@@ -40,7 +40,7 @@ defmodule RailWeb.Components.ScreenViewTest do
     assert ["false"] = doc |> Floki.find("#screen-view-next") |> Floki.attribute("aria-disabled")
     assert doc |> Floki.find("#screen-view-panel") |> Floki.text() =~ ~r/File list\s+e52a0bd\s+Fix round 1/
     assert ["send-twice"] = doc |> Floki.find("[data-qa=screen_finding]") |> Floki.attribute("phx-value-key")
-    assert doc |> Floki.find("#screen-view-comments") |> Floki.text() =~ ~r/Not sent\s+Remove\s+It wraps./
+    assert doc |> Floki.find("#screen-view-comments") |> Floki.text() =~ ~r/Not sent\s+Edit\s+Remove\s+It wraps./
     assert ["false"] = doc |> Floki.find("#screen-view-comment") |> Floki.attribute("aria-pressed")
     assert [_bound] = Floki.find(doc, "#screen-view-panel[phx-window-keydown=screen_key]")
     assert [] = Floki.find(doc, "#screen-comment-form")

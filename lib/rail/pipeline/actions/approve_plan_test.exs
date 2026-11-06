@@ -2,8 +2,12 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  import Ecto.Query
+
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Round
@@ -11,6 +15,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.StartEngineer
   alias Rail.Roles
+  alias Rail.Roles.Schemas.Role
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
@@ -43,6 +48,10 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   """
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    stub(Git, :branch_fingerprint, fn _worktree_path -> %{head_sha: String.duplicate("a", 40), dirty_digest: "clean"} end)
+
     roles =
       Map.new([:plan, :engineer], fn stage ->
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
@@ -62,7 +71,11 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "The raw ask."})
     {:ok, task} = Pipeline.create_task(issue, :plan)
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+    # Git is stubbed, so the worktree is only ever looked for: a plain directory stands in for it.
+    worktree_path = Path.join(System.tmp_dir!(), "rail_ap_wt_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(worktree_path)
+    on_exit(fn -> File.rm_rf(worktree_path) end)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Approved title", description: "The approved ticket body."})
@@ -148,6 +161,32 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
     assert %Round{number: 1, plan: ^plan, approved_at: %DateTime{}, approved_by_id: nil} = Pipeline.read_plan(task)
   end
 
+  test "a sequence placing a custom stage after Plan moves the task there, and the job committed with it starts it", %{
+    task: %{id: task_id} = task,
+    roles: roles,
+    run: run
+  } do
+    stages = [
+      %IssueStage{stage: :plan},
+      %IssueStage{stage: :custom, name: "Schema review", prompt: "Read the migrations."},
+      %IssueStage{stage: :engineer},
+      %IssueStage{stage: :review}
+    ]
+
+    Issue
+    |> Repo.get!(task.issue_id)
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.put_embed(:stages, stages)
+    |> Repo.update!()
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
+    assert %Task{stage: :custom, custom_stage: "Schema review"} = Repo.reload!(task)
+    assert :ok = perform_job(StartEngineer, %{task_id: task_id})
+
+    assert [%Run{status: :running, role: %Role{custom_stage: "Schema review"}}] =
+             Repo.all(from r in Run, where: r.task_id == ^task_id and r.role_id != ^roles[:plan].id, preload: :role)
+  end
+
   test "with a pick it adds the picked design's section and screenshot to the ticket in one write", %{
     task: task,
     run: run,
@@ -180,6 +219,52 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
 
     description = "The approved ticket body.\n\n## Design: Table\n\nDense rows."
     assert %Issue{title: "Approved title", description: ^description} = Repo.get!(Issue, task.issue_id)
+  end
+
+  test "with Product off it publishes nothing over the issue, which stays the ticket", %{task: task, run: run} do
+    Issue |> Repo.get!(task.issue_id) |> Ecto.Changeset.change(skipped_steps: [:product]) |> Repo.update!()
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
+
+    assert %Issue{title: "Approve Plan", description: nil} = Repo.get!(Issue, task.issue_id)
+    refute_enqueued(worker: Rail.Issues.Workers.SyncIssue)
+    assert %Task{stage: :engineer} = Repo.reload!(task)
+  end
+
+  test "with Architect off it is approved with no plan and the task enters Engineer with none recorded", %{
+    task: task,
+    run: run
+  } do
+    Issue |> Repo.get!(task.issue_id) |> Ecto.Changeset.change(skipped_steps: [:architect]) |> Repo.update!()
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: nil])
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
+
+    assert %Task{stage: :engineer} = Repo.reload!(task)
+    assert %Round{number: 1, plan: nil, approved_at: %DateTime{}} = Pipeline.read_plan(task)
+    assert %Issue{title: "Approved title"} = Repo.get!(Issue, task.issue_id)
+  end
+
+  test "with Product and Architect off a pick alone is approved, adding its section to the issue as it stands", %{
+    task: task,
+    run: run,
+    picked: picked,
+    uploaded: uploaded
+  } do
+    Issue
+    |> Repo.get!(task.issue_id)
+    |> Ecto.Changeset.change(skipped_steps: [:product, :architect])
+    |> Repo.update!()
+
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: nil])
+    picked.()
+    uploaded.()
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
+
+    description = "## Design: Table\n\nDense rows.\n\n![Table](https://uploads.linear.app/assets/app-1-table.png)"
+
+    assert %Issue{title: "Approve Plan", description: ^description} = Repo.get!(Issue, task.issue_id)
   end
 
   test "a second approval is told the plan is already approved and publishes nothing again", %{task: task, run: run} do

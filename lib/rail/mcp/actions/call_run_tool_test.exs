@@ -41,6 +41,10 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
   """
 
   setup do
+    # A role's prompt is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: these see no prompt file on the default branch, as when there is no clone.
+    stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     id = System.unique_integer([:positive])
 
     {:ok, user} =
@@ -261,6 +265,16 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
 
       assert {:error, {:refused, "Refused, nothing saved. evidence 1 path: cannot climb out of the QA directory."}} =
                Mcp.call_run_tool(lead, "save_finding", Map.put(finding, "evidence", [escape]))
+    end
+
+    test "a refusal inside a single embed names the embed it was in", %{project: project, task: task} do
+      {:ok, plan_role} = Roles.get_role(project_id: project.id, stage: :plan)
+      plan = %RunContext{os_process: %OsProcess{task_id: task.id}, role: plan_role, user: nil}
+
+      assert {:error, {:refused, refused}} = Mcp.call_run_tool(plan, "save_plan", %{"plan" => @plan})
+
+      assert refused =~ "ticket title: is required."
+      assert refused =~ "ticket description: is required."
     end
 
     test "a field that should be a list says so", %{project: project, task: task} do

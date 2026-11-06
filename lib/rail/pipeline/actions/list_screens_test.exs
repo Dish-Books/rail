@@ -4,9 +4,8 @@ defmodule Rail.Pipeline.Actions.ListScreensTest do
   alias Rail.Pipeline
 
   setup %{project: project} do
+    # The task has no worktree, so a finding saved here is on no commit: which one is not what is listed.
     task = learnings_task(project, "LSC-1", :review)
-    worktree = create_temp_git_repo()
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
     qa = Path.join(task.scratch_path, "qa")
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 

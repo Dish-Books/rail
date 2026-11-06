@@ -36,7 +36,8 @@ defmodule RailWeb.Live.DiffFileTest do
         commentable?: true,
         viewed?: false,
         collapsed?: false,
-        expanded_gaps: %{}
+        expanded_gaps: %{},
+        image: nil
       }
     }
   end
@@ -61,6 +62,30 @@ defmodule RailWeb.Live.DiffFileTest do
       parse_diff("diff --git a/lib/old_name.ex b/lib/new_name.ex\n--- a/lib/old_name.ex\n+++ b/lib/new_name.ex\n")
 
     assert render_component(DiffFile, %{section | file: renamed, segments: []}) =~ "lib/old_name.ex → lib/new_name.ex"
+  end
+
+  test "a picture is shown as it was and as it is, in place of its lines", %{section: section} do
+    image = %{old: "/tasks/tsk_1/diff/old?path=logo.png", new: "/tasks/tsk_1/diff/new?path=logo.png"}
+    html = DiffFile |> render_component(%{section | image: image}) |> Floki.parse_fragment!()
+
+    assert ["Before", "After"] =
+             html |> Floki.find("[data-qa=diff_image_side] figcaption") |> Enum.map(&String.trim(Floki.text(&1)))
+
+    assert Floki.attribute(html, "[data-qa=diff_image_side] img", "src") == [image.old, image.new]
+    assert [] = Floki.find(html, ".diff-rows")
+  end
+
+  test "an added picture is shown only as it is", %{section: section} do
+    html = render_component(DiffFile, %{section | image: %{old: nil, new: "/tasks/tsk_1/diff/new?path=logo.png"}})
+
+    refute html =~ "Before"
+    assert html =~ "After"
+  end
+
+  test "a collapsed picture is only its header", %{section: section} do
+    html = render_component(DiffFile, %{section | image: %{old: nil, new: "/x"}, collapsed?: true})
+
+    refute html =~ "diff_image"
   end
 
   test "the caret that folds it says which file", %{section: section} do

@@ -124,15 +124,18 @@ defmodule RailTest.TriageHelpers do
   end
 
   @doc """
-  A project on a real clone of a real remote, with a Triage role, so a pass can
-  check its code out. Returns `%{project: project, role: role, remote: remote}`.
+  A project with a Triage role. Its `clone_path` is a plain directory, not a
+  git clone: a test that reaches git stubs the `Rail.Git` calls it makes.
+  Returns `%{project: project, role: role}`.
   """
   def triage_project do
     Req.Test.stub(Rail.GitHub.Client, &Req.Test.json(&1, %{"token" => "ghs_token"}))
-    remote = RailTest.GitHelpers.create_temp_git_repo(prefix: "rail_triage_remote")
-    clone = RailTest.GitHelpers.create_temp_git_repo(prefix: "rail_triage_clone")
-    RailTest.GitHelpers.git!(clone, ["remote", "add", "origin", remote])
     unique = System.unique_integer([:positive])
+    # unique_integer restarts per VM, so the random suffix keeps concurrent runs apart.
+    salt = Base.encode32(:crypto.strong_rand_bytes(5), case: :lower, padding: false)
+    clone = Path.join(System.tmp_dir!(), "rail_triage_clone_#{unique}_#{salt}")
+    File.mkdir_p!(clone)
+    ExUnit.Callbacks.on_exit(fn -> File.rm_rf(clone) end)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -164,7 +167,7 @@ defmodule RailTest.TriageHelpers do
         cli: :claude
       })
 
-    %{project: project, role: role, remote: remote}
+    %{project: project, role: role}
   end
 
   @doc """

@@ -444,7 +444,7 @@ defmodule RailWeb.Components.TriageItem do
         id={"triage-item-task-#{@item_id}"}
         class="ml-auto inline-flex items-center gap-1.5 h-6 px-2 rounded-full border border-slate-300 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 hover:border-slate-500 outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900"
       >
-        <.icon name="pi-git-branch" class="size-3.5" />{Task.stage_label(@issue.task.stage)}
+        <.icon name="pi-git-branch" class="size-3.5" />{Task.stage_label(@issue.task)}
       </.link>
       <span
         :if={@show_start}

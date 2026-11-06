@@ -1,7 +1,9 @@
 defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.PlanCommentCapture
@@ -36,6 +38,9 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
   """
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -51,7 +56,11 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Plan Comments"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+    # Git is stubbed, so the worktree is only ever looked for: a plain directory stands in for it.
+    worktree_path = Path.join(System.tmp_dir!(), "rail_cpc_wt_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(worktree_path)
+    on_exit(fn -> File.rm_rf(worktree_path) end)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     dir = Path.join(task.scratch_path, "design")
     File.mkdir_p!(dir)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
@@ -189,7 +198,7 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
     {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Recordings", description: "Recordings open blank."})
     {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
 
-    assert {:ok, %PlanComment{target: :ticket, element_label: "Paragraph 1"}} =
+    assert {:ok, %PlanComment{target: :ticket, element_label: "Paragraph 1", custom_stage: nil}} =
              Pipeline.create_plan_comment(ada, run, ticket)
 
     assert {:ok, %PlanComment{target: :plan, element_text: "One module decides."}} =
@@ -261,5 +270,54 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
 
     assert {:error, :no_fix_plan} = Pipeline.create_plan_comment(ada, run, %{attrs | body: "And this."})
     assert [%PlanComment{body: "Guard it at the caller instead."}] = Pipeline.list_plan_comments(ada, task)
+  end
+
+  test "a comment on a custom stage's file is taken only at that stage, once its file is saved, through its own run", %{
+    project: project,
+    task: task,
+    run: plan_run,
+    ada: ada
+  } do
+    stages = [%IssueStage{stage: :custom, name: "License check", prompt: "Check each license."}]
+
+    Repo.preload(task, :issue).issue
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.put_embed(:stages, stages)
+    |> Repo.update!()
+
+    {:ok, task} = Pipeline.update_task(task, %{stage: :custom, custom_stage: "License check"})
+    {:ok, role} = Roles.get_custom_stage_role(project.id, "License check")
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :finished,
+        conversation_id: "sess_create_output_comment",
+        started_at: DateTime.utc_now()
+      })
+
+    attrs = %{
+      target: :output,
+      body: "Say to replace it with saxy.",
+      element_kind: :paragraph,
+      element_label: "Paragraph 1",
+      element_occurrence: 1,
+      element_text: "sweet_xml 0.7.5 is AGPL-3.0."
+    }
+
+    assert {:error, :no_output} = Pipeline.create_plan_comment(ada, run, attrs)
+
+    {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "sweet_xml 0.7.5 is AGPL-3.0."})
+    assert {:error, :no_output} = Pipeline.create_plan_comment(ada, plan_run, attrs)
+
+    assert {:ok, %PlanComment{target: :output, status: :unsent, custom_stage: "License check"}} =
+             Pipeline.create_plan_comment(ada, run, attrs)
+
+    assert %{element_label: ["can't be blank"]} =
+             errors_on(PlanComment.changeset(%PlanComment{}, Map.delete(attrs, :element_label)))
+
+    {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
+    assert {:error, :no_output} = Pipeline.create_plan_comment(ada, run, attrs)
   end
 end

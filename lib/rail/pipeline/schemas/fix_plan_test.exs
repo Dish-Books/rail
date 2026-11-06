@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
   use Rail.DataCase, async: true
 
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.FindingNote
   alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.Task
 
@@ -24,10 +25,21 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
 
         ### File-level changes
 
-        - `lib/rail/send.ex`: reads screen comments. For `send-drops-screen-comments`.
-        - `lib/rail_web/tray.ex`: counts finding comments. For `tray-count-skips-finding-comments`.
-        - `lib/rail_web/diff_comment.ex`: draws a sent comment. For comment 1.
-        - `lib/rail/send_test.exs`: one Send lists all three. For `send-drops-screen-comments`.
+        #### `lib/rail/send.ex`
+
+        Reads screen comments. For `send-drops-screen-comments`.
+
+        #### `lib/rail_web/tray.ex`
+
+        Counts finding comments. For `tray-count-skips-finding-comments`.
+
+        #### `lib/rail_web/diff_comment.ex`
+
+        Draws a sent comment. For comment 1.
+
+        #### `lib/rail/send_test.exs`
+
+        One Send lists all three. For `send-drops-screen-comments`.
 
         ### Verification
 
@@ -99,17 +111,17 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
     end
 
     test "a file naming no item is refused naming its path", %{fix_plan: fix_plan} do
-      plan = String.replace(@plan, "draws a sent comment. For comment 1.", "draws a sent comment.")
+      plan = String.replace(@plan, "Draws a sent comment. For comment 1.", "Draws a sent comment.")
 
       assert %{plan: [error]} = fix_plan |> FixPlan.save_changeset(%{"plan" => plan}) |> errors_on()
       assert error =~ "`lib/rail_web/diff_comment.ex` under `### File-level changes` naming no item"
     end
 
     test "File-level changes are held to the Plan tab's rules", %{fix_plan: fix_plan} do
-      plan = String.replace(@plan, "- `lib/rail/send.ex`:", "- lib/rail/send.ex:")
+      plan = String.replace(@plan, "#### `lib/rail/send.ex`", "#### lib/rail/send.ex")
 
       assert %{plan: [error]} = fix_plan |> FixPlan.save_changeset(%{"plan" => plan}) |> errors_on()
-      assert error =~ "not a bullet starting with a file path in backticks"
+      assert error =~ "has a heading under `### File-level changes` that is not `#### `path/to/file``"
     end
 
     test "a plan without What changes, with an unknown section or a stray heading is refused", %{fix_plan: fix_plan} do
@@ -135,7 +147,7 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
       plan =
         "### Changes to the plan\n\n- Criterion 1: a dot, not parentheses.\n\n### What changes\n\n" <>
           "#### Changes to the plan\n\nThe heading takes a dot.\n\n" <>
-          "### File-level changes\n\n- `lib/heading.ex`: the dot. For the changes to the plan."
+          "### File-level changes\n\n#### `lib/heading.ex`\n\nThe dot. For the changes to the plan."
 
       fix_plan = %{fix_plan | findings: [], comments: []}
 
@@ -231,6 +243,33 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
                FixPlan.calculate_ruling_changes(sent, task, findings)
     end
 
+    test "New issue reads on either side of a change, the earlier side from the finding's previous ruling", %{
+      fix_plan: fix_plan,
+      task: task,
+      findings: [send, tray, focus]
+    } do
+      rulings = [%FindingNote{kind: :ruling, decision: :new_issue}, %FindingNote{kind: :ruling, decision: :fix}]
+      findings = [send, %{tray | decision: :new_issue}, %{focus | decision: :fix, notes: rulings}]
+
+      assert %{
+               unsent: [
+                 %{key: "tray-count-skips-finding-comments", was: :fix, now: :new_issue},
+                 %{key: "composer-focus", was: :new_issue, now: :fix}
+               ]
+             } = FixPlan.calculate_ruling_changes(fix_plan, task, findings)
+    end
+
+    test "a finding recommended New issue and then ruled Fix reads as was New issue, which nobody ruled", %{
+      fix_plan: fix_plan,
+      task: task,
+      findings: [send, tray, focus]
+    } do
+      findings = [send, tray, %{focus | recommendation: :new_issue, decision: :fix}]
+
+      assert %{unsent: [%{key: "composer-focus", was: :new_issue, now: :fix}]} =
+               FixPlan.calculate_ruling_changes(fix_plan, task, findings)
+    end
+
     test "nothing changes before a plan is saved against what was sent, once approved, or past Review", %{
       fix_plan: fix_plan,
       task: task,
@@ -256,13 +295,21 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
                  %{
                    kind: :finding,
                    key: "send-drops-screen-comments",
-                   files: [1, 4],
+                   files: ["lib/rail/send.ex", "lib/rail/send_test.exs"],
                    body: "`SendReviewRound.run/2` reads screen comments too."
                  },
-                 %{kind: :finding, key: "tray-count-skips-finding-comments", files: [2]},
-                 %{kind: :comment, number: 1, comment_kind: :diff, place: "diff_comment.ex:58", files: [3]}
+                 %{kind: :finding, key: "tray-count-skips-finding-comments", files: ["lib/rail_web/tray.ex"]},
+                 %{
+                   kind: :comment,
+                   number: 1,
+                   comment_kind: :diff,
+                   place: "diff_comment.ex:58",
+                   files: ["lib/rail_web/diff_comment.ex"]
+                 }
                ],
-               files: [%{number: 1, path: "lib/rail/send.ex"} | _rest],
+               files: [
+                 %{path: "lib/rail/send.ex", prose: "Reads screen comments. For `send-drops-screen-comments`."} | _rest
+               ],
                verification: "`mix test lib/rail/send_test.exs`.",
                counts: %{findings: 2, comments: 1, files: 4}
              } = FixPlan.build_sheet(saved)
@@ -284,7 +331,11 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
 
       assert %{
                items: [
-                 %{key: "send-drops-screen-comments", title: "Send leaves screen comments out", files: [1, 4]},
+                 %{
+                   key: "send-drops-screen-comments",
+                   title: "Send leaves screen comments out",
+                   files: ["lib/rail/send.ex", "lib/rail/send_test.exs"]
+                 },
                  %{key: "tray-count-skips-finding-comments"},
                  %{kind: :comment, number: 1}
                ],
@@ -310,7 +361,7 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
       plan =
         "### Changes to the plan\n\n- Criterion 1: a dot.\n\n### What changes\n\n" <>
           "#### Changes to the plan\n\nThe heading takes a dot.\n\n### File-level changes\n\n" <>
-          "- `lib/heading.ex`: the dot. For the changes to the plan."
+          "#### `lib/heading.ex`\n\nThe dot. For the changes to the plan."
 
       {:ok, saved} =
         %{fix_plan | findings: [], comments: []} |> FixPlan.save_changeset(%{"plan" => plan}) |> apply_action(:update)
@@ -407,6 +458,33 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
                  %{key: "focus", was: "Don't fix", now: "Fix"}
                ],
                comments: [%{number: 4, text: "Also this."}]
+             } = FixPlan.parse_note(note)
+    end
+
+    test "reads the issues a Send filed by identifier and title, none of them a finding to fix" do
+      note = """
+      Sent 1 finding and 2 new issues.
+
+      <finding key="nil-crash" severity="major" kind="code">
+      Nil crashes the page
+      </finding>
+
+      <new_issue key="resort" identifier="RAIL-152">
+      Issues page re-sorts after every sync
+      </new_issue>
+
+      <new_issue key="branch" identifier="RAIL-153">
+      A long branch name pushes the pull request link off
+      </new_issue>
+      """
+
+      assert %{
+               summary: "1 finding and 2 new issues",
+               findings: ["Nil crashes the page"],
+               issues: [
+                 %{identifier: "RAIL-152", title: "Issues page re-sorts after every sync"},
+                 %{identifier: "RAIL-153", title: "A long branch name pushes the pull request link off"}
+               ]
              } = FixPlan.parse_note(note)
     end
 

@@ -38,9 +38,10 @@ defmodule Rail.Triage.Actions.TriageThread do
   @timeout to_timeout(minute: 30)
 
   @doc """
-  Triages `thread`. Returns `:ok`, `{:snooze, 30}` when another pass holds it, or
-  `{:waiting_for_usage, resets_at}` when every account is used up, which is no
-  failure. A pass that fails records why on the thread and leaves its items as they were.
+  Triages `thread`. Returns `:ok`, `{:snooze, 30}` when another pass holds it or
+  one of the role's MCP servers did not answer, or `{:waiting_for_usage, resets_at}`
+  when every account is used up, none of which is a failure. A pass that fails
+  records why on the thread and leaves its items as they were.
   """
   def triage_thread(%Thread{id: thread_id}) do
     {token, hash} = Mcp.issue_run_token()
@@ -73,6 +74,7 @@ defmodule Rail.Triage.Actions.TriageThread do
 
     case outcome do
       {:error, {:waiting_for_usage, resets_at}} -> {:waiting_for_usage, resets_at}
+      {:error, {:mcp_unreachable, _names}} -> {:snooze, 30}
       _ran_or_failed -> :ok
     end
   end
@@ -150,10 +152,12 @@ defmodule Rail.Triage.Actions.TriageThread do
 
   # The agent finds existing issues through the role's MCP servers, so a pass
   # without them would draft duplicates rather than fail: it is stopped here,
-  # saying what to fix before a retry.
+  # saying what to fix before a retry. A server that did not answer is no
+  # failure: the pass is tried again until it does.
   defp check_tools(%Thread{project: project}, role) do
     case Mcp.check_run_tools(%RunContext{role: role, user: project.triage_user}) do
       :ok -> :ok
+      {:error, {:mcp_unreachable, _names}} = unreachable -> unreachable
       {:error, reason} -> {:error, tools_error(reason, project.triage_user)}
     end
   end
@@ -166,9 +170,6 @@ defmodule Rail.Triage.Actions.TriageThread do
     do:
       "#{Enum.join(names, ", ")} needs reconnecting for #{user.name || user.login}. " <>
         "Reconnect it under Settings → Connected accounts, then retry."
-
-  defp tools_error({:mcp_unreachable, names}, _user),
-    do: "Could not reach #{Enum.join(names, ", ")}, so triage did not run. Retry once it answers."
 
   defp write_files(%Thread{} = thread) do
     dir = Thread.scratch_path(thread)
@@ -224,6 +225,7 @@ defmodule Rail.Triage.Actions.TriageThread do
 
   defp finish(_thread, :nothing), do: :ok
   defp finish(_thread, {:error, {:waiting_for_usage, _resets_at}}), do: :ok
+  defp finish(_thread, {:error, {:mcp_unreachable, _names}}), do: :ok
 
   defp finish(%Thread{id: thread_id} = thread, {:error, reason}) do
     Repo.update_all(from(i in Item, where: i.thread_id == ^thread_id and i.retriaging), set: [retriaging: false])
@@ -341,7 +343,7 @@ defmodule Rail.Triage.Actions.TriageThread do
           "assumptions": [{"text": "what you took as given without checking", "corrected": false}],
           "existing_issue": null,
           "issue_note": "which issue you checked covers this, or that none does",
-          "issue": {"title": "the issue's title", "description": "the problem, its cause and its evidence", "priority": "medium", "estimate": 2},
+          "issue": {"title": "the behavior the product should have, once the issue is done", "description": "the problem, its cause and its evidence", "priority": "medium", "estimate": 2},
           "reply": "the reply a teammate would post in the thread, or null"
         }
       ]
@@ -354,6 +356,7 @@ defmodule Rail.Triage.Actions.TriageThread do
     - `change` is `raised` for the message that first brought an item up, `widened` or `narrowed` when a later message changes its scope, and `added` for a new item raised later in the thread. `passage` is quoted verbatim from the message.
     - `kind` is `bug` or `feature_request`. A bug's `verdict` is `confirmed`, `not_reproduced` or `already_fixed`; a request's is `built`, `partly_built` or `not_built`.
     - Never propose a fix, a design or a plan, anywhere. There is no field for one.
+    - An issue's `title` states the behavior the product should have, as a sentence that is true once the issue is done, never what goes wrong today: "Saving a draft keeps its attachments", not "Attachments are lost when saving a draft". A title naming the fault reads as the behavior wanted, so whoever picks it up builds the bug. It says what should happen, not how to make it happen. The `description` is where the problem, its cause and its evidence go.
     - `existing_issue` is the identifier of the Linear issue that already covers the item, such as `TRI-23`, or null. When one does, leave `issue` null, and #{tracked(thread)}
     - `priority` is `urgent`, `high`, `medium` or `low`.
     - `estimate` is the issue's points on Product's scale: 1, 2, 3 or 5, and 8 for work too big for one ticket. Judge it from how much of the behavior exists and what the code shows, or leave it null where you cannot. It is a number only, never a description of the work.

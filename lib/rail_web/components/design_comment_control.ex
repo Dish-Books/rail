@@ -1,13 +1,15 @@
 defmodule RailWeb.Components.DesignCommentControl do
   @moduledoc """
   The slim row right above a design's frame that turns commenting on and off, kept off the mockup so it never
-  covers the part being commented on. Disabled, it says why.
+  covers the part being commented on. Disabled, it says why. What it is given sits at the row's right end.
   """
   use RailWeb, :html
 
   attr :commenting, :boolean, required: true
   attr :disabled_reason, :string, default: nil
   attr :target, :any, required: true
+
+  slot :inner_block
 
   def design_comment_control(assigns) do
     ~H"""
@@ -60,6 +62,8 @@ defmodule RailWeb.Components.DesignCommentControl do
       >
         {@disabled_reason || "Click an element to comment on it."}
       </span>
+
+      <div class="ml-auto shrink-0 flex items-center">{render_slot(@inner_block)}</div>
     </div>
     """
   end

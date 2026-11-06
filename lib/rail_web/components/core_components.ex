@@ -17,9 +17,14 @@ defmodule RailWeb.CoreComponents do
   defdelegate button(assigns), to: Components.Button
   defdelegate changed_comments(assigns), to: Components.ChangedComments
   defdelegate child_switcher(assigns), to: Components.ChildSwitcher
+  defdelegate comment_body(assigns), to: Components.CommentEdit
   defdelegate comment_box(assigns), to: Components.CommentBox
+  defdelegate comment_edit_button(assigns), to: Components.CommentEdit
+  defdelegate comment_list(assigns), to: Components.CommentList
   defdelegate commentable_line(assigns), to: Components.CommentableLine
   defdelegate commit_picker(assigns), to: Components.CommitPicker
+  defdelegate cycle_chart(assigns), to: Components.CycleChart
+  defdelegate cycle_panel(assigns), to: Components.CyclePanel
   defdelegate design_comment_control(assigns), to: Components.DesignCommentControl
   defdelegate diff_comment(assigns), to: Components.DiffComment
   defdelegate diff_comment_list(assigns), to: Components.DiffCommentList
@@ -28,17 +33,20 @@ defmodule RailWeb.CoreComponents do
   defdelegate diff_row(assigns), to: Components.DiffRow
   defdelegate diff_stat(assigns), to: Components.DiffStat
   defdelegate demo_player(assigns), to: Components.DemoPlayer
+  defdelegate discard_dialog(assigns), to: Components.DiscardDialog
   defdelegate dispatch_banner(assigns), to: Components.DispatchBanner
   defdelegate document_comment(assigns), to: Components.DocumentComment
   defdelegate element_preview(assigns), to: Components.ElementPreview
   defdelegate finding_code(assigns), to: Components.FindingCode
   defdelegate finding_detail(assigns), to: Components.FindingDetail
+  defdelegate finding_issue(assigns), to: Components.FindingIssue
   defdelegate finding_list(assigns), to: Components.FindingList
   defdelegate fix_plan_sheet(assigns), to: Components.FixPlanSheet
   defdelegate icon(assigns), to: Components.Icon
   defdelegate in_progress_tasks(assigns), to: Components.InProgressTasks
   defdelegate input(assigns), to: Components.Input
   defdelegate issue_card(assigns), to: Components.IssueCard
+  defdelegate issue_relation_list(assigns), to: Components.IssueRelationList
   defdelegate issue_view(assigns), to: Components.IssueView
   defdelegate learning_detail(assigns), to: Components.LearningDetail
   defdelegate learning_form_modal(assigns), to: Components.LearningFormModal
@@ -52,6 +60,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate overview_stats(assigns), to: Components.OverviewStats
   defdelegate plan_comment_card(assigns), to: Components.PlanCommentCard
   defdelegate plan_comment_tray(assigns), to: Components.PlanCommentTray
+  defdelegate plan_cards(assigns), to: Components.PlanCards
   defdelegate plan_sheet(assigns), to: Components.PlanSheet
   defdelegate priority_icon(assigns), to: Components.IssueIcons
   defdelegate project_badge(assigns), to: Components.ProjectBadge
@@ -62,6 +71,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate round_plan(assigns), to: Components.RoundPlan
   defdelegate review_send_card(assigns), to: Components.ReviewSendCard
   defdelegate review_status(assigns), to: Components.ReviewStatus
+  defdelegate reviewed_toggle(assigns), to: Components.ReviewedToggle
 
   defdelegate sandbox_meters(assigns), to: Components.SandboxMeters
   defdelegate sandbox_stats(assigns), to: Components.SandboxStats
@@ -73,6 +83,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate settings_nav(assigns), to: Components.SettingsNav
   defdelegate side_sheet(assigns), to: Components.SideSheet
   defdelegate split_board(assigns), to: Components.SplitBoard
+  defdelegate stage_sequence(assigns), to: Components.StageSequence
   defdelegate status_icon(assigns), to: Components.IssueIcons
   defdelegate task_layout(assigns), to: Components.TaskLayout
   defdelegate throughput_chart(assigns), to: Components.ThroughputChart

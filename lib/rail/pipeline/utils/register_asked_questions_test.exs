@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
   import Rail.Pipeline.Utils.QuestionQueue
   import Rail.Pipeline.Utils.RegisterAskedQuestions
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline
@@ -13,6 +14,8 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
   alias Rail.Roles
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
     Req.Test.expect(Rail.Linear, fn conn ->

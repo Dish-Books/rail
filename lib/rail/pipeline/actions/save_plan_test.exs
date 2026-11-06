@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Repo
 
   # The smallest plan the structure allows: one decision, one card and one criterion, and no data changes.
   @plan """
@@ -168,6 +169,16 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
 
       assert %Round{plan: ^plan, plan_saved_at: %DateTime{}, design: nil} = Pipeline.read_plan(task)
       assert_received {:output_saved, ^task_id}
+    end
+
+    test "a save takes a sent plan back from the tech leads and tells Overview", %{task: %Task{id: task_id} = task} do
+      {:ok, round} = Pipeline.save_plan(task, %{plan: @plan})
+      round |> Round.ready_changeset(nil) |> Repo.update!()
+      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+
+      assert {:ok, %Round{ready_at: nil, ready_by_id: nil}} = Pipeline.save_plan(task, %{plan: @plan})
+      assert %Round{ready_at: nil} = Pipeline.read_plan(task)
+      assert_received {:pipeline_changed, ^task_id}
     end
 
     test "a blank plan, or one without the heading, is refused and leaves the earlier plan", %{task: task, plan: plan} do
@@ -362,5 +373,44 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
 
     assert {:error, :round_approved} = Pipeline.save_plan(task, %{title: "Something else"})
     assert %Round{ticket: %{title: "Usage charts"}} = Pipeline.read_plan(task)
+  end
+
+  describe "a step the task's workflow turned off" do
+    setup %{task: task} do
+      skipping = fn steps ->
+        issue = Repo.preload(task, :issue).issue |> Ecto.Changeset.change(skipped_steps: steps) |> Repo.update!()
+        %{task | issue: issue}
+      end
+
+      %{skipping: skipping}
+    end
+
+    test "with Product off, any part of the ticket is refused and nothing is saved", %{skipping: skipping} do
+      task = skipping.([:product])
+
+      assert {:error, {:step_off, :product}} = Pipeline.save_plan(task, %{title: "Usage charts", plan: @plan})
+      assert {:error, {:step_off, :product}} = Pipeline.save_plan(task, %{estimate: 2})
+      assert Pipeline.read_plan(task) == nil
+    end
+
+    test "with Architect off, a plan is refused and the ticket saves as before", %{skipping: skipping} do
+      task = skipping.([:architect])
+
+      assert {:error, {:step_off, :architect}} =
+               Pipeline.save_plan(task, %{title: "Usage charts", description: "Show usage.", plan: @plan})
+
+      assert {:ok, %Round{plan: nil, ticket: %{title: "Usage charts"}}} =
+               Pipeline.save_plan(task, %{title: "Usage charts", description: "Show usage."})
+    end
+
+    test "with the demo off, asking for one is refused, and saying no demo is not", %{skipping: skipping} do
+      task = skipping.([:demo])
+
+      assert {:error, {:step_off, :demo}} =
+               Pipeline.save_plan(task, %{title: "Usage charts", description: "Show usage.", record_demo: true})
+
+      assert {:ok, %Round{record_demo: false}} =
+               Pipeline.save_plan(task, %{title: "Usage charts", description: "Show usage.", record_demo: false})
+    end
   end
 end

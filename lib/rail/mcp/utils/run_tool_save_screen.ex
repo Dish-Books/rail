@@ -1,6 +1,6 @@
 defmodule Rail.Mcp.Utils.RunToolSaveScreen do
   @moduledoc """
-  Photographs one screen state the lead named and saves it as that state's image for HEAD's commit, which
+  Photographs one screen state QA named and saves it as that state's image for HEAD's commit, which
   replaces the state's earlier picture. A worktree with uncommitted changes is refused, since its picture
   would belong to no commit, and so is a picture all one color, which leaves the earlier one in place.
   """
@@ -14,13 +14,13 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreen do
 
   @key ~r/\A[a-z0-9][a-z0-9-]{0,59}\z/
 
-  # Rail clears its width after the picture, which also ends a width an explorer's script set.
+  # Rail clears its width after the picture, which also ends a width QA's script set.
   @unsized " The tab is back at its own width now, so a script holding a resize has to set it again."
 
   @doc """
   Captures the browser `arguments["browser"]` names on `task` as the screen state `arguments["key"]`,
   labeled `arguments["label"]` and laid out `arguments["width"]` wide when given, and says which commit it
-  was saved for.
+  was saved for alongside the picture.
   """
   def run_tool_save_screen(%Task{} = task, %{"key" => key, "label" => label} = arguments, opts)
       when is_binary(key) and is_binary(label) do
@@ -56,11 +56,12 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreen do
 
   defp save(%Task{} = task, key, label, width, arguments, opts) do
     with {:ok, browser, session} <- named_browser(task, arguments, opts),
-         {:ok, file} <- Tools.capture_browser_evidence(session, task, label, key: key, width: width),
+         {:ok, file, picture} <- Tools.capture_browser_evidence(session, task, label, key: key, width: width),
          {:ok, %{commit: commit}} <- Pipeline.save_screen(task, %{key: key, label: label, file: file, browser: browser}) do
       {:ok,
-       "Saved as #{file}, the image of #{key} on #{String.slice(commit || "no commit", 0, 7)}. Give that path " <>
-         "to the lead to cite in a finding that turns on this screen." <> if(width, do: @unsized, else: "")}
+       "Saved as #{file}, the image of #{key} on #{String.slice(commit || "no commit", 0, 7)}, and the picture " <>
+         "is attached. Check now that it shows the state its label says, and save it again if it does not. Cite " <>
+         "the path in your report for a finding that turns on this screen." <> if(width, do: @unsized, else: ""), picture}
     else
       {:error, :flat_screenshot} ->
         {:refused,

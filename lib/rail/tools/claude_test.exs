@@ -73,8 +73,12 @@ defmodule Rail.Tools.ClaudeTest do
 
     stub(Tools, :run, fn _exe, args, _opts ->
       case args do
-        ["auth", "status", "--json"] -> {@auth_ok, 0}
-        usage -> send(test_pid, {:warmed, usage}) && {"{}", 0}
+        ["auth", "status", "--json"] ->
+          {@auth_ok, 0}
+
+        usage ->
+          send(test_pid, {:warmed, usage})
+          {"{}", 0}
       end
     end)
 
@@ -127,7 +131,10 @@ defmodule Rail.Tools.ClaudeTest do
       {@auth_ok, 0}
     end)
 
-    stub(File, :read, fn path -> send(test_pid, {:read, path}) && {:ok, "{}"} end)
+    stub(File, :read, fn path ->
+      send(test_pid, {:read, path})
+      {:ok, "{}"}
+    end)
 
     Claude.probe(backend)
 

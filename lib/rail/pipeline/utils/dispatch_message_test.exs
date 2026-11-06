@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
 
   alias Rail.Git
   alias Rail.Issues
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.RunEvent
@@ -36,7 +37,23 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Dispatch Message Issue"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+    # Git is only ever asked through Rail.Git, so the worktree is a plain directory, on the commit whose sha is all a's
+    # with nothing changed against main, and the repo has no prompts of its own.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
+
+    stub(Git, :branch_fingerprint, fn ^worktree ->
+      %{head_sha: String.duplicate("a", 40), dirty_digest: String.duplicate("0", 64)}
+    end)
+
+    stub(Git, :load_diff, fn _scope, %Task{worktree_path: ^worktree}, :branch -> {:ok, []} end)
+
+    stub(Git, :read_default_branch_file, fn _project, path ->
+      {:error, "fatal: path '#{path}' does not exist in 'refs/remotes/origin/main'"}
+    end)
 
     {:ok, %Run{id: run_id} = run} =
       Pipeline.create_run(%{
@@ -60,10 +77,21 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     %{project: project, task: task, run: run, run_id: run_id}
   end
 
-  test "sends the queued message and takes it off the run", %{run: run, run_id: run_id} do
+  test "the run going out is said on the pipeline topic, for lists that show it", %{run: %{task_id: task_id} = run} do
+    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+
+    assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+    assert_received {:pipeline_changed, ^task_id}
+  end
+
+  test "sends the queued message to the one Plan agent, with no subagents and the stored prompt the repo has no file for, and takes it off the run",
+       %{run: run, run_id: run_id} do
     expect(Tools, :start_os_process, fn spawned, argv ->
       assert Enum.any?(argv, &(&1 =~ "Please also add a test"))
       refute Enum.any?(argv, &(&1 =~ "behind origin/main"))
+      refute "--agents" in argv
+      assert ["--append-system-prompt", "You are the plan agent."] in Enum.chunk_every(argv, 2, 1)
       {:ok, %OsProcess{run: spawned}}
     end)
 
@@ -77,30 +105,14 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
   end
 
   test "each turn carries the prompt merged to the project's .rail/prompts at the time", %{
-    project: project,
+    project: %{id: project_id},
     run: run
   } do
-    remote = create_temp_git_repo(prefix: "rail_dispatch_prompt_remote")
-    File.mkdir_p!(Path.join(remote, ".rail/prompts"))
-    File.write!(Path.join(remote, ".rail/prompts/plan.md"), "From the repo.\n")
-    git!(remote, ["add", "."])
-    git!(remote, ["commit", "-m", "add prompt"])
-    clone = create_temp_git_repo(prefix: "rail_dispatch_prompt_clone")
-    git!(clone, ["remote", "add", "origin", remote])
-    git!(clone, ["fetch", "origin", "main"])
-    {:ok, _project} = Projects.update_project(system_scope(), project, %{clone_path: clone})
+    # Read for each role the turn looks up, so every read finds it.
+    stub(Git, :read_default_branch_file, fn %{id: ^project_id}, ".rail/prompts/plan.md" -> {:ok, "From the repo.\n"} end)
 
     expect(Tools, :start_os_process, fn spawned, argv ->
       assert ["--append-system-prompt", "From the repo."] in Enum.chunk_every(argv, 2, 1)
-      {:ok, %OsProcess{run: spawned}}
-    end)
-
-    assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
-  end
-
-  test "a turn with no prompt file in the project's repo carries the stored prompt", %{run: run} do
-    expect(Tools, :start_os_process, fn spawned, argv ->
-      assert ["--append-system-prompt", "You are the plan agent."] in Enum.chunk_every(argv, 2, 1)
       {:ok, %OsProcess{run: spawned}}
     end)
 
@@ -160,33 +172,17 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     end
   end
 
-  test "a message to a Plan run spawns the one agent, with no subagents", %{run: run} do
-    expect(Tools, :start_os_process, fn spawned, argv ->
-      refute "--agents" in argv
-      {:ok, %OsProcess{run: spawned}}
-    end)
-
-    assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
-  end
-
   # How the last turn ended is not how this one has ended, and a run left wearing
   # an error is a run nothing will ever latch as done.
-  test "a person's message starts the count of CI failures sent back over", %{run: run} do
-    {:ok, run} = Pipeline.update_run(run, %{ci_failure_streak: 3})
-
-    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
-    assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
-    assert %Run{ci_failure_streak: 0} = Repo.reload!(run)
-  end
-
-  test "the turn before this one takes its error with it", %{run: run} do
-    {:ok, failed} = run |> Run.changeset(%{error: "Error: empty prompt", exit_code: 1}) |> Repo.update()
+  test "a person's message starts the count of CI failures sent back over, and the turn before takes its error with it",
+       %{run: run} do
+    {:ok, failed} =
+      run |> Run.changeset(%{ci_failure_streak: 3, error: "Error: empty prompt", exit_code: 1}) |> Repo.update()
 
     expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
     assert {:ok, %OsProcess{}} = dispatch_message(failed, async: false)
-    assert %Run{error: nil, exit_code: nil} = Repo.reload!(failed)
+    assert %Run{ci_failure_streak: 0, error: nil, exit_code: nil} = Repo.reload!(failed)
   end
 
   # The review agent commits nothing, so its turn readies no branch, and it leads nobody.
@@ -240,6 +236,41 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
       assert_received {:prepared, ^task_id}
       assert "The branch is behind origin/main.\n\nRename the button" in argv
       refute "--agents" in argv
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+  end
+
+  test "a message to a custom stage's agent resumes it with the issue's copy of its prompt, on no fresh branch", %{
+    project: project,
+    task: task
+  } do
+    stages = [%IssueStage{stage: :custom, name: "License check", prompt: "Check each license."}]
+
+    Repo.preload(task, :issue).issue
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.put_embed(:stages, stages)
+    |> Repo.update!()
+
+    {:ok, %Task{id: task_id} = task} = Pipeline.update_task(task, %{stage: :custom, custom_stage: "License check"})
+    {:ok, role} = Roles.get_custom_stage_role(project.id, "License check")
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :finished,
+        conversation_id: "sess_dispatch_custom",
+        pending_chat: "Say which screens.",
+        started_at: DateTime.utc_now()
+      })
+
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      refute_received {:prepared, ^task_id}
+      assert "Say which screens." in argv
+      assert "Check each license." in argv
+      refute role.system_prompt in argv
       {:ok, %OsProcess{run: spawned}}
     end)
 

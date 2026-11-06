@@ -33,6 +33,19 @@ defmodule RailWeb.Components.NavTest do
     refute html =~ ~r/>\s*Overview\s*</
   end
 
+  test "the Rail mark is a link to Overview named Rail, with a focus outline and no hover background" do
+    html = render_component(&Nav.nav/1, current_section: :tasks, attention_count: 0)
+
+    assert [_whole, mark_tag] = Regex.run(~r/(<a[^>]*id="app-brand"[^>]*>)/, html)
+    assert mark_tag =~ ~s(href="/")
+    assert mark_tag =~ ~s(data-phx-link="redirect")
+    assert mark_tag =~ ~s(aria-label="Rail")
+    assert mark_tag =~ "focus-visible:outline-2"
+    assert mark_tag =~ "cursor-pointer"
+    refute mark_tag =~ "hover:"
+    assert html =~ ~r/id="app-brand".*id="brand-mark".*id="nav-destinations"/s
+  end
+
   test "nav_rail renders attention badge on overview when attention_count > 0" do
     html_with_badge =
       render_component(&Nav.nav/1,
@@ -105,6 +118,7 @@ defmodule RailWeb.Components.NavTest do
       )
 
     assert html =~ "id=\"top-app-bar\""
+    assert html =~ "phx-hook=\"Shortcuts\""
     assert html =~ "id=\"section-title\""
     assert html =~ "Overview"
     assert html =~ "All projects"

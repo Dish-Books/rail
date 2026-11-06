@@ -1,8 +1,8 @@
 defmodule RailWeb.Components.PlanCommentTray do
   @moduledoc """
-  The reader's unsent ticket, design, plan and next round's plan comments, above the composer as the message they will become, with
-  Send beside them while their agent can take a message: Plan, and once the work started the review agent. Only
-  their author sees them.
+  The reader's unsent ticket, design, plan, next round's plan and custom stage output comments, above the composer as
+  the message they will become, with Send beside them while their agent can take a message: Plan, a custom stage's
+  agent, and once the work started the review agent. Only their author sees them.
   """
   use RailWeb, :html
 
@@ -12,7 +12,11 @@ defmodule RailWeb.Components.PlanCommentTray do
   attr :open, :boolean, default: true
   attr :can_send, :boolean, required: true
   attr :plan_running, :boolean, required: true
-  attr :agent, :string, default: "Plan", doc: "who the comments go to: Plan, and once the work started the review agent"
+
+  attr :agent, :string,
+    default: "Plan",
+    doc: "who the comments go to: Plan, a custom stage by its name, and once the work started the review agent"
+
   attr :target, :any, required: true
 
   def plan_comment_tray(assigns) do
@@ -68,7 +72,7 @@ defmodule RailWeb.Components.PlanCommentTray do
           id={"plan-comment-#{comment.id}"}
           data-qa="plan_comment_row"
           data-found={to_string(comment.id not in @dashed)}
-          class="flex items-start gap-2.5 px-2 py-2 rounded-lg hover:bg-slate-200/50 dark:hover:bg-slate-700/40"
+          class="group/comment flex items-start gap-2.5 px-2 py-2 rounded-lg hover:bg-slate-200/50 dark:hover:bg-slate-700/40"
         >
           <span
             aria-hidden="true"
@@ -87,7 +91,7 @@ defmodule RailWeb.Components.PlanCommentTray do
                 :if={comment.target != :design}
                 class="shrink-0 font-sans font-semibold text-slate-600 dark:text-slate-300"
               >
-                {target_label(comment.target)}
+                {target_label(comment.target, @agent)}
               </span>
               <span :if={comment.target != :design} class="truncate">{comment.element_label}</span>
               <span :if={comment.target == :design} class="truncate" title={comment.selector}>
@@ -110,6 +114,8 @@ defmodule RailWeb.Components.PlanCommentTray do
               >
                 <.icon name="pi-arrows-clockwise-bold" class="size-[11px]" />Changed
               </span>
+              <span class="ml-auto" />
+              <.comment_edit_button place="tray" comment={comment} class="font-sans" />
               <button
                 type="button"
                 id={"remove-plan-comment-#{comment.id}"}
@@ -117,18 +123,22 @@ defmodule RailWeb.Components.PlanCommentTray do
                 phx-click="remove_plan_comment"
                 phx-value-id={comment.id}
                 phx-target={@target}
-                class="ml-auto shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded font-sans text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500"
+                class="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded font-sans text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500"
               >
                 <.icon name="pi-trash" class="size-[13px]" />Remove
               </button>
             </div>
-            <p class={[
-              "mt-0.5 text-[12.5px] leading-[18px] line-clamp-2 wrap-break-word",
-              comment.id not in @dashed && "text-slate-800 dark:text-slate-100",
-              comment.id in @dashed && "text-slate-500 dark:text-slate-400"
-            ]}>
-              {comment.body}
-            </p>
+            <.comment_body
+              place="tray"
+              comment={comment}
+              label={if comment.target == :design, do: comment.selector, else: comment.element_label}
+              class={[
+                "mt-0.5 text-[12.5px] leading-[18px] line-clamp-2 wrap-break-word",
+                comment.id not in @dashed && "text-slate-800 dark:text-slate-100",
+                comment.id in @dashed && "text-slate-500 dark:text-slate-400"
+              ]}
+              narrow
+            />
           </div>
         </div>
       </div>
@@ -156,7 +166,9 @@ defmodule RailWeb.Components.PlanCommentTray do
   defp noun(1), do: " comment"
   defp noun(_count), do: " comments"
 
-  defp target_label(:ticket), do: "Ticket"
-  defp target_label(:plan), do: "Plan"
-  defp target_label(:fix_plan), do: "Next round's plan"
+  # A custom stage's file is named for its stage, which is the agent the comments go to.
+  defp target_label(:output, agent), do: agent
+  defp target_label(:ticket, _agent), do: "Ticket"
+  defp target_label(:plan, _agent), do: "Plan"
+  defp target_label(:fix_plan, _agent), do: "Next round's plan"
 end

@@ -15,7 +15,7 @@ defmodule Rail.Pipeline.Schemas.FindingNote do
     field :at, :utc_datetime_usec
     field :commit, :string
     field :status, Ecto.Enum, values: [:open, :fixed, :not_fixed]
-    field :decision, Ecto.Enum, values: [:fix, :skip]
+    field :decision, Ecto.Enum, values: [:fix, :skip, :new_issue]
     field :by_id, :string
     field :text, :string
     field :covered, {:array, :string}, default: []

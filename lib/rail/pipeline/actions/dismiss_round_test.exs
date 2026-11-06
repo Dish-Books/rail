@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.DismissRoundTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
@@ -9,6 +10,8 @@ defmodule Rail.Pipeline.Actions.DismissRoundTest do
   alias Rail.Tools
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -41,6 +44,17 @@ defmodule Rail.Pipeline.Actions.DismissRoundTest do
     run = Repo.preload(run, task: :issue)
 
     %{task: task, role: role, run: run}
+  end
+
+  test "a dismissed round is said on the pipeline topic, for lists that show the run", %{
+    run: %{task_id: task_id} = run
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+    question = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
+    {:ok, _dismissed} = Pipeline.dismiss_question(question)
+
+    assert {:ok, %Run{status: :finished}} = run |> Repo.reload!() |> Repo.preload(:role) |> Pipeline.dismiss_round()
+    assert_received {:pipeline_changed, ^task_id}
   end
 
   test "an all-dismissed round closes without a message", %{run: run, role: role} do

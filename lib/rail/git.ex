@@ -7,6 +7,7 @@ defmodule Rail.Git do
   stage. The agent commits there itself, as the ticket's owner and signed with
   their key, which Rail writes into the worktree's own config for as long as the
   worktree lasts. Pushing stays Rail's, since the credential is the project's.
+  The clone's `.env` is the project's, and reaches every worktree once it is set up.
   Reading the result is the other half of the same thing, so parsing a diff and
   remembering who has read which file of it live here too.
   """
@@ -27,6 +28,7 @@ defmodule Rail.Git do
   defdelegate load_branch_history(task, rounds \\ []), to: Actions.LoadBranchHistory
   defdelegate branch_unpushed?(worktree_path), to: Actions.BranchUnpushed
   defdelegate commits_since(worktree_path, sha), to: Actions.CommitsSince
+  defdelegate list_round_paths(task, round_change), to: Actions.ListRoundPaths
   defdelegate base_status(worktree_path, base_branch), to: Actions.BaseStatus
   defdelegate branch_changed?(task), to: Actions.BranchChanged
   defdelegate push_branch(scope, task), to: Actions.PushBranch
@@ -36,15 +38,25 @@ defmodule Rail.Git do
   defdelegate ci_env(project, task), to: Actions.CiEnv
   defdelegate fetch_default_branch(project, worktree_path), to: Actions.FetchDefaultBranch
   defdelegate track_remote_branch(project, branch), to: Actions.TrackRemoteBranch
+  defdelegate fetch_branch(project, branch), to: Actions.FetchBranch
+  defdelegate delete_remote_branch(project, branch), to: Actions.DeleteRemoteBranch
   defdelegate read_default_branch_file(project, path), to: Actions.ReadDefaultBranchFile
+  defdelegate list_default_branch_files(project, directory), to: Actions.ListDefaultBranchFiles
+  defdelegate list_default_branch_paths(project, paths), to: Actions.ListDefaultBranchPaths
+  defdelegate list_branch_paths(task, paths), to: Actions.ListBranchPaths
+  defdelegate read_env_file(project), to: Actions.ReadEnvFile
+  defdelegate save_env_file(project, content), to: Actions.SaveEnvFile
+  defdelegate copy_env_file(project, worktree_path), to: Actions.CopyEnvFile
 
   # `filter` is `:branch`, `:uncommitted`, or `{:commit, sha}` for one commit against its first parent.
   defdelegate load_diff(scope, task, filter \\ :branch, previous_files \\ []), to: Actions.LoadDiff
   defdelegate load_diff_hunks(scope, task, ranges), to: Actions.LoadDiffHunks
+  defdelegate read_diff_image(task, path, side, filter), to: Actions.ReadDiffImage
 
   defdelegate expand_diff_gap(task, path, gap_index, start_line, end_line, revision \\ :worktree),
     to: Actions.ExpandDiffGap
 
-  defdelegate list_viewed_files(scope, task), to: Actions.ListViewedFiles
-  defdelegate set_file_viewed(scope, task, path, digest, viewed), to: Actions.SetFileViewed
+  defdelegate list_viewed_files(scope, task, document), to: Actions.ListViewedFiles
+  defdelegate set_file_viewed(scope, task, document, path, digest, viewed), to: Actions.SetFileViewed
+  defdelegate delete_viewed_files(task), to: Actions.DeleteViewedFiles
 end

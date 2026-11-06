@@ -2,8 +2,10 @@ defmodule RailWeb.Components.UpNextTest do
   use Rail.DataCase, async: true
 
   import Phoenix.LiveViewTest
+  import RailWeb.Utils.StageLabel, only: [waiting_path: 1]
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.Question
@@ -14,6 +16,10 @@ defmodule RailWeb.Components.UpNextTest do
   alias RailWeb.Components.UpNext
 
   setup do
+    # A role's prompt is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: these see no prompt file on the default branch, as when there is no clone.
+    stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     scratch = Path.join(System.tmp_dir!(), "up_next_#{System.unique_integer([:positive])}")
     on_exit(fn -> File.rm_rf(scratch) end)
 
@@ -125,6 +131,49 @@ defmodule RailWeb.Components.UpNextTest do
     end
   end
 
+  test "a custom stage stopped with its file saved waits on approval, and without it needs a fix", %{
+    waiting: waiting,
+    scratch: scratch
+  } do
+    stages = [
+      %IssueStage{stage: :plan},
+      %IssueStage{stage: :engineer},
+      %IssueStage{stage: :custom, name: "License check", prompt: "Check each license."},
+      %IssueStage{stage: :review}
+    ]
+
+    checking = %{
+      waiting.(:custom)
+      | stage_outcome: :in_progress,
+        conversation_id: "sess_up_next_custom",
+        role: %Role{name: "License check", icon_name: "pi-puzzle-piece", custom_stage: "License check"},
+        task: %Task{
+          stage: :custom,
+          custom_stage: "License check",
+          scratch_path: scratch,
+          issue: %Issue{identifier: "UPN-2", title: "Dependency updates", stages: stages}
+        }
+    }
+
+    html = render_component(&UpNext.up_next/1, runs: [checking])
+    assert html =~ "Needs a fix"
+    assert html =~ ~r/data-qa="up-next-action".*>\s*Fix\s*</s
+    assert html =~ "bg-red-500"
+
+    File.mkdir_p!(Path.join(scratch, "stages"))
+    File.write!(Path.join(scratch, "stages/3-license-check.md"), "sweet_xml 0.7.5 is AGPL-3.0.")
+
+    html = render_component(&UpNext.up_next/1, runs: [checking])
+    assert html =~ "Ready for review"
+    assert html =~ ~r/data-qa="up-next-action".*>\s*Review\s*</s
+    assert html =~ "Waiting on you to approve the License check file."
+    assert html =~ "bg-amber-500"
+    refute html =~ "bg-red-500"
+
+    html = render_component(&UpNext.up_next/1, runs: [waiting.(:plan), checking])
+    assert html =~ "License check file to approve"
+  end
+
   test "a failed run leads with the error, and reads as a problem", %{waiting: waiting} do
     failed = %{waiting.(:engineer) | stage_outcome: :in_progress, error: "The engineer changed nothing."}
 
@@ -188,6 +237,26 @@ defmodule RailWeb.Components.UpNextTest do
     assert ["/tasks/tsk_engineer?item=plan&agent=engineer"] = href.(:engineer)
     assert ["/tasks/tsk_review"] = href.(:review)
     assert ["/tasks/tsk_plan"] = href.(:plan)
+
+    asked = %{waiting.(:engineer) | status: :blocked_on_input, stage_outcome: :in_progress}
+    assert waiting_path(asked) == "/tasks/tsk_engineer?item=plan&agent=engineer"
+
+    # A task at a custom stage opens on that stage's own item, its conversation beside it.
+    custom = %{
+      waiting.(:custom)
+      | status: :blocked_on_input,
+        stage_outcome: :in_progress,
+        role: %Role{name: "License check", icon_name: "pi-robot", custom_stage: "License check"},
+        questions: [%Question{status: :pending, prompt: "German only?"}]
+    }
+
+    custom = %{custom | task: %{custom.task | custom_stage: "License check"}}
+
+    assert ["/tasks/tsk_custom"] =
+             (&UpNext.up_next/1)
+             |> render_component(runs: [custom])
+             |> Floki.parse_fragment!()
+             |> Floki.attribute("#up-next-featured-#{custom.id}", "href")
   end
 
   test "a run whose questions are all answered is waiting to be sent", %{waiting: waiting} do
@@ -269,6 +338,7 @@ defmodule RailWeb.Components.UpNextTest do
     assert html =~ ~s(href="/tasks/#{task_id}?item=findings")
     assert html =~ "Ready to merge"
     assert html =~ "the pull request is waiting on you to merge it."
+    assert waiting_path(shown) == "/tasks/#{task_id}?item=findings"
 
     html = render_component(&UpNext.up_next/1, runs: [waiting.(:engineer), shown])
 
@@ -449,6 +519,8 @@ defmodule RailWeb.Components.UpNextTest do
       assert Floki.text(row) =~ "fix plan to approve"
       assert Floki.text(row) =~ "Review"
       assert [^href] = Floki.attribute(row, "href")
+      # A flagged row in the cycle view reads the same place off the run alone.
+      assert waiting_path(run) == href
     end
   end
 end

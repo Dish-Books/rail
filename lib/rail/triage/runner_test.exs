@@ -3,6 +3,7 @@ defmodule Rail.Triage.RunnerTest do
   # stubs and sandbox are shared and nothing may run beside it.
   use Rail.DataCase, async: false
 
+  alias Rail.Git
   alias Rail.Tools
   alias Rail.Triage
   alias Rail.Triage.Runner
@@ -13,6 +14,12 @@ defmodule Rail.Triage.RunnerTest do
   setup do
     Req.Test.set_req_test_to_shared()
     on_exit(fn -> Req.Test.set_req_test_to_private() end)
+
+    # A pass checks the default branch out and reads the Triage prompt from it, both through Rail.Git.
+    # The project has no clone, so these answer as git would for a default branch with no .rail/prompts.
+    stub(Git, :checkout_detached_worktree, fn _project, worktree_path -> {:ok, worktree_path} end)
+    stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
 
     %{project: project} = triage_project()
     %{workspace: workspace, channel: channel} = connect_slack_channel(project)

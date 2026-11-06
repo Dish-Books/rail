@@ -4,6 +4,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
 
   import Rail.Pipeline.Utils.BuildTask
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
@@ -22,6 +23,11 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
 
   setup %{project: project} do
     {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+    # A role's prompt is read from its project's default branch, and a removed task's worktree and branch
+    # are removed from its project's clone.
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
+    stub(Git, :delete_branch, fn _clone_path, _branch -> :ok end)
 
     %{workspace: workspace}
   end
@@ -58,6 +64,96 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
              branch_name: "hwh-1-webhook",
              url: "https://linear.app/issue/HWH-1"
            } = Repo.get_by(Issue, external_id: "lin_wh_1")
+  end
+
+  test "an update moves the cycle and parent, clears them only when updatedFrom names them, and else keeps them", %{
+    project: project,
+    workspace: workspace
+  } do
+    %Issue{id: issue_id} =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_wh_cycle",
+        identifier: "HWH-40",
+        title: "In a cycle",
+        state: :todo,
+        cycle_external_id: "cyc_1",
+        parent_external_id: "lin_wh_parent_1"
+      })
+      |> Repo.insert!()
+
+    update = fn data, updated_from ->
+      %{
+        "type" => "Issue",
+        "action" => "update",
+        "data" =>
+          Map.merge(
+            %{
+              "id" => "lin_wh_cycle",
+              "teamId" => "lin_team_id",
+              "identifier" => "HWH-40",
+              "title" => "In a cycle",
+              "state" => %{"name" => "Todo", "type" => "unstarted"}
+            },
+            data
+          ),
+        "updatedFrom" => updated_from
+      }
+    end
+
+    # Silent on both, so both stay where they were.
+    assert {:ok, _issue} = Issues.handle_linear_webhook(workspace, update.(%{"title" => "Renamed"}, %{"title" => "Old"}))
+
+    assert %Issue{title: "Renamed", cycle_external_id: "cyc_1", parent_external_id: "lin_wh_parent_1"} =
+             Repo.get!(Issue, issue_id)
+
+    assert {:ok, _issue} =
+             Issues.handle_linear_webhook(
+               workspace,
+               update.(%{"cycleId" => "cyc_2", "parentId" => "lin_wh_parent_2"}, %{"cycleId" => "cyc_1"})
+             )
+
+    assert %Issue{cycle_external_id: "cyc_2", parent_external_id: "lin_wh_parent_2"} = Repo.get!(Issue, issue_id)
+
+    assert {:ok, _issue} =
+             Issues.handle_linear_webhook(
+               workspace,
+               update.(%{}, %{"cycleId" => "cyc_2", "parentId" => "lin_wh_parent_2"})
+             )
+
+    assert %Issue{cycle_external_id: nil, parent_external_id: nil} = Repo.get!(Issue, issue_id)
+  end
+
+  test "an archived issue leaves the cycle Linear cleared", %{project: project, workspace: workspace} do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_wh_cycle_archived",
+        identifier: "HWH-41",
+        title: "Archived in a cycle",
+        state: :done,
+        cycle_external_id: "cyc_1"
+      })
+      |> Repo.insert!()
+
+    assert {:ok, _issue} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "update",
+               "data" => %{
+                 "id" => "lin_wh_cycle_archived",
+                 "teamId" => "lin_team_id",
+                 "identifier" => "HWH-41",
+                 "title" => "Archived in a cycle",
+                 "archivedAt" => "2026-10-30T10:00:00.000Z",
+                 "state" => %{"name" => "Done", "type" => "completed"}
+               },
+               "updatedFrom" => %{"cycleId" => "cyc_1"}
+             })
+
+    assert %Issue{cycle_external_id: nil, archived_at: ~U[2026-10-30 10:00:00Z]} = Repo.reload!(issue)
   end
 
   test "an issue update changes the existing row and pushes nothing back to Linear", %{
@@ -330,28 +426,13 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
     refute_receive {:issue_changed, ^issue_id}, 50
   end
 
-  # Its own project, because the worktree is removed from a real clone.
-  test "a remove takes its task's worktree, branch and scratch folder with it", %{workspace: %{id: workspace_id}} do
-    clone_path = create_temp_git_repo(prefix: "rail_wh_remove_main")
+  test "a remove takes its task's worktree, branch and scratch folder with it", %{
+    project: %{clone_path: clone_path} = project,
+    workspace: workspace
+  } do
     worktree_path = Path.join(System.tmp_dir!(), "rail_wh_remove_wt_#{System.unique_integer([:positive])}")
-    git!(clone_path, ["worktree", "add", "-b", "wh-remove-branch", worktree_path])
     scratch_dir = Path.join(System.tmp_dir!(), "rail_wh_remove_scratch_#{System.unique_integer([:positive])}")
     File.mkdir_p!(scratch_dir)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_wh_remove"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Webhook Remove Project",
-        github_repo: "org/wh-remove",
-        github_installation_id: 12_955,
-        key: "WHR",
-        default_branch: "main",
-        clone_path: clone_path,
-        linear_workspace_id: workspace_id
-      })
 
     {:ok, task} =
       %Issue{}
@@ -373,14 +454,13 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
         scratch_path: scratch_dir
       })
 
-    {:ok, workspace} = Projects.get_linear_workspace(id: workspace_id)
     remove = %{"type" => "Issue", "action" => "remove", "data" => %{"id" => "lin_wh_remove_files"}}
+    expect(Git, :remove_worktree, fn ^clone_path, ^worktree_path -> :ok end)
+    expect(Git, :delete_branch, fn ^clone_path, "wh-remove-branch" -> :ok end)
 
     assert {:ok, %Issue{}} = Issues.handle_linear_webhook(workspace, remove)
 
-    refute File.exists?(worktree_path)
     refute File.exists?(scratch_dir)
-    assert "" = git!(clone_path, ["branch", "--list", "wh-remove-branch"])
   end
 
   test "an update marked trashed deletes the issue and its task, whatever team it names", %{
@@ -422,7 +502,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
     assert Repo.get(Task, task_id) == nil
   end
 
-  test "an archive deletes an issue with no task and broadcasts, and inserts nothing for one Rail never had", %{
+  test "an archive keeps an issue with no task as archived and broadcasts, and inserts one Rail never had", %{
     project: project,
     workspace: workspace
   } do
@@ -457,10 +537,10 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
 
     assert {:ok, %Issue{id: ^issue_id}} = archive.("lin_wh_archived")
     assert_receive {:issue_changed, ^issue_id}
-    assert Repo.get(Issue, issue_id) == nil
+    assert %Issue{archived_at: ~U[2026-10-06 10:00:00Z]} = Repo.get(Issue, issue_id)
 
-    assert :ok = archive.("lin_wh_never_had")
-    assert Repo.get_by(Issue, external_id: "lin_wh_never_had") == nil
+    assert {:ok, %Issue{}} = archive.("lin_wh_never_had")
+    assert %Issue{archived_at: ~U[2026-10-06 10:00:00Z]} = Repo.get_by(Issue, external_id: "lin_wh_never_had")
   end
 
   test "an archive keeps an issue with a task, even a cleaned-up one, and upserts it as any update", %{

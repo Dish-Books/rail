@@ -72,7 +72,7 @@ defmodule Rail.Tools.Clients.Speech do
 
   # A chunk is padded to an even length.
   defp wav_pcm(<<_id::binary-4, size::little-32, rest::binary>>, format) when byte_size(rest) >= size + rem(size, 2) do
-    <<_chunk::binary-size(size + rem(size, 2)), rest::binary>> = rest
+    <<_chunk::binary-size(^size + rem(^size, 2)), rest::binary>> = rest
     wav_pcm(rest, format)
   end
 

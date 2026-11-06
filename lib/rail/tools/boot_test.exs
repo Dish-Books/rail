@@ -1,5 +1,6 @@
 defmodule Rail.Tools.BootTest do
-  use Rail.DataCase, async: true
+  # Serial, as FollowerTest is: Boot lends a Follower the database after it starts, and a restarted one not at all.
+  use Rail.DataCase, async: false
   use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Issues.Schemas.Issue

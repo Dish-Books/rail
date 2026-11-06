@@ -30,10 +30,9 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   @doc """
   Applies `payload` for `workspace`, its projects preloaded. Issue creates and
   updates are upserted onto the project on the issue's team and broadcast as
-  `{:issue_changed, issue_id}` on `"issues"`. A remove or a trash deletes the
-  issue and its task, and so does an archive when no task references it, both
-  broadcast the same way. Anything else, including a team no project is on or an
-  update older than the row, is ignored.
+  `{:issue_changed, issue_id}` on `"issues"`, an archive among them. A remove or
+  a trash deletes the issue and its task, broadcast the same way. Anything else,
+  including a team no project is on or an update older than the row, is ignored.
   """
   def handle_linear_webhook(%LinearWorkspace{projects: projects}, %{
         "type" => "Issue",
@@ -44,24 +43,12 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
     delete_issue(projects, external_id)
   end
 
-  def handle_linear_webhook(%LinearWorkspace{projects: projects}, %{
-        "type" => "Issue",
-        "action" => action,
-        "data" => %{"id" => external_id, "archivedAt" => archived_at} = data
-      })
-      when action in ["create", "update"] and is_binary(archived_at) do
-    if Repo.exists?(from(t in Task, join: i in assoc(t, :issue), where: i.external_id == ^external_id)),
-      do: upsert_issue(projects, action, data),
-      else: delete_issue_without_task(projects, external_id)
-  end
-
-  def handle_linear_webhook(%LinearWorkspace{projects: projects}, %{
-        "type" => "Issue",
-        "action" => action,
-        "data" => %{"id" => _external_id, "teamId" => _team_id} = data
-      })
+  def handle_linear_webhook(
+        %LinearWorkspace{projects: projects},
+        %{"type" => "Issue", "action" => action, "data" => %{"id" => _external_id, "teamId" => _team_id} = data} = payload
+      )
       when action in ["create", "update"] do
-    upsert_issue(projects, action, data)
+    upsert_issue(projects, action, data, payload["updatedFrom"])
   end
 
   def handle_linear_webhook(%LinearWorkspace{projects: projects}, %{
@@ -104,11 +91,12 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
 
   def handle_linear_webhook(%LinearWorkspace{}, _payload), do: :ok
 
-  defp upsert_issue(projects, action, %{"id" => external_id} = data) do
+  defp upsert_issue(projects, action, %{"id" => external_id} = data, updated_from) do
     case Enum.find(projects, &(&1.linear_team_id == data["teamId"])) do
       %Project{id: project_id} ->
         attrs =
           data
+          |> with_cleared(updated_from)
           |> format_linear_issue()
           |> Map.merge(%{project_id: project_id, owner_user_id: owner_user_id(data["assigneeId"])})
 
@@ -141,7 +129,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
     end
   end
 
-  # Every task, cleaned up or not, is discarded first: its runs have no foreign key to go with it.
+  # Every task, cleaned up or not, is purged first: its runs have no foreign key to go with it.
   # A split parent's issue keeps its row, since deleting it would take the children's tasks with it.
   defp delete_issue(projects, external_id) do
     project_ids = Enum.map(projects, & &1.id)
@@ -160,11 +148,11 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
       Logger.warning("Linear removed #{external_id}, which Rail split into child tasks, so Rail keeps it")
       :ok
     else
-      discard_and_delete(project_ids, external_id)
+      purge_and_delete(project_ids, external_id)
     end
   end
 
-  defp discard_and_delete(project_ids, external_id) do
+  defp purge_and_delete(project_ids, external_id) do
     tasks =
       Repo.all(
         from(t in Task,
@@ -173,7 +161,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
         )
       )
 
-    Enum.each(tasks, &(:ok = Pipeline.discard_task(&1)))
+    Enum.each(tasks, &(:ok = Pipeline.purge_task(&1)))
 
     result =
       delete_and_broadcast(
@@ -183,19 +171,6 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
     # Sent only now, so nothing reloads while a task is still there without its issue.
     if tasks != [], do: Phoenix.PubSub.broadcast(Rail.PubSub, "sandboxes", :sandboxes_changed)
     result
-  end
-
-  defp delete_issue_without_task(projects, external_id) do
-    project_ids = Enum.map(projects, & &1.id)
-
-    delete_and_broadcast(
-      from(i in Issue,
-        as: :issue,
-        where: i.external_id == ^external_id and i.project_id in ^project_ids,
-        where: not exists(from(t in Task, where: t.issue_id == parent_as(:issue).id)),
-        select: i
-      )
-    )
   end
 
   # One statement, so a second remove or a task started meanwhile finds nothing to delete.
@@ -209,6 +184,15 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
         :ok
     end
   end
+
+  # An update leaves out a field it set to null, so only `updatedFrom` naming it says it was cleared.
+  defp with_cleared(data, %{} = updated_from) do
+    Enum.reduce(["cycleId", "parentId"], data, fn key, data ->
+      if Map.has_key?(updated_from, key) and not Map.has_key?(data, key), do: Map.put(data, key, nil), else: data
+    end)
+  end
+
+  defp with_cleared(data, _no_updated_from), do: data
 
   defp finished?("update", %Issue{id: id, state: was}, %Issue{state: now}) when is_binary(id),
     do: not Issue.finished_state?(was) and Issue.finished_state?(now)

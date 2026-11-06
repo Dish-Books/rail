@@ -3,7 +3,7 @@ defmodule Rail.Pipeline.Actions.MergeTask do
   A tech lead's Merge on Finalize: the merge is claimed and broadcast, so every tab shows Merging and a second
   click is refused, then the pull request is squash-merged on GitHub outside any transaction. A refusal is kept
   with GitHub's message unless the pull request was merged there already; a merge records who and the sha,
-  starts the parent's next children, queues the task's cleanup, and enters Merged.
+  starts the parent's next children, queues the task's cleanup and its owner's message, and enters Merged.
   """
 
   import Ecto.Query
@@ -15,6 +15,7 @@ defmodule Rail.Pipeline.Actions.MergeTask do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.AdvanceSplit
   alias Rail.Pipeline.Workers.CleanupMergedTask
+  alias Rail.Pipeline.Workers.NotifyOwner
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Scope
@@ -124,6 +125,7 @@ defmodule Rail.Pipeline.Actions.MergeTask do
           do: {:ok, _job} = %{parent_task_id: task.parent_task_id} |> AdvanceSplit.new() |> Oban.insert()
 
         {:ok, _job} = %{task_id: task.id} |> CleanupMergedTask.new() |> Oban.insert()
+        {:ok, _job} = %{task_id: task.id} |> NotifyOwner.new() |> Oban.insert()
         task
       end)
 

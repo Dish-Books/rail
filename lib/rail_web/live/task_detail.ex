@@ -1,22 +1,28 @@
 defmodule RailWeb.Live.TaskDetail do
   @moduledoc """
   A task's page body: the header with every decision on it, and a slim rail of the task's items beside the picked
-  one. Issue and Plan are the page's own, handed in as slots, and the conversation is too: Plan reads every round
+  one. Issue and Plan are the page's own, handed in as slots, and the conversation is too. A custom stage of a
+  workflow's task is an item of its own, its file beside its conversation, with Approve in the header. Plan reads every round
   beside it, with the next one's plan and its Approve while it waits, and every other item has its trays under it. Findings is the list beside one finding, with what the round's agents are doing
   above them; ruling moves on to the next finding. What Send would send and whether it can is handed to the page
   for the conversation's tray. Diff is the branch, or one commit of it, which a finding's commits open. Screens is
   each screen state's one shot, opened over the page to step through and comment on, Demo plays the latest
   recording with its walkthrough and says when the branch has moved past it, and Browser watches QA's browser.
+  Comments lists every comment on the task, and each opens where it was left.
   """
   use RailWeb, :live_component
 
   import RailWeb.Utils.BuildFixPlanLines
   import RailWeb.Utils.CalculateDocumentComments
+  import RailWeb.Utils.CustomStageItem
   import RailWeb.Utils.MonotonicMs
+  import RailWeb.Utils.StageLabel, only: [custom_stage_waiting?: 2]
 
   alias Rail.Git
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Learnings
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FindingComment
   alias Rail.Pipeline.Schemas.FindingEvidence
@@ -28,8 +34,10 @@ defmodule RailWeb.Live.TaskDetail do
   alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
+  alias Rail.Scope
   alias Rail.Tools
   alias Rail.Users
+  alias RailWeb.Live.CustomStage
   alias RailWeb.Live.DiffView
 
   @double_click_ms 400
@@ -50,6 +58,18 @@ defmodule RailWeb.Live.TaskDetail do
   # Something the page heard moved what the stage shows; it reads it again off the task it holds.
   def update(%{reload: true}, socket), do: {:ok, load(socket)}
 
+  # A comment in the Comments item opens the Plan item. Round 1 is the Plan stage, whose round the URL keeps.
+  def update(%{open_plan: nil}, socket) do
+    socket = socket |> pick(:plan) |> assign(:plan_round, nil) |> load()
+    {:ok, socket}
+  end
+
+  def update(%{open_plan: round}, socket) do
+    send(self(), {:plan_round, round})
+    socket = socket |> assign(:item, :plan) |> assign(:plan_round, round) |> load()
+    {:ok, socket}
+  end
+
   def update(assigns, socket) do
     socket =
       socket
@@ -57,7 +77,7 @@ defmodule RailWeb.Live.TaskDetail do
       |> open_url_file(assigns)
       |> assign(assigns)
       |> assign_new(:error, fn -> nil end)
-      |> assign_new(:selected_key, fn -> nil end)
+      |> assign_new(:selected_key, fn -> assigns[:url_finding] end)
       |> assign_new(:plan_round, fn -> assigns[:url_round] end)
       |> assign_new(:advanced_to, fn -> nil end)
       |> assign_new(:filed_index, fn -> 0 end)
@@ -67,7 +87,10 @@ defmodule RailWeb.Live.TaskDetail do
       |> assign_new(:screen_open, fn -> nil end)
       |> assign_new(:screen_draft, fn -> nil end)
       |> assign_new(:finding_draft, fn -> nil end)
+      |> assign_new(:reopen_comment, fn -> assigns[:url_comment] end)
+      |> assign_new(:finding_url, fn -> {assigns[:url_finding], assigns[:url_comment]} end)
       |> assign_new(:fix_plan_draft, fn -> nil end)
+      |> assign_new(:comment_order, fn -> "newest" end)
       |> assign_new(:reported_lifted, fn -> nil end)
       |> assign_new(:code_cache, fn -> %{fingerprint: :unread, by_key: %{}} end)
       |> load()
@@ -86,21 +109,12 @@ defmodule RailWeb.Live.TaskDetail do
         line={@line}
         title={@task.issue.title}
         status={@status}
+        link_workflow={Scope.admin?(@current_scope)}
         flush
       >
         <:breadcrumb :if={@breadcrumb != []}>{render_slot(@breadcrumb)}</:breadcrumb>
         <:actions>
           {render_slot(@actions)}
-
-          <span
-            :if={@plan_state == :approved}
-            id="fix-plan-approved-header"
-            data-qa="fix_plan_approved"
-            class="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400"
-          >
-            <.icon name="pi-check-circle" class="size-4" /> Approved by {@fix_plan.approved_by} ·
-            <.local_time id="fix-plan-approved-at" at={@fix_plan.approved_at} />
-          </span>
 
           <button
             :if={@show_approve}
@@ -115,6 +129,21 @@ defmodule RailWeb.Live.TaskDetail do
           >
             <%!-- Not the PR's Approve, which sits in the same place at Finalize --%>
             <.icon name="pi-play" class="size-4" /> Start fix round
+          </button>
+
+          <button
+            :if={@stage_approvable}
+            type="button"
+            id="approve-custom-stage"
+            data-qa="approve_custom_stage"
+            phx-click="approve_stage_output"
+            phx-target={@myself}
+            phx-disable-with="Approving…"
+            disabled={@stage_unsent > 0}
+            title={@stage_unsent > 0 && unsent(@stage_unsent)}
+            class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+          >
+            <.icon name="pi-check" class="size-4" /> Approve
           </button>
         </:actions>
 
@@ -148,7 +177,7 @@ defmodule RailWeb.Live.TaskDetail do
               <%!-- Its edge drags it wider, and the width the hook sets is kept through patches. A split's child
               waiting on its turn has run nothing, so it has no conversation to show. --%>
               <aside
-                :if={@item in [:plan, :fix_plan] and @task.runs != []}
+                :if={@beside and @task.runs != []}
                 id="plan-chat"
                 data-qa="plan_chat"
                 phx-hook="SidebarResize"
@@ -210,6 +239,16 @@ defmodule RailWeb.Live.TaskDetail do
                   {render_slot(@plan)}
                 </div>
                 <.round_plan :if={@item == :plan and @round_pick != "1"} round={@shown_round} />
+                <div :if={@custom_item} id="task-item-custom-stage" class="flex-1 min-h-0">
+                  <.live_component
+                    module={CustomStage}
+                    id={"custom-#{@custom_item.key}"}
+                    task={@task}
+                    run={@custom_item.run}
+                    name={@custom_item.name}
+                    current_scope={@current_scope}
+                  />
+                </div>
                 <div
                   :if={@item == :children}
                   id="task-item-children"
@@ -282,6 +321,8 @@ defmodule RailWeb.Live.TaskDetail do
                       names={@names}
                       viewer_id={@current_scope.user && @current_scope.user.id}
                       suppressor={@suppressor}
+                      preview={@preview}
+                      project_name={@task.project.name}
                       neighbours={@neighbours}
                       comments={@finding_placed}
                       draft={@finding_draft}
@@ -382,6 +423,10 @@ defmodule RailWeb.Live.TaskDetail do
                         lifted={@fix_plan_comments.lifted}
                         draft={@fix_plan_draft}
                         offered={@fix_plan_offered}
+                        reviewed={@fix_plan_reviewed}
+                        default_paths={@fix_plan_default_paths}
+                        diff_paths={@fix_plan_diff_paths}
+                        project={@task.project}
                         target={@myself}
                       />
                     </div>
@@ -408,6 +453,17 @@ defmodule RailWeb.Live.TaskDetail do
                   target={@myself}
                 />
 
+                <.comment_list
+                  :if={@item == :comments}
+                  comments={
+                    if @comment_order == "newest", do: Enum.reverse(@comments), else: @comments
+                  }
+                  order={@comment_order}
+                  screen_keys={Enum.map(@screens, & &1.key)}
+                  reader_id={@current_scope.user.id}
+                  target={@myself}
+                />
+
                 <.demo_player
                   :if={@item == :demo}
                   task={@task}
@@ -417,6 +473,7 @@ defmodule RailWeb.Live.TaskDetail do
                   recording={@recording}
                   stale={@stale}
                   rerecordable={@approvable and not Run.running?(@run)}
+                  off={Issue.skips_step?(@task.issue, :demo)}
                   target={@myself}
                 />
 
@@ -430,7 +487,7 @@ defmodule RailWeb.Live.TaskDetail do
                 />
 
                 <%!-- Under every other item, the comments waiting to be sent, so Send is never an item away. --%>
-                <div :if={@item not in [:plan, :fix_plan]} class="shrink-0">
+                <div :if={!@beside} class="shrink-0">
                   {render_slot(@conversation)}
                 </div>
               </div>
@@ -463,7 +520,7 @@ defmodule RailWeb.Live.TaskDetail do
   end
 
   def handle_event("pick_item", %{"item" => item}, socket) do
-    socket = socket |> pick(item(item) || :findings) |> load()
+    socket = socket |> pick(item(item, socket.assigns.task) || :findings) |> load()
     {:noreply, socket}
   end
 
@@ -550,22 +607,8 @@ defmodule RailWeb.Live.TaskDetail do
     end
   end
 
-  # The piece is read off the finding this tab shows, so only a piece it draws can be commented on.
   def handle_event("open_finding_comment", %{"piece" => piece} = params, socket) do
-    %{selected: selected, commentable: commentable} = socket.assigns
-    piece = Enum.find(Ecto.Enum.values(FindingComment, :piece), &(Atom.to_string(&1) == piece))
-
-    index =
-      case Integer.parse(params["index"] || "") do
-        {index, ""} -> index
-        _no_index -> nil
-      end
-
-    socket =
-      if commentable and selected != nil and FindingComment.calculate_piece(selected, piece, index) != nil,
-        do: assign(socket, :finding_draft, %{finding_id: selected.id, piece: piece, index: index, body: nil}),
-        else: socket
-
+    socket = socket |> open_finding_draft(piece, params["index"]) |> sync_finding_url()
     {:noreply, socket}
   end
 
@@ -576,7 +619,8 @@ defmodule RailWeb.Live.TaskDetail do
   def handle_event("change_finding_comment", _params, socket), do: {:noreply, socket}
 
   def handle_event("cancel_finding_comment", _params, socket) do
-    {:noreply, assign(socket, :finding_draft, nil)}
+    socket = socket |> assign(:finding_draft, nil) |> sync_finding_url()
+    {:noreply, socket}
   end
 
   # A blank comment keeps the box open on what was typed.
@@ -587,18 +631,18 @@ defmodule RailWeb.Live.TaskDetail do
     case Pipeline.create_finding_comment(scope, task, attrs) do
       {:ok, _comment} ->
         socket = socket |> assign(:finding_draft, nil) |> assign(:error, nil) |> assign_finding_comments()
-        {:noreply, socket}
+        {:noreply, sync_finding_url(socket)}
 
       {:error, %Ecto.Changeset{}} ->
         {:noreply, assign(socket, :finding_draft, %{draft | body: body})}
 
       {:error, :not_found} ->
         socket = socket |> assign(:finding_draft, nil) |> assign(:error, "That finding has no such piece to comment on.")
-        {:noreply, socket}
+        {:noreply, sync_finding_url(socket)}
 
       {:error, reason} ->
         socket = socket |> assign(:finding_draft, nil) |> assign(:error, message_for(reason))
-        {:noreply, socket}
+        {:noreply, sync_finding_url(socket)}
     end
   end
 
@@ -627,6 +671,17 @@ defmodule RailWeb.Live.TaskDetail do
       |> load()
 
     {:noreply, socket}
+  end
+
+  def handle_event("order_comments", %{"order" => order}, socket) when order in ["newest", "oldest"],
+    do: {:noreply, assign(socket, :comment_order, order)}
+
+  # A comment gone since the list was drawn opens nothing; the next read drops its row.
+  def handle_event("open_comment", %{"kind" => kind, "id" => id}, socket) do
+    case Enum.find(socket.assigns.comments, &(to_string(&1.kind) == kind and &1.id == id)) do
+      %{} = entry -> {:noreply, open_comment(socket, entry)}
+      nil -> {:noreply, socket}
+    end
   end
 
   def handle_event("record_demo", _params, socket) do
@@ -682,6 +737,26 @@ defmodule RailWeb.Live.TaskDetail do
     {:noreply, socket}
   end
 
+  # Approve moves the task on, so the page opens on the stage it moved to.
+  def handle_event("approve_stage_output", _params, socket) do
+    %{current_scope: scope, task: task} = socket.assigns
+
+    # A page drawn before another tab approved still sends this, and the approval refuses it.
+    socket =
+      with %Task{stage: :custom} <- task,
+           {:ok, _run} <- Pipeline.approve_stage_output(scope, custom_run(task, task.custom_stage)) do
+        {:ok, moved} = Pipeline.get_task(task.id)
+        send(self(), :task_changed)
+        socket |> assign(:error, nil) |> pick(default_item(moved))
+      else
+        %Task{} -> assign(socket, :error, message_for(:already_approved))
+        {:error, {:invalid_stage, _stage}} -> assign(socket, :error, message_for(:already_approved))
+        {:error, reason} -> assign(socket, :error, message_for(reason))
+      end
+
+    {:noreply, load(socket)}
+  end
+
   def handle_event("approve_fix_plan", %{"version" => version}, socket) do
     %{current_scope: scope, run: run} = socket.assigns
 
@@ -699,6 +774,19 @@ defmodule RailWeb.Live.TaskDetail do
       end
 
     {:noreply, load(socket)}
+  end
+
+  # Only a card this tab drew is marked, as the path comes from the page. The digest is the one the reader saw, so a
+  # click from a page drawn before a revision marks the version read, which then reads revised.
+  def handle_event("toggle_plan_file_reviewed", %{"path" => path, "digest" => digest, "reviewed" => reviewed}, socket) do
+    %{current_scope: scope, task: task, fix_plan_reviewed: marks, fix_plan_paths: paths} = socket.assigns
+
+    if marks && path in paths do
+      {:ok, _mark} = Git.set_file_viewed(scope, task, :fix_plan, path, digest, reviewed == "true")
+      {:noreply, assign_fix_plan_cards(socket)}
+    else
+      {:noreply, socket}
+    end
   end
 
   # The line is read off this tab's own copy of the plan by its key, so only a line it shows can be commented on.
@@ -782,7 +870,10 @@ defmodule RailWeb.Live.TaskDetail do
   defp open_url_item(%{assigns: %{task: %Task{id: id}}} = socket, %{task: %Task{id: id}}), do: socket
 
   defp open_url_item(socket, assigns) do
-    item = item(assigns[:url_item]) || if(assigns[:split_parent], do: :children, else: default_item(assigns.task))
+    item =
+      item(assigns[:url_item], assigns.task) ||
+        if(assigns[:split_parent], do: :children, else: default_item(assigns.task))
+
     assign(socket, :item, item)
   end
 
@@ -795,14 +886,16 @@ defmodule RailWeb.Live.TaskDetail do
   defp open_url_file(socket, _assigns), do: socket
 
   # A page opens on what the task is waiting on now.
+  defp default_item(%Task{stage: :custom} = task), do: custom_stage_item(task.issue, Task.current_stage(task)).key
   defp default_item(%Task{stage: :plan}), do: :plan
   defp default_item(%Task{stage: :engineer}), do: :diff
   defp default_item(%Task{}), do: :findings
 
   # The page puts the open item in the URL, so a reload comes back to it.
+  # Another item's URL names no finding, so coming back to Findings names it again.
   defp pick(socket, item) do
     if item != socket.assigns.item, do: send(self(), {:review_item, item})
-    assign(socket, :item, item)
+    socket |> assign(:item, item) |> assign(:finding_url, {nil, nil})
   end
 
   defp assign_demo_and_browsers(%{assigns: %{task: task}} = socket, runs) do
@@ -844,6 +937,7 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign(:plan_label, plan_label(task, runs[:plan], List.first(rounds)))
     |> assign_fix_plan(fix_plan, plan_state, findings)
     |> assign_fix_plan_comments()
+    |> assign_fix_plan_cards()
     |> assign(:findings, findings)
     |> assign(:phase, phase)
     |> assign(:round, round(phase, passes, fix_plan, latest))
@@ -859,12 +953,140 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign_branch(passes)
     |> assign_screen_comments()
     |> assign_demo_and_browsers(runs)
+    |> assign_custom_stage()
     |> assign_items()
     |> assign_selected(selected, findings)
     |> assign(:commentable, task.stage in [:review, :finalize, :merged] and is_nil(task.cleaned_up_at))
     |> assign_finding_comments()
+    |> assign_comments()
+    |> reopen_finding_draft()
+    |> sync_finding_url()
     |> watch()
     |> tray(findings, passes, phase)
+  end
+
+  # The piece is read off the finding this tab shows, so only a piece it draws can be commented on.
+  defp open_finding_draft(socket, piece, index) do
+    %{selected: selected, commentable: commentable} = socket.assigns
+    piece = Enum.find(Ecto.Enum.values(FindingComment, :piece), &(Atom.to_string(&1) == piece))
+
+    index =
+      case Integer.parse(index || "") do
+        {index, ""} -> index
+        _no_index -> nil
+      end
+
+    if commentable and selected != nil and FindingComment.calculate_piece(selected, piece, index) != nil,
+      do: assign(socket, :finding_draft, %{finding_id: selected.id, piece: piece, index: index, body: nil}),
+      else: socket
+  end
+
+  # The box the URL names opens once, on the page's first read, so form recovery has it to put its text back in.
+  defp reopen_finding_draft(%{assigns: %{reopen_comment: "" <> anchor}} = socket) do
+    [piece | index] = String.split(anchor, "-", parts: 2)
+    socket |> assign(:reopen_comment, nil) |> open_finding_draft(piece, List.first(index))
+  end
+
+  defp reopen_finding_draft(socket), do: socket
+
+  # The URL names the finding open in Findings and the piece its box is open on, so a reconnect or a reload opens
+  # both again. The stage remembers what it last named, as the page's patch draws nothing here.
+  defp sync_finding_url(%{assigns: %{item: :findings, selected: %Finding{key: key}, finding_draft: draft}} = socket) do
+    comment =
+      case draft do
+        %{piece: piece, index: nil} -> Atom.to_string(piece)
+        %{piece: piece, index: index} -> "#{piece}-#{index}"
+        nil -> nil
+      end
+
+    if {key, comment} == socket.assigns.finding_url do
+      socket
+    else
+      send(self(), {:review_finding, key, comment})
+      assign(socket, :finding_url, {key, comment})
+    end
+  end
+
+  defp sync_finding_url(socket), do: socket
+
+  defp assign_comments(%{assigns: %{task: task, item: item, current_scope: scope}} = socket),
+    do: assign(socket, :comments, if(item == :comments, do: Pipeline.list_comments(scope, task), else: []))
+
+  # The custom stage item open, with its run beside it, and whether the stage the task is at waits on its Approve.
+  defp assign_custom_stage(%{assigns: %{task: task, item: item, current_scope: scope}} = socket) do
+    open =
+      with "stage-" <> _number <- item,
+           %{name: name} = found <- custom_stage_item(task.issue, item),
+           %Run{} = run <- custom_run(task, name) do
+        Map.put(found, :run, run)
+      else
+        _not_a_custom_stage -> nil
+      end
+
+    approvable =
+      task.stage == :custom and is_nil(task.cleaned_up_at) and match?(%{user: %{}}, scope) and
+        custom_stage_waiting?(task, custom_run(task, task.custom_stage))
+
+    socket
+    |> assign(:custom_item, open)
+    |> assign(:beside, item in [:plan, :fix_plan] or open != nil)
+    |> assign(:stage_approvable, approvable)
+    |> assign(:stage_unsent, if(approvable, do: length(Pipeline.list_plan_comments(scope, task)), else: 0))
+  end
+
+  defp custom_run(%Task{runs: runs}, name), do: Enum.find(runs, &match?(%Run{role: %Role{custom_stage: ^name}}, &1))
+
+  # Each comment opens where it was left, as the tray and the rail open the same places.
+  defp open_comment(socket, %{kind: :diff, comment: comment}) do
+    socket
+    |> pick(:diff)
+    |> assign(:diff_open, %{
+      view: DiffComment.calculate_view(comment),
+      comment: comment.id,
+      at: System.unique_integer([:positive])
+    })
+    |> assign(:diff_file, comment.path)
+    |> load()
+  end
+
+  # A state a retake or a cleanup took away leaves the grid open.
+  defp open_comment(socket, %{kind: :screen, comment: %ScreenComment{key: key}}) do
+    key = if Enum.any?(socket.assigns.screens, &(&1.key == key)), do: key
+    socket |> pick(:screens) |> open_screen(key) |> load()
+  end
+
+  defp open_comment(socket, %{kind: :finding, comment: %FindingComment{finding: finding}}) do
+    socket |> pick(:findings) |> assign(:selected_key, finding.key) |> assign(:filed_index, 0) |> load()
+  end
+
+  # A comment on a custom stage's file, or a message to its agent, opens the stage's item while its sequence has it.
+  defp open_comment(socket, %{kind: :plan, comment: %PlanComment{target: :output, custom_stage: name}}),
+    do: open_stage(socket, name)
+
+  defp open_comment(socket, %{kind: :message, comment: %{role: %Role{custom_stage: "" <> name}}}),
+    do: open_stage(socket, name)
+
+  defp open_comment(socket, %{kind: :plan, comment: %PlanComment{target: :fix_plan}}) do
+    item = if waiting_plan?(socket.assigns), do: :fix_plan, else: :plan
+    socket |> pick(item) |> assign(:plan_round, nil) |> load()
+  end
+
+  # The Plan stage and the conversation beside it are the page's, so the page opens them.
+  defp open_comment(socket, %{kind: :plan, comment: %PlanComment{target: target}}) do
+    send(self(), {:open_plan, %{tab: Atom.to_string(target)}})
+    socket
+  end
+
+  defp open_comment(socket, %{kind: :message, comment: %{role: role}}) do
+    send(self(), {:open_plan, %{agent: Atom.to_string(role.stage)}})
+    socket
+  end
+
+  defp open_stage(%{assigns: %{task: task}} = socket, name) do
+    case custom_stage_item(task.issue, {:custom, name}) do
+      %{key: key} -> socket |> pick(key) |> load()
+      nil -> socket
+    end
   end
 
   # The round's plan, what changed in its rulings and whether it can be approved. Its item opens only while there is one.
@@ -912,6 +1134,43 @@ defmodule RailWeb.Live.TaskDetail do
     |> report_lifted(if(open?, do: Enum.map(placement.lifted, &elem(&1, 0).id)))
   end
 
+  # The reader's marks on the round's cards, which of their files the default branch has and which the task already
+  # changed, read only while the plan is the item open. Git is asked once per set of paths and HEAD the round was sent
+  # on, so a comment or an unrelated update does not ask again.
+  defp assign_fix_plan_cards(socket) do
+    %{fix_plan: fix_plan, item: item, task: task, current_scope: scope} = socket.assigns
+
+    case item == :fix_plan && fix_plan && FixPlan.build_sheet(fix_plan) do
+      %{} = sheet ->
+        paths = sheet.files |> Enum.map(& &1.path) |> Enum.uniq() |> Enum.sort()
+        socket = assign(socket, :fix_plan_reviewed, fix_plan_marks(scope, task, sheet.round))
+
+        if socket.assigns[:fix_plan_paths_of] == {paths, fix_plan.head},
+          do: socket,
+          else:
+            socket
+            |> assign(:fix_plan_paths_of, {paths, fix_plan.head})
+            |> assign(:fix_plan_paths, paths)
+            |> assign(:fix_plan_default_paths, Git.list_default_branch_paths(task.project, paths))
+            |> assign(:fix_plan_diff_paths, if(is_nil(task.cleaned_up_at), do: Git.list_branch_paths(task, paths)))
+
+      _closed ->
+        socket
+        |> assign(:fix_plan_reviewed, nil)
+        |> assign(:fix_plan_paths_of, nil)
+        |> assign(:fix_plan_paths, [])
+        |> assign(:fix_plan_default_paths, nil)
+        |> assign(:fix_plan_diff_paths, nil)
+    end
+  end
+
+  # A card's digest starts with its round, so a mark on an earlier round's card for the same file does not stand.
+  defp fix_plan_marks(scope, task, round) do
+    scope
+    |> Git.list_viewed_files(task, :fix_plan)
+    |> Map.filter(fn {_path, digest} -> String.starts_with?(digest, "#{round}-") end)
+  end
+
   # The conversation's tray marks the same comments changed, and hears of it only when they change.
   defp report_lifted(%{assigns: %{reported_lifted: ids}} = socket, ids), do: socket
   defp report_lifted(socket, nil), do: socket
@@ -944,11 +1203,18 @@ defmodule RailWeb.Live.TaskDetail do
     # The Fix findings went out with the Send, so they come back only if the round ends with them still outstanding.
     # A fix commit moves HEAD past the pass, and the gate then reads :round, so every working phase hides them.
     fix = if gate.working or plan or stage != :review, do: [], else: Enum.filter(findings, &Finding.outstanding?/1)
+    # A Send files these whether or not a plan waits, so only a working lead hides them.
+    new_issues = if gate.working or stage != :review, do: [], else: Enum.filter(findings, &Finding.awaiting_issue?/1)
 
     # Comments are taken until cleanup, so a cleaned-up task, or one not yet at Review, sends nothing from it.
     tray =
       if stage in [:review, :finalize, :merged] and is_nil(cleaned_up_at),
-        do: %{fix: fix, rulings: if(gate.working, do: [], else: socket.assigns.ruling_changes.unsent), gate: gate}
+        do: %{
+          fix: fix,
+          new_issues: new_issues,
+          rulings: if(gate.working, do: [], else: socket.assigns.ruling_changes.unsent),
+          gate: gate
+        }
 
     send(self(), {:review_tray, tray})
     socket
@@ -1040,6 +1306,7 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign(:filed, [])
     |> assign(:names, %{})
     |> assign(:suppressor, nil)
+    |> assign(:preview, nil)
   end
 
   defp assign_selected(socket, %Finding{} = selected, findings) do
@@ -1057,6 +1324,13 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign(:filed, if(open?, do: filed(socket, selected), else: []))
     |> assign(:names, if(open?, do: names(socket, selected), else: %{}))
     |> assign(:suppressor, if(open?, do: suppressor(selected)))
+    # The issue a Send would file, read the way the filing reads it. Nobody rules past Review, so none is offered there.
+    |> assign(
+      :preview,
+      if(socket.assigns.task.stage not in [:finalize, :merged] and Finding.previews_issue?(selected),
+        do: Finding.calculate_issue(selected, socket.assigns.task)
+      )
+    )
     |> assign_code(if(open?, do: selected))
   end
 
@@ -1109,10 +1383,10 @@ defmodule RailWeb.Live.TaskDetail do
       label: "Demo",
       icon: "pi-video-camera",
       picked_icon: "pi-video-camera-fill",
-      state: demo_state(socket.assigns),
+      state: demo_label(socket.assigns),
       badge: nil,
       dot: if(socket.assigns.recording, do: :recording),
-      mark: if(socket.assigns.stale && not socket.assigns.recording, do: :stale)
+      mark: demo_mark(socket.assigns)
     }
 
     browser = %{
@@ -1144,7 +1418,11 @@ defmodule RailWeb.Live.TaskDetail do
   # built, the rest once it is reviewed.
   defp shown(%{task: task, passes: passes}, [findings, diff, screens, demo, browser]) do
     reviewed? = task.stage in [:review, :finalize, :merged] or passes != []
-    built? = task.stage != :plan
+    # A custom stage can run before the engineer has built anything, or after.
+    built? =
+      task.stage not in [:plan, :custom] or
+        (task.stage == :custom and Enum.any?(task.runs, &match?(%Run{role: %Role{stage: :engineer}}, &1)))
+
     [reviewed? && findings, built? && diff, reviewed? && screens, reviewed? && demo, built? && browser]
   end
 
@@ -1174,8 +1452,12 @@ defmodule RailWeb.Live.TaskDetail do
   defp waiting_plan?(%{fix_plan: %FixPlan{}, plan_state: state}), do: state != :approved
   defp waiting_plan?(_assigns), do: false
 
-  # The whole task's items before the review's: the issue, the plan with its conversation and a split's children.
+  # The whole task's items before the review's: the issue, the plan with its conversation, each custom stage it has
+  # reached on the side of Plan its sequence puts it, a split's children and every comment on the task.
   defp page_items(assigns) do
+    sequence = Issue.calculate_stages(assigns.task.issue)
+    {before_plan, after_plan} = if :plan in sequence, do: Enum.split_while(sequence, &(&1 != :plan)), else: {[], sequence}
+
     [
       %{
         key: :issue,
@@ -1186,33 +1468,79 @@ defmodule RailWeb.Live.TaskDetail do
         badge: nil,
         dot: nil,
         mark: nil
-      },
-      Map.merge(
+      }
+      | custom_items(assigns.task, before_plan)
+    ] ++
+      [
+        Map.merge(
+          %{
+            key: :plan,
+            label: "Plan",
+            icon: "pi-clipboard-text",
+            picked_icon: "pi-clipboard-text-fill",
+            state: assigns.plan_label,
+            # Its conversation is beside it, so the questions waiting there are counted on it.
+            badge: if(assigns.questions > 0 and assigns.task.stage != :custom, do: assigns.questions),
+            dot: if(assigns.task.stage == :plan and Run.running?(assigns.plan_run), do: :running),
+            mark: nil
+          },
+          fix_plan_item(assigns) || %{}
+        )
+        | custom_items(assigns.task, after_plan)
+      ] ++
+      [
+        assigns.split &&
+          %{
+            key: :children,
+            label: "Children",
+            icon: "pi-tree-structure",
+            picked_icon: "pi-tree-structure-fill",
+            state: "The split's children",
+            badge: nil,
+            dot: nil,
+            mark: nil
+          },
         %{
-          key: :plan,
-          label: "Plan",
-          icon: "pi-clipboard-text",
-          picked_icon: "pi-clipboard-text-fill",
-          state: assigns.plan_label,
-          # Its conversation is beside it, so the questions waiting there are counted on it.
-          badge: if(assigns.questions > 0, do: assigns.questions),
-          dot: if(assigns.task.stage == :plan and Run.running?(assigns.plan_run), do: :running),
-          mark: nil
-        },
-        fix_plan_item(assigns) || %{}
-      ),
-      assigns.split &&
-        %{
-          key: :children,
-          label: "Children",
-          icon: "pi-tree-structure",
-          picked_icon: "pi-tree-structure-fill",
-          state: "The split's children",
+          key: :comments,
+          label: "Comments",
+          icon: "pi-chats",
+          picked_icon: "pi-chats-fill",
+          state: "Every comment on the task",
           badge: nil,
           dot: nil,
           mark: nil
         }
-    ]
+      ]
+  end
+
+  # A custom stage shows once it has a run, saying what it waits on: an answer, its file, or the reader's Approve.
+  defp custom_items(%Task{} = task, stages) do
+    saved = task |> Pipeline.read_stage_outputs() |> Enum.map(& &1.name)
+
+    for {:custom, name} = stage <- stages, %Run{} = run <- [custom_run(task, name)] do
+      questions = Enum.count(run.questions, &(&1.status == :pending))
+
+      {state, dot, mark} =
+        case {Run.state(run), name in saved} do
+          {state, _saved?} when state in [:running, :waiting] -> {"running", :running, nil}
+          {:blocked, _saved?} -> {"needs an answer", nil, :waiting}
+          {:failed, _saved?} -> {"failed", nil, :failed}
+          {:done, _saved?} -> {"approved", nil, :done}
+          {_stopped, true} -> {"waiting on you", nil, :waiting}
+          {_stopped, false} -> {"no file saved", nil, :waiting}
+        end
+
+      %{
+        key: custom_stage_item(task.issue, stage).key,
+        label: name,
+        icon: "pi-puzzle-piece",
+        picked_icon: "pi-puzzle-piece-fill",
+        state: state,
+        badge: if(questions > 0, do: questions),
+        dot: dot,
+        mark: mark
+      }
+    end
   end
 
   # The next round's plan, while there is one, is what the Plan item says it is doing.
@@ -1270,6 +1598,7 @@ defmodule RailWeb.Live.TaskDetail do
 
   defp ruling(:fix), do: "Fix"
   defp ruling(:skip), do: "Don't fix"
+  defp ruling(:new_issue), do: "New issue"
 
   # Approve starts the engineer, so it is offered only on the latest plan while it waits and nothing works on the
   # task, the checks included, as the approval itself requires.
@@ -1321,9 +1650,9 @@ defmodule RailWeb.Live.TaskDetail do
 
   defp first_line(text), do: text |> String.trim() |> String.split("\n", parts: 2) |> hd()
 
-  # Each role's run on the task, by its stage.
+  # Each role's run on the task, by its stage; a custom stage's role has none.
   defp role_runs(%Task{runs: runs}) do
-    for %Run{role: %Role{stage: stage}} = run <- runs, into: %{}, do: {stage, run}
+    for %Run{role: %Role{stage: stage}} = run <- runs, is_atom(stage) and stage != nil, into: %{}, do: {stage, run}
   end
 
   defp plan_label(%Task{submitted_at: %DateTime{}, pr_number: number}, _plan_run, _first),
@@ -1332,9 +1661,16 @@ defmodule RailWeb.Live.TaskDetail do
   defp plan_label(%Task{stage: :plan}, plan_run, _first),
     do: if(Run.running?(plan_run), do: "Plan is writing", else: "Not approved yet")
 
-  # Work its owner started without a tech lead's approval still waits on one.
-  defp plan_label(%Task{}, _plan_run, %Round{approved_at: nil}), do: "Started without approval"
-  defp plan_label(%Task{}, _plan_run, _approved_or_none), do: "Approved"
+  # A task whose workflow turned every Plan step off has nothing to approve, and one a custom stage runs before
+  # Plan has not reached it yet. Work its owner started without a tech lead's approval still waits on one.
+  defp plan_label(%Task{issue: issue} = task, plan_run, first) do
+    cond do
+      :plan not in Issue.calculate_stages(issue) -> "Off for this workflow"
+      task.stage == :custom and plan_run == nil -> "Not started yet"
+      match?(%Round{approved_at: nil}, first) -> "Started without approval"
+      true -> "Approved"
+    end
+  end
 
   # A fix plan is numbered for the review it answers, and the engineer's work for the round it builds.
   defp round(phase, _passes, fix_plan, _latest) when phase in [:planning, :waiting, :outdated], do: fix_plan.round
@@ -1349,9 +1685,10 @@ defmodule RailWeb.Live.TaskDetail do
     %{
       total: length(findings),
       undecided: Enum.count(findings, &Finding.undecided?/1),
-      # An unruled finding goes to the round on its recommendation, but is counted as still to rule.
+      # An unruled finding recommended Fix goes to the round, but is counted as still to rule.
       fix: Enum.count(findings, &(Finding.outstanding?(&1) and not Finding.undecided?(&1))),
       fixed: Enum.count(findings, &(&1.status == :fixed)),
+      new_issues: Enum.count(findings, &(Finding.state(&1) == :new_issue)),
       dismissed: Enum.count(findings, &(Finding.state(&1) in [:dismissed, :suppressed]))
     }
   end
@@ -1360,7 +1697,13 @@ defmodule RailWeb.Live.TaskDetail do
     do: "#{counts.total} so far · rule once round #{length(passes) + 1} finishes"
 
   defp tally(phase, counts, _findings, _passes) when phase in [:fixing, :ci],
-    do: said([{counts.fix, "fixing"}, {counts.fixed, "fixed"}, {counts.dismissed, "not fixing"}])
+    do:
+      said([
+        {counts.fix, "fixing"},
+        {counts.fixed, "fixed"},
+        {counts.new_issues, new_issues(counts.new_issues)},
+        {counts.dismissed, "not fixing"}
+      ])
 
   defp tally(_phase, %{total: 0}, _findings, _passes), do: "No findings"
 
@@ -1369,9 +1712,13 @@ defmodule RailWeb.Live.TaskDetail do
       {counts.undecided, "to rule"},
       {counts.fix, "to fix"},
       {counts.fixed, "fixed"},
+      {counts.new_issues, new_issues(counts.new_issues)},
       {counts.dismissed, "not fixing"}
     ])
   end
+
+  defp new_issues(1), do: "new issue"
+  defp new_issues(_count), do: "new issues"
 
   defp said(parts) do
     parts
@@ -1397,7 +1744,7 @@ defmodule RailWeb.Live.TaskDetail do
     do: findings_state(:ruling, counts, assigns)
 
   defp findings_state(:ruling, counts, _assigns) do
-    case said([{counts.undecided, "to rule"}, {counts.fix, "to fix"}]) do
+    case said([{counts.undecided, "to rule"}, {counts.fix, "to fix"}, {counts.new_issues, new_issues(counts.new_issues)}]) do
       "" -> "Nothing to rule"
       state -> state
     end
@@ -1420,6 +1767,19 @@ defmodule RailWeb.Live.TaskDetail do
     latest = Enum.max_by(screens, & &1.taken_at, DateTime)
     on = if latest.commit, do: " · on #{String.slice(latest.commit, 0, 7)}", else: ""
     "#{plural(length(screens), "screen")}#{on}"
+  end
+
+  # A demo the task's workflow turned off reads as off, whatever was recorded before.
+  defp demo_label(assigns) do
+    if Issue.skips_step?(assigns.task.issue, :demo), do: "Off for this workflow", else: demo_state(assigns)
+  end
+
+  defp demo_mark(assigns) do
+    cond do
+      Issue.skips_step?(assigns.task.issue, :demo) -> :off
+      assigns.stale && not assigns.recording -> :stale
+      true -> nil
+    end
   end
 
   defp demo_state(%{recording: true, beats: [_one]}), do: "Recording · 1 beat said so far"
@@ -1601,10 +1961,21 @@ defmodule RailWeb.Live.TaskDetail do
   defp double_click?({key, at}, key), do: monotonic_ms() - at < @double_click_ms
   defp double_click?(_advanced_to, _key), do: false
 
+  # A custom stage's item opens once its stage has a run to show.
+  defp item("stage-" <> _number = item, %Task{} = task) do
+    case custom_stage_item(task.issue, item) do
+      %{key: key, name: name} -> if custom_run(task, name), do: key
+      nil -> nil
+    end
+  end
+
+  defp item(item, %Task{}), do: item(item)
+
   defp item("issue"), do: :issue
   defp item("plan"), do: :plan
   defp item("conversation"), do: :plan
   defp item("children"), do: :children
+  defp item("comments"), do: :comments
   defp item("fix_plan"), do: :fix_plan
   defp item("diff"), do: :diff
   defp item("screens"), do: :screens
@@ -1615,12 +1986,17 @@ defmodule RailWeb.Live.TaskDetail do
 
   defp decision("fix"), do: :fix
   defp decision("skip"), do: :skip
+  defp decision("new_issue"), do: :new_issue
 
+  defp message_for(:already_approved), do: "That stage was already approved."
+  defp message_for(:no_output), do: "Nothing is saved to approve yet."
   defp message_for(:stage_running), do: "Something is still running on this task."
+  defp message_for({:step_off, :demo}), do: "The demo is off for this workflow."
   defp message_for(:no_stage_run), do: "Review has no run to ask yet."
   defp message_for(:chat_unavailable), do: "The Review lead has no conversation to ask yet."
   defp message_for({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Review."
   defp message_for(:review_finished), do: "The review is finished, so its rulings are settled."
+  defp message_for(:issue_filed), do: "That finding is filed as a new issue, so its ruling can no longer change."
   defp message_for(:cleaned_up), do: "This task is cleaned up, so it takes no more comments."
   defp message_for(:not_found), do: "That screen is gone: a retake or a cleanup removed it."
   defp message_for({:unanswered_questions, 1}), do: "Answer or dismiss the open question first. Nothing started."
@@ -1628,8 +2004,12 @@ defmodule RailWeb.Live.TaskDetail do
   defp message_for({:unanswered_questions, count}),
     do: "Answer or dismiss the #{count} open questions first. Nothing started."
 
+  defp message_for({:unsent_comments, count}), do: unsent(count)
   defp message_for(:no_fix_plan), do: "There is no fix plan waiting on approval."
   defp message_for({:fix_plan_not_waiting, :outdated}), do: "A ruling changed since that plan was saved. Nothing started."
   defp message_for({:fix_plan_not_waiting, :approved}), do: "That fix plan is already approved."
   defp message_for({:fix_plan_not_waiting, _writing}), do: "The lead is revising that fix plan. Nothing started."
+
+  defp unsent(1), do: "Send or remove your unsent comment first."
+  defp unsent(count), do: "Send or remove your #{count} unsent comments first."
 end

@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.SendAnswersTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
@@ -10,6 +11,9 @@ defmodule Rail.Pipeline.Actions.SendAnswersTest do
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
     task = learnings_task(project, "SNA-1")
 
@@ -22,7 +26,15 @@ defmodule Rail.Pipeline.Actions.SendAnswersTest do
         started_at: DateTime.utc_now()
       })
 
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    test_pid = self()
+
+    # A sent round resumes the run in the background, which each test that sends one waits for, so it never outlives
+    # the test's stubs.
+    stub(Tools, :start_os_process, fn spawned, _argv ->
+      send(test_pid, {:resumed, spawned.id})
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
     %{task: task, run: Repo.preload(run, task: :issue)}
   end
 
@@ -40,6 +52,7 @@ defmodule Rail.Pipeline.Actions.SendAnswersTest do
 
     assert [] = Repo.all(from o in Observation, where: o.task_id == ^task.id)
     assert {:ok, :sent, _run} = Pipeline.send_answers(system_scope(), Repo.reload!(run))
+    assert_receive {:resumed, _run_id}
 
     assert [
              %Observation{
@@ -104,6 +117,7 @@ defmodule Rail.Pipeline.Actions.SendAnswersTest do
         |> Repo.update()
 
       assert {:ok, :sent, _run} = Pipeline.send_answers(system_scope(), Repo.reload!(run))
+      assert_receive {:resumed, _run_id}
 
       lines = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
       assert "[answered from past answers] #{cited}: #{rule.rule}" in lines
@@ -134,6 +148,7 @@ defmodule Rail.Pipeline.Actions.SendAnswersTest do
 
       {:ok, _answered} = Pipeline.answer_question(system_scope(), second, "Yes")
       assert {:ok, :sent, _run} = Pipeline.send_answers(system_scope(), Repo.reload!(run))
+      assert_receive {:resumed, _run_id}
 
       lines = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
       assert "[human]    #{cited}: #{rule.rule}" in lines

@@ -62,31 +62,14 @@ defmodule RailWeb.Live.DiffFile do
 
           <.diff_stat additions={@file.additions} deletions={@file.deletions} font_size={11} />
 
-          <button
-            type="button"
+          <.reviewed_toggle
+            reviewed={@viewed?}
             phx-click="toggle_viewed"
             phx-target={@target}
             phx-value-path={@file.path}
             phx-value-digest={@file.digest}
-            aria-pressed={to_string(@viewed?)}
             data-qa="diff-viewed-checkbox"
-            class={[
-              "inline-flex items-center gap-1.5 pl-1.5 pr-2.5 py-1 rounded-lg border text-xs font-semibold cursor-pointer",
-              @viewed? &&
-                "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-              not @viewed? &&
-                "border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
-            ]}
-          >
-            <span class={[
-              "size-4 grid place-items-center rounded border",
-              @viewed? && "border-emerald-500 bg-emerald-500 text-white",
-              not @viewed? && "border-slate-300 dark:border-slate-600"
-            ]}>
-              <.icon :if={@viewed?} name="pi-check" class="size-3" />
-            </span>
-            Reviewed
-          </button>
+          />
         </span>
       </div>
 
@@ -116,7 +99,26 @@ defmodule RailWeb.Live.DiffFile do
       </div>
 
       <div
-        :if={not @collapsed?}
+        :if={not @collapsed? and @image}
+        data-qa="diff_image"
+        class={["p-4 grid gap-4", @image.old && @image.new && "@2xl:grid-cols-2"]}
+      >
+        <.image_side
+          :if={@image.old}
+          src={@image.old}
+          label="Before"
+          alt={"#{@file.display_path} before"}
+        />
+        <.image_side
+          :if={@image.new}
+          src={@image.new}
+          label="After"
+          alt={"#{@file.display_path} after"}
+        />
+      </div>
+
+      <div
+        :if={not @collapsed? and is_nil(@image)}
         style={"content-visibility: auto; contain-intrinsic-size: auto #{intrinsic_height(@segments)}px;"}
         class="diff-body rounded-b-xl"
       >
@@ -168,6 +170,30 @@ defmodule RailWeb.Live.DiffFile do
         target={@target}
       />
     </div>
+    """
+  end
+
+  attr :src, :string, required: true
+  attr :label, :string, required: true
+  attr :alt, :string, required: true
+
+  # Labelled in the colors the diff gives removed and added lines.
+  defp image_side(assigns) do
+    ~H"""
+    <figure data-qa="diff_image_side" class="min-w-0 flex flex-col gap-1.5">
+      <figcaption class={[
+        "text-[11px] font-semibold uppercase tracking-wider",
+        if(@label == "Before",
+          do: "text-rose-600 dark:text-rose-500",
+          else: "text-emerald-600 dark:text-emerald-500"
+        )
+      ]}>
+        {@label}
+      </figcaption>
+      <div class="diff-image flex justify-center rounded-lg border border-slate-200 dark:border-slate-700 p-2">
+        <img src={@src} alt={@alt} loading="lazy" class="max-w-full max-h-[32rem] object-contain" />
+      </div>
+    </figure>
     """
   end
 

@@ -19,6 +19,7 @@ defmodule RailWeb.Live.RunConversation do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Turn
+  alias Rail.Roles.Schemas.Role
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
@@ -120,13 +121,14 @@ defmodule RailWeb.Live.RunConversation do
           open={@tray_open}
           can_send={Run.can_chat?(@selected_run)}
           plan_running={Run.running?(@selected_run)}
-          agent={if review_run?(assigns), do: "The review agent", else: "Plan"}
+          agent={tray_agent(assigns)}
           target={@myself}
         />
 
         <.review_comment_tray
           :if={@show_review_tray}
           fix={@review_tray.fix}
+          new_issues={@review_tray.new_issues}
           finding_comments={@review_finding_comments}
           diff_comments={@review_diff_comments}
           screen_comments={@review_screen_comments}
@@ -239,16 +241,16 @@ defmodule RailWeb.Live.RunConversation do
               data-qa="run-metadata-row"
               class="flex items-center flex-wrap gap-x-1.5 gap-y-1 px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400"
             >
-              <span :if={@selected_run} id="metadata-run-status">
+              <span id="metadata-run-status">
                 {format_run_status(@selected_run.status)} ·
               </span>
 
-              <span :if={@selected_run && Run.usage(@selected_run)} id="metadata-run-usage">
+              <span :if={Run.usage(@selected_run)} id="metadata-run-usage">
                 {Run.usage(@selected_run)} ·
               </span>
 
               <span
-                :if={@selected_run && @selected_run.conversation_id not in [nil, ""]}
+                :if={@selected_run.conversation_id not in [nil, ""]}
                 id="metadata-run-conversation-id"
                 title={@selected_run.conversation_id}
                 class="select-text truncate max-w-[10rem]"
@@ -285,13 +287,14 @@ defmodule RailWeb.Live.RunConversation do
               open={@tray_open}
               can_send={Run.can_chat?(@selected_run)}
               plan_running={Run.running?(@selected_run)}
-              agent={if review_run?(assigns), do: "The review agent", else: "Plan"}
+              agent={tray_agent(assigns)}
               target={@myself}
             />
 
             <.review_comment_tray
               :if={@show_review_tray}
               fix={@review_tray.fix}
+              new_issues={@review_tray.new_issues}
               finding_comments={@review_finding_comments}
               diff_comments={@review_diff_comments}
               screen_comments={@review_screen_comments}
@@ -948,6 +951,7 @@ defmodule RailWeb.Live.RunConversation do
     is_thinking = Run.state(run) == :running
     is_queued = run != nil and is_binary(run.pending_chat) and run.pending_chat != ""
     is_unavailable = run == nil or not Run.can_chat?(run)
+    sends_when = if Run.state(run) == :failed, do: "runs again", else: "is done"
 
     hint_text =
       cond do
@@ -964,6 +968,7 @@ defmodule RailWeb.Live.RunConversation do
       |> assign(:is_thinking, is_thinking)
       |> assign(:is_queued, is_queued)
       |> assign(:is_unavailable, is_unavailable)
+      |> assign(:sends_when, sends_when)
       |> assign(:hint_text, hint_text)
 
     ~H"""
@@ -1072,7 +1077,7 @@ defmodule RailWeb.Live.RunConversation do
         <div class="flex items-center gap-2 text-xs text-slate-900 dark:text-slate-100 truncate">
           <.icon name="pi-clock" class="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
           <span class="truncate">
-            {"Queued: \"#{@run.pending_chat}\" (sends when #{@role_name} is done)"}
+            {"Queued: \"#{@run.pending_chat}\" (sends when #{@role_name} #{@sends_when})"}
           </span>
         </div>
 
@@ -1266,14 +1271,17 @@ defmodule RailWeb.Live.RunConversation do
 
   # With no conversation there is nothing a message could resume, so the stage is
   # entered again: the run goes back to running and its role starts on the brief.
+  # Read again, so a task Discard or Back to Plan erased since this page drew starts nothing.
   def handle_event("retry_run", _params, socket) do
-    %{task: task, selected_run: run, roles_map: roles_map} = socket.assigns
+    %{task: %{id: task_id}, selected_run: %Run{id: run_id}, roles_map: roles_map} = socket.assigns
 
-    if retryable?(run, task, roles_map) do
-      {:ok, %Run{} = run} = Pipeline.enter_stage(task, task.stage)
+    with {:ok, task} <- Pipeline.get_task(task_id),
+         %Run{} = run <- Enum.find(task.runs, &(&1.id == run_id)),
+         true <- retryable?(run, task, roles_map) do
+      {:ok, %Run{} = run} = Pipeline.enter_stage(task, Task.current_stage(task))
       {:noreply, select(socket, run)}
     else
-      {:noreply, socket}
+      _gone_or_not_retryable -> {:noreply, socket}
     end
   end
 
@@ -1481,9 +1489,10 @@ defmodule RailWeb.Live.RunConversation do
   defp identifier(_no_issue), do: nil
 
   # Only the Plan run's conversation is where plan comments wait to be sent.
-  # Plan takes the reader's ticket, design and plan comments, and once the work started the review agent does.
+  # Plan takes the reader's ticket, design and plan comments, a custom stage those on its file, and once the work
+  # started the review agent does.
   defp assign_plan_comments(%{assigns: %{current_scope: %{user: %{}} = scope, task: task}} = socket) do
-    if plan_run?(socket.assigns) or review_run?(socket.assigns),
+    if plan_run?(socket.assigns) or review_run?(socket.assigns) or custom_stage_run?(socket.assigns),
       do: assign(socket, :plan_comments, Pipeline.list_plan_comments(scope, task)),
       else: assign(socket, :plan_comments, [])
   end
@@ -1516,6 +1525,20 @@ defmodule RailWeb.Live.RunConversation do
 
   defp review_run?(_assigns), do: false
 
+  defp custom_stage_run?(%{selected_run: %Run{role_id: role_id}, roles_map: %{} = roles_map}),
+    do: match?(%{custom_stage: name} when is_binary(name), roles_map[role_id])
+
+  defp custom_stage_run?(_assigns), do: false
+
+  # Who the tray's comments go to, as its Send hint names them.
+  defp tray_agent(assigns) do
+    cond do
+      review_run?(assigns) -> "The review agent"
+      custom_stage_run?(assigns) -> assigns.roles_map[assigns.selected_run.role_id].name
+      true -> "Plan"
+    end
+  end
+
   defp tray_message(:stage_running), do: "The Review lead is working. Send waits until it stops."
 
   defp tray_message(:fix_plan_waiting),
@@ -1529,6 +1552,8 @@ defmodule RailWeb.Live.RunConversation do
     do: "#{count} #{if count == 1, do: "finding needs", else: "findings need"} a ruling before the review can finish."
 
   defp tray_message(:cleaned_up), do: "This task is cleaned up, so nothing more can be sent."
+
+  defp tray_message({:issue_not_filed, title}), do: "Rail could not file the issue for “#{title}”. Nothing was sent."
   defp tray_message({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Review."
 
   # The log the component holds; the rendered lines and the turns read out of it
@@ -1873,9 +1898,9 @@ defmodule RailWeb.Live.RunConversation do
 
   # Only the stage the task is in can be entered again without moving the task.
   # The run belongs to the stage the task is at, Review's being the Review lead's.
-  defp retryable?(%Run{role_id: role_id} = run, %{stage: stage}, %{} = roles_map) do
-    role_stage = Task.role_stage(stage)
-    not Run.running?(run) and not Run.resumable?(run) and match?(%{stage: ^role_stage}, roles_map[role_id])
+  defp retryable?(%Run{role_id: role_id} = run, %Task{} = task, %{} = roles_map) do
+    not Run.running?(run) and not Run.resumable?(run) and match?(%Role{}, roles_map[role_id]) and
+      Task.works_stage?(task, roles_map[role_id])
   end
 
   defp restore_draft(nil, draft), do: draft

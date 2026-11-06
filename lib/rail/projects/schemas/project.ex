@@ -36,6 +36,8 @@ defmodule Rail.Projects.Schemas.Project do
     field :ci_reserved_cpus, :integer, default: 1
     # Run from the worktree root in each agent's sandbox that opens a browser; prints a magic link and an email.
     field :account_seed_command, :string
+    # Files nobody sees in the app: a later round that changed only these gets no QA or demo. Globs, from the root.
+    field :qa_skip_paths, {:array, :string}, default: ["**/*_test.exs", "**/test/**", "**/*.test.{ts,tsx,js}", "**/*.md"]
 
     # Shared by every project on the same Linear workspace; each project is one team in it.
     belongs_to :linear_workspace, LinearWorkspace
@@ -69,6 +71,7 @@ defmodule Rail.Projects.Schemas.Project do
     :ci_timeout_minutes,
     :ci_reserved_cpus,
     :account_seed_command,
+    :qa_skip_paths,
     :triage_user_id,
     :learnings_slack_workspace_id,
     :learnings_channel_external_id
@@ -86,7 +89,7 @@ defmodule Rail.Projects.Schemas.Project do
 
   def changeset(project, attrs) do
     project
-    |> cast(attrs, @fields)
+    |> cast(lines(attrs), @fields)
     |> put_default_key()
     |> validate_required(@required_fields)
     |> validate_format(:key, ~r/^[a-z0-9][a-z0-9_-]*$/i, message: "use letters, digits, - and _")
@@ -106,6 +109,13 @@ defmodule Rail.Projects.Schemas.Project do
     |> cast_assoc(:slack_channels)
     |> put_linear_team_id()
   end
+
+  # The form edits the globs one to a line.
+  defp lines(%{"qa_skip_paths" => text} = attrs) when is_binary(text) do
+    %{attrs | "qa_skip_paths" => text |> String.split("\n") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))}
+  end
+
+  defp lines(attrs), do: attrs
 
   # As a role's is: the machine is only asked when the number changes, and one it
   # cannot be asked about is left to the line, which refuses what never fits.

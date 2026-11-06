@@ -62,5 +62,6 @@ defmodule Rail.Pipeline.Utils.FormatFindings do
 
   defp ruling_word(:fix), do: "Fix"
   defp ruling_word(:skip), do: "Don't fix"
+  defp ruling_word(:new_issue), do: "New issue"
   defp ruling_word(nil), do: "not yet"
 end

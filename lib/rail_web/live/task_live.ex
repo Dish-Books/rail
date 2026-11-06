@@ -1,13 +1,13 @@
 defmodule RailWeb.TaskLive do
   @moduledoc """
   One task on one page: a header with every decision a person makes on it, a rail of the task's items, and the
-  item picked beside it. The items are the issue, the plan with the conversation beside it and, once there is
-  something of each to read, the findings, the next round's plan, the diff, the screens, the demo and the browser; a split adds its
-  children. The item, the agent the conversation reads and a split's child are in the URL, so a refresh comes
-  back to them.
+  item picked beside it. The items are the issue, the plan with the conversation beside it, every comment on the
+  task and, once there is something of each to read, the findings, the next round's plan, the diff, the screens, the
+  demo and the browser; a split adds its children. The item, the agent the conversation reads and a split's child
+  are in the URL, so a refresh comes back to them.
 
-  The conversation takes messages for Plan until its plan is approved, then for the review agent; every other
-  agent's run is read there as the record of what it did.
+  The conversation takes messages for Plan until its plan is approved, for a custom stage beside its file until that
+  is approved, then for the review agent; every other agent's run is read there as the record of what it did.
 
   The page owns what the components cannot: the subscriptions. A LiveComponent may not subscribe, so log lines
   arrive here and are forwarded to the conversation, and a saved output to the open item, with `send_update/2`.
@@ -15,7 +15,9 @@ defmodule RailWeb.TaskLive do
   use RailWeb, :live_view
 
   import RailWeb.Utils.ChildStatus
+  import RailWeb.Utils.CustomStageItem
   import RailWeb.Utils.HandleIssueEvent
+  import RailWeb.Utils.IssueRelative
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
@@ -23,12 +25,19 @@ defmodule RailWeb.TaskLive do
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.DiffComment
+  alias Rail.Pipeline.Schemas.FindingComment
+  alias Rail.Pipeline.Schemas.PlanComment
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
   alias Rail.Tools
   alias Rail.Users
+  alias RailWeb.Live.CommentBody
+  alias RailWeb.Live.CustomStage
   alias RailWeb.Live.DiffView
   alias RailWeb.Live.PlanStage
   alias RailWeb.Live.RunConversation
@@ -45,8 +54,9 @@ defmodule RailWeb.TaskLive do
   # picture but a load any viewer's connection can keep up with.
   @frame_interval_ms 250
 
-  # The items the URL can name; any other opens what the task is waiting on.
-  @items ["issue", "plan", "children", "findings", "fix_plan", "diff", "screens", "demo", "browser"]
+  # The items the URL can name, and `stage-<position>` for a custom stage; any other opens what the task waits on.
+  @items ["issue", "plan", "children", "comments", "findings", "fix_plan", "diff", "screens", "demo", "browser"]
+  @plan_closed "Only Plan, and then the review agent, take messages. This is a record of what this agent did."
 
   # The agents whose runs the conversation reads, in the order a task meets them.
   @agents [:plan, :engineer, :qa, :review, :demo, :review_lead]
@@ -64,6 +74,10 @@ defmodule RailWeb.TaskLive do
       |> assign(:item, nil)
       |> assign(:agent, nil)
       |> assign(:round, nil)
+      |> assign(:finding, nil)
+      |> assign(:comment, nil)
+      |> assign(:url_finding, nil)
+      |> assign(:url_comment, nil)
       |> assign(:plan_run, nil)
       |> assign(:rounds, [])
       |> assign(:review_run, nil)
@@ -73,9 +87,15 @@ defmodule RailWeb.TaskLive do
       |> assign(:stage_run, nil)
       |> assign(:line, nil)
       |> assign(:conversation_run, nil)
+      |> assign(:sidebar_run, nil)
+      |> assign(:sidebar_closed, false)
+      |> assign(:sidebar_closed_reason, @plan_closed)
+      |> assign(:beside, false)
       |> assign(:diff_refreshed_at, nil)
       |> assign(:approvable, false)
       |> assign(:issue, nil)
+      |> assign(:blockers, nil)
+      |> assign(:blockers_for, nil)
       |> assign(:assignees, [])
       |> assign(:assignee_query, "")
       |> assign(:comment_nonce, 0)
@@ -91,7 +111,12 @@ defmodule RailWeb.TaskLive do
       |> assign(:round_questions, [])
       |> assign(:conversation_questions, [])
       |> assign(:suggestions, %{})
-      |> assign(:cleaning_up, false)
+      |> assign(:discard_open, false)
+      |> assign(:discarding, false)
+      |> assign(:discard_error, nil)
+      |> assign(:discard_choice, :discard)
+      |> assign(:discard_had_runs, false)
+      |> assign(:discard_stopped, false)
       |> assign(:focus_file, nil)
       |> assign(:url_id, nil)
       |> assign(:child, nil)
@@ -104,37 +129,57 @@ defmodule RailWeb.TaskLive do
       |> assign(:header_status, nil)
       |> assign(:child_of, nil)
       |> assign(:split_points, nil)
-      |> assign(:cleanup_confirm, nil)
+      |> assign(:show_discard, false)
+      |> assign(:show_back_to_plan, false)
       |> assign(:viewer_owns, false)
+      |> assign(:plan_tab, nil)
 
     # A stage moved from another page or by a run finishing is what keeps this one current.
-    if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+      # The header names the workflow, which its file renames.
+      Phoenix.PubSub.subscribe(Rail.PubSub, "workflows")
+    end
 
     {:ok, socket}
   end
 
   def handle_params(%{"id" => task_id} = params, _uri, socket) do
     url = %{url_id: task_id, child: params["child"], focus_file: params["file"]}
+    opened = %{item: params["item"], agent: params["agent"], round: params["round"]}
+    same_task? = socket.assigns.task != nil and Map.take(socket.assigns, Map.keys(url)) == url
 
-    # The stage naming its item, or the conversation its agent, reads nothing again. A stale item is safe: the
-    # stage reads it only on mount or a new task.
+    # The stage naming its finding draws nothing: the stage named it. The stage naming its item, or the
+    # conversation its agent, reads nothing again. A stale item is safe: the stage reads it only on mount or a new
+    # task.
     socket =
-      if socket.assigns.task != nil and Map.take(socket.assigns, Map.keys(url)) == url do
-        socket
-        |> assign(:item, params["item"])
-        |> assign(:agent, params["agent"])
-        |> assign(:round, params["round"])
-        |> apply_task(socket.assigns.task)
-      else
-        socket
-        |> assign(:url_id, task_id)
-        |> assign(:task_id, task_id)
-        |> assign(:child, params["child"])
-        |> assign(:item, params["item"])
-        |> assign(:agent, params["agent"])
-        |> assign(:round, params["round"])
-        |> assign(:focus_file, params["file"])
-        |> refresh_task()
+      cond do
+        same_task? and Map.take(socket.assigns, Map.keys(opened)) == opened ->
+          socket |> assign(:finding, params["finding"]) |> assign(:comment, params["comment"])
+
+        same_task? ->
+          socket
+          |> assign(:item, params["item"])
+          |> assign(:agent, params["agent"])
+          |> assign(:round, params["round"])
+          |> assign(:finding, params["finding"])
+          |> assign(:comment, params["comment"])
+          |> apply_task(socket.assigns.task)
+
+        true ->
+          socket
+          |> assign(:url_id, task_id)
+          |> assign(:task_id, task_id)
+          |> assign(:child, params["child"])
+          |> assign(:item, params["item"])
+          |> assign(:agent, params["agent"])
+          |> assign(:round, params["round"])
+          |> assign(:finding, params["finding"])
+          |> assign(:comment, params["comment"])
+          |> assign(:url_finding, params["finding"])
+          |> assign(:url_comment, params["comment"])
+          |> assign(:focus_file, params["file"])
+          |> refresh_task()
       end
 
     {:noreply, socket}
@@ -164,7 +209,7 @@ defmodule RailWeb.TaskLive do
           class="flex flex-col items-center justify-center min-h-[300px] text-center p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs"
         >
           <p class="text-base font-medium text-slate-500 dark:text-slate-400">
-            This task has been cleaned up.
+            This task was discarded or its issue was deleted.
           </p>
         </div>
 
@@ -184,6 +229,8 @@ defmodule RailWeb.TaskLive do
           current_scope={@current_scope}
           url_item={@item}
           url_round={@round}
+          url_finding={@url_finding}
+          url_comment={@url_comment}
           url_file={@focus_file}
         >
           <:breadcrumb :if={@show_switcher}>
@@ -203,7 +250,7 @@ defmodule RailWeb.TaskLive do
               {@split_points}
             </span>
             <.claim_button task={@task} />
-            <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
+            <.discard_button :if={@show_discard} />
             <.live_component
               module={TaskActions}
               id="task-actions"
@@ -216,11 +263,13 @@ defmodule RailWeb.TaskLive do
             <.issue_view
               :if={@issue != nil}
               issue={@issue}
+              current_scope={@current_scope}
               assignees={@assignees}
               assignee_query={@assignee_query}
               comment_nonce={@comment_nonce}
               show_task={false}
               owner_editable={@task.parent_task_id == nil}
+              blockers={@blockers}
             />
           </:issue>
           <:plan>
@@ -236,6 +285,7 @@ defmodule RailWeb.TaskLive do
               approvable={@task.stage == :plan and not Run.running?(@plan_run)}
               status={@header_status}
               child_of={@child_of}
+              tab={@plan_tab}
             />
           </:plan>
           <:conversation>
@@ -246,27 +296,17 @@ defmodule RailWeb.TaskLive do
               chat_run={@chat_run}
             />
             <.conversation_sidebar
-              compact={@open_item not in [:plan, :fix_plan]}
+              compact={not @beside}
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
               questions={@conversation_questions}
               round_questions={@round_questions}
               suggestions={@suggestions}
-              conversation_run={
-                if @open_item in [:plan, :fix_plan], do: @conversation_run, else: @chat_run
-              }
-              closed={
-                @open_item in [:plan, :fix_plan] and @conversation_run != nil and
-                  @conversation_run != @chat_run
-              }
-              closed_reason="Only Plan, and then the review agent, take messages. This is a record of what this agent did."
-              review_pane={
-                match?(
-                  %Run{role: %Role{stage: :review_lead}},
-                  if(@open_item in [:plan, :fix_plan], do: @conversation_run, else: @chat_run)
-                )
-              }
+              conversation_run={@sidebar_run}
+              closed={@sidebar_closed}
+              closed_reason={@sidebar_closed_reason}
+              review_pane={match?(%Run{role: %Role{stage: :review_lead}}, @sidebar_run)}
             />
           </:conversation>
           <:children>
@@ -275,6 +315,16 @@ defmodule RailWeb.TaskLive do
         </.live_component>
       </div>
     </Layouts.app>
+
+    <.discard_dialog
+      :if={@discard_open and @task != nil}
+      task={@task}
+      discarding={@discarding}
+      error={@discard_error}
+      stopped={@discard_stopped}
+      choice={@discard_choice}
+      back_to_plan={@show_back_to_plan}
+    />
     """
   end
 
@@ -287,13 +337,52 @@ defmodule RailWeb.TaskLive do
     {:noreply, push_patch(socket, to: task_path(socket, item: "plan", agent: stage))}
   end
 
-  def handle_event("cleanup", _params, socket) do
-    task = socket.assigns.task
-
+  def handle_event("open_discard", _params, socket) do
     socket =
       socket
-      |> assign(:cleaning_up, true)
-      |> start_async(:cleanup, fn -> Pipeline.cleanup_task(task) end)
+      |> assign(:discard_open, true)
+      |> assign(:discard_error, nil)
+      |> assign(:discard_stopped, false)
+      |> assign(:discard_choice, :discard)
+
+    {:noreply, socket}
+  end
+
+  def handle_event("pick_discard", _params, %{assigns: %{discarding: true}} = socket), do: {:noreply, socket}
+
+  def handle_event("pick_discard", %{"choice" => "plan"}, %{assigns: %{show_back_to_plan: true}} = socket),
+    do: {:noreply, pick(socket, :plan)}
+
+  def handle_event("pick_discard", _params, socket), do: {:noreply, pick(socket, :discard)}
+
+  # The dialog stays until the action under way has its answer, which opens the issue or the plan, or says what failed.
+  def handle_event("close_discard", _params, %{assigns: %{discarding: true}} = socket), do: {:noreply, socket}
+
+  def handle_event("close_discard", _params, socket) do
+    socket =
+      socket
+      |> assign(:discard_open, false)
+      |> assign(:discard_error, nil)
+
+    {:noreply, socket}
+  end
+
+  def handle_event("discard", _params, %{assigns: %{discarding: true}} = socket), do: {:noreply, socket}
+
+  def handle_event("discard", _params, socket) do
+    %{current_scope: scope, task: task, discard_choice: choice} = socket.assigns
+
+    # What the dialog listed as in progress is what "Runs stopped" stands for after a failure past the stops.
+    socket =
+      socket
+      |> assign(:discarding, true)
+      |> assign(:discard_error, nil)
+      |> assign(:discard_had_runs, Enum.any?(task.runs, &(Run.running?(&1) or Run.state(&1) == :blocked)))
+      |> start_async(:discard, fn ->
+        # Unlinked, so leaving the page does not cut Back to Plan off between its commit and the Planner's start.
+        action = Elixir.Task.Supervisor.async_nolink(Rail.TaskSupervisor, fn -> act(choice, scope, task) end)
+        {choice, Elixir.Task.await(action, :infinity)}
+      end)
 
     {:noreply, socket}
   end
@@ -313,10 +402,16 @@ defmodule RailWeb.TaskLive do
   end
 
   def handle_info({:run_events, run_id, events}, socket) do
-    for {run_id, batches} <- Enum.group_by(queued_run_events([{run_id, events}]), &elem(&1, 0), &elem(&1, 1)),
+    queued = queued_run_events([{run_id, events}])
+
+    for {run_id, batches} <- Enum.group_by(queued, &elem(&1, 0), &elem(&1, 1)),
         MapSet.member?(socket.assigns.subscribed_run_ids, run_id) do
       send_update(RunConversation, id: "run-conversation", run_id: run_id, appended_events: Enum.concat(batches))
     end
+
+    # A message someone typed is a comment the open Comments item lists.
+    typed? = Enum.any?(queued, fn {_run_id, batch} -> Enum.any?(batch, &String.starts_with?(&1.line, "[human:")) end)
+    if typed?, do: reload_comments(socket)
 
     socket = refresh_diff(socket)
 
@@ -384,17 +479,39 @@ defmodule RailWeb.TaskLive do
   end
 
   # The reader's unsent plan comments moved, in another tab or this one: the Plan stage, or the next round's plan,
-  # draws their markers, the conversation their tray and the header whether Approve plan waits on them, and each
+  # draws their markers, the conversation their tray and the header whether Approve waits on them, and each
   # reads its own.
   def handle_info({:plan_comments_changed, task_id}, socket) do
     # The conversation is drawn under every item, as its trays at least, so it always reads them.
     with %{task_id: ^task_id, open_item: item} <- socket.assigns do
       if item == :plan, do: send_update(PlanStage, id: "plan-stage", reload_comments: true)
-      if item == :fix_plan, do: send_update(TaskDetail, id: "task-detail", reload: true)
+      if is_binary(item), do: send_update(CustomStage, id: "custom-#{item}", reload_comments: true)
+
+      if item in [:fix_plan, :comments] or match?(%Task{stage: :custom}, socket.assigns.task),
+        do: send_update(TaskDetail, id: "task-detail", reload: true)
+
       send_update(RunConversation, id: "run-conversation", reload_plan_comments: true)
       send_update(TaskActions, id: "task-actions")
     end
 
+    {:noreply, socket}
+  end
+
+  # An edited comment is saved here, where the reader's scope is, and its box hears how it went. One that took tells
+  # the author's tabs, which read their comments again.
+  def handle_info({:update_comment, comment, body, id}, socket) do
+    %{current_scope: scope} = socket.assigns
+    attrs = %{"body" => body}
+
+    saved =
+      case comment do
+        %PlanComment{} -> Pipeline.update_plan_comment(scope, comment, attrs)
+        %DiffComment{} -> Pipeline.update_diff_comment(scope, comment, attrs)
+        %FindingComment{} -> Pipeline.update_finding_comment(scope, comment, attrs)
+        %ScreenComment{} -> Pipeline.update_screen_comment(scope, comment, attrs)
+      end
+
+    send_update(CommentBody, id: id, saved: saved)
     {:noreply, socket}
   end
 
@@ -404,18 +521,50 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
+  # A comment opens the Plan item on its tab, which the Plan stage takes as it mounts, or beside its agent's
+  # conversation.
+  def handle_info({:open_plan, opts}, socket) do
+    socket = assign(socket, :plan_tab, opts[:tab])
+
+    socket =
+      if opts[:agent],
+        do: push_patch(socket, to: task_path(socket, item: "plan", agent: opts[:agent]), replace: true),
+        else: socket
+
+    send_update(TaskDetail, id: "task-detail", open_plan: if(opts[:tab], do: "1"))
+    {:noreply, socket}
+  end
+
   # The Plan item opened another round, which the URL names in place for a reload, beside the same agent's run.
+  # The Plan stage has taken any tab it was handed by now.
   def handle_info({:plan_round, round}, socket) do
     path = task_path(socket, item: "plan", round: round, agent: socket.assigns.agent)
-    {:noreply, push_patch(socket, to: path, replace: true)}
+    socket = socket |> assign(:plan_tab, nil) |> push_patch(to: path, replace: true)
+    {:noreply, socket}
   end
 
   # The stage opened another item, which the URL names in place for a reload; the Plan item keeps the agent its
   # conversation reads.
   def handle_info({:review_item, item}, socket) do
     agent = if item in [:plan, :fix_plan], do: socket.assigns.agent
-    {:noreply, push_patch(socket, to: task_path(socket, item: Atom.to_string(item), agent: agent), replace: true)}
+    path = task_path(socket, item: to_string(item), agent: agent)
+    socket = socket |> assign(:plan_tab, nil) |> push_patch(to: path, replace: true)
+    {:noreply, socket}
   end
+
+  # Findings opened another finding, or a comment box on one of its pieces, which the URL names in place, so a
+  # reconnect or a reload opens them again.
+  def handle_info({:review_finding, key, comment}, %{assigns: assigns} = socket)
+      when {key, comment} != {assigns.finding, assigns.comment} do
+    %{item: item, agent: agent, round: round} = assigns
+    path = task_path(socket, item: item, agent: agent, round: round, finding: key, comment: comment)
+    {:noreply, push_patch(socket, to: path, replace: true)}
+  end
+
+  def handle_info({:review_finding, _key, _comment}, socket), do: {:noreply, socket}
+
+  # Sent by the stage as it drew, so it can land after the task was discarded underneath the page.
+  def handle_info({:watch_browser, _name}, %{assigns: %{task: nil}} = socket), do: {:noreply, socket}
 
   # The Browser item is open on this browser, or on none; only the subscription moves.
   def handle_info({:watch_browser, name}, socket) do
@@ -443,8 +592,12 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
+  # A task read again can equal the one the stage holds, which then is not updated, so the open Comments item is
+  # told to read its comments again: another person's Review Send arrives only as this.
   def handle_info({:pipeline_changed, task_id}, %{assigns: %{task_id: task_id}} = socket) do
-    {:noreply, refresh_task(socket)}
+    socket = refresh_task(socket)
+    reload_comments(socket)
+    {:noreply, socket}
   end
 
   # A split's parent and children are one page, so a move in any of them redraws it.
@@ -454,14 +607,42 @@ defmodule RailWeb.TaskLive do
       else: {:noreply, socket}
   end
 
-  # A child's issue completing in Linear is what merges it.
-  def handle_info({:issue_changed, issue_id}, socket) do
-    if MapSet.member?(socket.assigns.family_issue_ids, issue_id),
-      do: {:noreply, refresh_task(socket)},
-      else: {:noreply, socket}
+  # Only a task a workflow opened names one, so no other page reads its task again on a sync.
+  def handle_info(
+        {:workflows_changed, project_id},
+        %{assigns: %{task: %Task{project_id: project_id, issue: %Issue{workflow_id: workflow_id}}}} = socket
+      )
+      when is_binary(workflow_id) do
+    {:noreply, refresh_task(socket)}
   end
 
-  def handle_info({event, _id}, socket) when event in [:issue_created, :issue_comments_changed, :issues_synced] do
+  def handle_info({:workflows_changed, _project_id}, socket), do: {:noreply, socket}
+
+  # A child's issue completing in Linear is what merges it. The open Issue tab follows its parent, sub-issues and
+  # blockers, and reads blockers again when its issue or one of them changes, since Linear sends nothing for those.
+  def handle_info({event, issue_id}, socket) when event in [:issue_changed, :issue_created] do
+    %{family_issue_ids: family, issue: issue, blockers: blockers} = socket.assigns
+
+    cond do
+      event == :issue_changed and MapSet.member?(family, issue_id) ->
+        {:noreply, refresh_task(socket)}
+
+      issue != nil and issue_relative?(issue, blockers, issue_id) ->
+        blocker_ids = for %{issue: %Issue{id: id}} <- (blockers && blockers.blocked_by ++ blockers.blocks) || [], do: id
+        socket = load_issue(socket, socket.assigns.task)
+
+        cond do
+          is_nil(socket.assigns.issue) -> {:noreply, refresh_task(socket)}
+          issue_id == issue.id or issue_id in blocker_ids -> {:noreply, read_blockers(socket, true)}
+          true -> {:noreply, socket}
+        end
+
+      true ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_info({event, _id}, socket) when event in [:issue_comments_changed, :issues_synced] do
     {:noreply, socket}
   end
 
@@ -498,26 +679,35 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
-  # A cleaned-up task is gone, so the issue is where it can be started again.
-  def handle_async(:cleanup, {:ok, {:ok, %Task{issue_id: issue_id}}}, socket) do
+  # A discarded task is gone, so the issue is where it can be started again.
+  def handle_async(:discard, {:ok, {:discard, {:ok, %Task{issue_id: issue_id}}}}, socket) do
     {:noreply, push_navigate(socket, to: ~p"/issues/#{issue_id}")}
   end
 
-  def handle_async(:cleanup, {:ok, {:error, :task_busy}}, socket) do
+  # Navigated rather than patched, so every pane mounts again on the task as it now stands.
+  def handle_async(:discard, {:ok, {:plan, {:ok, %Task{id: id}}}}, socket) do
+    {:noreply, push_navigate(socket, to: ~p"/tasks/#{id}?item=plan")}
+  end
+
+  def handle_async(:discard, {:ok, {choice, {:error, reason}}}, socket) do
+    stopped = socket.assigns.discard_had_runs and after_stops?(reason)
+
     socket =
       socket
-      |> assign(:cleaning_up, false)
-      |> put_flash(:error, "Stop the task's run before cleaning it up")
+      |> assign(:discarding, false)
+      |> assign(:discard_stopped, stopped)
+      |> assign(:discard_error, discard_error(choice, reason, stopped))
       |> refresh_task()
 
     {:noreply, socket}
   end
 
-  def handle_async(:cleanup, _result, socket) do
+  def handle_async(:discard, {:exit, _reason}, socket) do
     socket =
       socket
-      |> assign(:cleaning_up, false)
-      |> put_flash(:error, "Could not clean up the task")
+      |> assign(:discarding, false)
+      |> assign(:discard_error, discard_error(socket.assigns.discard_choice, :crashed, false))
+      |> assign(:discard_stopped, false)
       |> refresh_task()
 
     {:noreply, socket}
@@ -528,6 +718,12 @@ defmodule RailWeb.TaskLive do
     do: {:noreply, show_frame(socket, data)}
 
   def handle_async({:held_frame, _topic}, _none_or_stale, socket), do: {:noreply, socket}
+
+  # An answer read for an issue the tab no longer shows is dropped.
+  def handle_async(:blockers, {:ok, {issue_id, blockers}}, %{assigns: %{issue: %Issue{id: issue_id}}} = socket),
+    do: {:noreply, assign(socket, :blockers, blockers)}
+
+  def handle_async(:blockers, _stale_or_failed, socket), do: {:noreply, socket}
 
   attr :task, :any, required: true
 
@@ -550,24 +746,16 @@ defmodule RailWeb.TaskLive do
     """
   end
 
-  attr :task, :any, required: true
-  attr :cleaning_up, :boolean, required: true
-  attr :confirm, :string, required: true
-
-  # A cleaned-up task is history: there is nothing left on disk to clean. A child goes with its parent.
-  defp cleanup_button(assigns) do
+  defp discard_button(assigns) do
     ~H"""
     <button
-      :if={@task.cleaned_up_at == nil and @task.parent_task_id == nil}
       type="button"
-      id="cleanup-task"
-      data-qa="cleanup_task"
-      phx-click="cleanup"
-      data-confirm={@confirm}
-      disabled={@cleaning_up}
-      class="px-4 py-2 rounded-lg border border-red-300 dark:border-red-800 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 cursor-pointer disabled:opacity-50"
+      id="discard-task"
+      data-qa="discard_task"
+      phx-click="open_discard"
+      class="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-red-300 dark:border-red-800 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
     >
-      {if @cleaning_up, do: "Cleaning up…", else: "Clean up"}
+      <.icon name="pi-trash-bold" class="size-[15px]" /> Discard
     </button>
     """
   end
@@ -662,12 +850,18 @@ defmodule RailWeb.TaskLive do
     socket
   end
 
+  defp reload_comments(socket) do
+    if match?(%{open_item: :comments, task: %Task{}}, socket.assigns),
+      do: send_update(TaskDetail, id: "task-detail", reload: true)
+  end
+
   # Whatever the open item shows is read off disk or the rows again.
   # A task cleaned up underneath the page has nothing on disk to read.
   defp reload_stage(socket) do
     with %{task: %Task{} = task, open_item: item} <- socket.assigns do
       send_update(TaskDetail, id: "task-detail", reload: true)
       if item == :plan, do: send_update(PlanStage, id: "plan-stage", task: task)
+      if is_binary(item), do: send_update(CustomStage, id: "custom-#{item}", reload: true)
       if item == :diff, do: send_update(DiffView, id: "diff-view", reload: true)
     end
 
@@ -704,11 +898,28 @@ defmodule RailWeb.TaskLive do
   defp refresh_task(socket) do
     with {:ok, task} <- Pipeline.get_task(socket.assigns.url_id),
          true <- Scope.can_access_project?(socket.assigns.current_scope, task.project_id) do
-      show_task(socket, task)
+      socket
+      |> show_task(task)
+      |> follow_back_to_plan(socket.assigns.task, task)
     else
-      _missing -> assign(socket, :task, nil)
+      _missing ->
+        socket |> assign(:task, nil) |> assign(:issue, nil) |> assign(:blockers, nil) |> assign(:blockers_for, nil)
     end
   end
+
+  # The tab that sent the task back navigates from its own handle_async; leaving first would kill the action.
+  defp follow_back_to_plan(%{assigns: %{discarding: true}} = socket, _was, _task), do: socket
+
+  # A custom stage before Plan reaches Plan by its Approve; only one after Plan comes back to it.
+  defp follow_back_to_plan(socket, %Task{id: id, stage: :custom} = was, %Task{id: id, stage: :plan}) do
+    after_plan = was.issue |> Issue.calculate_stages() |> Enum.drop_while(&(&1 != :plan))
+    if Task.current_stage(was) in after_plan, do: push_navigate(socket, to: ~p"/tasks/#{id}?item=plan"), else: socket
+  end
+
+  defp follow_back_to_plan(socket, %Task{id: id, stage: was}, %Task{id: id, stage: :plan})
+       when was in [:engineer, :review, :finalize], do: push_navigate(socket, to: ~p"/tasks/#{id}?item=plan")
+
+  defp follow_back_to_plan(socket, _was, _task), do: socket
 
   # Every link to a child, its own included, lands on its parent's page with it selected.
   defp show_task(socket, %Task{parent_task_id: parent_id, issue: issue}) when is_binary(parent_id) do
@@ -768,16 +979,24 @@ defmodule RailWeb.TaskLive do
   defp apply_task(socket, %Task{} = task) do
     roles = if task.project_id, do: Rail.Roles.list_roles(task.project_id), else: []
     runs = role_runs(roles, task)
+    rounds = Pipeline.list_rounds(task)
+    # The header reads whether the plan is sent off the task's own rounds.
+    task = %{task | rounds: rounds}
+    back_to_plan = discardable?(task) and task.stage != :plan and match?(%Round{plan: "" <> _plan}, List.first(rounds))
 
     socket
     |> assign(:task, task)
     |> assign(:page_title, task.issue.title)
     |> assign(:roles_map, Map.new(roles, &{&1.id, &1}))
     |> assign(:open_item, open_item(socket.assigns.item, task, socket.assigns.parent))
-    |> assign(:rounds, Pipeline.list_rounds(task))
+    |> assign(:rounds, rounds)
     |> assign_runs(runs, task)
+    |> assign_sidebar(runs, task)
     |> assign_questions(task)
     |> assign_family(task)
+    |> assign(:show_discard, discardable?(task))
+    |> assign(:show_back_to_plan, back_to_plan)
+    |> assign(:discard_choice, if(back_to_plan, do: socket.assigns.discard_choice, else: :discard))
     |> assign(:subscribed_run_ids, sync_run_subscriptions(socket, task.runs))
     |> assign_watched_browser(task)
     |> load_issue(task)
@@ -786,8 +1005,17 @@ defmodule RailWeb.TaskLive do
   # The run the conversation takes messages for, the one it reads (the URL's agent, or else that one), and the
   # run the header says the task is waiting on.
   defp assign_runs(socket, runs, %Task{} = task) do
-    chat_run = if task.stage == :plan, do: runs[:plan], else: runs[:review_lead]
-    picked = Enum.find_value(runs, fn {stage, run} -> to_string(stage) == socket.assigns.agent && run end)
+    chat_run =
+      case task.stage do
+        :plan -> runs[:plan]
+        :custom -> runs[Task.current_stage(task)]
+        _later -> runs[:review_lead]
+      end
+
+    # A custom stage's conversation is beside its own item, so the URL's agent names only a built-in one.
+    picked =
+      Enum.find_value(runs, fn {stage, run} -> (is_atom(stage) and to_string(stage) == socket.assigns.agent) && run end)
+
     stage_run = stage_run(runs, task)
 
     socket
@@ -801,15 +1029,43 @@ defmodule RailWeb.TaskLive do
     |> assign(:approvable, task.stage == :review and not Run.running?(runs[:review_lead]))
   end
 
+  # What the conversation reads under the open item: the agent picked under Plan, a custom stage's own run beside
+  # its file, closed once the stage is approved, and the run taking messages under every other item.
+  defp assign_sidebar(socket, runs, %Task{} = task) do
+    %{open_item: item, conversation_run: picked, chat_run: chat_run} = socket.assigns
+
+    custom = custom_stage_item(task.issue, item)
+
+    {run, closed, reason} =
+      cond do
+        custom != nil ->
+          run = runs[{:custom, custom.name}]
+          closed = run != nil and not Task.works_stage?(task, run.role)
+          {run, closed, "#{custom.name} was approved, so this conversation is closed."}
+
+        item in [:plan, :fix_plan] ->
+          {picked, picked != nil and picked != chat_run, @plan_closed}
+
+        true ->
+          {chat_run, false, @plan_closed}
+      end
+
+    socket
+    |> assign(:beside, item in [:plan, :fix_plan] or is_binary(item))
+    |> assign(:sidebar_run, run)
+    |> assign(:sidebar_closed, closed)
+    |> assign(:sidebar_closed_reason, reason)
+  end
+
   defp assign_questions(socket, %Task{} = task) do
-    %{chat_run: chat_run, conversation_run: conversation_run} = socket.assigns
+    %{chat_run: chat_run, sidebar_run: sidebar_run} = socket.assigns
     asked = Pipeline.list_questions(task, order_by: [asc: :inserted_at, asc: :id])
-    round_questions = round_questions(asked, conversation_run)
+    round_questions = round_questions(asked, sidebar_run)
 
     socket
     |> assign(:chat_questions, Enum.count(asked, &((&1.status == :pending and chat_run) && &1.run_id == chat_run.id)))
     |> assign(:round_questions, round_questions)
-    |> assign(:conversation_questions, run_questions(asked, conversation_run))
+    |> assign(:conversation_questions, run_questions(asked, sidebar_run))
     |> assign(:suggestions, suggestions(round_questions))
   end
 
@@ -843,40 +1099,105 @@ defmodule RailWeb.TaskLive do
   # The issue is an item of its own and costs a query of its own, so it is read
   # only while it is the one being looked at.
   defp load_issue(socket, %Task{} = task) do
-    preload = [:project, :owner_user, task: [runs: :role], comments: [:author_user, replies: :author_user]]
+    preload = [
+      :project,
+      :owner_user,
+      :parent,
+      :children,
+      task: [runs: :role],
+      comments: [:author_user, replies: :author_user]
+    ]
 
     case socket.assigns.open_item do
-      :issue -> assign(socket, :issue, read_issue(task.issue_id, preload))
-      _other_item -> assign(socket, :issue, nil)
+      :issue ->
+        socket
+        |> assign(:issue, read_issue(task.issue_id, preload))
+        |> watch_issues()
+        |> read_blockers(false)
+
+      _other_item ->
+        socket
+        |> assign(:issue, nil)
+        |> assign(:blockers, nil)
+        |> assign(:blockers_for, nil)
     end
   end
 
+  # One subscription serves the Issue tab and a split's family alike, so neither hears a message twice.
+  defp watch_issues(%{assigns: %{watching_issues: false}} = socket) do
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+      assign(socket, :watching_issues, true)
+    else
+      socket
+    end
+  end
+
+  defp watch_issues(socket), do: socket
+
+  # `load_issue/2` runs on every run event, so blockers are read once per opening of the tab unless `force`; the
+  # last answer stays on screen until the next lands, unless it was for another issue.
+  defp read_blockers(%{assigns: %{issue: %Issue{id: id}, blockers_for: id}} = socket, false), do: socket
+
+  defp read_blockers(%{assigns: %{issue: %Issue{} = issue, blockers_for: read_for}} = socket, _force) do
+    if connected?(socket) do
+      socket
+      |> assign(:blockers, if(read_for == issue.id, do: socket.assigns.blockers))
+      |> assign(:blockers_for, issue.id)
+      |> start_async(:blockers, fn ->
+        {issue.id, Map.get(Issues.get_blockers([issue]), issue.external_id, %{blocked_by: [], blocks: []})}
+      end)
+    else
+      socket
+    end
+  end
+
+  defp read_blockers(socket, _force), do: socket
+
   defp read_issue(issue_id, preload) do
-    {:ok, issue} = Issues.get_issue(issue_id, preload: preload)
-    issue
+    case Issues.get_issue(issue_id, preload: preload) do
+      {:ok, issue} -> issue
+      {:error, :not_found} -> nil
+    end
   end
 
   # The item the stage opens: the URL's, or else what the task is waiting on now, as the stage reads it.
   defp open_item(nil, %Task{id: id}, %Task{id: id}), do: :children
+
+  defp open_item(nil, %Task{stage: :custom} = task, _parent),
+    do: custom_stage_item(task.issue, Task.current_stage(task)).key
+
   defp open_item(nil, %Task{stage: :plan}, _parent), do: :plan
   defp open_item(nil, %Task{stage: :engineer}, _parent), do: :diff
   defp open_item(nil, %Task{}, _parent), do: :findings
   # The conversation was an item of its own; it is the Plan item's sidebar now.
   defp open_item("conversation", %Task{}, _parent), do: :plan
   defp open_item(item, %Task{}, _parent) when item in @items, do: String.to_existing_atom(item)
+
+  defp open_item("stage-" <> _number = item, %Task{} = task, parent) do
+    case custom_stage_item(task.issue, item) do
+      %{key: key} -> key
+      nil -> open_item(nil, task, parent)
+    end
+  end
+
   defp open_item(_unknown, %Task{} = task, parent), do: open_item(nil, task, parent)
 
   # Each role read through its latest run: an earlier one is the same conversation before the stage sent the work
   # back.
   defp role_runs(roles, %Task{runs: runs}) do
-    for %Role{} = role <- roles, %Run{} = run <- [role_run(runs, role)], into: %{}, do: {role.stage, run}
+    for %Role{} = role <- roles, %Run{} = run <- [role_run(runs, role)], into: %{}, do: {role_key(role), run}
   end
+
+  defp role_key(%Role{custom_stage: name}) when is_binary(name), do: {:custom, name}
+  defp role_key(%Role{stage: stage}), do: stage
 
   # The header says where the task is: at Review, whichever agent is checking the round, else the review agent.
   defp stage_run(runs, %Task{stage: :review}) do
     Enum.find_value([:qa, :review, :demo], &(Run.running?(runs[&1]) && runs[&1])) || runs[:review_lead]
   end
 
+  defp stage_run(runs, %Task{stage: :custom} = task), do: runs[Task.current_stage(task)]
   defp stage_run(runs, %Task{stage: stage}), do: runs[Task.role_stage(stage)]
 
   # What the stage's run waits on: its account's usage, or its place in the line for a sandbox.
@@ -907,9 +1228,8 @@ defmodule RailWeb.TaskLive do
   end
 
   # Where a split parent or a child of one stands, said in the header in place of a stage.
-  defp assign_family(%{assigns: %{parent: nil}} = socket, %Task{} = task) do
+  defp assign_family(%{assigns: %{parent: nil}} = socket, %Task{}) do
     socket
-    |> assign(:cleanup_confirm, cleanup_confirm(task.issue, []))
     |> assign(:show_switcher, false)
     |> assign(:header_status, nil)
     |> assign(:child_of, nil)
@@ -944,7 +1264,6 @@ defmodule RailWeb.TaskLive do
       end
 
     socket
-    |> assign(:cleanup_confirm, cleanup_confirm(parent.issue, Enum.map(statuses, & &1.task.issue)))
     |> assign(:show_switcher, false)
     |> assign(:header_status, status)
     |> assign(:child_of, nil)
@@ -959,7 +1278,6 @@ defmodule RailWeb.TaskLive do
         do: %{label: status.label, icon: status.icon, class: status.text_class}
 
     socket
-    |> assign(:cleanup_confirm, nil)
     |> assign(:viewer_owns, viewer_owns?(socket, parent))
     |> assign(:show_switcher, true)
     |> assign(:header_status, header_status)
@@ -977,26 +1295,6 @@ defmodule RailWeb.TaskLive do
 
   # A split is as big as it was approved, so a child deleted in Linear since does not shrink it.
   defp split_total(statuses), do: statuses |> Enum.map(& &1.task.split_position) |> Enum.max()
-
-  # Cleaning up work Linear has not marked done is usually a mistake, so the confirmation says so.
-  defp cleanup_confirm(%Issue{state: :done}, []),
-    do: "Clean up this task? Its worktree and scratch files will be deleted."
-
-  defp cleanup_confirm(%Issue{identifier: identifier}, []) do
-    "#{identifier} is not marked done in Linear. Clean up this task anyway? Its worktree and scratch files will be deleted."
-  end
-
-  defp cleanup_confirm(%Issue{}, children) do
-    case Enum.reject(children, &(&1.state == :done)) do
-      [] ->
-        "Clean up this task and its #{length(children)} children? Their worktrees and scratch files will be deleted."
-
-      open ->
-        "#{length(open)} of #{length(children)} children are not marked done in Linear: " <>
-          "#{Enum.map_join(open, ", ", & &1.identifier)}. Clean up this task and all of its children anyway? " <>
-          "Their worktrees and scratch files will be deleted."
-    end
-  end
 
   # A child is shown on its parent's page, so the child goes in the URL with the item.
   defp task_path(socket, params) do
@@ -1082,8 +1380,8 @@ defmodule RailWeb.TaskLive do
   end
 
   # Sent and resolved comments are everyone's, so the task has a topic; unsent ones
-  # are the reader's alone, so every tab of theirs also hears their own topic. Plan,
-  # screen and finding comments are only ever unsent on the page, so they have only the reader's topic.
+  # are the reader's alone, so every tab of theirs also hears their own topic. Plan, screen and finding comments
+  # have only the reader's topic: Comments hears another's sent ones as their log line or the pipeline's broadcast.
   defp watch_diff_comments(socket, %Task{id: task_id}) do
     watched = socket.assigns.watched_comments_task_id
     user_id = socket.assigns.current_scope.user.id
@@ -1124,6 +1422,61 @@ defmodule RailWeb.TaskLive do
     |> assign(:frame_window_open?, true)
     |> push_event("browser:frame", %{data: data})
   end
+
+  # Mirrors what Discard itself refuses; a merge in progress is offered, so the dialog can say why it waits.
+  defp discardable?(%Task{cleaned_up_at: nil, merged_at: nil, parent_task_id: nil, stage: stage}),
+    do: stage not in [:merged, :split]
+
+  defp discardable?(%Task{}), do: false
+
+  defp act(:discard, scope, task), do: Pipeline.discard_task(scope, task)
+  defp act(:plan, scope, task), do: Pipeline.return_to_plan(scope, task)
+
+  # Only a failure past the stops leaves runs stopped: GitHub's refusals, and a run still settling.
+  defp after_stops?({step, _reason}) when step in [:branch_not_deleted, :pull_request_not_closed], do: true
+  defp after_stops?(:task_busy), do: true
+  defp after_stops?(_reason), do: false
+
+  defp pick(%{assigns: %{discard_choice: choice}} = socket, choice), do: socket
+
+  # An error names the choice it came from, so it goes with that choice.
+  defp pick(socket, choice) do
+    socket
+    |> assign(:discard_choice, choice)
+    |> assign(:discard_error, nil)
+    |> assign(:discard_stopped, false)
+  end
+
+  defp discard_error(:plan, :not_discardable, _stopped),
+    do: "This task already went back to Plan, or was discarded or cleaned up."
+
+  defp discard_error(:discard, :not_discardable, _stopped), do: "This task was already discarded or cleaned up."
+
+  defp discard_error(choice, {:branch_not_deleted, "" <> reason}, stopped),
+    do: "GitHub refused to delete the branch: #{reason}. " <> left_as_was(choice, stopped)
+
+  defp discard_error(choice, {:branch_not_deleted, _reason}, stopped),
+    do: "GitHub refused to delete the branch. " <> left_as_was(choice, stopped)
+
+  defp discard_error(choice, {:pull_request_not_closed, _reason}, stopped),
+    do: "GitHub refused to close the pull request. " <> left_as_was(choice, stopped)
+
+  defp discard_error(choice, :task_busy, _stopped), do: "A run was still finishing. #{again(choice)} to stop it."
+
+  defp discard_error(:plan, :merging, _stopped),
+    do: "A merge is in progress. Take it back to Plan once it finishes or fails."
+
+  defp discard_error(:discard, :merging, _stopped), do: "A merge is in progress. Discard once it finishes or fails."
+  defp discard_error(:plan, _reason, _stopped), do: "Could not take the task back to Plan."
+  defp discard_error(:discard, _reason, _stopped), do: "Could not discard the task."
+
+  defp left_as_was(choice, true),
+    do: "The runs are stopped; the worktree and ticket are as they were. #{again(choice)} to finish."
+
+  defp left_as_was(choice, false), do: "The worktree and ticket are as they were. #{again(choice)} to finish."
+
+  defp again(:plan), do: "Click Back to Plan again"
+  defp again(:discard), do: "Discard again"
 
   defp claim_error(:already_assigned), do: "Somebody else claimed this issue first"
   defp claim_error(:linear_not_linked), do: "Link your Linear account in Settings before claiming an issue"

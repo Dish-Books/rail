@@ -8,6 +8,7 @@ import { ChatComposer } from "./hooks/chat_composer";
 import { CommandOutput } from "./hooks/command_output";
 import { CopyText } from "./hooks/copy_text";
 import { CurrentInView } from "./hooks/current_in_view";
+import { CycleFigures } from "./hooks/cycle_figures";
 import { DemoCaptions } from "./hooks/demo_captions";
 import { DesignFrame, ElementPreview } from "./hooks/design_frame";
 import { DiffScroller } from "./hooks/diff_scroller";
@@ -21,6 +22,7 @@ import { LocalTime } from "./hooks/local_time";
 import { ScrollSelectedTab } from "./hooks/scroll_selected_tab";
 import { Shortcuts } from "./hooks/shortcuts";
 import { SidebarResize } from "./hooks/sidebar_resize";
+import { StatusMenu } from "./hooks/status_menu";
 import { Theme } from "./hooks/theme";
 
 const Hooks = {
@@ -42,9 +44,11 @@ const Hooks = {
   BrowserScreencast,
   DemoCaptions,
   CurrentInView,
+  CycleFigures,
   ScrollSelectedTab,
   ImageFallback,
-  SidebarResize
+  SidebarResize,
+  StatusMenu
 };
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content");

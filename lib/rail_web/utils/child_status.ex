@@ -134,10 +134,11 @@ defmodule RailWeb.Utils.ChildStatus do
     }
   end
 
-  # Finalize waits on people, so it reads the same whatever a run a comment resumed there is doing.
+  # Finalize waits on people, unless a comment resumed its run, which waits on no one while it is at work.
   defp finalizing(%Task{} = child, run) do
     style = run_state_style(run, child)
-    state = Task.finalize_state(child)
+    working? = finalize_run_working?(child, run)
+    state = if working?, do: :running, else: Task.finalize_state(child)
     needs = state == :not_ready
     label = stage_label(child, run)
     chip = %{label: label, icon: style.icon, class: style.chip_class}

@@ -15,7 +15,7 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
   # The item a change a person asked for, to the ticket or the design, goes under when no finding or comment carries it.
   @changes {:changes, :plan}
 
-  @counted "\\d+ (?:finding|changed ruling|comment)s?"
+  @counted "\\d+ (?:finding|changed ruling|new issue|comment)s?"
   @sent Regex.compile!("\\ASent (#{@counted}(?:(?:, | and )#{@counted})*)\\.\\n")
 
   @primary_key false
@@ -125,7 +125,8 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
 
   @doc """
   The findings whose ruling differs from what the round sent (`unsent`) and from what the saved plan covers
-  (`since_plan`), each `%{key:, title:, was:, now:}` with `:fix` or `:skip`. Nobody rules once approved or past Review.
+  (`since_plan`), each `%{key:, title:, was:, now:}` with `:fix`, `:skip` or `:new_issue`. Nobody rules once approved
+  or past Review.
   """
   def calculate_ruling_changes(%__MODULE__{approved_at: %DateTime{}}, %Task{}, _findings),
     do: %{unsent: [], since_plan: []}
@@ -139,9 +140,9 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
   end
 
   @doc """
-  Lays the plan out for the Review tab: its summary, the changes to the ticket or the design a person asked for, an
-  item per finding and comment it covers, each with the numbers of the files that name it, the numbered files,
-  Verification, the counts and whether it covers the round as sent. `nil` before a plan is saved.
+  Lays the plan out for the Review tab: its round, its summary, the changes to the ticket or the design a person asked for, an
+  item per finding and comment it covers, each with the paths of the files that name it, a card per file, as a plan's
+  `### Changes` has, Verification, the counts and whether it covers the round as sent. `nil` before a plan is saved.
   """
   def build_sheet(%__MODULE__{plan: nil}), do: nil
 
@@ -158,7 +159,7 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
           key: key,
           title: fix_plan.covered_titles[key],
           body: bodies |> Map.get({:finding, key}, "") |> String.trim(),
-          files: for(file <- files, names?(file.description, {:finding, key}), do: file.number)
+          files: for(file <- files, names?(file.prose, {:finding, key}), do: file.path)
         }
       end)
 
@@ -175,27 +176,20 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
           place: comment.place,
           text: comment.text,
           body: bodies |> Map.get({:comment, comment.number}, "") |> String.trim(),
-          files: for(file <- files, names?(file.description, {:comment, comment.number}), do: file.number)
+          files: for(file <- files, names?(file.prose, {:comment, comment.number}), do: file.path)
         }
       end)
 
     verification = sections |> List.keyfind("Verification", 0, {nil, []}) |> elem(1) |> Enum.join("\n") |> String.trim()
-    # What a person asked to change, to the ticket or the design, read first: the section and its item.
-    changes =
-      [
-        sections |> List.keyfind("Changes to the plan", 0, {nil, []}) |> elem(1) |> Enum.join("\n"),
-        bodies[@changes] || ""
-      ]
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == ""))
-      |> Enum.join("\n\n")
+    changes = asked_changes(sections, bodies)
 
     %{
+      round: fix_plan.round,
       summary: lead |> Enum.reject(&String.match?(&1, ~r/\A\#{1,2} /)) |> Enum.join("\n") |> String.trim(),
       items: findings ++ comments,
       files: files,
       verification: if(verification != "", do: verification),
-      changes: if(changes != "", do: changes),
+      changes: changes,
       counts: %{findings: length(findings), comments: length(comments), files: length(files)},
       covers_round:
         MapSet.new(fix_plan.covered_keys) == MapSet.new(fix_plan.findings, & &1.key) and
@@ -205,7 +199,7 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
 
   @doc """
   Reads a Send's note back for the conversation: what its first line says was sent, the titles of the findings it
-  sent, the rulings it changed and its numbered comments' text. `nil` for any other message.
+  sent, the rulings it changed, the issues it filed and its numbered comments' text. `nil` for any other message.
   """
   def parse_note(text) when is_binary(text) do
     case Regex.run(@sent, String.trim_leading(text) <> "\n") do
@@ -229,7 +223,11 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
                 ),
               do: %{number: String.to_integer(number), text: comment_text(block)}
 
-        %{summary: summary, findings: findings, rulings: rulings, comments: comments}
+        issues =
+          for [_all, identifier, title] <- Regex.scan(~r/<new_issue key="[^"]+" identifier="([^"]+)">\n(.*)\n/, text),
+              do: %{identifier: identifier, title: title}
+
+        %{summary: summary, findings: findings, rulings: rulings, issues: issues, comments: comments}
 
       nil ->
         nil
@@ -237,6 +235,21 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
   end
 
   def parse_note(_not_text), do: nil
+
+  # What a person asked to change, to the ticket or the design, read first: the section and its item.
+  defp asked_changes(sections, bodies) do
+    [
+      sections |> List.keyfind("Changes to the plan", 0, {nil, []}) |> elem(1) |> Enum.join("\n"),
+      bodies[@changes] || ""
+    ]
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n\n")
+    |> case do
+      "" -> nil
+      changes -> changes
+    end
+  end
 
   # Past Review nobody rules, so the round is what it sent.
   defp fix_now(%__MODULE__{}, %Task{stage: :review}, findings),
@@ -250,13 +263,25 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
         do: %{
           key: finding.key,
           title: finding.title,
-          was: ruling(MapSet.member?(before, finding.key)),
-          now: ruling(MapSet.member?(now, finding.key))
+          was:
+            if(MapSet.member?(before, finding.key),
+              do: :fix,
+              else: not_fix(previous_ruling(finding) || finding.recommendation)
+            ),
+          now: if(MapSet.member?(now, finding.key), do: :fix, else: not_fix(finding.decision))
         }
   end
 
-  defp ruling(true), do: :fix
-  defp ruling(false), do: :skip
+  # The ruling before the one it has now, which is what a change to it moved away from.
+  defp previous_ruling(%Finding{notes: notes}) do
+    case notes |> Enum.filter(&(&1.kind == :ruling)) |> Enum.drop(-1) |> List.last() do
+      %{decision: decision} -> decision
+      nil -> nil
+    end
+  end
+
+  defp not_fix(:new_issue), do: :new_issue
+  defp not_fix(_skip_or_unruled), do: :skip
 
   defp validate_structure(changeset, %__MODULE__{} = fix_plan) do
     validate_change(changeset, :plan, fn :plan, plan ->
@@ -305,16 +330,16 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
           Enum.map(fix_plan.comments, &{:comment, &1.number})
 
       for file <- ImplementationPlan.build_file_changes(plan) || [],
-          not Enum.any?(items, &names?(file.description, &1)),
+          not Enum.any?(items, &names?(file.prose, &1)),
           do:
             {:plan,
-             "has `#{file.path}` under `### File-level changes` naming no item; end its bullet with the finding's key in backticks, `comment N` or `changes to the plan`"}
+             "has `#{file.path}` under `### File-level changes` naming no item; say in its card's prose which it is for: the finding's key in backticks, `comment N` or `changes to the plan`"}
     end)
   end
 
-  defp names?(description, {:finding, key}), do: String.contains?(description, "`#{key}`")
-  defp names?(description, {:comment, number}), do: Regex.match?(~r/\bcomment #{number}\b/i, description)
-  defp names?(description, @changes), do: Regex.match?(~r/\bchanges to the plan\b/i, description)
+  defp names?(prose, {:finding, key}), do: String.contains?(prose, "`#{key}`")
+  defp names?(prose, {:comment, number}), do: Regex.match?(~r/\bcomment #{number}\b/i, prose)
+  defp names?(prose, @changes), do: Regex.match?(~r/\bchanges to the plan\b/i, prose)
 
   defp item({:finding, key}), do: "`#{key}`"
   defp item({:comment, number}), do: "comment #{number}"

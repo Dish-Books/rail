@@ -1,14 +1,15 @@
 defmodule Rail.Pipeline.Actions.StartTask do
   @moduledoc """
-  Starts an issue's task: at Plan, where Rail cuts its own branch, or at Review on an open pull request a person
-  hands over, whose branch Rail then works as pushed and never opens a second pull request for. An issue that
-  already has its task gets that one back, so a second click or a second tab starts nothing. A hand-over's checks
-  start from a job committed with its task, so they start even when the page that clicked is gone.
+  Starts an issue's task at the first of its stages: Plan, a custom stage its workflow placed first, or Engineer when
+  its workflow turned every Plan step off. Or at Review on an open pull request a person hands over, whose branch Rail
+  works as pushed and never opens a second pull request for. The person who starts an unowned issue becomes its owner.
   """
 
   import Ecto.Query
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.BuildTask
+  import Rail.Pipeline.Utils.ClaimForStarter
+  import Rail.Pipeline.Utils.MakeIssueWorktree
 
   alias Rail.Git
   alias Rail.GitHub.Client, as: GitHub
@@ -23,17 +24,11 @@ defmodule Rail.Pipeline.Actions.StartTask do
   alias Rail.Tools.Schemas.OsProcess
 
   @doc """
-  Creates the task for `issue` at Plan, starts its run and returns `{:ok, task}`, or the issue's task when it has one.
+  Creates the task for `issue` at its first stage, starts its run and returns `{:ok, task}`, or `{:error, reason}`:
+  `:not_found`, `:task_exists` for a second start, or what the worktree or the spawn refused.
   """
-  def start_task(%Scope{} = scope, %Issue{} = issue, :plan) do
-    with :ok <- accessible(scope, issue),
-         nil <- current_task(issue),
-         {:ok, %OsProcess{task_id: task_id}} <- Pipeline.start_plan_run(issue) do
-      Pipeline.get_task(task_id)
-    else
-      %Task{id: task_id} -> Pipeline.get_task(task_id)
-      {:error, reason} -> {:error, reason}
-    end
+  def start_task(%Scope{} = scope, %Issue{} = issue) do
+    if Scope.can_access_project?(scope, issue.project_id), do: start(scope, issue), else: {:error, :not_found}
   end
 
   @doc """
@@ -67,6 +62,45 @@ defmodule Rail.Pipeline.Actions.StartTask do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  defp start(%Scope{} = scope, %Issue{} = issue) do
+    case Issue.calculate_stages(issue) do
+      [:plan | _later] ->
+        with {:ok, %OsProcess{task_id: task_id}} <- Pipeline.start_plan_run(scope, issue),
+             do: Pipeline.get_task(task_id)
+
+      [first | _later] = stages ->
+        with {:ok, %Task{} = task} <- record_task(scope, Repo.preload(issue, :project), first, :plan in stages) do
+          Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
+          {:ok, _run} = Pipeline.enter_stage(task, first, fresh: true)
+          # Again now the run exists, so an open page reads it rather than Queued.
+          Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
+          Pipeline.get_task(task.id)
+        end
+    end
+  end
+
+  # The worktree comes first, as no transaction may wait on a git fetch.
+  defp record_task(%Scope{} = scope, %Issue{project: %Project{} = project} = issue, first, planned?) do
+    with {:ok, _worktree_path} <- make_issue_worktree(project, issue),
+         do: Repo.transaction(fn -> insert_task(scope, issue, first, planned?) end)
+  end
+
+  # With no Plan to come, round 1 holds the issue as its ticket, approved by Rail so Merge waits on no plan.
+  defp insert_task(%Scope{} = scope, %Issue{} = issue, first, planned?) do
+    with {:ok, task} <- Pipeline.create_task(issue, first),
+         {:ok, _round} <- if(planned?, do: {:ok, nil}, else: issue_round(task, issue)),
+         :ok <- claim_for_starter(scope, issue) do
+      task
+    else
+      {:error, reason} -> Repo.rollback(reason)
+    end
+  end
+
+  defp issue_round(%Task{} = task, %Issue{} = issue) do
+    {:ok, round} = Pipeline.create_round(task)
+    round |> Round.approve_changeset(nil) |> Round.issue_ticket_changeset(issue) |> Repo.update()
   end
 
   defp accessible(%Scope{} = scope, %Issue{project_id: project_id}) do
@@ -161,7 +195,7 @@ defmodule Rail.Pipeline.Actions.StartTask do
 
   # The task, its first round and the job that starts its checks land together or not at all. Of two tabs handing
   # over at once the second's insert waits on the first's, then finds the issue's task taken and opens that one.
-  defp insert(%Scope{user: user}, %Issue{} = issue, %Project{} = project, %{"head" => head} = pull_request) do
+  defp insert(%Scope{user: user} = scope, %Issue{} = issue, %Project{} = project, %{"head" => head} = pull_request) do
     user_id = user && user.id
 
     attrs = %{
@@ -184,9 +218,11 @@ defmodule Rail.Pipeline.Actions.StartTask do
              {:ok, _round} <-
                round
                |> Round.approve_changeset(user_id)
-               |> Ecto.Changeset.put_embed(:ticket, ticket(issue))
+               |> Round.issue_ticket_changeset(issue)
                |> Repo.update(),
-             {:ok, _job} <- %{task_id: task.id} |> StartReviewChecks.new() |> Oban.insert() do
+             {:ok, _job} <- %{task_id: task.id} |> StartReviewChecks.new() |> Oban.insert(),
+             # Last, because it locks the issue's row.
+             :ok <- claim_for_starter(scope, issue) do
           task
         else
           {:error, %Ecto.Changeset{errors: [issue_id: _taken]}} -> Repo.rollback(:started)
@@ -194,14 +230,5 @@ defmodule Rail.Pipeline.Actions.StartTask do
       end)
 
     if result == {:error, :started}, do: current_task(issue), else: result
-  end
-
-  defp ticket(%Issue{} = issue) do
-    %Round.Ticket{
-      title: issue.title,
-      description: issue.description,
-      priority: issue.priority,
-      estimate: issue.estimate
-    }
   end
 end

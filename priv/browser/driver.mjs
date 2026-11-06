@@ -364,8 +364,9 @@ export async function openBrowser(pageUrl) {
     // The visible text of the page, for asserting copy and for spotting a raw error or a stray `nil`.
     text: () => evaluate('document.body.innerText'),
 
-    // A PNG you read back with the Read tool, for your own eyes. Evidence for the human goes
-    // through qa_shot, which files it against a check.
+    // A PNG you read back with the Read tool, for your own eyes, or the engineer's retake of a
+    // screenshot the repository commits. Evidence for the human goes through qa_shot, which files
+    // it against a check.
     async shot(path) {
       const { data } = await send('Page.captureScreenshot', { format: 'png' })
       mkdirSync(dirname(path), { recursive: true })

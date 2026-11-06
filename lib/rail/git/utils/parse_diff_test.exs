@@ -179,7 +179,16 @@ defmodule Rail.Git.Utils.ParseDiffTest do
     Binary files a/assets/logo.png and b/assets/logo.png differ
     """
 
-    assert [%{path: "assets/logo.png", binary?: true, rows: [%{kind: :binary}]}] = parse_diff(raw)
+    assert [%{path: "assets/logo.png", binary?: true, image?: true, rows: [%{kind: :binary}]}] = parse_diff(raw)
+  end
+
+  test "a binary file that is not a picture is not one" do
+    raw = """
+    diff --git a/priv/data.bin b/priv/data.bin
+    Binary files a/priv/data.bin and b/priv/data.bin differ
+    """
+
+    assert [%{binary?: true, image?: false}] = parse_diff(raw)
   end
 
   test "a single-sided binary notice still names the file" do

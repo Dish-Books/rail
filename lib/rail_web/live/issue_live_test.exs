@@ -12,6 +12,7 @@ defmodule RailWeb.IssueLiveTest do
   alias Rail.Issues.Workers.LinearSync
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.StartReviewChecks
@@ -21,8 +22,17 @@ defmodule RailWeb.IssueLiveTest do
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
+  alias Rail.Workflows.Schemas.Workflow
+  alias Rail.Workflows.Schemas.WorkflowDefinition
 
   setup %{conn: conn, project: project} do
+    # A role's prompt is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: these see no prompt file on the default branch, as when there is no clone. A task Linear
+    # deletes takes its worktree and branch in that clone with it.
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
+    stub(Git, :delete_branch, fn _clone_path, _branch -> :ok end)
+
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_issue_live",
@@ -32,6 +42,11 @@ defmodule RailWeb.IssueLiveTest do
       })
 
     {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
+
+    # An issue with no task looks for a pull request to start at Review on, which no test here has unless it says.
+    stub(Issues, :link_pull_request, fn _scope, _issue -> {:ok, nil} end)
+    # Blockers are read from Linear, which no test here asks unless it says.
+    stub(Issues, :get_blockers, fn _issues -> %{} end)
 
     %{conn: log_in_user(conn, user), user: user, project: project}
   end
@@ -92,6 +107,99 @@ defmodule RailWeb.IssueLiveTest do
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
 
     assert has_element?(view, "#issue-branch[data-copy-text='michael/hosts-on-sandboxes']", "michael/hosts-on-sandboxes")
+  end
+
+  test "an issue a workflow opened names it under the title, as plain text for someone who is not an admin", %{
+    conn: conn,
+    project: project
+  } do
+    workflow =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/flaky-test-sweep.yml",
+        definition: %WorkflowDefinition{
+          name: "Flaky test sweep",
+          schedule: "0 9 * * 1",
+          instructions: "Sweep the flaky tests."
+        },
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
+
+    # The byline reads when the issue was opened.
+    stub(DateTime, :utc_now, fn -> ~U[2026-10-12 08:00:00.000000Z] end)
+
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        workflow_id: workflow.id,
+        external_id: "lin_workflow_page_1",
+        identifier: "WFP-1",
+        title: "Flaky test sweep 2026-10-12",
+        state: :triage
+      })
+      |> Repo.insert!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    assert has_element?(view, "#issue-workflow-byline", "Opened by the Flaky test sweep workflow on Oct 12, 08:00 UTC")
+    refute has_element?(view, "#issue-workflow-link")
+    assert has_element?(view, "#issue-owner", "Unassigned")
+
+    # Only a workflow change on this issue's project reloads it.
+    Phoenix.PubSub.broadcast(Rail.PubSub, "workflows", {:workflows_changed, "prj_elsewhere"})
+
+    workflow
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.put_embed(:definition, %{name: "Flake sweep"})
+    |> Repo.update!()
+
+    Phoenix.PubSub.broadcast(Rail.PubSub, "workflows", {:workflows_changed, project.id})
+    assert has_element?(view, "#issue-workflow-byline", "Opened by the Flake sweep workflow")
+  end
+
+  test "an admin follows the workflow's name to Settings, and a filed issue has no byline", %{
+    conn: conn,
+    project: project
+  } do
+    {:ok, admin} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issue_live_admin",
+        login: "issue_admin",
+        email: "issue_admin@example.com"
+      })
+
+    {:ok, _admin} = Users.update_user(system_scope(), admin, %{admin: true})
+
+    workflow =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/sweep.yml",
+        definition: %WorkflowDefinition{name: "Sweep", schedule: "0 9 * * 1", instructions: "Sweep the flaky tests."},
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
+
+    [opened, filed] =
+      for {workflow_id, n} <- [{workflow.id, 1}, {nil, 2}] do
+        %Issue{}
+        |> Issue.tracker_changeset(%{
+          project_id: project.id,
+          workflow_id: workflow_id,
+          external_id: "lin_workflow_page_admin_#{n}",
+          identifier: "WFA-#{n}",
+          title: "Admin #{n}",
+          state: :triage
+        })
+        |> Repo.insert!()
+      end
+
+    admin_conn = log_in_user(conn, Repo.reload!(admin))
+
+    assert {:ok, view, _html} = live(admin_conn, ~p"/issues/#{opened.identifier}")
+    assert has_element?(view, ~s(#issue-workflow-link[href="/settings/workflows"]), "Sweep")
+
+    assert {:ok, view, _html} = live(admin_conn, ~p"/issues/#{filed.identifier}")
+    refute has_element?(view, "#issue-workflow-byline")
   end
 
   test "a GitHub issue opens from its key#number identifier, and anyone can own it", %{
@@ -250,6 +358,39 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-task-link", ~r/^\s*Review\s*$/)
   end
 
+  test "the task link of a plan sent to the tech leads reads Ready for tech lead", %{conn: conn, project: project} do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_plan_sent",
+        identifier: "IPG-14",
+        title: "Plan with the leads",
+        state: :in_progress
+      })
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+
+    {:ok, task} = Pipeline.create_task(issue, :plan)
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    {:ok, plan} = Roles.get_role(project_id: project.id, stage: :plan)
+
+    {:ok, _done} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: plan.id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: DateTime.utc_now()
+      })
+
+    Repo.insert!(%Round{task_id: task.id, number: 1, plan: "A plan.", ready_at: DateTime.utc_now()})
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    assert has_element?(view, "#issue-task-link", "Ready for tech lead")
+  end
+
   test "an issue with no task can be started from its page", %{conn: conn, project: project} do
     issue =
       %Issue{}
@@ -276,6 +417,7 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-owner", "Unassigned")
     refute has_element?(view, "#issue-task-link")
 
+    render_async(view)
     view |> element("#issue-start-plan") |> render_click()
 
     assert %Task{id: task_id, stage: :plan} = Repo.get_by(Task, issue_id: issue.id)
@@ -300,12 +442,13 @@ defmodule RailWeb.IssueLiveTest do
     end)
 
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    render_async(view)
     allow(Pipeline, self(), view.pid)
 
-    assert has_element?(view, "#issue-start-review label", "Or hand Rail a pull request")
+    assert has_element?(view, "#issue-hand-over label", "Or hand Rail a pull request")
     assert has_element?(view, "#start-review-pr[placeholder='#212 or its link']")
 
-    view |> form("#issue-start-review", %{pull_request: "#212"}) |> render_submit()
+    view |> form("#issue-hand-over", %{pull_request: "#212"}) |> render_submit()
 
     assert %Task{id: task_id} = Repo.get_by(Task, issue_id: issue.id)
     assert_redirect(view, ~p"/tasks/#{task_id}")
@@ -337,9 +480,10 @@ defmodule RailWeb.IssueLiveTest do
     end)
 
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    render_async(view)
     refute has_element?(view, "#start-review-pr-error")
 
-    view |> form("#issue-start-review", %{pull_request: "#198"}) |> render_submit()
+    view |> form("#issue-hand-over", %{pull_request: "#198"}) |> render_submit()
 
     assert has_element?(view, "#start-review-pr-error", "#198 is merged, so there is nothing left to review.")
     assert has_element?(view, "#start-review-pr[value='#198'][aria-invalid='true']")
@@ -347,7 +491,7 @@ defmodule RailWeb.IssueLiveTest do
     refute Repo.get_by(Task, issue_id: issue.id)
 
     # What is typed next survives the issue reloading under it.
-    view |> form("#issue-start-review", %{pull_request: "#19"}) |> render_change()
+    view |> form("#issue-hand-over", %{pull_request: "#19"}) |> render_change()
     send(view.pid, {:issue_changed, issue.id})
     assert has_element?(view, "#start-review-pr[value='#19']")
   end
@@ -365,6 +509,7 @@ defmodule RailWeb.IssueLiveTest do
       |> Repo.insert!()
 
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    render_async(view)
 
     for {reason, said} <- [
           {:not_a_pull_request, "Give the pull request's number, such as #212, or its link."},
@@ -383,7 +528,7 @@ defmodule RailWeb.IssueLiveTest do
       expect(Pipeline, :start_task, fn _scope, %Issue{}, :review, "#1" -> {:error, reason} end)
       allow(Pipeline, self(), view.pid)
 
-      view |> form("#issue-start-review", %{pull_request: "#1"}) |> render_submit()
+      view |> form("#issue-hand-over", %{pull_request: "#1"}) |> render_submit()
 
       assert has_element?(view, "#start-review-pr-error", said)
     end
@@ -406,7 +551,8 @@ defmodule RailWeb.IssueLiveTest do
       |> Repo.insert!()
 
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
-    assert has_element?(view, "#issue-start-review")
+    render_async(view)
+    assert has_element?(view, "#issue-hand-over")
 
     {:ok, task} = Pipeline.create_task(Repo.preload(issue, :project), :review)
     {:ok, task} = Pipeline.enter_stage(task, :review, start: false)
@@ -448,6 +594,132 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-task-link", "Review running")
   end
 
+  test "an in-progress issue with no task can still be started at Plan from its page", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_moving",
+        identifier: "IPG-41",
+        title: "Moving outside Rail",
+        state: :in_progress,
+        state_name: "In Progress"
+      })
+      |> Repo.insert!()
+
+    expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv ->
+      {:ok, %OsProcess{task_id: run.task_id, run: run}}
+    end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    allow(Git, self(), view.pid)
+    allow(Tools, self(), view.pid)
+
+    render_async(view)
+    view |> element("#issue-start-plan") |> render_click()
+
+    assert %Task{id: task_id, stage: :plan} = Repo.get_by(Task, issue_id: issue.id)
+    assert_redirect(view, ~p"/tasks/#{task_id}")
+  end
+
+  test "a second page on an issue shows the new owner and drops Start when someone starts it", %{
+    conn: conn,
+    project: project,
+    user: user
+  } do
+    user |> Ecto.Changeset.change(linear_user_id: "lin_usr_issue_live") |> Repo.update!()
+
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_two_tabs",
+        identifier: "IPG-20",
+        title: "Open in two tabs",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+    assert {:ok, starting, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    assert {:ok, second, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    allow(Git, self(), starting.pid)
+    allow(Tools, self(), starting.pid)
+
+    render_async(starting)
+    render_async(second)
+    assert has_element?(second, "#issue-owner", "Unassigned")
+    assert has_element?(second, "#issue-start-plan")
+
+    starting |> element("#issue-start-plan") |> render_click()
+
+    assert has_element?(second, "#issue-owner", "Issue Live")
+    refute has_element?(second, "#issue-start-plan")
+    assert has_element?(second, "#issue-task-link")
+  end
+
+  test "a second page on an issue that starts at Engineer reads the run, not Queued", %{conn: conn, project: project} do
+    issue =
+      %Issue{skipped_steps: [:product, :design, :architect]}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_two_tabs_engineer",
+        identifier: "IPG-21",
+        title: "Open in two tabs at Engineer",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    stub(Git, :branch_fingerprint, fn _worktree_path -> nil end)
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+    assert {:ok, starting, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    assert {:ok, second, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    allow(Git, self(), starting.pid)
+    allow(Tools, self(), starting.pid)
+
+    render_async(starting)
+    render_async(second)
+    starting |> element("#issue-start-plan") |> render_click()
+
+    assert has_element?(second, "#issue-task-link", "Implement running")
+  end
+
+  test "a stale page whose issue has since started opens the task and leaves its run alone", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_stale",
+        identifier: "IPG-40",
+        title: "Started elsewhere",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    render_async(view)
+
+    {:ok, task} = issue |> Repo.preload(:project) |> Pipeline.create_task(:plan)
+    reject(&Pipeline.start_task/2)
+    allow(Pipeline, self(), view.pid)
+
+    view |> element("#issue-start-plan") |> render_click()
+
+    assert_redirect(view, ~p"/tasks/#{task.id}")
+  end
+
   test "an issue offers one Start at Plan button, where every task begins", %{conn: conn, project: project} do
     issue =
       %Issue{}
@@ -468,6 +740,143 @@ defmodule RailWeb.IssueLiveTest do
     refute has_element?(view, "#issue-start-architect")
   end
 
+  test "an issue whose work has a pull request links it, and offers Review in place of Plan", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_adopt",
+        identifier: "IPG-30",
+        title: "Built by hand",
+        state: :in_progress
+      })
+      |> Repo.insert!()
+
+    expect(Issues, :link_pull_request, fn _scope, %Issue{id: issue_id} = found when issue_id == issue.id ->
+      attrs = %{pr_number: 41, pr_url: "https://github.com/org/app/pull/41", pr_title: "Vendor filter"}
+      found |> Issue.pull_request_changeset(attrs) |> Repo.update!()
+      {:ok, %{"number" => 41}}
+    end)
+
+    expect(Pipeline, :adopt_pull_request, fn _scope, %Issue{id: issue_id} = adopted when issue_id == issue.id ->
+      Pipeline.create_task(Repo.preload(adopted, :project), :review)
+    end)
+
+    assert {:ok, view, html} = live(conn, ~p"/issues/#{issue.identifier}")
+    allow(Pipeline, self(), view.pid)
+    assert html =~ "Looking for a pull request"
+
+    render_async(view)
+
+    refute has_element?(view, "#issue-start-checking")
+    refute has_element?(view, "#issue-start-plan")
+    assert has_element?(view, "#issue-pull-request[href='https://github.com/org/app/pull/41']", "#41")
+    assert has_element?(view, "#issue-pull-request", "Vendor filter")
+
+    view |> element("#issue-start-review") |> render_click()
+
+    assert %Task{id: task_id, stage: :review} = Repo.get_by(Task, issue_id: issue.id)
+    assert_redirect(view, ~p"/tasks/#{task_id}")
+  end
+
+  test "an issue with a linked pull request offers Review without asking GitHub again", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_linked",
+        identifier: "IPG-33",
+        title: "Linked already",
+        state: :in_progress
+      })
+      |> Repo.insert!()
+      |> Issue.pull_request_changeset(%{pr_number: 42, pr_url: "https://github.com/org/app/pull/42", pr_title: "Linked"})
+      |> Repo.update!()
+
+    reject(Issues, :link_pull_request, 2)
+
+    assert {:ok, view, html} = live(conn, ~p"/issues/#{issue.identifier}")
+    refute html =~ "Looking for a pull request"
+
+    assert has_element?(view, "#issue-start-review")
+    refute has_element?(view, "#issue-start-review[phx-disable-with]")
+    assert has_element?(view, "#issue-pull-request", "Linked")
+    refute has_element?(view, "#issue-start-plan")
+  end
+
+  test "an issue offers Plan when GitHub has no pull request for it or cannot say", %{conn: conn, project: project} do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_no_pr",
+        identifier: "IPG-32",
+        title: "Not started",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    for found <- [{:ok, nil}, {:error, :github_down}] do
+      expect(Issues, :link_pull_request, fn _scope, _issue -> found end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+      render_async(view)
+
+      assert has_element?(view, "#issue-start-plan")
+      refute has_element?(view, "#issue-start-review")
+      refute has_element?(view, "#issue-pull-request")
+    end
+  end
+
+  test "a pull request that cannot be reviewed says why", %{conn: conn, project: project} do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_adopt_refused",
+        identifier: "IPG-31",
+        title: "Built elsewhere",
+        state: :in_progress
+      })
+      |> Repo.insert!()
+      |> Issue.pull_request_changeset(%{pr_number: 41, pr_url: "https://github.com/org/app/pull/41"})
+      |> Repo.update!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    allow(Pipeline, self(), view.pid)
+
+    for {reason, said} <- [
+          {:pull_request_from_fork, "That pull request comes from a fork, which Rail cannot push fixes to."},
+          {{:pull_request_base, "release"}, "That pull request merges into release, not the default branch."},
+          {:pull_request_taken, "Another task already works on that pull request's branch."},
+          {"no checkout", "Could not check out the pull request: no checkout"},
+          {:task_exists, "Could not start: :task_exists"}
+        ] do
+      expect(Pipeline, :adopt_pull_request, fn _scope, _issue -> {:error, reason} end)
+
+      view |> element("#issue-start-review") |> render_click()
+
+      assert has_element?(view, "#flash-error", said)
+    end
+
+    # Starting found it closed, which let the link go, so the page offers Plan again.
+    expect(Pipeline, :adopt_pull_request, fn _scope, adopted ->
+      adopted |> Issue.pull_request_changeset(%{pr_number: nil, pr_url: nil}) |> Repo.update!()
+      {:error, :no_pull_request}
+    end)
+
+    view |> element("#issue-start-review") |> render_click()
+
+    assert has_element?(view, "#flash-error", "The pull request is no longer open.")
+    assert has_element?(view, "#issue-start-plan")
+  end
+
   test "a Duplicate issue reads as Duplicate and offers no start", %{conn: conn, project: project} do
     issue =
       %Issue{}
@@ -485,6 +894,58 @@ defmodule RailWeb.IssueLiveTest do
 
     assert has_element?(view, "#issue-status", "Duplicate")
     refute has_element?(view, "#issue-start")
+  end
+
+  test "a status picked in Properties shows at once, in a second tab too, and reaches Linear", %{
+    conn: conn,
+    project: project
+  } do
+    %Issue{id: issue_id} =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_pick",
+        identifier: "IPG-30",
+        title: "Pick a status",
+        state: :in_progress,
+        state_name: "In Progress"
+      })
+      |> Repo.insert!()
+
+    stub(Issues, :get_statuses, fn _scope, _project ->
+      {:ok, [%{id: "st_review", name: "In Review", state: :in_review}]}
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/issues/IPG-30")
+    {:ok, other_view, _html} = live(conn, ~p"/issues/IPG-30")
+    Req.Test.allow(Rail.Linear, self(), view.pid)
+
+    view |> element("#issue-status") |> render_click()
+    render_async(view)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"id" => "lin_page_pick", "input" => %{"stateId" => "st_review"}} = Jason.decode!(body)["variables"]
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueUpdate" => %{
+            "success" => true,
+            "issue" => %{
+              "state" => %{"name" => "In Review", "type" => "started"},
+              "updatedAt" => "2026-11-01T10:00:00.000Z"
+            }
+          }
+        }
+      })
+    end)
+
+    view |> element("#issue-status-picker-#{issue_id}-status-st_review") |> render_click()
+
+    assert has_element?(view, "#issue-status", "In Review")
+    assert has_element?(other_view, "#issue-status", "In Review")
+    assert %Issue{state: :in_progress, state_name: "In Review"} = Repo.get!(Issue, issue_id)
+    refute_enqueued(worker: SyncIssue)
   end
 
   test "an open page follows Linear closing its issue and stops offering to start it", %{
@@ -523,7 +984,7 @@ defmodule RailWeb.IssueLiveTest do
       }
     end
 
-    # Another issue closing leaves this page as it was.
+    # An unrelated issue closing leaves this page as it was.
     assert {:ok, _other} = Issues.handle_linear_webhook(workspace, duplicate.("lin_page_other", "IPG-22"))
     assert has_element?(view, "#issue-status", "Todo")
     assert has_element?(view, "#issue-start")
@@ -550,6 +1011,7 @@ defmodule RailWeb.IssueLiveTest do
     expect(Git, :get_or_create_worktree, fn _project, _task -> {:error, "no checkout"} end)
     allow(Git, self(), view.pid)
 
+    render_async(view)
     view |> element("#issue-start-plan") |> render_click()
 
     assert has_element?(view, "#flash-error", "Could not create the worktree: no checkout")
@@ -690,6 +1152,7 @@ defmodule RailWeb.IssueLiveTest do
       end
 
     expect(Git, :get_or_create_worktree, fn _project, _task -> {:error, "no checkout"} end)
+    expect(Git, :get_or_create_worktree, fn _project, _task -> {:error, {:github_api_error, 503}} end)
     expect(Git, :get_or_create_worktree, 3, fn _project, task -> {:ok, task.worktree_path} end)
     expect(Tools, :start_os_process, fn run, _argv -> {:error, {:spawn_failed, :enoent, run}} end)
     expect(Tools, :start_os_process, fn _run, _argv -> {:error, :dispatch_disabled} end)
@@ -699,8 +1162,12 @@ defmodule RailWeb.IssueLiveTest do
     allow(Git, self(), view.pid)
     allow(Tools, self(), view.pid)
 
+    render_async(view)
     view |> element("#issue-start-plan") |> render_click()
     assert has_element?(view, "#flash-error", "Could not create the worktree: no checkout")
+
+    view |> element("#issue-start-plan") |> render_click()
+    assert has_element?(view, "#flash-error", "Could not create the worktree: {:github_api_error, 503}")
 
     view |> element("#issue-start-plan") |> render_click()
     assert has_element?(view, "#flash-error", "Could not start the agent: :enoent")
@@ -709,6 +1176,7 @@ defmodule RailWeb.IssueLiveTest do
     allow(Git, self(), dispatch_view.pid)
     allow(Tools, self(), dispatch_view.pid)
 
+    render_async(dispatch_view)
     dispatch_view |> element("#issue-start-plan") |> render_click()
     assert has_element?(dispatch_view, "#flash-error", "Dispatch is switched off, so no agent was started.")
 
@@ -716,6 +1184,7 @@ defmodule RailWeb.IssueLiveTest do
     allow(Git, self(), other_view.pid)
     allow(Tools, self(), other_view.pid)
 
+    render_async(other_view)
     other_view |> element("#issue-start-plan") |> render_click()
     assert has_element?(other_view, "#flash-error", "Could not start: :unavailable")
   end
@@ -878,5 +1347,193 @@ defmodule RailWeb.IssueLiveTest do
     dead = get(conn, ~p"/issues/#{issue.identifier}")
     assert redirected_to(dead) == "/issues"
     refute dead.resp_body =~ "A secret title"
+  end
+
+  describe "parents, sub-issues and blockers" do
+    setup %{project: project} do
+      insert = fn identifier, attrs ->
+        %Issue{}
+        |> Issue.tracker_changeset(
+          Map.merge(
+            %{
+              project_id: project.id,
+              external_id: "lin_#{identifier}",
+              identifier: identifier,
+              title: "Title #{identifier}",
+              state: :todo
+            },
+            attrs
+          )
+        )
+        |> Repo.insert!()
+      end
+
+      {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+      parent = insert.("REL-1", %{})
+
+      %{
+        insert: insert,
+        workspace: workspace,
+        parent: parent,
+        done_child: insert.("REL-2", %{parent_external_id: parent.external_id, state: :done, state_name: "Done"}),
+        open_child:
+          insert.("REL-3", %{parent_external_id: parent.external_id, state: :in_progress, state_name: "In Review"})
+      }
+    end
+
+    test "a parent lists its sub-issues with their done count, and what blocks it and what it blocks", %{
+      conn: conn,
+      parent: parent,
+      open_child: open_child
+    } do
+      blocker = %Issue{external_id: "lin_rel_b", identifier: "REL-9", title: "Blocking", state: :todo, id: "iss_rel_b"}
+
+      finished = %Issue{
+        external_id: "lin_rel_f",
+        identifier: "REL-8",
+        title: "Was blocking",
+        state: :done,
+        id: "iss_rel_f"
+      }
+
+      elsewhere = %Issue{
+        external_id: "lin_oth",
+        identifier: "OTH-1",
+        state: :in_progress,
+        url: "https://linear.app/OTH-1"
+      }
+
+      waiting = %Issue{external_id: "lin_rel_w", identifier: "REL-7", title: "Waiting", state: :todo, id: "iss_rel_w"}
+
+      stub(Issues, :get_blockers, fn [%Issue{id: id}] when id == parent.id ->
+        %{
+          parent.external_id => %{
+            blocked_by: [
+              %{issue: blocker, in_project: true},
+              %{issue: elsewhere, in_project: false},
+              %{issue: finished, in_project: true}
+            ],
+            blocks: [%{issue: waiting, in_project: true}]
+          }
+        }
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues/#{parent.identifier}")
+      render_async(view)
+
+      refute has_element?(view, "#issue-parent-link")
+      assert has_element?(view, "#issue-sub-issues", "1/2")
+      assert has_element?(view, "#issue-sub-issues a[href='/issues/#{open_child.identifier}']", "In Review")
+      assert has_element?(view, "#issue-blocked-by h2", "2")
+      assert has_element?(view, "#issue-blocked-by a[href='/issues/REL-9']", "Blocking")
+      assert has_element?(view, "#issue-blocked-by a[href='https://linear.app/OTH-1']", "In another project")
+      assert has_element?(view, "#issue-blocked-by a[href='/issues/REL-8'] .text-slate-500", "Was blocking")
+      assert has_element?(view, "#issue-blocks a[href='/issues/REL-7']", "Waiting")
+    end
+
+    test "a sub-issue links its parent and shows no empty sections", %{conn: conn, parent: parent, open_child: open_child} do
+      # Linear failing on blockers leaves their sections out and nothing else.
+      stub(Issues, :get_blockers, fn _issues -> raise "Linear is down" end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues/#{open_child.identifier}")
+      render_async(view)
+
+      assert has_element?(view, "#issue-parent-link[title='Title REL-1'][href='/issues/#{parent.identifier}']", "REL-1")
+      assert has_element?(view, "#issue-status .text-emerald-500")
+      refute has_element?(view, "#issue-sub-issues")
+      refute has_element?(view, "#issue-blocked-by")
+      refute has_element?(view, "#issue-blocks")
+    end
+
+    test "a sub-issue changing or a new one arriving from Linear updates the parent's open page", %{
+      conn: conn,
+      parent: parent,
+      open_child: open_child,
+      workspace: workspace
+    } do
+      {:ok, view, _html} = live(conn, ~p"/issues/#{parent.identifier}")
+      render_async(view)
+      assert has_element?(view, "#issue-sub-issues", "1/2")
+
+      webhook = fn action, external_id, identifier, state, extra ->
+        %{
+          "type" => "Issue",
+          "action" => action,
+          "data" =>
+            Map.merge(
+              %{
+                "id" => external_id,
+                "teamId" => "lin_team_id",
+                "identifier" => identifier,
+                "title" => "Title #{identifier}",
+                "state" => state
+              },
+              extra
+            )
+        }
+      end
+
+      assert {:ok, _issue} =
+               Issues.handle_linear_webhook(
+                 workspace,
+                 webhook.("update", open_child.external_id, "REL-3", %{"name" => "Done", "type" => "completed"}, %{})
+               )
+
+      assert has_element?(view, "#issue-sub-issues", "2/2")
+
+      assert {:ok, _issue} =
+               Issues.handle_linear_webhook(
+                 workspace,
+                 webhook.("create", "lin_REL-4", "REL-4", %{"name" => "Todo", "type" => "unstarted"}, %{
+                   "parentId" => parent.external_id
+                 })
+               )
+
+      assert has_element?(view, "#issue-sub-issues", "2/3")
+      assert has_element?(view, "#issue-sub-issues a[href='/issues/REL-4']")
+    end
+
+    test "a blocker finishing through the webhook reads blockers again", %{
+      conn: conn,
+      parent: parent,
+      insert: insert,
+      workspace: workspace
+    } do
+      blocker = insert.("REL-5", %{})
+      test_pid = self()
+
+      stub(Issues, :get_blockers, fn [issue] ->
+        send(test_pid, :blockers_read)
+        %{issue.external_id => %{blocked_by: [%{issue: Repo.get!(Issue, blocker.id), in_project: true}], blocks: []}}
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues/#{parent.identifier}")
+      render_async(view)
+      assert_received :blockers_read
+      assert has_element?(view, "#issue-blocked-by h2", "1")
+
+      assert {:ok, _issue} =
+               Issues.handle_linear_webhook(workspace, %{
+                 "type" => "Issue",
+                 "action" => "update",
+                 "data" => %{
+                   "id" => blocker.external_id,
+                   "teamId" => "lin_team_id",
+                   "identifier" => "REL-5",
+                   "title" => "Title REL-5",
+                   "state" => %{"name" => "Done", "type" => "completed"}
+                 }
+               })
+
+      render_async(view)
+      assert_received :blockers_read
+      assert has_element?(view, "#issue-blocked-by h2", "0")
+
+      # An unrelated issue changing reads neither the issue nor its blockers.
+      unrelated = insert.("REL-6", %{})
+      send(view.pid, {:issue_changed, unrelated.id})
+      render_async(view)
+      refute_received :blockers_read
+    end
   end
 end

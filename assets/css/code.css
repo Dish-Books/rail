@@ -152,12 +152,24 @@
 [data-theme="dark"] .l-diff-minus {
   color: #ffc0b9;
 }
+.l-diff-minus-word {
+  background-color: #e7867f;
+}
+[data-theme="dark"] .l-diff-minus-word {
+  background-color: #603a36;
+}
 .l-diff-plus {
   color: #1a7f37;
   background-color: #b8d0bf;
 }
 [data-theme="dark"] .l-diff-plus {
   color: #98c379;
+}
+.l-diff-plus-word {
+  background-color: #85b88b;
+}
+[data-theme="dark"] .l-diff-plus-word {
+  background-color: #374d27;
 }
 .l-function {
   color: #6639ba;
@@ -347,6 +359,13 @@
 }
 [data-theme="dark"] .l-label-ruby {
   color: #e06c75;
+}
+.l-line-number-highlighted {
+  color: #1f2328;
+}
+[data-theme="dark"] .l-line-number-highlighted {
+  color: #c678dd;
+  background-color: #282c34;
 }
 .l-markup {
   color: #1f2328;

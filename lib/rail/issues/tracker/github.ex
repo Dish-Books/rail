@@ -23,6 +23,7 @@ defmodule Rail.Issues.Tracker.Github do
   alias Rail.Users.Schemas.User
 
   @ranks %{triage: 0, backlog: 1, todo: 2, in_progress: 3, in_review: 4, done: 5}
+  @statuses [:triage, :backlog, :todo, :in_progress, :in_review, :done, :canceled, :duplicate]
 
   @impl true
   # GitHub has no estimate; a sub-issue goes up as an issue of its own.
@@ -87,6 +88,10 @@ defmodule Rail.Issues.Tracker.Github do
     end
   end
 
+  # GitHub has no links on an issue apart from its body and comments, which people write.
+  @impl true
+  def link_url(%Issue{}, _url, _title), do: :ok
+
   # An issue is named by its number: `key#123`, `#123` or `123`.
   @impl true
   def canonical_identifier(%Project{key: key}, identifier) do
@@ -128,6 +133,29 @@ defmodule Rail.Issues.Tracker.Github do
 
   @impl true
   def get_asset(%Issue{}, _path), do: {:error, :unsupported}
+
+  # Rail reads no milestones or dependencies from GitHub.
+  @impl true
+  def get_cycles(%Project{}), do: {:ok, %{cycles: [], statuses: []}}
+
+  @impl true
+  def get_issue_relations(%Project{}, _external_ids), do: {:ok, %{}}
+
+  # GitHub has no list of its own, so a ticket's status is one of Rail's.
+  @impl true
+  def get_statuses(%Project{}) do
+    {:ok, Enum.map(@statuses, &%{id: Atom.to_string(&1), name: Issue.state_label(&1), state: &1})}
+  end
+
+  # Read back after the writes, since each of them moves `updated_at`.
+  @impl true
+  def set_status(_scope, %Issue{project: %Project{} = project} = issue, %{state: state}) do
+    with :ok <- update_issue(%{issue | state: state}, [:state], nil),
+         {:ok, token} <- token(project),
+         {:ok, live} <- GitHub.get_issue(token, project.github_repo, issue.number) do
+      {:ok, format_github_issue(project, live)}
+    end
+  end
 
   # Everyone signs in with GitHub, so anyone can own a GitHub issue.
   @impl true

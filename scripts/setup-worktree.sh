@@ -16,8 +16,11 @@
 # PORT/TEST_PORT = RAIL_PORT_BASE and +2, DB_SUFFIX=_rail<slot>, WORKTREE_SLOT =
 # 1000 + its Rail slot.
 #
-# A fresh worktree inherits the developer's own vars (secrets, the vault key, ...)
-# from the primary checkout's `.env`. Only the managed block is rewritten on rerun.
+# A fresh worktree made by hand inherits the developer's own vars (secrets, the vault
+# key, ...) from the primary checkout's `.env`. One Rail made inherits nothing: Rail
+# writes the project's `.env` into it, under markers of its own, once this succeeds.
+# Every worktree still reads DB_HOST/DB_PORT from the primary's. Only the managed
+# block is rewritten on rerun.
 #
 # `deps` and `_build` are copied from the primary checkout (copy-on-write where
 # supported) so the first compile is incremental. `rail_dev<suffix>` is created as
@@ -171,12 +174,12 @@ dev_db="rail_dev${db_suffix}"
 # The vars we own; everything else in the .env is the developer's and kept verbatim.
 managed_re='^(WORKTREE_SLOT|DB_SUFFIX|PORT|TEST_PORT|DB_HOST|DB_PORT)='
 
-# Our own .env on a rerun, the primary checkout's for a fresh worktree.
+# Our own .env on a rerun, the primary checkout's for a fresh worktree made by hand.
 source_env=""
 inherited_from=""
 if [ -f "$env_file" ]; then
   source_env="$env_file"
-elif [ "$is_primary" -eq 0 ] && [ -f "$primary_root/.env" ]; then
+elif [ "$is_primary" -eq 0 ] && [ -z "$rail_slot" ] && [ -f "$primary_root/.env" ]; then
   source_env="$primary_root/.env"
   inherited_from="$primary_root/.env"
 fi

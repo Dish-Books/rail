@@ -3,8 +3,10 @@ defmodule Rail.Pipeline.Utils.PlanRunFinishedTest do
 
   import Rail.Pipeline.Utils.PlanRunFinished
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
   alias Rail.Roles
@@ -37,6 +39,8 @@ defmodule Rail.Pipeline.Utils.PlanRunFinishedTest do
   """
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -84,11 +88,27 @@ defmodule Rail.Pipeline.Utils.PlanRunFinishedTest do
     assert %Run{error: "The Plan agent did not save a ticket."} = plan_run_finished(run, [])
   end
 
-  test "options that are neither three nor picked record how many", %{run: run, ticket: ticket, options: options} do
+  test "fewer than three options and no pick record how many", %{run: run, ticket: ticket, options: options} do
     ticket.()
+    options.(["a"], ["a"])
+
+    assert %Run{error: "The Plan agent saved 1 design option. It needs at least 3, or a pick."} =
+             plan_run_finished(run, [])
+
     options.(["a", "b"], ["a", "b"])
 
-    assert %Run{error: "The Plan agent saved 2 design options. It needs 3, or a pick."} = plan_run_finished(run, [])
+    assert %Run{error: "The Plan agent saved 2 design options. It needs at least 3, or a pick."} =
+             plan_run_finished(run, [])
+  end
+
+  test "four or more options and no pick finish clean", %{run: run, ticket: ticket, plan: plan, options: options} do
+    ticket.()
+    plan.()
+    options.(["a", "b", "c", "d"], ["a", "b", "c", "d"])
+    assert %Run{error: nil} = plan_run_finished(run, [])
+
+    options.(["a", "b", "c", "d", "e"], ["a", "b", "c", "d", "e"])
+    assert %Run{error: nil} = plan_run_finished(run, [])
   end
 
   test "an option missing its page or screenshot is named", %{run: run, ticket: ticket, options: options, design_dir: dir} do
@@ -122,6 +142,25 @@ defmodule Rail.Pipeline.Utils.PlanRunFinishedTest do
 
     options.(["b"], [])
     File.write!(Path.join(dir, "picked"), "b")
+    assert %Run{error: nil} = plan_run_finished(run, [])
+  end
+
+  test "with Architect off, a ticket and no plan finish clean", %{run: run, ticket: ticket} do
+    Repo.preload(run.task, :issue).issue |> Ecto.Changeset.change(skipped_steps: [:architect]) |> Repo.update!()
+    ticket.()
+
+    assert %Run{error: nil} = plan_run_finished(run, [])
+  end
+
+  test "with Product and Architect off, the round holding the issue finishes clean with nothing saved", %{run: run} do
+    issue =
+      Repo.preload(run.task, :issue).issue
+      |> Ecto.Changeset.change(skipped_steps: [:product, :architect])
+      |> Repo.update!()
+
+    {:ok, round} = Pipeline.create_round(run.task)
+    round |> Round.issue_ticket_changeset(issue) |> Repo.update!()
+
     assert %Run{error: nil} = plan_run_finished(run, [])
   end
 end

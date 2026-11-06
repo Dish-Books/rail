@@ -12,12 +12,15 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   degrades to a message that is still queued rather than one that is lost.
   """
 
+  import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.DeliverPlanComments
   import Rail.Pipeline.Utils.PrepareTurn
   import Rail.Pipeline.Utils.PrepareWorktree
   import Rail.Pipeline.Utils.StartWorktreeSetup
+  import Rail.Pipeline.Utils.WithTaskLock
 
   alias Ecto.Adapters.SQL.Sandbox
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
@@ -32,9 +35,8 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   @doc """
   Dispatches `run`'s queued message.
 
-  Spawns in the background by default. `async: false` runs it inline and returns
-  `{:ok, os_process}`, which is what a caller that needs to see the spawn itself
-  should pass.
+  Spawns in the background, under the task's lock, by default. `async: false` runs it inline in the caller's process,
+  taking no lock, and returns `{:ok, os_process}`, which is what a caller that needs to see the spawn itself passes.
   """
   def dispatch_message(%Run{} = run, opts \\ []) do
     # Plan comments queued in the message count as sent the moment it goes out, as one sent at once does.
@@ -43,9 +45,10 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
     if Keyword.get(opts, :async, true) do
       caller = self()
 
+      # Under the task's lock, so a message to a run Discard or Back to Plan deleted meanwhile finds no run.
       Elixir.Task.Supervisor.start_child(Rail.TaskSupervisor, fn ->
         allow_sandbox(caller)
-        execute(run, opts)
+        with_task_lock(run.task_id, fn -> execute(run, opts) end)
       end)
 
       {:ok, run}
@@ -138,7 +141,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",
         read_only: false,
-        system_prompt: role.system_prompt,
+        system_prompt: system_prompt(task, role),
         conversation_id: run.conversation_id,
         work_dir: worktree_path
       )
@@ -156,6 +159,12 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
         {:error, :dispatch_disabled}
     end
   end
+
+  # A custom stage's prompt is the one its issue copied from the workflow file, never the role's.
+  defp system_prompt(%Task{} = task, %Role{custom_stage: name}) when is_binary(name),
+    do: Issue.custom_stage(Repo.preload(task, :issue).issue, name).prompt
+
+  defp system_prompt(%Task{}, %Role{} = role), do: role.system_prompt
 
   # A design picked while Plan was working was recorded without a message, so the next one carries it. Plan has
   # heard a pick once its plan is saved for it.
@@ -179,9 +188,10 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   end
 
   # The dispatch runs in the background, so whoever queued the message only learns
-  # it went out, or came back, from the run's topic.
-  defp broadcast_changed(%Run{id: id}) do
+  # it went out, or came back, from the run's topic, and a list showing the run from `"pipeline"`.
+  defp broadcast_changed(%Run{id: id} = run) do
     Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{id}", {:run_changed, id})
+    broadcast_pipeline_changed(run)
   end
 
   defp fail(%Run{} = run, reason) do

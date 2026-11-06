@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.ListRunsTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -9,6 +10,8 @@ defmodule Rail.Pipeline.Actions.ListRunsTest do
   alias Rail.Users
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     scope = system_scope()
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)

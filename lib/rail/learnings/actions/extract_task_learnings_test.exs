@@ -17,6 +17,10 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
   alias Rail.Users
 
   setup %{project: project} do
+    # A role's prompt is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: these see no prompt file on the default branch, as when there is no clone.
+    stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     id = System.unique_integer([:positive])
 
     {:ok, user} =

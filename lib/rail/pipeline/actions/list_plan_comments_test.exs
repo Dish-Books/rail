@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.ListPlanCommentsTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.PlanComment
@@ -10,6 +11,9 @@ defmodule Rail.Pipeline.Actions.ListPlanCommentsTest do
   alias Rail.Users
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -25,7 +29,11 @@ defmodule Rail.Pipeline.Actions.ListPlanCommentsTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Plan Comments"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+    # Git is stubbed, so the worktree is only ever looked for: a plain directory stands in for it.
+    worktree_path = Path.join(System.tmp_dir!(), "rail_lpc_wt_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(worktree_path)
+    on_exit(fn -> File.rm_rf(worktree_path) end)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     dir = Path.join(task.scratch_path, "design")
     File.mkdir_p!(dir)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
@@ -130,5 +138,28 @@ defmodule Rail.Pipeline.Actions.ListPlanCommentsTest do
     {:ok, %{id: later_design}} = Pipeline.create_plan_comment(ada, run, %{attrs | body: "Later."})
 
     assert [%{id: ^first_design}, %{id: ^later_design}, %{id: ^ticket_id}] = Pipeline.list_plan_comments(ada, task)
+  end
+
+  test "sent: true adds everyone's queued and sent comments with their authors, never another person's unsent one", %{
+    task: task,
+    run: run,
+    ada: ada,
+    grace: %{user: %{id: grace_id}} = grace,
+    attrs: attrs
+  } do
+    {:ok, %{id: sent_id}} = Pipeline.create_plan_comment(grace, run, %{attrs | body: "Sent."})
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    {:ok, :sent, _run} = Pipeline.send_plan_comments(grace, run)
+    {:ok, %{id: queued_id}} = Pipeline.create_plan_comment(grace, run, %{attrs | body: "Queued."})
+    {:ok, _running} = Pipeline.update_run(Repo.reload!(run), %{status: :running})
+    {:ok, :queued, _run} = Pipeline.send_plan_comments(grace, Repo.reload!(run))
+    {:ok, _unsent} = Pipeline.create_plan_comment(grace, run, %{attrs | body: "Not sent."})
+    {:ok, %{id: adas_id}} = Pipeline.create_plan_comment(ada, run, attrs)
+
+    assert [
+             %PlanComment{id: ^sent_id, status: :sent, user: %{id: ^grace_id}},
+             %PlanComment{id: ^queued_id, status: :queued, user: %{id: ^grace_id}},
+             %PlanComment{id: ^adas_id, status: :unsent}
+           ] = Pipeline.list_plan_comments(ada, task, sent: true)
   end
 end

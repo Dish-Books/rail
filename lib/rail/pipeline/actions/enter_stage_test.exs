@@ -2,8 +2,10 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -37,25 +39,66 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Enter Stage Issue"})
+    stages = [
+      %IssueStage{stage: :plan},
+      %IssueStage{stage: :engineer},
+      %IssueStage{stage: :custom, name: "License check", prompt: "Check each changed dependency's license."},
+      %IssueStage{stage: :review}
+    ]
+
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Enter Stage Issue", stages: stages})
     {:ok, task} = Pipeline.create_task(issue, :plan)
 
     %{project: project, task: task, roles: roles}
   end
 
+  # Git is only ever asked through Rail.Git, so the worktree is a plain directory, on the commit whose sha is all a's
+  # with nothing changed against main, and the repo has no prompts of its own.
   setup %{task: task} do
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
+
+    stub(Git, :branch_fingerprint, fn ^worktree ->
+      %{head_sha: String.duplicate("a", 40), dirty_digest: String.duplicate("0", 64)}
+    end)
+
+    stub(Git, :load_diff, fn _scope, %Task{worktree_path: ^worktree}, :branch -> {:ok, []} end)
+
+    stub(Git, :read_default_branch_file, fn %Project{}, path ->
+      {:error, "fatal: path '#{path}' does not exist in 'refs/remotes/origin/main'"}
+    end)
 
     %{task: task}
   end
 
-  test "writes the stage and starts the run that belongs to it", %{task: task, roles: roles} do
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+  test "entering a custom stage records it and spawns its run on its own role, with Engineer's model and its prompt",
+       %{task: task, roles: roles} do
+    %{model: model, id: engineer_id} = roles[:engineer]
 
-    %{id: review_lead_role_id} = roles[:review_lead]
+    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
+      assert "Check each changed dependency's license." in argv
+      assert model in argv
+      {:ok, %OsProcess{run: spawned, task: task}}
+    end)
 
-    assert {:ok, %Run{role_id: ^review_lead_role_id, status: :running}} = Pipeline.enter_stage(task, :review)
-    assert %Task{stage: :review} = Repo.reload!(task)
+    assert {:ok, %Run{status: :running, role: %Role{id: role_id, custom_stage: "License check"}}} =
+             Pipeline.enter_stage(task, {:custom, "License check"})
+
+    assert role_id != engineer_id
+    assert %Task{stage: :custom, custom_stage: "License check"} = Repo.reload!(task)
+    assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: task.issue_id})
+  end
+
+  test "a run that could not start is said on the pipeline topic once it settles", %{task: %Task{id: task_id} = task} do
+    stub(Tools, :start_os_process, fn _spawned, _argv -> {:error, :dispatch_disabled} end)
+    {:ok, _entered} = Pipeline.enter_stage(task, :split, start: false)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+
+    assert {:ok, %Run{status: :failed}} = Pipeline.enter_stage(task, :review)
+    assert_received {:pipeline_changed, ^task_id}
+    assert_received {:pipeline_changed, ^task_id}
   end
 
   test "entering a stage, started or not, tells whoever is watching the pipeline", %{task: %Task{id: task_id} = task} do
@@ -103,10 +146,8 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: task.issue_id})
   end
 
-  test "Review entered with a start spawns the review agent on its own brief, with no subagents", %{
-    task: task,
-    roles: roles
-  } do
+  test "writes the stage and starts the run that belongs to it: Review's spawns the review agent on its own brief, with no subagents",
+       %{task: task, roles: roles} do
     %{id: review_lead_role_id} = roles[:review_lead]
 
     expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] = argv ->
@@ -116,21 +157,16 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     end)
 
     assert {:ok, %Run{role_id: ^review_lead_role_id, status: :running}} = Pipeline.enter_stage(task, :review)
+    assert %Task{stage: :review} = Repo.reload!(task)
   end
 
   test "an engineer starts with the prompt merged to its project's .rail/prompts, not the stored one", %{
-    project: project,
+    project: %Project{id: project_id},
     task: task
   } do
-    remote = create_temp_git_repo(prefix: "rail_enter_prompt_remote")
-    File.mkdir_p!(Path.join(remote, ".rail/prompts"))
-    File.write!(Path.join(remote, ".rail/prompts/engineer.md"), "From the repo.\n")
-    git!(remote, ["add", "."])
-    git!(remote, ["commit", "-m", "add prompt"])
-    clone = create_temp_git_repo(prefix: "rail_enter_prompt_clone")
-    git!(clone, ["remote", "add", "origin", remote])
-    git!(clone, ["fetch", "origin", "main"])
-    {:ok, _project} = Projects.update_project(system_scope(), project, %{clone_path: clone})
+    expect(Git, :read_default_branch_file, fn %Project{id: ^project_id}, ".rail/prompts/engineer.md" ->
+      {:ok, "From the repo.\n"}
+    end)
 
     expect(Tools, :start_os_process, fn spawned, argv ->
       assert ["--append-system-prompt", "From the repo."] in Enum.chunk_every(argv, 2, 1)
@@ -169,9 +205,11 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert %Run{stage_outcome: :in_progress} = Repo.reload!(done)
   end
 
-  test "a worktree Rail cannot make is recorded on the run, not swallowed", %{task: task} do
-    Req.Test.stub(Rail.GitHub.Client, &Req.Test.json(&1, %{"token" => "ghs_token"}))
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: "/tmp/rail-no-such-worktree"})
+  test "a worktree Rail cannot make is recorded on the run, not swallowed", %{task: %Task{id: task_id} = task} do
+    expect(Git, :get_or_create_worktree, fn %Project{}, %Task{id: ^task_id} ->
+      {:error,
+       "Failed to create worktree at #{task.worktree_path} (git worktree add exited 128): fatal: invalid reference"}
+    end)
 
     assert {:ok, %Run{status: :failed, error: error}} = Pipeline.enter_stage(task, :review)
     assert error =~ "Could not prepare the worktree"

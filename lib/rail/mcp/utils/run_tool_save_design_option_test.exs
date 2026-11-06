@@ -39,4 +39,14 @@ defmodule Rail.Mcp.Utils.RunToolSaveDesignOptionTest do
   test "a refusal is passed back as the changeset", %{task: task} do
     assert {:error, %Ecto.Changeset{valid?: false}} = run_tool_save_design_option(task, %{"key" => "round-bar"}, [])
   end
+
+  test "a task whose workflow turned Design off refuses the option, saying Design is off", %{task: task} do
+    issue = Repo.preload(task, :issue).issue |> Ecto.Changeset.change(skipped_steps: [:design]) |> Repo.update!()
+    option = %{"key" => "round-bar", "title" => "Round bar", "summary" => "A bar."}
+
+    assert {:refused, "Nothing saved: Design is off for this task, so it has no design options."} =
+             run_tool_save_design_option(%{task | issue: issue}, option, [])
+
+    assert Pipeline.read_design(task) == nil
+  end
 end

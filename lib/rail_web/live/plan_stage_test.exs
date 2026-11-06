@@ -5,12 +5,16 @@ defmodule RailWeb.Live.PlanStageTest do
   import Phoenix.LiveViewTest
   import Rail.Pipeline.Utils.BuildTask
 
+  alias Rail.Git
   alias Rail.Issues
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Scope
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
   # The smallest plan the structure allows: one decision, one card and one criterion, and no data changes.
@@ -41,6 +45,11 @@ defmodule RailWeb.Live.PlanStageTest do
   """
 
   setup %{conn: conn, project: project} do
+    # What is merged is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: these pages see nothing on the default branch, as when there is no clone.
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :list_default_branch_paths, fn _project, paths -> if paths == [], do: MapSet.new() end)
+
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_plan_stage",
@@ -115,7 +124,317 @@ defmodule RailWeb.Live.PlanStageTest do
     assert has_element?(view, "#plan-section-ticket")
     assert has_element?(view, "#plan-section-design")
     assert has_element?(view, "#plan-section-plan #plan-plan")
+    assert has_element?(view, "#plan-tab-plan")
+    refute has_element?(view, "#plan-tab-split")
     refute has_element?(view, "#plan-section-split")
+
+    assert ["plan-tab-ticket", "plan-tab-design", "plan-tab-plan"] ==
+             view |> render() |> Floki.parse_document!() |> Floki.attribute("[data-qa='plan_tab']", "id")
+
+    refute has_element?(view, "[data-qa='plan_tab_off']")
+    refute has_element?(view, "#plan-ticket-from-issue")
+  end
+
+  test "a file a custom stage saved before Plan heads the tabs, saying when it was saved and which stages get it", %{
+    conn: conn,
+    task: task
+  } do
+    stages = [
+      %IssueStage{stage: :custom, name: "Missing strings", prompt: "List the keys."},
+      %IssueStage{stage: :plan},
+      %IssueStage{stage: :engineer},
+      %IssueStage{stage: :custom, name: "License check", prompt: "Check each license."},
+      %IssueStage{stage: :review}
+    ]
+
+    Repo.preload(task, :issue).issue
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.put_embed(:stages, stages)
+    |> Repo.update!()
+
+    File.mkdir_p!(Path.join(task.scratch_path, "stages"))
+
+    File.write!(
+      Path.join([task.scratch_path, "stages", "1-missing-strings.md"]),
+      "12 keys in `en.json` have no German entry.\n"
+    )
+
+    File.write!(Path.join([task.scratch_path, "stages", "4-license-check.md"]), "Not Plan's to show.\n")
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    assert ["plan-tab-stage-1", "plan-tab-ticket", "plan-tab-design", "plan-tab-plan"] ==
+             view |> render() |> Floki.parse_document!() |> Floki.attribute("[data-qa='plan_tab']", "id")
+
+    assert has_element?(view, "#plan-tab-stage-1", "Missing strings")
+    assert has_element?(view, "#plan-earlier-stage-1", "Earlier stage")
+    assert has_element?(view, "#plan-earlier-stage-1", "Plan, Implement, License check and Review get this file")
+    assert has_element?(view, "#plan-earlier-stage-1 code", "en.json")
+    refute has_element?(view, "#plan-section-stage-4")
+
+    # Before Plan has saved its plan, the earlier stage's file is what the tab opens on.
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: nil])
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+    assert has_element?(view, "#plan-tab-stage-1[aria-selected='true']")
+  end
+
+  describe "a task whose workflow turned steps off" do
+    setup %{task: task} do
+      skipping = fn steps ->
+        Repo.preload(task, :issue).issue |> Ecto.Changeset.change(skipped_steps: steps) |> Repo.update!()
+      end
+
+      %{skipping: skipping}
+    end
+
+    test "with Product off the Ticket tab is the issue, saying why, and its lines take no comment", %{
+      conn: conn,
+      task: task,
+      skipping: skipping
+    } do
+      issue = skipping.([:product])
+      issue |> Ecto.Changeset.change(description: "Update the **dependencies**.") |> Repo.update!()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+      assert has_element?(
+               view,
+               "#plan-ticket-from-issue",
+               "Product is off for this workflow, so the issue's description is the ticket."
+             )
+
+      assert has_element?(view, "#plan-ticket-issue-title", "Plan Stage Issue")
+      assert has_element?(view, "#plan-ticket-from-issue strong", "dependencies")
+      refute has_element?(view, "[data-qa='plan_ticket']")
+      refute has_element?(view, "[data-qa='plan_tab_off']")
+    end
+
+    test "with Design off the Design tab is marked off and says so", %{conn: conn, task: task, skipping: skipping} do
+      skipping.([:design])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+      assert has_element?(view, "#plan-tab-design #plan-tab-design-off[title='Off for this workflow']")
+      assert has_element?(view, "#plan-design-off", "Off for this workflow")
+      assert has_element?(view, "#plan-design-off", "This workflow turned Design off")
+      refute has_element?(view, "#plan-design-pending")
+      refute has_element?(view, "#plan-tab-plan-off")
+    end
+
+    test "with Architect off the Plan tab is marked off and the status asks for the ticket", %{
+      conn: conn,
+      task: task,
+      skipping: skipping
+    } do
+      skipping.([:product, :architect])
+      Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: nil])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+      assert has_element?(view, "#plan-tab-plan-off")
+      assert has_element?(view, "#plan-plan-off", "This workflow turned Architect off")
+      assert has_element?(view, "#plan-plan-off", "Engineer builds from the issue.")
+      refute has_element?(view, "#plan-plan-pending")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Review the ticket")
+    end
+  end
+
+  test "every part is a panel on the page with only the opening one shown, and a tab switches in the browser alone", %{
+    conn: conn,
+    task: task
+  } do
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    assert has_element?(view, "#plan-section-plan[role='tabpanel']:not(.hidden) #plan-plan")
+    assert has_element?(view, "#plan-section-ticket.hidden [data-qa='plan_ticket']")
+    assert has_element?(view, "#plan-section-design.hidden")
+    assert has_element?(view, "#plan-tab-plan[aria-selected='true']")
+    assert has_element?(view, "#plan-tab-ticket[aria-selected='false']")
+
+    doc = view |> render() |> Floki.parse_document!()
+
+    # Only these four on every tab, so nothing goes to the server.
+    for id <- ["ticket", "design", "plan"] do
+      [click] = Floki.attribute(doc, "#plan-tab-#{id}", "phx-click")
+      hidden = "#plan-panels-#{task.id} > [role='tabpanel']:not(#plan-section-#{id})"
+      section = "#plan-section-#{id}"
+      unselected = "#plan-tabs-#{task.id} > [role='tab']:not(#plan-tab-#{id})"
+      tab = "#plan-tab-#{id}"
+
+      assert [
+               ["hide", %{"to" => ^hidden}],
+               ["show", %{"to" => ^section, "display" => "block"}],
+               ["set_attr", %{"to" => ^unselected, "attr" => ["aria-selected", "false"]}],
+               ["set_attr", %{"to" => ^tab, "attr" => ["aria-selected", "true"]}]
+             ] = Jason.decode!(click)
+    end
+  end
+
+  test "after the first render the browser alone keeps which panel shows and which tab reads selected", %{
+    conn: conn,
+    task: task
+  } do
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+    doc = view |> render() |> Floki.parse_document!()
+
+    assert [_ticket, _design, _plan] =
+             panels = Floki.attribute(doc, "#plan-panels-#{task.id} > [role='tabpanel']", "phx-mounted")
+
+    assert Enum.all?(panels, &(Jason.decode!(&1) == [["ignore_attrs", %{"attrs" => ["class"]}]]))
+
+    assert [_ticket, _design, _plan] = tabs = Floki.attribute(doc, "#plan-tabs-#{task.id} > [role='tab']", "phx-mounted")
+    assert Enum.all?(tabs, &(Jason.decode!(&1) == [["ignore_attrs", %{"attrs" => ["aria-selected"]}]]))
+  end
+
+  test "a tab the page names opens in place of the one it would pick, and one it does not show is passed over", %{
+    conn: conn,
+    task: task
+  } do
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
+    send(view.pid, {:open_plan, %{tab: "design"}})
+    _settled = render(view)
+
+    assert has_element?(view, "#plan-tab-design[aria-selected='true']")
+    assert has_element?(view, "#plan-section-design:not(.hidden)")
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
+    send(view.pid, {:open_plan, %{tab: "split"}})
+    _settled = render(view)
+
+    assert has_element?(view, "#plan-tab-plan[aria-selected='true']")
+  end
+
+  test "the page opens on Ticket before a plan is saved, and a plan saved after leaves it there", %{
+    conn: conn,
+    task: task
+  } do
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: nil])
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+    assert has_element?(view, "#plan-section-ticket:not(.hidden)")
+    assert has_element?(view, "#plan-section-plan.hidden #plan-plan-pending")
+
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
+    _settled = render(view)
+
+    assert has_element?(view, "#plan-section-plan.hidden #plan-plan")
+    assert has_element?(view, "#plan-section-ticket:not(.hidden)")
+    assert has_element?(view, "#plan-tab-ticket[aria-selected='true']")
+    assert has_element?(view, "#plan-tab-plan[aria-selected='false']")
+  end
+
+  test "while three options wait for a pick the page opens on Design, whose tab raises a hand through every save", %{
+    conn: conn,
+    task: task
+  } do
+    dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(dir)
+
+    for key <- ["cards", "table", "timeline"] do
+      File.write!(Path.join(dir, "#{key}.html"), "<h1>#{key}</h1>")
+      File.write!(Path.join(dir, "#{key}.png"), "png bytes")
+      {:ok, _option} = Pipeline.save_design_option(task, %{key: key, title: key, summary: "#{key}."})
+    end
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+    assert has_element?(view, "#plan-section-design:not(.hidden) #design-options")
+    assert has_element?(view, "#plan-tab-design[aria-selected='true'] #plan-tab-design-waiting")
+    refute has_element?(view, "#plan-tab-ticket [data-qa='plan_tab_waiting']")
+    refute has_element?(view, "#plan-tab-plan [data-qa='plan_tab_waiting']")
+
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: String.replace(@plan, "All of it.", "Revised.")})
+    _settled = render(view)
+
+    assert has_element?(view, "#plan-section-plan.hidden #plan-plan", "Revised.")
+    assert has_element?(view, "#plan-section-design:not(.hidden)")
+    assert has_element?(view, "#plan-tab-design-waiting")
+
+    File.write!(Path.join(dir, "picked"), "table")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+    refute has_element?(view, "#plan-tab-design-waiting")
+    assert has_element?(view, "#plan-section-plan:not(.hidden)")
+    assert has_element?(view, "#plan-section-design.hidden")
+  end
+
+  test "with four options and the run stopped, each has a tab, Design raises a hand, and picking the fourth keeps only it",
+       %{conn: conn, task: task, run: run} do
+    # Picking tells the stopped run, which resumes in a worktree that is only a directory and spawns nothing.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(dir)
+
+    for key <- ["cards", "table", "timeline", "cards-table"] do
+      File.write!(Path.join(dir, "#{key}.html"), "<h1>#{key}</h1>")
+      File.write!(Path.join(dir, "#{key}.png"), "png bytes")
+      {:ok, _option} = Pipeline.save_design_option(task, %{key: key, title: "Title #{key}", summary: "#{key}."})
+    end
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+    assert has_element?(view, "#plan-tab-design[aria-selected='true'] #plan-tab-design-waiting")
+    refute has_element?(view, "[id^='design-tab-missing-']")
+
+    for key <- ["cards", "table", "timeline", "cards-table"] do
+      view |> element("#design-tab-#{key}") |> render_click()
+      assert has_element?(view, "[role='tablist'][aria-label='Design options'] #design-tab-#{key}", "Title #{key}")
+      assert has_element?(view, "#design-option-title", "Title #{key}")
+      assert has_element?(view, "#design-comment-control #pick-design-#{key}", "Use this design")
+      refute has_element?(view, "#pick-in-conversation")
+    end
+
+    view |> element("#pick-design-cards-table") |> render_click()
+
+    assert File.read!(Path.join(dir, "picked")) == "cards-table"
+    assert %{picked: "cards-table", options: [%{key: "cards-table"}]} = Pipeline.read_design(task)
+    assert Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "I picked Title cards-table (cards-table)."))
+    refute File.exists?(Path.join(dir, "cards.html"))
+    refute has_element?(view, "#plan-tab-design-waiting")
+    refute has_element?(view, "[role='tablist'][aria-label='Design options']")
+    assert has_element?(view, "#plan-section-design #design-option-cards-table", "Picked")
+  end
+
+  test "a fourth option saved while two pages are open shows on both as a tab, without a reload", %{
+    conn: conn,
+    task: task
+  } do
+    dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(dir)
+
+    for key <- ["cards", "table", "timeline", "cards-table"] do
+      File.write!(Path.join(dir, "#{key}.html"), "<h1>#{key}</h1>")
+      File.write!(Path.join(dir, "#{key}.png"), "png bytes")
+    end
+
+    for key <- ["cards", "table", "timeline"],
+        do: {:ok, _option} = Pipeline.save_design_option(task, %{key: key, title: "Title #{key}", summary: "#{key}."})
+
+    assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+    assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+    refute has_element?(two, "#design-tab-cards-table")
+
+    {:ok, _option} =
+      Pipeline.save_design_option(task, %{key: "cards-table", title: "Cards with a table", summary: "Both."})
+
+    for view <- [one, two] do
+      _settled = render(view)
+      assert has_element?(view, "#design-tab-cards-table", "Cards with a table")
+      assert has_element?(view, "#design-tab-cards", "Title cards")
+      assert has_element?(view, "#plan-tab-design-waiting")
+    end
+  end
+
+  test "a tab Plan is writing carries a spinner and no hand", %{conn: conn, task: task, run: run} do
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [ticket: nil, plan: nil])
+    {:ok, _working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    assert has_element?(view, "#plan-tab-ticket-working", "being written")
+    assert has_element?(view, "#plan-tab-design-working")
+    refute has_element?(view, "#plan-tab-plan-working")
+    refute has_element?(view, "[data-qa='plan_tab_waiting']")
   end
 
   test "a pull request handed over shows the issue's ticket and where it came from, with nothing to approve", %{
@@ -159,11 +478,8 @@ defmodule RailWeb.Live.PlanStageTest do
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
     assert has_element?(view, "#review-item-plan[title='Plan: From PR #212, no plan']")
-    assert has_element?(view, "#plan-section-ticket-status", "From the issue")
     assert has_element?(view, "#plan-ticket-title", "Hosts on the Sandboxes page")
-    assert has_element?(view, "#plan-section-design-status", "None")
     assert has_element?(view, "#plan-design-submitted", "None. Submitted work has no design options.")
-    assert has_element?(view, "#plan-section-plan-status", "From a pull request")
     assert has_element?(view, "#plan-submitted", "Handed to Rail by plan_stage")
     assert has_element?(view, "#plan-submitted-pr[href='https://github.com/example/test-seed/pull/212']", "#212")
 
@@ -263,6 +579,56 @@ defmodule RailWeb.Live.PlanStageTest do
     refute has_element?(view, "#plan-plan", "In this plan")
   end
 
+  test "the plan's cards read New or Changed off the default branch, which a load with the same paths does not ask again",
+       %{conn: conn, task: task} do
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: sheet_plan()})
+
+    # Once for the first render and once for the connected page; no later load asks again.
+    expect(Git, :list_default_branch_paths, 2, fn %{github_repo: "example/test-seed"}, paths ->
+      assert paths == [
+               "lib/rail/pipeline.ex",
+               "lib/rail/pipeline/actions/old_send_back.ex",
+               "lib/rail/pipeline/actions/send_back_to_architect.ex",
+               "lib/rail_web/live/review_stage.ex",
+               "priv/repo/migrations/20261022000000_add_sent_back_note.exs"
+             ]
+
+      MapSet.new(["lib/rail/pipeline.ex"])
+    end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    assert has_element?(view, "#plan-card-1 [data-qa='plan_card_new']", "New")
+    assert has_element?(view, "#plan-card-2 [data-qa='plan_card_changed']", "Changed")
+
+    assert has_element?(
+             view,
+             "#plan-card-2 a[href='https://github.com/example/test-seed/blob/main/lib/rail/pipeline.ex']"
+           )
+
+    assert has_element?(view, "#plan-group-pipeline [data-qa='plan_group_count']", "1 new · 1 changed · 1 deleted")
+
+    {:ok, _ticket} =
+      Pipeline.save_plan(task, %{title: "Previews again", description: "## Acceptance criteria\n\n- One\n"})
+
+    _settled = render(view)
+    assert has_element?(view, "#plan-section-ticket", "Previews again")
+    assert has_element?(view, "#plan-card-2 [data-qa='plan_card_changed']")
+  end
+
+  test "when the clone cannot say, the cards read neither New nor Changed and the groups count their files", %{
+    conn: conn,
+    task: task
+  } do
+    expect(Git, :list_default_branch_paths, 2, fn _project, ["lib/rail.ex"] -> nil end)
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    refute has_element?(view, "#plan-card-1 [data-qa='plan_card_new']")
+    refute has_element?(view, "#plan-card-1 [data-qa='plan_card_changed']")
+    refute has_element?(view, "#plan-card-1 [data-qa='plan_card_link']")
+    assert has_element?(view, "#plan-group-lib [data-qa='plan_group_count']", "1 file")
+  end
+
   test "a plan saved before its ticket still lays out, its criteria read by their numbers", %{conn: conn, task: task} do
     Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [ticket: nil])
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
@@ -300,6 +666,151 @@ defmodule RailWeb.Live.PlanStageTest do
 
     assert has_element?(view, "#plan-card-1 [data-qa='plan_card_sketch'][open]")
     assert has_element?(view, "#plan-criteria [data-qa='plan_criterion']", "Not covered")
+  end
+
+  describe "reviewed cards" do
+    setup %{task: task} do
+      {:ok, _plan} = Pipeline.save_plan(task, %{plan: sheet_plan()})
+      %{path: "lib/rail/pipeline/actions/send_back_to_architect.ex"}
+    end
+
+    test "marking a card collapses it and moves both counts, and a second click on the same state changes nothing", %{
+      conn: conn,
+      user: user,
+      task: task,
+      path: path
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+      assert has_element?(view, "#plan-reviewed-count", "0 of 5 reviewed")
+      assert has_element?(view, "#plan-card-1", "Refuses unless the task is at :review and idle.")
+
+      toggle = element(view, "#plan-card-1 [data-qa='plan_card_reviewed']")
+      [digest] = toggle |> render() |> Floki.parse_fragment!() |> Floki.attribute("button", "phx-value-digest")
+      render_click(toggle)
+
+      assert has_element?(view, "#plan-card-1 [data-qa='plan_card_reviewed'][aria-pressed='true']")
+      refute has_element?(view, "#plan-card-1", "Refuses unless the task is at :review and idle.")
+      refute has_element?(view, "#plan-card-1 [data-qa='plan_card_sketch']")
+      assert has_element?(view, "#plan-reviewed-count", "1 of 5 reviewed")
+      assert has_element?(view, "#plan-group-pipeline [data-qa='plan_group_reviewed']", "1 of 3 reviewed")
+      assert has_element?(view, "#plan-group-web [data-qa='plan_group_reviewed']", "0 of 1 reviewed")
+
+      # A double click, or a second tab, asks for the state already set.
+      click = fn reviewed ->
+        render_click(with_target(view, "#plan-stage"), "toggle_plan_file_reviewed", %{
+          "path" => path,
+          "digest" => digest,
+          "reviewed" => reviewed
+        })
+      end
+
+      click.("true")
+      assert Git.list_viewed_files(user_scope(user: user), task, :plan) == %{path => digest}
+      assert has_element?(view, "#plan-reviewed-count", "1 of 5 reviewed")
+
+      view |> element("#plan-card-1 [data-qa='plan_card_reviewed']") |> render_click()
+      click.("false")
+
+      assert Git.list_viewed_files(user_scope(user: user), task, :plan) == %{}
+      assert has_element?(view, "#plan-card-1 [data-qa='plan_card_reviewed'][aria-pressed='false']")
+      assert has_element?(view, "#plan-card-1", "Refuses unless the task is at :review and idle.")
+      assert has_element?(view, "#plan-reviewed-count", "0 of 5 reviewed")
+    end
+
+    test "a path that is not one of the plan's cards is ignored", %{conn: conn, user: user, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+      render_click(with_target(view, "#plan-stage"), "toggle_plan_file_reviewed", %{
+        "path" => "lib/rail/not_in_the_plan.ex",
+        "digest" => "any",
+        "reviewed" => "true"
+      })
+
+      assert Git.list_viewed_files(user_scope(user: user), task, :plan) == %{}
+      assert has_element?(view, "#plan-reviewed-count", "0 of 5 reviewed")
+    end
+
+    test "the marks are the reader's own: a reload keeps them and a teammate sees only theirs", %{
+      conn: conn,
+      task: task
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+      view |> element("#plan-card-1 [data-qa='plan_card_reviewed']") |> render_click()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+      assert has_element?(view, "#plan-card-1 [data-qa='plan_card_reviewed'][aria-pressed='true']")
+      assert has_element?(view, "#plan-reviewed-count", "1 of 5 reviewed")
+
+      {:ok, teammate} =
+        Users.register_oauth_user(%{
+          github_id: "gh_plan_stage_teammate",
+          login: "plan_stage_teammate",
+          email: "plan_stage_teammate@example.com",
+          admin: true
+        })
+
+      assert {:ok, theirs, _html} = live(log_in_user(build_conn(), teammate), ~p"/tasks/#{task.id}?item=plan")
+      assert has_element?(theirs, "#plan-card-1 [data-qa='plan_card_reviewed'][aria-pressed='false']")
+      assert has_element?(theirs, "#plan-reviewed-count", "0 of 5 reviewed")
+
+      theirs |> element("#plan-card-4 [data-qa='plan_card_reviewed']") |> render_click()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+      assert has_element?(view, "#plan-card-4 [data-qa='plan_card_reviewed'][aria-pressed='false']")
+    end
+
+    test "a revision that changes a reviewed card opens it unmarked saying so, and leaves an unchanged one reviewed", %{
+      conn: conn,
+      task: task
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+      view |> element("#plan-card-1 [data-qa='plan_card_reviewed']") |> render_click()
+      view |> element("#plan-card-4 [data-qa='plan_card_reviewed']") |> render_click()
+      assert has_element?(view, "#plan-reviewed-count", "2 of 5 reviewed")
+      refute has_element?(view, "[data-qa='plan_card_revised']")
+
+      revised = String.replace(sheet_plan(), "Refuses unless the task is at `:review` and idle.", "Refuses unless idle.")
+      {:ok, _plan} = Pipeline.save_plan(task, %{plan: revised})
+      _settled = render(view)
+
+      assert has_element?(view, "#plan-card-1[data-state='revised']")
+      assert has_element?(view, "#plan-card-1 [data-qa='plan_card_revised']", "Revised since you reviewed it.")
+      assert has_element?(view, "#plan-card-1 [data-qa='plan_card_reviewed'][aria-pressed='false']")
+      assert has_element?(view, "#plan-card-1", "Refuses unless idle.")
+      assert has_element?(view, "#plan-card-4[data-state='reviewed']")
+      refute has_element?(view, "#plan-card-4 [data-qa='plan_card_revised']")
+      assert has_element?(view, "#plan-reviewed-count", "1 of 5 reviewed")
+      assert has_element?(view, "#plan-group-pipeline [data-qa='plan_group_reviewed']", "0 of 3 reviewed")
+
+      # Marking it again reads the revision as reviewed.
+      view |> element("#plan-card-1 [data-qa='plan_card_reviewed']") |> render_click()
+      assert has_element?(view, "#plan-card-1[data-state='reviewed']")
+      assert has_element?(view, "#plan-reviewed-count", "2 of 5 reviewed")
+    end
+
+    test "a reviewed card keeps the reader's comments and an open box under its header, each naming its line", %{
+      conn: conn,
+      task: task
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+      view |> element("#plan-sheet button[aria-label='Comment on File 1, paragraph 1']") |> render_click()
+      view |> form("#plan-sheet [data-qa='document_comment_form']", %{"body" => "Idle how?"}) |> render_submit()
+      view |> element("#plan-sheet button[aria-label='Comment on File 1, signature line 1']") |> render_click()
+
+      view |> element("#plan-card-1 [data-qa='plan_card_reviewed']") |> render_click()
+
+      refute has_element?(view, "#plan-card-1", "Refuses unless the task is at :review and idle.")
+      assert has_element?(view, "#plan-card-1 [data-qa='document_comment']", "Idle how?")
+      assert has_element?(view, "#plan-card-1 [data-qa='document_comment_line']", "File 1, paragraph 1")
+      assert has_element?(view, "#plan-card-1 [data-qa='document_comment_form']")
+      assert has_element?(view, "#plan-card-1 [data-qa='document_comment_box_line']", "File 1, signature line 1")
+
+      # Its path still takes a comment.
+      view |> element("#plan-card-1 button[aria-label='Comment on File 1']") |> render_click()
+      view |> form("#plan-card-1 [data-qa='document_comment_form']", %{"body" => "Rename it."}) |> render_submit()
+      assert has_element?(view, "#plan-card-1 [data-qa='document_comment']", "Rename it.")
+    end
   end
 
   test "a plan saved before this change, diagrams and all, shows as lines that take a comment", %{

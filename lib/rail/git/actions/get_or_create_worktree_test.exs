@@ -134,4 +134,63 @@ defmodule Rail.Git.Actions.GetOrCreateWorktreeTest do
 
     assert reason =~ "not a git repository"
   end
+
+  test "a new worktree of a project with no setup script has the clone's .env at once", %{repo: repo, project: project} do
+    File.write!(Path.join(repo, ".env"), "FOO=bar\n")
+    wt_path = Path.join(repo, ".worktrees/feature-env")
+
+    assert {:ok, ^wt_path} =
+             Git.get_or_create_worktree(project, %Task{worktree_path: wt_path, worktree_name: "feature-env"})
+
+    assert File.read!(Path.join(wt_path, ".env")) =~ "\nFOO=bar\n"
+    assert git!(wt_path, ["status", "--porcelain"]) == ""
+  end
+
+  test "a new worktree whose .env cannot be written is removed, so the next attempt makes it again", %{
+    repo: repo,
+    project: project
+  } do
+    File.mkdir_p!(Path.join(repo, ".env"))
+    wt_path = Path.join(repo, ".worktrees/feature-env-refused")
+
+    assert {:error, "Rail could not write the new worktree's .env (" <> _rest} =
+             Git.get_or_create_worktree(project, %Task{worktree_path: wt_path, worktree_name: "feature-env-refused"})
+
+    refute File.dir?(wt_path)
+    refute git!(repo, ["worktree", "list"]) =~ "feature-env-refused"
+  end
+
+  test "a new worktree that can be neither written nor removed names the path to remove", %{
+    repo: repo,
+    project: project
+  } do
+    File.mkdir_p!(Path.join(repo, ".env"))
+    wt_path = Path.join(repo, ".worktrees/feature-env-stuck")
+
+    stub(Rail.Tools, :run, fn
+      "git", ["worktree", "remove" | _rest], _opts -> {"fatal: locked\n", 128}
+      command, args, opts -> call_original(Rail.Tools, :run, [command, args, opts])
+    end)
+
+    assert {:error, message} =
+             Git.get_or_create_worktree(project, %Task{worktree_path: wt_path, worktree_name: "feature-env-stuck"})
+
+    assert message =~ "and could not remove #{wt_path} (fatal: locked): remove it before retrying."
+  end
+
+  test "a new worktree of a project with a setup script waits for it to succeed for its .env", %{
+    repo: repo,
+    project: project
+  } do
+    File.write!(Path.join(repo, ".env"), "FOO=bar\n")
+    wt_path = Path.join(repo, ".worktrees/feature-scripted")
+
+    assert {:ok, ^wt_path} =
+             Git.get_or_create_worktree(
+               %{project | worktree_setup_script: "scripts/setup.sh"},
+               %Task{worktree_path: wt_path, worktree_name: "feature-scripted"}
+             )
+
+    refute File.exists?(Path.join(wt_path, ".env"))
+  end
 end

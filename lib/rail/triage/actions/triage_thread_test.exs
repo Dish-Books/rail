@@ -1,6 +1,7 @@
 defmodule Rail.Triage.Actions.TriageThreadTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Mcp
   alias Rail.Mcp.Schemas.McpConnection
@@ -15,7 +16,13 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
   alias Rail.Users
 
   setup context do
-    %{project: project, role: role, remote: remote} = triage_project()
+    # A pass checks the default branch out and reads the Triage prompt from it, both through Rail.Git.
+    # The project has no clone, so these answer as git would for a default branch with no .rail/prompts.
+    stub(Git, :checkout_detached_worktree, fn _project, worktree_path -> {:ok, worktree_path} end)
+    stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
+    %{project: project, role: role} = triage_project()
 
     %{workspace: workspace, channel: channel} =
       connect_slack_channel(project, users: %{"U_PRIYA" => "Priya"}, external: context[:external] == true)
@@ -28,7 +35,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
         })
       )
 
-    %{project: project, role: role, remote: remote, workspace: workspace, channel: channel, thread: thread}
+    %{project: project, role: role, workspace: workspace, channel: channel, thread: thread}
   end
 
   setup %{thread: thread} do
@@ -200,14 +207,17 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
            ] = Repo.all(from i in Item, where: i.thread_id == ^thread_id)
   end
 
-  test "a pass in an ordinary channel drafts replies that link the issue with the placeholder", %{
-    thread: thread,
-    result_path: result_path
-  } do
+  test "a pass in an ordinary channel runs the stored triage prompt where the repo has none, and drafts replies that link the issue with the placeholder",
+       %{
+         thread: thread,
+         result_path: result_path
+       } do
     expect(Tools, :run_agent, fn _role, argv, _opts ->
+      assert ["--append-system-prompt", "You triage."] in Enum.chunk_every(argv, 2, 1)
       brief = Enum.find(argv, &(&1 =~ "Triage the Slack thread in"))
       assert brief =~ "Where the issue should be linked, write `{issue link}`"
       assert brief =~ "the reply says the item is already tracked in that issue, giving its identifier"
+      assert brief =~ "An issue's `title` states the behavior the product should have"
       refute brief =~ "external"
       File.write!(result_path, Jason.encode!(%{"items" => []}))
       {:ok, ""}
@@ -418,15 +428,20 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
              Repo.all(from i in Item, where: i.thread_id == ^thread_id)
   end
 
-  test "the agent gets an MCP token whose hash the thread holds only while the pass runs", %{
-    thread: %{id: thread_id} = thread,
-    role: %{id: role_id},
-    result_path: result_path
-  } do
+  test "the agent runs in a checkout of the default branch, removed after, with an MCP token the thread holds meanwhile",
+       %{
+         project: %{id: project_id, clone_path: clone_path} = project,
+         thread: %{id: thread_id} = thread,
+         role: %{id: role_id},
+         result_path: result_path
+       } do
+    worktree = Thread.worktree_path(%{thread | project: project})
+    expect(Git, :checkout_detached_worktree, fn %{id: ^project_id}, ^worktree -> {:ok, worktree} end)
+
     expect(Tools, :run_agent, fn %{id: ^role_id}, argv, opts ->
       assert %{"RAIL_MCP_TOKEN" => token} = opts[:env]
       assert opts[:timeout] == to_timeout(minute: 30)
-      assert File.dir?(opts[:cd])
+      assert opts[:cd] == worktree
       assert Enum.any?(argv, &(&1 =~ result_path))
 
       hash = :crypto.hash(:sha256, token)
@@ -436,37 +451,23 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       {:ok, ""}
     end)
 
+    expect(Git, :remove_worktree, fn ^clone_path, ^worktree -> :ok end)
+
     assert :ok = Triage.triage_thread(thread)
     assert %Thread{mcp_token_hash: nil, triage_started_at: nil} = Repo.get!(Thread, thread_id)
   end
 
   test "the agent runs the triage prompt merged to the project's .rail/prompts", %{
-    project: project,
-    remote: remote,
+    project: %{id: project_id},
     thread: thread,
     result_path: result_path
   } do
-    File.mkdir_p!(Path.join(remote, ".rail/prompts"))
-    File.write!(Path.join(remote, ".rail/prompts/triage.md"), "From the repo.\n")
-    git!(remote, ["add", "."])
-    git!(remote, ["commit", "-m", "add prompt"])
-    git!(project.clone_path, ["fetch", "origin", "main"])
+    expect(Git, :read_default_branch_file, fn %{id: ^project_id}, ".rail/prompts/triage.md" ->
+      {:ok, "From the repo.\n"}
+    end)
 
     expect(Tools, :run_agent, fn _role, argv, _opts ->
       assert ["--append-system-prompt", "From the repo."] in Enum.chunk_every(argv, 2, 1)
-      File.write!(result_path, Jason.encode!(%{"items" => []}))
-      {:ok, ""}
-    end)
-
-    assert :ok = Triage.triage_thread(thread)
-  end
-
-  test "the agent runs the stored triage prompt when the repo has no file for it", %{
-    thread: thread,
-    result_path: result_path
-  } do
-    expect(Tools, :run_agent, fn _role, argv, _opts ->
-      assert ["--append-system-prompt", "You triage."] in Enum.chunk_every(argv, 2, 1)
       File.write!(result_path, Jason.encode!(%{"items" => []}))
       {:ok, ""}
     end)
@@ -482,6 +483,39 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     end)
 
     assert :ok = Triage.triage_thread(thread)
+  end
+
+  test "a pass whose MCP server does not answer snoozes without failing, and runs once it does", %{
+    project: project,
+    thread: %{id: thread_id} = thread,
+    role: role,
+    result_path: result_path
+  } do
+    {:ok, server} = Mcp.create_server(system_scope(), %{name: "tt_down", url: "https://down.example.com/mcp"})
+    {:ok, _role} = Roles.update_role(system_scope(), role, %{mcp_tools: ["tt_down__list_issues"]})
+    {:ok, user} = Users.register_oauth_user(%{github_id: "gh_td", login: "td", email: "td@example.com"})
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{"triage_user_id" => user.id})
+    Repo.insert!(%McpConnection{user_id: user.id, mcp_server_id: server.id, access_token: "at_td"})
+
+    Req.Test.stub(Mcp, &Plug.Conn.send_resp(&1, 500, "down"))
+
+    assert {:snooze, 30} = Triage.triage_thread(thread)
+    assert %Thread{status: :triaging, error: nil, triage_started_at: nil} = Repo.get!(Thread, thread_id)
+
+    Req.Test.stub(Mcp, fn conn ->
+      case conn |> Req.Test.raw_body() |> Jason.decode!() do
+        %{"method" => "notifications/initialized"} -> Plug.Conn.send_resp(conn, 202, "")
+        %{"id" => id} -> Req.Test.json(conn, %{"jsonrpc" => "2.0", "id" => id, "result" => %{}})
+      end
+    end)
+
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
+      File.write!(result_path, Jason.encode!(%{"items" => []}))
+      {:ok, ""}
+    end)
+
+    assert :ok = Triage.triage_thread(thread)
+    assert %Thread{error: nil} = Repo.get!(Thread, thread_id)
   end
 
   test "a thread with nothing new to read never runs an agent", %{project: project} do
@@ -531,12 +565,12 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       assert %Thread{status: :waiting, error: "This project has no Triage role."} = Repo.get!(Thread, thread_id)
     end
 
-    test "when the role's MCP servers need reconnecting, or cannot be reached", %{
+    test "when the role's MCP servers need reconnecting", %{
       project: project,
       thread: %{id: thread_id} = thread,
       role: role
     } do
-      {:ok, server} =
+      {:ok, _server} =
         Mcp.create_server(system_scope(), %{
           name: "tt_linear",
           url: "https://linear.example.com/mcp",
@@ -560,14 +594,6 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       assert %Thread{
                error: "tt_linear needs reconnecting for tt. Reconnect it under Settings → Connected accounts, then retry."
              } = Repo.get!(Thread, thread_id)
-
-      Repo.insert!(%McpConnection{user_id: user.id, mcp_server_id: server.id, access_token: "at_tt"})
-      Req.Test.stub(Mcp, &Plug.Conn.send_resp(&1, 500, "down"))
-
-      assert :ok = Triage.triage_thread(thread)
-
-      assert %Thread{error: "Could not reach tt_linear, so triage did not run. Retry once it answers."} =
-               Repo.get!(Thread, thread_id)
     end
 
     test "when the agent fails, times out or is not dispatched", %{thread: %{id: thread_id} = thread} do
@@ -592,21 +618,21 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       end
     end
 
-    test "when the code cannot be checked out", %{thread: %{id: thread_id} = thread, remote: remote} do
-      File.rm_rf!(remote)
+    test "when the code cannot be checked out, in git's words or GitHub's", %{
+      thread: %{id: thread_id} = thread
+    } do
       reject(&Tools.run_agent/3)
 
-      assert :ok = Triage.triage_thread(thread)
-      assert %Thread{error: error} = Repo.get!(Thread, thread_id)
-      assert error =~ "fatal"
-    end
+      for {failure, error} <- [
+            {"fatal: 'origin' does not appear to be a git repository",
+             "fatal: 'origin' does not appear to be a git repository"},
+            {{:github_api_error, 500, "down"}, ~s(Triage failed: {:github_api_error, 500, "down"})}
+          ] do
+        expect(Git, :checkout_detached_worktree, fn _project, _worktree_path -> {:error, failure} end)
 
-    test "when GitHub will not lend a token to fetch with", %{thread: %{id: thread_id} = thread} do
-      Req.Test.stub(Rail.GitHub.Client, &Plug.Conn.send_resp(&1, 500, "down"))
-      reject(&Tools.run_agent/3)
-
-      assert :ok = Triage.triage_thread(thread)
-      assert %Thread{error: "Triage failed: " <> _reason} = Repo.get!(Thread, thread_id)
+        assert :ok = Triage.triage_thread(thread)
+        assert %Thread{error: ^error} = Repo.get!(Thread, thread_id)
+      end
     end
 
     test "when the result is missing or malformed", %{thread: %{id: thread_id} = thread, result_path: result_path} do

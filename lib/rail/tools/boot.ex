@@ -207,7 +207,7 @@ defmodule Rail.Tools.Boot do
 
     # Nobody wrote these to the run's log while the process was alive, so the
     # conversation would otherwise end wherever its last Follower stopped.
-    if run, do: Pipeline.append_run_events(run.id, os_process.id, unlogged_lines)
+    Pipeline.append_run_events(run.id, os_process.id, unlogged_lines)
 
     updated_event_state =
       Enum.reduce(lines, event_state, fn line, acc ->
@@ -226,34 +226,32 @@ defmodule Rail.Tools.Boot do
       })
       |> Repo.update()
 
-    if run do
-      run_attrs = %{
-        status: :finished,
-        completed_at: now,
-        exit_code: exit_code,
-        error: error,
-        usage: updated_event_state.usage,
-        conversation_id: updated_event_state.conversation_id || run.conversation_id
-      }
+    run_attrs = %{
+      status: :finished,
+      completed_at: now,
+      exit_code: exit_code,
+      error: error,
+      usage: updated_event_state.usage,
+      conversation_id: updated_event_state.conversation_id || run.conversation_id
+    }
 
-      {:ok, updated_run} = Pipeline.update_run(run, run_attrs)
+    {:ok, updated_run} = Pipeline.update_run(run, run_attrs)
 
-      outcome = %{
-        exit_code: exit_code,
-        error: error,
-        usage: updated_event_state.usage,
-        conversation_id: updated_event_state.conversation_id || run.conversation_id,
-        os_process: updated_os_process,
-        run: updated_run
-      }
+    outcome = %{
+      exit_code: exit_code,
+      error: error,
+      usage: updated_event_state.usage,
+      conversation_id: updated_event_state.conversation_id || run.conversation_id,
+      os_process: updated_os_process,
+      run: updated_run
+    }
 
-      # A process adopted dead settles exactly as one Rail watched exit: the row
-      # says which task and run it belonged to and whether it was a chat turn.
-      Pipeline.run_finished(updated_os_process, outcome)
+    # A process adopted dead settles exactly as one Rail watched exit: the row
+    # says which task and run it belonged to and whether it was a chat turn.
+    Pipeline.run_finished(updated_os_process, outcome)
 
-      # coveralls-ignore-stop
-      Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:os_process_finished, updated_os_process, outcome})
-    end
+    # coveralls-ignore-stop
+    Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:os_process_finished, updated_os_process, outcome})
 
     remove_sandbox(updated_os_process)
 

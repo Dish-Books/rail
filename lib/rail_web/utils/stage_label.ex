@@ -7,6 +7,8 @@ defmodule RailWeb.Utils.StageLabel do
   anyone is waiting, and `:done` does not say done with what.
   """
 
+  use RailWeb, :verified_routes
+
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.FixPlan
@@ -26,8 +28,12 @@ defmodule RailWeb.Utils.StageLabel do
   # No role runs at merged, so there is no run to say anything; the task is done.
   def stage_label(%Task{stage: :merged}, _run), do: "Merged"
 
-  # Finalize waits on people, not on the run, so a run a comment resumed there does not change what it says.
-  def stage_label(%Task{stage: :finalize} = task, _run), do: task |> Task.finalize_state() |> finalize_label()
+  # Finalize waits on people, so it says where it stands there, unless a comment resumed its run, which is at work.
+  def stage_label(%Task{stage: :finalize} = task, run) do
+    if finalize_run_working?(task, run),
+      do: run_label(task, run),
+      else: task |> Task.finalize_state() |> finalize_label()
+  end
 
   # A split parent's work is its children's, so all it says of itself is that its plan was approved.
   def stage_label(%Task{stage: :split}, _run), do: "Plan approved"
@@ -52,21 +58,7 @@ defmodule RailWeb.Utils.StageLabel do
     end
   end
 
-  # Read off its status before the state it shares with a run waiting for a sandbox.
-  def stage_label(%Task{stage: stage}, %Run{status: :waiting_for_usage}),
-    do: "#{Task.stage_label(stage)} waiting for usage"
-
-  def stage_label(%Task{stage: stage} = task, run) do
-    case Run.state(run) do
-      :queued -> "Queued for #{Task.stage_label(stage)}"
-      :running -> "#{Task.stage_label(stage)} running"
-      :waiting -> "#{Task.stage_label(stage)} waiting for resources"
-      :blocked -> "#{Task.stage_label(stage)} needs an answer"
-      :failed -> "#{Task.stage_label(stage)} failed"
-      :stopped -> "#{Task.stage_label(stage)} stopped"
-      :done -> approval_label(task)
-    end
-  end
+  def stage_label(%Task{} = task, run), do: run_label(task, run)
 
   @doc "What a task at Finalize says of itself in `state`, `Task.finalize_state/1`'s."
   def finalize_label(:not_ready), do: "Ready to finalize"
@@ -76,13 +68,27 @@ defmodule RailWeb.Utils.StageLabel do
   def finalize_label(:merged), do: "Merged"
 
   @doc """
+  True when `task` is at Finalize, not yet merging, and `run` is at work on it: resumed by a comment and running,
+  waiting to, or asking a question. Finalize then reads as the run, not as the people it otherwise waits on.
+  """
+  def finalize_run_working?(%Task{stage: :finalize} = task, run),
+    do: Task.finalize_state(task) in [:not_ready, :ready] and Run.state(run) in [:running, :waiting, :blocked]
+
+  def finalize_run_working?(_task, _run), do: false
+
+  @doc """
   What the human is being asked to read, for a stage that has finished.
 
   Public because `child_status.ex` reads it, so the task page and the split
   board name the errand alike.
   """
   def approval_label(%Task{stage: :plan} = task) do
-    if waiting_on_pick?(task), do: "Pick a design", else: "Review the plan"
+    cond do
+      Task.plan_sent?(task) -> finalize_label(:ready)
+      waiting_on_pick?(task) -> "Pick a design"
+      match?(%Task{issue: %Issue{}}, task) and Issue.skips_step?(task.issue, :architect) -> "Review the ticket"
+      true -> "Review the plan"
+    end
   end
 
   def approval_label(%Task{stage: :engineer}), do: "Review the diff"
@@ -99,6 +105,14 @@ defmodule RailWeb.Utils.StageLabel do
   def ready_to_merge?(%Task{stage: :review} = task, run), do: Run.state(run) == :done and review_finished?(task)
   def ready_to_merge?(_task, _run), do: false
 
+  @doc "True when `run` is the Review lead's, done, on a pull request ready to merge at Review."
+  def ready_to_merge?(%Run{role: %Role{stage: :review_lead}, task: %Task{pr_url: pr_url} = task} = run)
+      when is_binary(pr_url) do
+    ready_to_merge?(task, run)
+  end
+
+  def ready_to_merge?(%Run{}), do: false
+
   @doc """
   True when `run` is the Review lead's at a task at Review, done and not ready to merge: a round waiting on a person.
   """
@@ -106,6 +120,23 @@ defmodule RailWeb.Utils.StageLabel do
     do: Run.state(run) == :done and not ready_to_merge?(task, run)
 
   def review_waiting?(_task, _run), do: false
+
+  @doc """
+  True when `task`'s plan is sent to the tech leads and `run`, its Plan run, is done, so the plan waits on them. Reads
+  `task`'s `rounds`.
+  """
+  def sent_plan_waiting?(%Task{stage: :plan} = task, run), do: Task.plan_sent?(task) and Run.state(run) == :done
+  def sent_plan_waiting?(_task, _run), do: false
+
+  @doc """
+  True when `task` is at a custom stage whose agent has stopped with its file saved, so the file waits on a person's
+  Approve.
+  """
+  def custom_stage_waiting?(%Task{stage: :custom} = task, run) do
+    Run.state(run) == :stopped and Enum.any?(Pipeline.read_stage_outputs(task), &(&1.name == task.custom_stage))
+  end
+
+  def custom_stage_waiting?(_task, _run), do: false
 
   @doc "True when `task` has design options saved and none of them picked yet."
   def waiting_on_pick?(%Task{} = task) do
@@ -128,6 +159,60 @@ defmodule RailWeb.Utils.StageLabel do
   end
 
   def fix_plan_waiting?(%Task{}), do: false
+
+  @doc "True when `run` is the done Review lead's on a task whose fix plan waits on a person. Reads a file on disk."
+  def waiting_fix_plan?(%Run{role: %Role{stage: :review_lead}, task: %Task{stage: stage} = task} = run)
+      when stage in [:review, :finalize], do: Run.state(run) == :done and fix_plan_waiting?(task)
+
+  def waiting_fix_plan?(%Run{}), do: false
+
+  @doc "True when `run` is done at a task at Finalize, so all it waits on is someone marking the task ready."
+  def finalizing?(%Run{task: %Task{stage: :finalize}} = run), do: Run.state(run) == :done
+  def finalizing?(%Run{}), do: false
+
+  @doc """
+  Where a person deals with waiting `run`: its fix plan, its findings, or a question in its agent's conversation, which
+  the task opens on by itself only for the agent taking messages. `fix_plan?` is `waiting_fix_plan?/1`'s answer.
+  """
+  def waiting_path(%Run{} = run), do: waiting_path(run, waiting_fix_plan?(run))
+
+  def waiting_path(%Run{} = run, fix_plan?) do
+    cond do
+      fix_plan? -> ~p"/tasks/#{run.task_id}?item=fix_plan"
+      finalizing?(run) -> ~p"/tasks/#{run.task_id}"
+      ready_to_merge?(run) -> ~p"/tasks/#{run.task_id}?item=findings"
+      Run.state(run) == :blocked and not chat_run?(run) -> ~p"/tasks/#{run.task_id}?item=plan&agent=#{run.role.stage}"
+      true -> ~p"/tasks/#{run.task_id}"
+    end
+  end
+
+  defp chat_run?(%Run{role: %Role{custom_stage: name}, task: %Task{} = task} = run) when is_binary(name),
+    do: Task.works_stage?(task, run.role)
+
+  defp chat_run?(%Run{role: %Role{stage: stage}, task: %Task{stage: :plan}}), do: stage == :plan
+  defp chat_run?(%Run{role: %Role{stage: stage}}), do: stage == :review_lead
+
+  # Read off its status before the state it shares with a run waiting for a sandbox.
+  defp run_label(%Task{} = task, %Run{status: :waiting_for_usage}), do: "#{Task.stage_label(task)} waiting for usage"
+
+  defp run_label(%Task{} = task, run) do
+    case Run.state(run) do
+      :queued -> "Queued for #{Task.stage_label(task)}"
+      :running -> "#{Task.stage_label(task)} running"
+      :waiting -> "#{Task.stage_label(task)} waiting for resources"
+      :blocked -> "#{Task.stage_label(task)} needs an answer"
+      :failed -> "#{Task.stage_label(task)} failed"
+      :stopped -> stopped_label(task, run)
+      :done -> approval_label(task)
+    end
+  end
+
+  # A custom stage moves on only by approval, so its stopped agent waits on a person either way.
+  defp stopped_label(%Task{stage: :custom} = task, run) do
+    if custom_stage_waiting?(task, run), do: "Review #{task.custom_stage}", else: "#{task.custom_stage} needs you"
+  end
+
+  defp stopped_label(%Task{} = task, _run), do: "#{Task.stage_label(task)} stopped"
 
   # Read only off a task whose issue is loaded, which names the review file.
   defp review_finished?(%Task{issue: %Issue{}} = task) do

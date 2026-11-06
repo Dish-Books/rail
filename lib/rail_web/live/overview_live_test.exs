@@ -7,6 +7,7 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Round
@@ -19,6 +20,18 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.Scope
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
+
+  setup do
+    # What is merged is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: these pages see nothing on the default branch, as when there is no clone.
+    stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Rail.Git, :list_default_branch_paths, fn _project, paths -> if paths == [], do: MapSet.new() end)
+    # A task cleaned up or deleted with its issue takes its worktree and branch in that clone with it.
+    stub(Rail.Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
+    stub(Rail.Git, :delete_branch, fn _clone_path, _branch -> :ok end)
+
+    :ok
+  end
 
   test "redirects an unauthenticated user to the sign-in page", %{conn: conn} do
     assert {:error, {:redirect, %{to: "/sign-in"}}} = live(conn, ~p"/")
@@ -299,7 +312,7 @@ defmodule RailWeb.OverviewLiveTest do
 
   # The Theme hook flips <html data-theme> itself and reports the result back, so the
   # server only ever reacts to "theme_changed".
-  test "follows the theme the client reports", %{conn: conn} do
+  test "follows the theme the client reports, and opens and closes the new issue modal", %{conn: conn} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_overview_live_5",
@@ -319,20 +332,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     render_hook(view, "theme_changed", %{"theme" => "dark"})
     assert has_element?(view, "#theme-toggle-button[title='Switch to Light mode']")
-  end
 
-  test "opens and closes new issue modal", %{conn: conn} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_overview_live_6",
-        login: "overview_live_user_6",
-        email: "overview_live_user_6@example.com",
-        admin: true
-      })
-
-    authed_conn = log_in_user(conn, user)
-
-    assert {:ok, view, _html} = live(authed_conn, ~p"/")
     refute has_element?(view, "#new-issue-modal")
 
     # Open modal
@@ -345,26 +345,7 @@ defmodule RailWeb.OverviewLiveTest do
     refute has_element?(view, "#new-issue-modal")
   end
 
-  test "close_project_switcher event closes open dialog", %{conn: conn} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_overview_live_7",
-        login: "overview_live_user_7",
-        email: "overview_live_user_7@example.com",
-        admin: true
-      })
-
-    authed_conn = log_in_user(conn, user)
-
-    assert {:ok, view, _html} = live(authed_conn, ~p"/")
-    view |> element("#project-switcher-button") |> render_click()
-    assert has_element?(view, "#project-switcher-dialog")
-
-    render_hook(view, "close_project_switcher", %{})
-    refute has_element?(view, "#project-switcher-dialog")
-  end
-
-  test "the project switcher closes on Escape or a click outside it", %{conn: conn} do
+  test "the project switcher closes on Escape or a click outside it, which sends close_project_switcher", %{conn: conn} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_overview_live_8",
@@ -386,6 +367,12 @@ defmodule RailWeb.OverviewLiveTest do
     assert has_element?(view, "#project-switcher-dialog[phx-key='Escape']")
 
     view |> element("#project-switcher-dialog") |> render_keydown(%{"key" => "Escape"})
+    refute has_element?(view, "#project-switcher-dialog")
+
+    view |> element("#project-switcher-button") |> render_click()
+    assert has_element?(view, "#project-switcher-dialog")
+
+    render_hook(view, "close_project_switcher", %{})
     refute has_element?(view, "#project-switcher-dialog")
   end
 
@@ -459,7 +446,7 @@ defmodule RailWeb.OverviewLiveTest do
       unmarked = task_for.("Not marked", %{stage: :finalize, pr_number: 153})
 
       assert {:ok, view, _html} = live(conn, ~p"/")
-      assert has_element?(view, "#review-queue-empty", "Nothing is waiting for a tech lead.")
+      assert has_element?(view, "#review-queue-empty", "No task at Finalize is marked ready.")
 
       {:ok, _marked} = Pipeline.mark_ready(Scope.for_user(user), ready)
       row = "#review-queue-row-#{ready.issue.identifier}"
@@ -480,8 +467,12 @@ defmodule RailWeb.OverviewLiveTest do
       roles: roles,
       task_for: task_for
     } do
-      task = task_for.("Comments go as one round", %{stage: :review, worktree_path: create_temp_git_repo()})
+      task = task_for.("Comments go as one round", %{stage: :review})
       on_exit(fn -> File.rm_rf(task.scratch_path) end)
+      # Nothing here asks git, so the worktree only has to be there.
+      worktree = Path.join(task.scratch_path, "worktree")
+      File.mkdir_p!(worktree)
+      {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
 
       {:ok, run} =
         Pipeline.create_run(%{
@@ -1011,6 +1002,18 @@ defmodule RailWeb.OverviewLiveTest do
       assert_redirect(view, ~p"/project-selection?#{[project_id: project.id, return_to: "/"]}")
     end
 
+    test "the Rail mark on Everyone's view opens My work, as the Overview icon does", %{conn: conn} do
+      assert {:ok, view, _html} = live(conn, ~p"/?everyone=true")
+
+      assert {:error, {:live_redirect, %{to: "/"}}} = view |> element("#nav-overview") |> render_click()
+      assert {:ok, view, _html} = live(conn, ~p"/?everyone=true")
+      assert {:error, {:live_redirect, %{to: "/"}}} = redirect = view |> element("#app-brand") |> render_click()
+
+      assert {:ok, view, _html} = follow_redirect(redirect, conn)
+      assert has_element?(view, "#overview-view-mine[aria-pressed='true']")
+      assert has_element?(view, "#nav-overview[data-active='true']")
+    end
+
     test "the chosen view is the link, so a reload or a shared link opens on it", %{
       conn: conn,
       rival: rival,
@@ -1109,8 +1112,10 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#throughput-total", "0 total")
     end
 
-    test "the numbers across the top count what is in flight, what shipped and what waits", %{
+    test "the numbers across the top count what is in flight, what shipped, archived or not, and what waits", %{
       conn: conn,
+      user: user,
+      project: project,
       roles: roles,
       task_for: task_for
     } do
@@ -1131,11 +1136,25 @@ defmodule RailWeb.OverviewLiveTest do
       task_for.("Shipped this month", %{completed_at: DateTime.shift(now, day: -5)})
       task_for.("Shipped last month", %{completed_at: DateTime.shift(now, day: -45)})
 
+      # Linear archives what closed a while ago, and an issue Rail never ran still shipped.
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_overview_archived_shipped",
+        identifier: "OVR-900",
+        title: "Shipped and archived",
+        state: :done,
+        owner_user_id: user.id,
+        completed_at: DateTime.shift(now, day: -40),
+        archived_at: DateTime.shift(now, day: -2)
+      })
+      |> Repo.insert!()
+
       assert {:ok, view, _html} = live(conn, ~p"/")
 
       assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "1")
       assert has_element?(view, "#stat-shipped [data-qa='stat-value']", "2")
-      assert has_element?(view, "#stat-shipped-delta", "+1 vs prior 30")
+      assert has_element?(view, "#stat-shipped-delta", "same as prior 30")
       assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
       assert has_element?(view, "#stat-oldest-waiting", "oldest 2h 14m")
 
@@ -1280,6 +1299,117 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert has_element?(view, "#in-progress-task-#{task.id}[data-state='done']", "Pick a design")
       assert has_element?(view, "#in-progress-task-#{task.id} [data-qa='in-progress-age']", "1h 0m")
+    end
+
+    test "a plan its owner sends leaves Up next, Waiting on you and the badge without a reload, and reads Ready for tech lead",
+         %{conn: conn, user: user, roles: roles, task_for: task_for} do
+      task = task_for.("Send the plan", %{stage: :plan})
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+      {:ok, %Run{id: run_id} = run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:plan].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.utc_now(),
+          completed_at: DateTime.utc_now()
+        })
+
+      Repo.insert!(%Round{
+        task_id: task.id,
+        number: 1,
+        plan: "## Implementation plan",
+        ticket: %Round.Ticket{title: "T", description: "D"}
+      })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+      assert has_element?(view, "#up-next-featured-#{run_id} [data-qa='up-next-chip']", "Ready for review")
+      assert has_element?(view, "#up-next-featured-#{run_id} [data-qa='up-next-action']", ~r/^\s*Review\s*$/)
+
+      assert has_element?(
+               view,
+               "#up-next-featured-#{run_id} [data-qa='up-next-summary']",
+               "Waiting on you to read the plan."
+             )
+
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
+      assert has_element?(view, "#attention-badge", "1")
+      assert has_element?(view, "#in-progress-task-#{task.id}", "Review the plan")
+
+      {:ok, _sent} = Pipeline.send_plan_to_lead(Scope.for_user(user), run)
+
+      refute has_element?(view, "#up-next-featured-#{run_id}")
+      refute has_element?(view, "#up-next-row-#{run_id}")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
+      refute has_element?(view, "#attention-badge")
+      refute has_element?(view, "#plan-queue-section")
+      assert has_element?(view, "#in-progress-task-#{task.id}.border-slate-200 .pi-seal-check.text-amber-700")
+      assert has_element?(view, "#in-progress-task-#{task.id}", "Ready for tech lead")
+      assert has_element?(view, "#review-queue-empty", "No task at Finalize is marked ready.")
+      refute has_element?(view, "#review-queue-empty", "tech lead")
+    end
+
+    test "a sent plan saved again, or given a design option, comes back to its owner and leaves Plans to approve", %{
+      conn: conn,
+      project: project,
+      user: user,
+      roles: roles,
+      task_for: task_for
+    } do
+      {:ok, lead} =
+        Users.register_oauth_user(%{github_id: "gh_ovl_back_lead", login: "ovl-back-lead", email: "back@example.com"})
+
+      {:ok, lead} = Users.update_user(system_scope(), lead, %{tech_lead: true, project_ids: [project.id]})
+
+      task = task_for.("Saved again", %{stage: :plan})
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+      {:ok, %Run{id: run_id} = run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:plan].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.utc_now(),
+          completed_at: DateTime.utc_now()
+        })
+
+      Repo.insert!(%Round{
+        task_id: task.id,
+        number: 1,
+        plan: "## Implementation plan",
+        ticket: %Round.Ticket{title: "T", description: "D"}
+      })
+
+      {:ok, _sent} = Pipeline.send_plan_to_lead(Scope.for_user(user), run)
+      queued = "#plan-queue-row-#{task.issue.identifier}"
+
+      assert {:ok, owner_view, _html} = live(conn, ~p"/")
+      assert {:ok, lead_view, _html} = live(log_in_user(build_conn(), lead), ~p"/")
+      refute has_element?(owner_view, "#up-next-featured-#{run_id}")
+      assert has_element?(lead_view, queued)
+
+      {:ok, _saved} = Pipeline.save_plan(task, %{title: "Saved again"})
+
+      assert has_element?(owner_view, "#up-next-featured-#{run_id} [data-qa='up-next-chip']", "Ready for review")
+      assert has_element?(owner_view, "#stat-waiting [data-qa='stat-value']", "1")
+      refute has_element?(lead_view, queued)
+
+      {:ok, _sent} = Pipeline.send_plan_to_lead(Scope.for_user(user), run)
+      assert has_element?(lead_view, queued)
+      refute has_element?(owner_view, "#up-next-featured-#{run_id}")
+
+      design = Path.join(task.scratch_path, "design")
+      File.mkdir_p!(design)
+      for file <- ["cards.html", "cards.png"], do: File.write!(Path.join(design, file), "cards")
+
+      {:ok, _option} =
+        Pipeline.save_design_option(task, %{"key" => "cards", "title" => "Cards", "summary" => "As cards."})
+
+      assert has_element?(owner_view, "#up-next-featured-#{run_id} [data-qa='up-next-action']", "Pick")
+      assert has_element?(owner_view, "#stat-waiting [data-qa='stat-value']", "1")
+      refute has_element?(lead_view, queued)
     end
 
     test "a run whose questions are all answered leads as ready to send", %{
@@ -1600,8 +1730,15 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#up-next-featured-#{run_id} [data-qa='up-next-chip']", "Ready for review")
       assert has_element?(view, "#in-progress-task-#{task.id} span.font-semibold", ~r/^Review$/)
 
-      {:ok, %Run{id: ^run_id}} = Pipeline.start_fix_round(system_scope(), run)
+      {:ok, %Run{id: ^run_id} = finalizing} = Pipeline.start_fix_round(system_scope(), run)
 
+      # A comment resumes the run at Finalize, which is at work on it until it is done again.
+      {:ok, resumed} = Pipeline.update_run(finalizing, %{status: :running})
+      assert {:ok, view, _html} = live(conn, ~p"/")
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']", "Finalize running")
+      refute has_element?(view, "#in-progress-task-#{task.id}.bg-amber-50")
+
+      {:ok, _done} = Pipeline.update_run(resumed, %{status: :finished})
       assert {:ok, view, _html} = live(conn, ~p"/")
       assert has_element?(view, "#up-next-finalize-row-#{run_id}[href='/tasks/#{task.id}']", "Finalize")
       assert has_element?(view, "#in-progress-task-#{task.id}.bg-amber-50", "Ready to finalize")
@@ -1699,6 +1836,84 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(everyone, "#in-progress-task-#{engineer.id} .pi-chat-text")
       assert has_element?(everyone, "#in-progress-task-#{engineer.id}", "Review the diff")
       refute has_element?(everyone, "#in-progress-task-#{engineer.id} .pi-list-checks")
+    end
+
+    test "a custom stage whose file waits on Approve reads as waiting on you, not as stopped", %{
+      conn: conn,
+      project: project,
+      roles: roles,
+      task_for: task_for,
+      user: user
+    } do
+      now = DateTime.utc_now()
+
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{"id" => "lin_queue_custom", "identifier" => "QUE-302", "title" => "Dependency updates"}
+            }
+          }
+        })
+      end)
+
+      stages = [
+        %IssueStage{stage: :plan},
+        %IssueStage{stage: :engineer},
+        %IssueStage{stage: :custom, name: "License check", prompt: "Check each changed dependency's license."},
+        %IssueStage{stage: :review}
+      ]
+
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Dependency updates", stages: stages})
+      {:ok, _owned} = issue |> Issue.tracker_changeset(%{owner_user_id: user.id}) |> Repo.update()
+      {:ok, task} = Pipeline.create_task(issue, {:custom, "License check"})
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+      {:ok, license_check} = Roles.get_custom_stage_role(project.id, "License check")
+
+      {:ok, checking} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: license_check.id,
+          status: :finished,
+          started_at: DateTime.shift(now, hour: -2),
+          completed_at: DateTime.shift(now, hour: -1)
+        })
+
+      {:ok, stalled} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:engineer].id,
+          status: :finished,
+          started_at: DateTime.shift(now, hour: -4),
+          completed_at: DateTime.shift(now, hour: -3)
+        })
+
+      {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "sweet_xml 0.7.5 is AGPL-3.0."})
+
+      broken = task_for.("Broken work", %{stage: :review})
+
+      {:ok, _failed} =
+        Pipeline.create_run(%{
+          task_id: broken.id,
+          role_id: roles[:review_lead].id,
+          status: :failed,
+          error: "Exited with code 2",
+          started_at: DateTime.shift(now, hour: -6),
+          completed_at: DateTime.shift(now, hour: -5)
+        })
+
+      assert {:ok, view, html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#activity-ended-#{checking.id}", "says QUE-302 is ready for review")
+      refute has_element?(view, "#activity-ended-#{checking.id}", "stopped on")
+      assert has_element?(view, "#activity-ended-#{stalled.id}", "stopped on QUE-302")
+      assert has_element?(view, "#up-next-row-#{checking.id}", "License check file to approve")
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='done']")
+
+      # Waiting on you comes before broken, though the broken task has stood longer.
+      assert html |> :binary.match("in-progress-task-#{task.id}") |> elem(0) <
+               html |> :binary.match("in-progress-task-#{broken.id}") |> elem(0)
     end
 
     test "the sidebar lists every task in progress and where it stands", %{
@@ -1926,7 +2141,7 @@ defmodule RailWeb.OverviewLiveTest do
       shipped_elsewhere =
         task_for.("Shipped elsewhere", %{project: other_project, completed_at: DateTime.shift(now, hour: -2)})
 
-      for {task, role} <- [{own, roles[:plan]}, {elsewhere, other_role}] do
+      for {task, role} <- [{own, roles[:plan]}, {teammates, roles[:plan]}, {elsewhere, other_role}] do
         {:ok, _done} =
           Pipeline.create_run(%{
             task_id: task.id,
@@ -1965,7 +2180,8 @@ defmodule RailWeb.OverviewLiveTest do
       end
 
       assert has_element?(admin_view, "#activity-shipped-#{shipped_elsewhere.issue.id}")
-      assert has_element?(admin_view, "#attention-badge", "2")
+      # The badge is what waits on the user looking: the teammate's task, not the two the rival owns.
+      assert has_element?(admin_view, "#attention-badge", "1")
     end
 
     test "a row opens its task", %{conn: conn, task_for: task_for} do
@@ -2315,6 +2531,14 @@ defmodule RailWeb.OverviewLiveIssueEventsTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Users
+
+  setup do
+    # A role's prompt is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: this sees no prompt file on the default branch, as when there is no clone.
+    stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
+    :ok
+  end
 
   test "a new issue or a comment on one moves no task, so the page is left as it was", %{
     conn: conn,

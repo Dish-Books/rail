@@ -14,7 +14,11 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
   test "each stage that writes something is offered exactly its own save tool", %{names: names} do
     assert names[:plan] == ["save_design_option", "save_plan", "ask_questions", "knowledge_search"]
 
-    assert names[:engineer] == ["save_report", "ask_questions", "knowledge_search"]
+    assert names[:engineer] ==
+             ["browser_connect", "browser_problems", "browser_close", "save_report", "ask_questions", "knowledge_search"]
+
+    assert %Role{custom_stage: "License check"} |> mcp_tools() |> Enum.map(& &1["name"]) ==
+             ["save_stage_output", "ask_questions", "knowledge_search"]
   end
 
   test "only the Plan, Engineer and Review leads are offered ask_questions, a list of prompts with options", %{
@@ -47,10 +51,12 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
     end
   end
 
-  test "each agent that checks a round is offered its own tools, and the two that drive the app a browser",
+  # The engineer drives it only to retake the screenshots the repository commits, such as a help center's.
+  test "each agent that checks a round is offered its own tools, and the three that drive the app a browser",
        %{names: names} do
     browser = ["browser_connect", "browser_problems", "browser_close"]
 
+    assert Enum.sort(for({stage, tools} <- names, "browser_connect" in tools, do: stage)) == [:demo, :engineer, :qa]
     assert names[:qa] == browser ++ ["qa_plan", "qa_check", "qa_shot", "save_screen", "save_report", "knowledge_search"]
     assert names[:review] == ["save_report", "knowledge_search"]
     assert names[:demo] == browser ++ ["demo_start", "demo_say", "demo_cut", "save_demo", "knowledge_search"]
@@ -87,6 +93,7 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
                  "left" => %{"type" => "array", "items" => %{"required" => ["place", "reason"]}},
                  "test" => %{"type" => "object", "required" => ["file", "name"]},
                  "files" => %{"type" => "array", "items" => %{"type" => "string"}},
+                 "recommendation" => %{"enum" => ["fix", "skip", "new_issue"]},
                  "evidence" => %{
                    "type" => "array",
                    "items" => %{

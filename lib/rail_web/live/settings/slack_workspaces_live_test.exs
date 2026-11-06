@@ -31,6 +31,7 @@ defmodule RailWeb.Settings.SlackWorkspacesLiveTest do
     assert has_element?(view, "#empty-slack-workspaces-message")
     assert has_element?(view, "#slack-setup-note", "connections:write")
     assert has_element?(view, "#slack-setup-note", "files:read")
+    assert has_element?(view, "#slack-setup-note", "App Home: turn on the Messages tab")
 
     view |> element("#new-slack-workspace-button") |> render_click()
     view |> form("#slack-workspace-form", %{"slack_workspace" => %{"name" => "Acme"}}) |> render_change()

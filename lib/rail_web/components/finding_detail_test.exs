@@ -3,6 +3,7 @@ defmodule RailWeb.Components.FindingDetailTest do
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FindingEvidence
@@ -107,9 +108,9 @@ defmodule RailWeb.Components.FindingDetailTest do
 
     test "the reader's unsent comments show under their pieces with the tray's numbers, and the box under its piece",
          %{finding: finding} do
-      on_title = %{id: "fcm_0", body: "Say who."}
-      on_fix = %{id: "fcm_1", body: "Guard it higher up."}
-      on_place = %{id: "fcm_2", body: "And its caller."}
+      on_title = %{id: "fcm_0", label: "Title", body: "Say who."}
+      on_fix = %{id: "fcm_1", label: "Fix", body: "Guard it higher up."}
+      on_place = %{id: "fcm_2", label: "Place 1", body: "And its caller."}
 
       doc =
         (&FindingDetail.finding_detail/1)
@@ -126,10 +127,10 @@ defmodule RailWeb.Components.FindingDetailTest do
       # The header does not scroll, so the title's comments are drawn in the body under a caption, not under it.
       assert [] = Floki.find(doc, "[data-qa=finding_title] [data-qa=document_comment]")
       [title] = Floki.find(doc, "[data-qa=finding_title_comments]")
-      assert Floki.text(title) =~ ~r/Title\s+1\s+You\s+Not sent\s+Remove\s+Say who./
+      assert Floki.text(title) =~ ~r/Title\s+1\s+You\s+Not sent\s+Edit\s+Remove\s+Say who./
 
       [fix] = Floki.find(doc, "[data-qa=finding_fix] [data-qa=document_comment]")
-      assert Floki.text(fix) =~ ~r/2\s+You\s+Not sent\s+Remove\s+Guard it higher up./
+      assert Floki.text(fix) =~ ~r/2\s+You\s+Not sent\s+Edit\s+Remove\s+Guard it higher up./
 
       assert ["remove_finding_comment"] =
                fix |> Floki.find("[data-qa=document_comment_remove]") |> Floki.attribute("phx-click")
@@ -142,6 +143,82 @@ defmodule RailWeb.Components.FindingDetailTest do
       assert box |> Floki.find("textarea") |> Floki.text() == "Half typed"
       assert [_one_box] = Floki.find(doc, "#finding-comment-form")
     end
+  end
+
+  test "New issue sits beside Fix and Don't fix, and ruled New issue shows the issue Send files above Problem" do
+    finding = %{
+      @finding
+      | decision: :new_issue,
+        notes: [%FindingNote{round: 1, kind: :ruling, at: @at, decision: :new_issue, by_id: "usr_1"}]
+    }
+
+    doc =
+      (&FindingDetail.finding_detail/1)
+      |> render_component(
+        [
+          finding: finding,
+          preview: %{title: "Send twice", description: "**Problem.** Sends twice.", priority: :medium},
+          project_name: "Rail",
+          viewer_id: "usr_1"
+        ] ++ @attrs
+      )
+      |> Floki.parse_fragment!()
+
+    assert ["false", "false", "true"] =
+             doc |> Floki.find("[data-qa^=decide_]") |> Floki.attribute("aria-pressed")
+
+    assert doc |> Floki.find("[data-qa=decide_new_issue]") |> Floki.text() =~ "New issue"
+
+    assert "New issue · filed when you send" =
+             doc |> Floki.find("[data-qa=finding_state]") |> Floki.text() |> String.trim()
+
+    assert [_card] = Floki.find(doc, "[data-qa=finding_issue][data-filed=false]")
+    assert doc |> Floki.find("[data-qa=finding_severity]") |> Floki.attribute("class") |> hd() =~ "ring-slate-200"
+    assert doc |> Floki.find("[data-qa=finding_note]") |> Floki.text() =~ "You ruled New issue"
+  end
+
+  test "an unruled finding recommended New issue shows the issue it would become, and no preview draws no card" do
+    finding = %{@finding | recommendation: :new_issue}
+
+    doc =
+      (&FindingDetail.finding_detail/1)
+      |> render_component(
+        [
+          finding: finding,
+          preview: %{title: "Send twice", description: "**Problem.** Sends twice.", priority: :medium},
+          project_name: "Rail"
+        ] ++ @attrs
+      )
+      |> Floki.parse_fragment!()
+
+    assert [_card] = Floki.find(doc, "#finding-issue[data-filed=false]")
+    assert doc |> Floki.find("[data-qa=finding_recommendation]") |> Floki.text() =~ "recommends New issue"
+    assert doc |> Floki.find("[data-qa=finding_why] dt") |> Floki.text() =~ "Why new issue"
+
+    doc = (&FindingDetail.finding_detail/1) |> render_component([finding: finding] ++ @attrs) |> Floki.parse_fragment!()
+
+    assert [] = Floki.find(doc, "#finding-issue")
+  end
+
+  test "once filed, the header links the issue it became and the ruling buttons are gone" do
+    issue = %Issue{
+      identifier: "RAIL-152",
+      url: "https://linear.app/x/issue/RAIL-152",
+      title: "Send twice",
+      state: :triage,
+      priority: :low,
+      tracker: :linear
+    }
+
+    doc =
+      (&FindingDetail.finding_detail/1)
+      |> render_component([finding: %{@finding | decision: :new_issue, issue_id: "iss_1", issue: issue}] ++ @attrs)
+      |> Floki.parse_fragment!()
+
+    assert [] = Floki.find(doc, "[data-qa^=decide_]")
+    assert "New issue · filed as RAIL-152" = doc |> Floki.find("[data-qa=finding_state]") |> Floki.text() |> String.trim()
+    assert ["https://linear.app/x/issue/RAIL-152"] = doc |> Floki.find("#finding-issue-link") |> Floki.attribute("href")
+    assert [_card] = Floki.find(doc, "[data-qa=finding_issue][data-filed=true]")
   end
 
   test "a suppressed finding names the rule that suppressed it, and offers only Fix" do
@@ -157,6 +234,7 @@ defmodule RailWeb.Components.FindingDetailTest do
     assert doc |> Floki.find("[data-qa=finding_suppressor]") |> Floki.text() =~ "Don't flag a missing @doc"
     assert [_fix] = Floki.find(doc, "[data-qa=decide_fix]")
     assert [] = Floki.find(doc, "[data-qa=decide_skip]")
+    assert [] = Floki.find(doc, "[data-qa=decide_new_issue]")
     assert "Suppressed" = doc |> Floki.find("[data-qa=finding_state]") |> Floki.text() |> String.trim()
   end
 
@@ -436,7 +514,7 @@ defmodule RailWeb.Components.FindingDetailTest do
         |> render_component(
           Keyword.merge(attrs,
             offered: true,
-            comments: %{{:place, 2} => [{%{id: "fcm_1", body: "Use it here too."}, 1}]},
+            comments: %{{:place, 2} => [{%{id: "fcm_1", label: "Place 3", body: "Use it here too."}, 1}]},
             draft: %{piece: :place, index: 1, body: "And here"}
           )
         )

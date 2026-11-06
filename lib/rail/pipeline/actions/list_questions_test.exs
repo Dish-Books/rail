@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.ListQuestionsTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
@@ -8,6 +9,8 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
   alias Rail.Roles
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     roles =
       Map.new([:plan, :engineer, :review, :qa, :demo], fn stage ->
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)

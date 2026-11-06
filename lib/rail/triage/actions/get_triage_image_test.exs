@@ -1,6 +1,7 @@
 defmodule Rail.Triage.Actions.GetTriageImageTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Triage
   alias Rail.Triage.Schemas.Message
   alias Rail.Triage.Schemas.Thread
@@ -106,6 +107,12 @@ defmodule Rail.Triage.Actions.GetTriageImageTest do
       stub_slack(files: %{})
 
       assert {:ok, "image/png", "slack-bytes"} = Triage.get_triage_image(system_scope(), message_id, "F_SHOT")
+
+      # A pass checks the default branch out and reads the Triage prompt from it, both through Rail.Git.
+      # The project has no clone, so these answer as git would for a default branch with no .rail/prompts.
+      stub(Git, :checkout_detached_worktree, fn _project, worktree_path -> {:ok, worktree_path} end)
+      stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
+      stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
 
       triage_with(thread, %{"items" => []})
 

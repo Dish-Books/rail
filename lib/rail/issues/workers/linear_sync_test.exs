@@ -4,6 +4,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
 
   import Rail.Pipeline.Utils.BuildTask
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
@@ -18,8 +19,13 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Users
+  alias Rail.Workflows.Schemas.Workflow
+  alias Rail.Workflows.Schemas.WorkflowDefinition
 
   setup %{project: project} do
+    # A role's prompt is read from its project's default branch; none of these projects has one.
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     %{project: project}
   end
 
@@ -110,6 +116,129 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
 
     # Pulling from Linear is not a change to push back to it.
     refute_enqueued(worker: SyncIssue)
+  end
+
+  test "an existing issue gains its cycle and parent, and a sub-issue synced before its parent nests once it lands", %{
+    project: project
+  } do
+    %Issue{id: existing_id} =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_cyc_existing",
+        identifier: "SPI-31",
+        title: "In a cycle",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    node = fn id, identifier, cycle, parent ->
+      %{
+        "id" => id,
+        "identifier" => identifier,
+        "title" => identifier,
+        "state" => %{"name" => "Todo", "type" => "unstarted"},
+        "cycle" => cycle,
+        "parent" => parent
+      }
+    end
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"query" => query} = Jason.decode!(body)
+      assert query =~ "cycle {"
+      assert query =~ "parent {"
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issues" => %{
+            "nodes" => [
+              node.("lin_cyc_existing", "SPI-31", %{"id" => "cyc_12"}, %{"id" => "lin_cyc_parent"}),
+              node.("lin_cyc_other", "SPI-32", nil, nil)
+            ],
+            "pageInfo" => %{"hasNextPage" => true, "endCursor" => "cursor_cyc"}
+          }
+        }
+      })
+    end)
+
+    assert :ok = perform_job(LinearSync, %{project_id: project.id, started_at: "2026-10-06T10:00:00.000000Z"})
+
+    assert %Issue{id: ^existing_id, cycle_external_id: "cyc_12", parent_external_id: "lin_cyc_parent", parent: nil} =
+             Issue |> Repo.get!(existing_id) |> Repo.preload(:parent)
+
+    assert %Issue{cycle_external_id: nil, parent_external_id: nil} = Repo.get_by(Issue, external_id: "lin_cyc_other")
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issues" => %{
+            "nodes" => [node.("lin_cyc_parent", "SPI-30", %{"id" => "cyc_12"}, nil)],
+            "pageInfo" => %{"hasNextPage" => true, "endCursor" => "cursor_cyc_2"}
+          }
+        }
+      })
+    end)
+
+    assert :ok =
+             perform_job(LinearSync, %{
+               project_id: project.id,
+               cursor: "cursor_cyc",
+               started_at: "2026-10-06T10:00:00.000000Z"
+             })
+
+    assert %Issue{parent: %Issue{identifier: "SPI-30"} = parent} =
+             sub_issue = Issue |> Repo.get!(existing_id) |> Repo.preload(:parent)
+
+    assert ^parent = Issue.calculate_parent(sub_issue)
+  end
+
+  test "an issue a workflow opened keeps its workflow through a full sync", %{project: project} do
+    %Workflow{id: workflow_id} =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/sweep.yml",
+        definition: %WorkflowDefinition{name: "Sweep", schedule: "0 9 * * 1", instructions: "Sweep the flaky tests."},
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
+
+    stub(DateTime, :utc_now, fn -> ~U[2026-10-12 10:00:00.000000Z] end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_TST-84", "identifier" => "TST-84", "title" => "Sweep 2026-10-12"}
+          }
+        }
+      })
+    end)
+
+    {:ok, _issue} = Issues.create_issue(system_scope(), project, %{title: "Sweep 2026-10-12", workflow_id: workflow_id})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issues" => %{
+            "nodes" => [
+              %{
+                "id" => "lin_TST-84",
+                "identifier" => "TST-84",
+                "title" => "Sweep 2026-10-12, retitled",
+                "state" => %{"id" => "st_1", "name" => "Todo", "type" => "unstarted"}
+              }
+            ],
+            "pageInfo" => %{"hasNextPage" => true, "endCursor" => "cursor_2"}
+          }
+        }
+      })
+    end)
+
+    assert :ok = perform_job(LinearSync, %{project_id: project.id, started_at: "2026-10-12T10:00:00.000000Z"})
+
+    assert %Issue{title: "Sweep 2026-10-12, retitled", workflow_id: ^workflow_id} =
+             Repo.get_by(Issue, external_id: "lin_TST-84")
   end
 
   test "an unowned issue the page gives an owner has its Linear status caught up, and no other does", %{
@@ -346,7 +475,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
           github_installation_id: 12_954,
           key: "LPG",
           default_branch: "main",
-          clone_path: create_temp_git_repo(prefix: "rail_last_page"),
+          clone_path: "/tmp/repos/last-page",
           linear_workspace_id: "lw_test_seed"
         })
 
@@ -387,6 +516,19 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
       end
 
       not_found = %{"errors" => [%{"message" => "Entity not found: Issue"}], "data" => nil}
+
+      # A removed task takes its worktree and branch in the project's clone with it.
+      test_pid = self()
+
+      stub(Git, :remove_worktree, fn clone_path, worktree_path ->
+        send(test_pid, {:removed_worktree, clone_path, worktree_path})
+        :ok
+      end)
+
+      stub(Git, :delete_branch, fn clone_path, branch ->
+        send(test_pid, {:deleted_branch, clone_path, branch})
+        :ok
+      end)
 
       %{project: project, plan: plan, insert: insert, last_page: last_page, lookups: lookups, not_found: not_found}
     end
@@ -480,7 +622,6 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
         end
 
       worktree_path = Path.join(System.tmp_dir!(), "rail_pruned_wt_#{System.unique_integer([:positive])}")
-      git!(clone_path, ["worktree", "add", "-b", "pruned-branch", worktree_path])
 
       {:ok, %Task{id: pruned_task_id}} =
         Pipeline.update_task(hd(tasks), %{worktree_name: "pruned-branch", worktree_path: worktree_path})
@@ -507,8 +648,8 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
 
       assert [] = Repo.all(from(i in Issue, where: i.project_id == ^project_id))
       assert [] = Repo.all(from(t in Task, where: t.id in ^Enum.map(tasks, & &1.id)))
-      refute File.exists?(worktree_path)
-      assert "" = git!(clone_path, ["branch", "--list", "pruned-branch"])
+      assert_received {:removed_worktree, ^clone_path, ^worktree_path}
+      assert_received {:deleted_branch, ^clone_path, "pruned-branch"}
       assert Repo.get(Run, run_id) == nil
       assert_receive :sandboxes_changed
     end
@@ -568,14 +709,14 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
       refute_receive {:issues_synced, ^project_id}, 50
     end
 
-    test "an archived node is written only with a task, and the one without is removed", %{
+    test "an archived node is written with when it was completed and archived, with a task or without", %{
       project: %{id: project_id},
       insert: insert,
       last_page: last_page
     } do
-      %Issue{id: kept_id} = kept = insert.("lin_archived_kept", :in_review)
-      {:ok, %Task{id: task_id}} = Pipeline.create_task(kept, :review)
-      %Issue{id: dropped_id} = insert.("lin_archived_dropped", :done)
+      %Issue{id: tasked_id} = tasked = insert.("lin_archived_tasked", :in_review)
+      {:ok, %Task{id: task_id}} = Pipeline.create_task(tasked, :review)
+      %Issue{id: untasked_id} = insert.("lin_archived_untasked", :done)
       started_at = DateTime.to_iso8601(DateTime.utc_now())
 
       archived = fn external_id ->
@@ -584,19 +725,22 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
           "identifier" => external_id,
           "title" => "Archived #{external_id}",
           "state" => %{"id" => "st_done", "name" => "Done", "type" => "completed"},
+          "completedAt" => "2026-09-01T09:00:00.000Z",
           "archivedAt" => "2026-10-06T09:00:00.000Z",
           "trashed" => nil
         }
       end
 
-      last_page.([archived.("lin_archived_kept"), archived.("lin_archived_dropped"), archived.("lin_archived_new")])
+      last_page.([archived.("lin_archived_tasked"), archived.("lin_archived_untasked"), archived.("lin_archived_new")])
 
       assert :ok = perform_job(LinearSync, %{project_id: project_id, cursor: "cursor_last", started_at: started_at})
 
-      assert %Issue{id: ^kept_id, title: "Archived lin_archived_kept", state: :done} = Repo.get(Issue, kept_id)
-      assert %Task{issue_id: ^kept_id} = Repo.get(Task, task_id)
-      assert Repo.get(Issue, dropped_id) == nil
-      assert Repo.get_by(Issue, external_id: "lin_archived_new") == nil
+      assert %Issue{id: ^tasked_id, title: "Archived lin_archived_tasked", state: :done} = Repo.get(Issue, tasked_id)
+      assert %Task{issue_id: ^tasked_id} = Repo.get(Task, task_id)
+
+      for issue <- [Repo.get(Issue, untasked_id), Repo.get_by(Issue, external_id: "lin_archived_new")] do
+        assert %Issue{completed_at: ~U[2026-09-01 09:00:00Z], archived_at: ~U[2026-10-06 09:00:00Z]} = issue
+      end
     end
 
     test "a trashed node is never written, and with a task it is removed with it", %{
@@ -660,7 +804,6 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
       %Issue{id: webhooked_id} = webhooked = insert.("lin_webhooked", :todo)
       {:ok, %Task{id: webhooked_task_id} = webhooked_task} = Pipeline.create_task(webhooked, :plan)
       worktree_path = Path.join(System.tmp_dir!(), "rail_spared_wt_#{System.unique_integer([:positive])}")
-      git!(clone_path, ["worktree", "add", "-b", "spared-branch", worktree_path])
 
       {:ok, _task} =
         Pipeline.update_task(webhooked_task, %{worktree_name: "spared-branch", worktree_path: worktree_path})
@@ -698,7 +841,8 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
       assert %Issue{id: ^fresh_id} = Repo.get(Issue, fresh_id)
       assert %Issue{id: ^webhooked_id, title: "Rewritten meanwhile"} = Repo.get(Issue, webhooked_id)
       assert %Task{id: ^webhooked_task_id} = Repo.get(Task, webhooked_task_id)
-      assert File.dir?(worktree_path)
+      refute_received {:removed_worktree, ^clone_path, ^worktree_path}
+      refute_received {:deleted_branch, ^clone_path, "spared-branch"}
       assert %Issue{id: ^claimed_id} = Repo.get(Issue, claimed_id)
     end
 

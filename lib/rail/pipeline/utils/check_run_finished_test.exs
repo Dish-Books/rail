@@ -13,11 +13,17 @@ defmodule Rail.Pipeline.Utils.CheckRunFinishedTest do
 
   setup %{project: project} do
     task = learnings_task(project, "CRF-1", :review)
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+    # Starting the review agent asks Rail.Git for the worktree, its HEAD and the diff, so the worktree is a plain
+    # directory and the stubs answer for a branch with nothing changed.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     round = Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter.", approved_at: DateTime.utc_now()})
 
     stub(Git, :get_or_create_worktree, fn _project, _task -> {:ok, task.worktree_path} end)
+    stub(Git, :branch_fingerprint, fn _worktree_path -> %{head_sha: String.duplicate("a", 40), dirty_digest: "clean"} end)
+    stub(Git, :load_diff, fn _scope, _task, :branch -> {:ok, []} end)
     test_pid = self()
 
     # Each start says which agent it was, so a test sees what a finish started and what it did not.
@@ -70,6 +76,15 @@ defmodule Rail.Pipeline.Utils.CheckRunFinishedTest do
     assert %Run{stage_outcome: :done} = check_run_finished(runs.qa, [])
     assert_received {:started, :review_lead, false}
     refute_received {:started, _stage, _resumed}
+  end
+
+  # A round that changed nothing a person sees skipped QA, so the code reviewer is the last check.
+  test "the code reviewer's finish starts the review agent when QA was skipped", %{task: task, runs: runs} do
+    {:ok, _skipped} = Pipeline.update_run(runs.qa, %{stage_outcome: :skipped})
+    {:ok, _saved} = Pipeline.save_report(task, :review, "Nothing to report.")
+
+    assert %Run{stage_outcome: :done} = check_run_finished(runs.review, [])
+    assert_received {:started, :review_lead, false}
   end
 
   # The demo started beside the others, and the review agent does not wait on it.

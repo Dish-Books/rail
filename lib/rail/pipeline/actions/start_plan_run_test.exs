@@ -9,21 +9,26 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.AdvanceTrackerState
+  alias Rail.Issues.Workers.SyncIssue
   alias Rail.Learnings
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.PlanCommentCapture
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
+  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
+  alias Rail.Scope
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Users
 
-  # Its own project, because starting a run adds a worktree to a real clone.
+  # Its own project, because starting a run adds a worktree to its clone.
   # The smallest plan the structure allows: one decision, one card and one criterion, and no data changes.
   @plan """
   ## Implementation plan
@@ -53,8 +58,8 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
 
   setup %{project: %{linear_workspace_id: workspace_id}} do
     scope = system_scope()
-    clone_path = create_temp_git_repo()
-    git!(clone_path, ["remote", "add", "origin", create_temp_git_repo(prefix: "rail_start_plan_remote")])
+    clone_path = Path.join(System.tmp_dir!(), "rail_start_plan_#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(clone_path) end)
     Req.Test.stub(Rail.GitHub.Client, &Req.Test.json(&1, %{"token" => "ghs_token"}))
 
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -108,6 +113,21 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     {:ok, issue} =
       Issues.create_issue(system_scope(), project, %{description: "Attachments follow their source document"})
 
+    # Git is only ever asked through Rail.Git, so a worktree is a plain directory where the task says it goes, on the
+    # commit whose sha is all a's, and the repo has no prompts of its own.
+    stub(Git, :get_or_create_worktree, fn %Project{clone_path: ^clone_path}, %Task{worktree_path: path} ->
+      File.mkdir_p!(path)
+      {:ok, path}
+    end)
+
+    stub(Git, :branch_fingerprint, fn _path ->
+      %{head_sha: String.duplicate("a", 40), dirty_digest: String.duplicate("0", 64)}
+    end)
+
+    stub(Git, :read_default_branch_file, fn %Project{clone_path: ^clone_path}, path ->
+      {:error, "fatal: path '#{path}' does not exist in 'refs/remotes/origin/main'"}
+    end)
+
     %{project: project, roles: roles, issue: issue}
   end
 
@@ -133,12 +153,11 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       assert prompt =~ "1. The ticket first. Save it with `save_plan`"
       assert prompt =~ "three options, each saved with `save_design_option`"
       assert prompt =~ "skip them and say so in one line"
-      assert prompt =~ "Never plan for all three."
       assert prompt =~ "which one you recommend and why"
-      assert prompt =~ "4. Have the plan checked before you end any turn that saved it"
+      assert prompt =~ "4. Have the plan checked in the turn that first saves it"
       assert prompt =~ "Start one subagent on a clean context to read it against the code."
       assert prompt =~ "an acceptance criterion no step delivers"
-      assert prompt =~ "One check a turn: what it revised is checked when the next turn saves the plan."
+      assert prompt =~ "After that, check again only in a turn that changes the plan substantially"
       assert prompt =~ "A fix the plan check brings is the one change a line nobody commented on can take."
       assert prompt =~ "A part you leave out of a save stays as the last save left it"
       assert prompt =~ "carry it everywhere it reaches before your turn ends"
@@ -157,7 +176,8 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
     end)
 
-    assert {:ok, %OsProcess{task_id: task_id, run: %Run{role_id: ^role_id}}} = Pipeline.start_plan_run(issue)
+    assert {:ok, %OsProcess{task_id: task_id, run: %Run{role_id: ^role_id}}} =
+             Pipeline.start_plan_run(system_scope(), issue)
 
     assert %Task{stage: :plan, worktree_path: worktree_path, scratch_path: scratch_path} = Repo.get!(Task, task_id)
     assert File.dir?(worktree_path)
@@ -167,23 +187,82 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     assert_received {:pipeline_changed, ^task_id}
   end
 
-  test "a worktree that cannot be made leaves no task and broadcasts nothing", %{project: project, issue: issue} do
-    File.rm_rf!(Path.join(project.clone_path, ".git"))
+  test "a worktree that cannot be made leaves no task, no owner and broadcasts nothing", %{issue: %{id: issue_id} = issue} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
     test_pid = self()
 
-    # The task is rolled back, so its id is only known from the attempt at its worktree.
-    stub(Git, :get_or_create_worktree, fn project, task ->
+    {:ok, starter} =
+      Users.register_oauth_user(%{
+        github_id: "gh_plan_starter",
+        login: "plan-starter",
+        email: "plan-starter@example.com"
+      })
+
+    starter = starter |> Ecto.Changeset.change(linear_user_id: "lin_usr_plan_starter") |> Repo.update!()
+
+    # The worktree is made before the task is recorded, so its id is only known from the attempt. No transaction is
+    # open while git fetches, so nothing is recorded or claimed yet in here.
+    expect(Git, :get_or_create_worktree, fn _project, task ->
       send(test_pid, {:worktree_for, task.id})
-      call_original(Git, :get_or_create_worktree, [project, task])
+      refute Repo.in_transaction?()
+      refute Repo.exists?(from t in Task, where: t.issue_id == ^task.issue_id)
+      assert %Issue{owner_user_id: nil} = Repo.get!(Issue, task.issue_id)
+
+      {:error,
+       "Failed to create worktree at #{task.worktree_path} (git worktree add exited 128): fatal: not a git repository"}
     end)
 
-    assert {:error, {:worktree_failed, _reason}} = Pipeline.start_plan_run(issue)
+    assert {:error, {:worktree_failed, _reason}} = Pipeline.start_plan_run(Scope.for_user(starter), issue)
 
     assert_received {:worktree_for, task_id}
     refute_received {:pipeline_changed, ^task_id}
+    refute_received {:issue_changed, ^issue_id}
     refute Repo.exists?(from t in Task, where: t.issue_id == ^issue.id)
     refute Repo.exists?(Run)
+    assert %Issue{owner_user_id: nil} = Repo.reload!(issue)
+    refute_enqueued(worker: AdvanceTrackerState)
+    refute_enqueued(worker: SyncIssue)
+  end
+
+  test "an issue that already has its task and Plan run is refused, and nothing is spawned or resumed", %{
+    roles: %{plan: role},
+    issue: issue
+  } do
+    {:ok, task} = Pipeline.create_task(Repo.preload(issue, :project), :plan)
+
+    {:ok, run} =
+      Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
+
+    reject(&Tools.start_os_process/2)
+    reject(Git, :get_or_create_worktree, 2)
+
+    assert {:error, :task_exists} = Pipeline.start_plan_run(system_scope(), issue)
+
+    assert Repo.reload!(run).started_at == run.started_at
+    refute_enqueued(worker: AdvanceTrackerState)
+  end
+
+  test "a task another start records while git runs refuses this one, which records and spawns nothing", %{
+    issue: issue
+  } do
+    {:ok, starter} =
+      Users.register_oauth_user(%{github_id: "gh_plan_racer", login: "plan-racer", email: "plan-racer@example.com"})
+
+    starter = starter |> Ecto.Changeset.change(linear_user_id: "lin_usr_plan_racer") |> Repo.update!()
+
+    expect(Git, :get_or_create_worktree, fn _project, task ->
+      {:ok, _theirs} = Pipeline.create_task(Repo.preload(issue, :project), :plan)
+      {:ok, task.worktree_path}
+    end)
+
+    reject(&Tools.start_os_process/2)
+
+    assert {:error, :task_exists} = Pipeline.start_plan_run(Scope.for_user(starter), issue)
+
+    assert [_theirs] = Repo.all(from t in Task, where: t.issue_id == ^issue.id)
+    refute Repo.exists?(Run)
+    assert %Issue{owner_user_id: nil} = Repo.reload!(issue)
     refute_enqueued(worker: AdvanceTrackerState)
   end
 
@@ -192,9 +271,10 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     issue: issue
   } do
     {:ok, task} = Pipeline.create_task(Repo.preload(issue, :project), :plan)
-    worktree_path = create_temp_git_repo()
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    worktree_path = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree_path)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
 
     {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Attachments follow", description: "Body."})
     design = Path.join(task.scratch_path, "design")
@@ -224,6 +304,55 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     assert {:ok, %OsProcess{}} = Pipeline.start_plan_run(%{run | role: role})
   end
 
+  test "with Product and Design off, round 1 holds the issue as its ticket and the brief hands the issue over", %{
+    issue: issue
+  } do
+    issue = issue |> Ecto.Changeset.change(skipped_steps: [:product, :design]) |> Repo.update!()
+
+    expect(Tools, :start_os_process, fn %Run{} = run, ["-p", prompt | _rest] ->
+      assert prompt =~ "- Product is off: the issue below is the ticket"
+      assert prompt =~ "- Design is off: there are no design options"
+      assert prompt =~ "1. The implementation plan, saved with `save_plan` as `plan`.\n2. Have the plan checked"
+      refute prompt =~ "The design options:"
+      {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
+    end)
+
+    assert {:ok, %OsProcess{task_id: task_id}} = Pipeline.start_plan_run(system_scope(), issue)
+
+    assert %Round{
+             number: 1,
+             plan: nil,
+             approved_at: nil,
+             ticket: %Round.Ticket{title: "Attachments follow their source document"}
+           } = Pipeline.read_plan(Repo.get!(Task, task_id))
+  end
+
+  test "with Architect off the brief asks for no plan, and no round is started before the ticket", %{issue: issue} do
+    issue = issue |> Ecto.Changeset.change(skipped_steps: [:architect]) |> Repo.update!()
+
+    expect(Tools, :start_os_process, fn %Run{} = run, ["-p", prompt | _rest] ->
+      assert prompt =~ "- Architect is off: there is no implementation plan."
+      assert prompt =~ "- Approval needs the ticket and, when there are options, a pick."
+      refute prompt =~ "Have the plan checked"
+      {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
+    end)
+
+    assert {:ok, %OsProcess{task_id: task_id}} = Pipeline.start_plan_run(system_scope(), issue)
+    assert Pipeline.read_plan(Repo.get!(Task, task_id)) == nil
+  end
+
+  test "with Design, Architect and the demo off, approval needs the ticket alone", %{issue: issue} do
+    issue = issue |> Ecto.Changeset.change(skipped_steps: [:design, :architect, :demo]) |> Repo.update!()
+
+    expect(Tools, :start_os_process, fn %Run{} = run, ["-p", prompt | _rest] ->
+      assert prompt =~ "- Approval needs the ticket.\n"
+      assert prompt =~ "- The demo is off: Review records none, so never pass `record_demo`."
+      {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_plan_run(system_scope(), issue)
+  end
+
   test "the brief carries the rules people set for Plan, and not another role's", %{project: project, issue: issue} do
     stub_vertex(%{"source document" => vector([1.0])})
     learning(project, %{rule: "Copy says task, never ticket", kind: :product, roles: [:plan]}, embedding: [1.0])
@@ -235,7 +364,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
     end)
 
-    assert {:ok, %OsProcess{}} = Pipeline.start_plan_run(issue)
+    assert {:ok, %OsProcess{}} = Pipeline.start_plan_run(system_scope(), issue)
   end
 
   test "a rule learned from a design comment on a large element carries no more than the start of its HTML", %{
@@ -270,6 +399,6 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
     end)
 
-    assert {:ok, %OsProcess{}} = Pipeline.start_plan_run(issue)
+    assert {:ok, %OsProcess{}} = Pipeline.start_plan_run(system_scope(), issue)
   end
 end

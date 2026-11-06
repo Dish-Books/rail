@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.StartFixRoundTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Learnings.Schemas.LearningProposal
@@ -35,9 +36,15 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Start Fix Round"})
     {:ok, task} = Pipeline.create_task(issue, :review)
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo(), pr_number: 9, pr_is_draft: true})
+    # HEAD is asked of Rail.Git, so the worktree is a plain directory and the stub says which commit it is on.
+    # A test that moves the branch stubs it again with the new commit.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree, pr_number: 9, pr_is_draft: true})
     task = Repo.preload(task, :issue)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    head = String.duplicate("a", 40)
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: head, dirty_digest: "clean"} end)
 
     {:ok, run} =
       Pipeline.create_run(%{
@@ -68,7 +75,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     {:ok, nit} = Pipeline.save_finding(task, Map.merge(attrs, %{key: "a-nit", title: "A nit", severity: :nit}))
     {:ok, %{round: 1}} = Pipeline.save_review(task)
 
-    %{task: task, run: run, crash: crash, nit: nit}
+    %{task: task, head: head, run: run, crash: crash, nit: nit}
   end
 
   test "with findings ruled Fix it resumes the Review run on them, their rules and places, and the task stays at Review",
@@ -104,7 +111,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
   } do
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
-    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: String.duplicate("b", 40), dirty_digest: "clean"} end)
 
     {:ok, _fixed} =
       Pipeline.save_finding(task, %{
@@ -116,7 +123,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       })
 
     {:ok, %{round: 2}} = Pipeline.save_review(task)
-    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Merge main"])
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: String.duplicate("c", 40), dirty_digest: "clean"} end)
     {:ok, %Finding{carried_round: 3}} = Pipeline.save_finding(task, %{key: "nil-crash", status: "not_fixed"})
     {:ok, %{round: 3}} = Pipeline.save_review(task)
 
@@ -171,6 +178,37 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     assert [%{finished_at: nil}] = Pipeline.read_review(task)
   end
 
+  # A filing cannot be undone, so a recommendation alone never files, and with nothing else to send the review waits.
+  test "a Send leaves a finding only recommended New issue unruled and unfiled", %{
+    task: task,
+    run: run,
+    crash: crash,
+    nit: nit
+  } do
+    {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
+    nit |> Ecto.Changeset.change(recommendation: :new_issue) |> Repo.update!()
+
+    assert {:error, {:undecided_findings, 1}} = Pipeline.start_fix_round(system_scope(), run)
+    assert %Finding{decision: nil, issue_id: nil} = Repo.reload!(nit)
+    assert [%{finished_at: nil}] = Pipeline.read_review(task)
+  end
+
+  test "a Send takes a finding recommended Fix to the round and leaves one recommended New issue out", %{
+    run: run,
+    nit: nit
+  } do
+    nit |> Ecto.Changeset.change(recommendation: :new_issue) |> Repo.update!()
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ ~s(<finding key="nil-crash")
+      refute prompt =~ ~s(key="a-nit")
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{status: :running}} = Pipeline.start_fix_round(system_scope(), run)
+    assert %Finding{decision: nil, issue_id: nil} = Repo.reload!(nit)
+  end
+
   # A chat turn that stopped or failed leaves the lead in progress with its error, which a finished review clears.
   test "Finish review after a stopped or failed chat turn saves the run done, with no error", %{
     task: task,
@@ -193,6 +231,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
   test "on a project with CI, nothing ruled Fix finishes only once CI passed on HEAD", %{
     project: project,
     task: task,
+    head: head,
     run: run,
     crash: crash,
     nit: nit
@@ -200,7 +239,6 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
-    head = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
 
     Repo.insert!(%OsProcess{
       run_id: run.id,
@@ -245,17 +283,17 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
 
   # Rail's CI never ran on what was handed over, and a review with nothing to fix does not wait for it.
   test "on a project with CI, a pull request handed over finishes on its own commit, and on a later one once CI passed",
-       %{project: project, task: task, run: run, crash: crash, nit: nit} do
+       %{project: project, task: task, head: handed, run: run, crash: crash, nit: nit} do
     {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
-    handed = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
     {:ok, task} = Pipeline.update_task(task, %{submitted_head: handed, submitted_at: DateTime.utc_now()})
 
-    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
+    # A fix round committed past what was handed over.
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: String.duplicate("b", 40), dirty_digest: "clean"} end)
     assert {:error, :ci_not_passed} = Pipeline.start_fix_round(system_scope(), run)
 
-    git!(task.worktree_path, ["reset", "--hard", handed])
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: handed, dirty_digest: "clean"} end)
 
     Req.Test.expect(Client, 3, fn conn ->
       case {conn.method, conn.request_path} do
@@ -340,8 +378,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       %{
         ada: user_scope(user: ada),
         grace: user_scope(user: grace),
-        diff: %{path: "lib/a.ex", line_kind: :added, line: 3, line_text: "x = 1", filter: :branch},
-        head: task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
+        diff: %{path: "lib/a.ex", line_kind: :added, line: 3, line_text: "x = 1", filter: :branch}
       }
     end
 
@@ -603,8 +640,8 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
       {:ok, _comment} = Pipeline.create_screen_comment(ada, task, %{"key" => "file-list", "body" => "Fold it."})
-      git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Retake"])
-      retaken = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
+      retaken = String.duplicate("b", 40)
+      stub(Git, :branch_fingerprint, fn _path -> %{head_sha: retaken, dirty_digest: "clean"} end)
       File.write!(Path.join([task.scratch_path, "qa", "screens/file-list/2.jpg"]), "jpeg")
       {:ok, _shot} = Pipeline.save_screen(task, %{key: "file-list", label: "File list", file: "screens/file-list/2.jpg"})
       picture = Path.join([task.scratch_path, "qa", "screens/file-list/2.jpg"])
@@ -832,11 +869,10 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     end
 
     test "a Send of two Fix findings and a diff comment asks the lead for a plan only and writes the round's snapshot",
-         %{task: task, run: run, crash: crash, nit: nit, ada: ada, diff: diff} do
+         %{task: task, head: head, run: run, crash: crash, nit: nit, ada: ada, diff: diff} do
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :fix)
       {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Name it."))
-      head = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
 
       expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
         assert prompt =~ "Sent 2 findings and 1 comment.\n\nStart fix round 1."
@@ -1046,6 +1082,223 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       assert {:error, :dispatch_disabled} = Pipeline.start_fix_round(ada, run)
       assert Pipeline.read_fix_plan(task) == before
       assert [%DiffComment{status: :unsent}] = Pipeline.list_diff_comments(ada, task, unsent: true)
+    end
+  end
+
+  describe "new issues" do
+    setup %{task: task} do
+      {:ok, ada} =
+        Users.register_oauth_user(%{
+          github_id: "gh_sfr_new_issue",
+          login: "ada-new-issue",
+          email: "ada-new-issue@example.com"
+        })
+
+      %{
+        ada: user_scope(user: ada),
+        diff: %{path: "lib/a.ex", line_kind: :added, line: 3, line_text: "x = 1", filter: :branch},
+        task: Repo.preload(task, :issue),
+        filed: fn identifier ->
+          fn conn ->
+            assert %{"variables" => %{"input" => %{"title" => title}}} = conn |> Req.Test.raw_body() |> Jason.decode!()
+
+            Req.Test.json(conn, %{
+              "data" => %{
+                "issueCreate" => %{
+                  "success" => true,
+                  "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
+                }
+              }
+            })
+          end
+        end
+      }
+    end
+
+    test "a Send with a Fix finding and a New issue finding resumes the lead on the Fix one alone and files the other once",
+         %{task: task, run: run, crash: crash, nit: nit, filed: filed} do
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :new_issue)
+
+      Req.Test.expect(Rail.Linear, fn conn ->
+        assert %{
+                 "variables" => %{
+                   "input" => %{"title" => "A nit", "priority" => 4, "stateId" => "st_triage", "description" => described}
+                 }
+               } = conn |> Req.Test.raw_body() |> Jason.decode!()
+
+        assert described =~ "**Problem.** It crashes."
+        assert described =~ "Raised in Review of [SFR-1]"
+        filed.("SFR-2").(conn)
+      end)
+
+      expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "Sent 1 finding and 1 new issue.\n\nStart fix round 1."
+        assert prompt =~ "anything not here was ruled Don't fix, filed as a new issue, or is already fixed"
+        assert prompt =~ ~s(<finding key="nil-crash")
+        refute prompt =~ ~s(<finding key="a-nit")
+        assert prompt =~ ~s(<new_issue key="a-nit" identifier="SFR-2">\nA nit\n</new_issue>)
+        assert prompt =~ "change nothing for it on the branch"
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %Run{status: :running}} = Pipeline.start_fix_round(system_scope(), run)
+      assert %Finding{decision: :new_issue, issue: %{identifier: "SFR-2"}} = Repo.preload(Repo.reload!(nit), :issue)
+      assert %FixPlan{findings: [%FixPlan.Finding{key: "nil-crash"}]} = Pipeline.read_fix_plan(task)
+    end
+
+    test "Finish review with only New issue rulings files each once, says so in the conversation and finishes", %{
+      task: task,
+      run: run,
+      crash: crash,
+      nit: nit,
+      filed: filed
+    } do
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :new_issue)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :new_issue)
+      Req.Test.expect(Rail.Linear, filed.("SFR-2"))
+      Req.Test.expect(Rail.Linear, filed.("SFR-3"))
+
+      Req.Test.expect(Client, 3, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/1/access_tokens"} -> Req.Test.json(conn, %{"token" => "ghs_token"})
+          {"GET", "/repos/example/test-seed/pulls/9"} -> Req.Test.json(conn, %{"number" => 9, "node_id" => "PR_9"})
+          {"POST", "/graphql"} -> Req.Test.json(conn, %{"data" => %{"markPullRequestReadyForReview" => %{}}})
+        end
+      end)
+
+      assert {:ok, %Run{status: :finished}} = Pipeline.start_fix_round(system_scope(), run)
+      assert %Task{stage: :finalize} = Repo.reload!(task)
+
+      assert [
+               %Finding{key: "nil-crash", issue: %{identifier: "SFR-2"}},
+               %Finding{key: "a-nit", issue: %{identifier: "SFR-3"}}
+             ] =
+               Pipeline.list_findings(task)
+
+      lines = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
+      assert "[human] Sent 2 new issues." in lines
+      assert "[human] Finish review: nothing was ruled Fix." in lines
+      assert ~s([human] <new_issue key="a-nit" identifier="SFR-3">) in lines
+      assert {:error, :nothing_to_start} = Pipeline.start_fix_round(system_scope(), run)
+    end
+
+    test "a tracker refusal stops the Send, gives the comment back and leaves the issue already filed, filed once", %{
+      task: task,
+      run: run,
+      crash: crash,
+      nit: nit,
+      ada: ada,
+      diff: diff,
+      filed: filed
+    } do
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :new_issue)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :new_issue)
+      {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Name it."))
+      Req.Test.expect(Rail.Linear, filed.("SFR-2"))
+      Req.Test.expect(Rail.Linear, &Plug.Conn.send_resp(&1, 500, "down"))
+
+      assert {:error, {:issue_not_filed, "A nit"}} = Pipeline.start_fix_round(ada, run)
+      assert [%DiffComment{status: :unsent}] = Pipeline.list_diff_comments(ada, task, unsent: true)
+      assert %Run{status: :finished} = Repo.reload!(run)
+
+      assert [%Finding{key: "nil-crash", issue: %{identifier: "SFR-2"}}, %Finding{key: "a-nit", issue_id: nil}] =
+               Pipeline.list_findings(task)
+
+      # The next Send files only the one left, and the comment goes with it.
+      Req.Test.expect(Rail.Linear, filed.("SFR-3"))
+
+      expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "Sent 1 new issue and 1 comment."
+        assert prompt =~ ~s(<new_issue key="a-nit" identifier="SFR-3">)
+        refute prompt =~ ~s(<new_issue key="nil-crash")
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %Run{status: :running}} = Pipeline.start_fix_round(ada, run)
+    end
+
+    test "a Send that waited on another's filing and finds the review finished by it starts nothing", %{
+      task: task,
+      run: run,
+      crash: crash,
+      nit: nit,
+      ada: ada,
+      diff: diff,
+      filed: filed
+    } do
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :new_issue)
+      {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Name it."))
+      path = Path.join([task.scratch_path, "reviews", "#{task.issue.identifier}.json"])
+
+      # The other Send finishes the review while this one's filing waits on the tracker.
+      Req.Test.expect(Rail.Linear, fn conn ->
+        %{"passes" => [pass]} = path |> File.read!() |> Jason.decode!()
+        File.write!(path, Jason.encode!(%{"passes" => [Map.put(pass, "finished_at", DateTime.utc_now())]}))
+        filed.("SFR-2").(conn)
+      end)
+
+      reject(Tools, :start_os_process, 2)
+      assert {:error, :nothing_to_start} = Pipeline.start_fix_round(ada, run)
+      assert [%DiffComment{status: :unsent}] = Pipeline.list_diff_comments(ada, task, unsent: true)
+    end
+
+    test "while a plan waits, a finding moved from Don't fix to New issue is filed and the plan stays waiting", %{
+      task: task,
+      run: run,
+      crash: crash,
+      nit: nit,
+      ada: ada,
+      filed: filed
+    } do
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+      expect(Tools, :start_os_process, fn %Run{} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      {:ok, _started} = Pipeline.start_fix_round(ada, run)
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => "### What changes\n\n#### `nil-crash`\n\nGuard it."})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      before = Pipeline.read_fix_plan(task)
+
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :new_issue)
+      Req.Test.expect(Rail.Linear, filed.("SFR-2"))
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok, %Run{status: :finished}} = Pipeline.start_fix_round(ada, run)
+      assert Pipeline.read_fix_plan(task) == before
+      assert FixPlan.state(before, task, Pipeline.list_findings(task)) == :waiting
+      assert "[human] Sent 1 new issue." in (run |> Pipeline.list_run_events() |> Enum.map(& &1.line))
+      assert {:error, :fix_plan_waiting} = Pipeline.start_fix_round(ada, run)
+    end
+
+    test "while a plan waits, a Fix finding moved to New issue is a changed ruling the revision names with its issue", %{
+      task: task,
+      run: run,
+      crash: crash,
+      nit: nit,
+      ada: ada,
+      filed: filed
+    } do
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :fix)
+      expect(Tools, :start_os_process, fn %Run{} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      {:ok, _started} = Pipeline.start_fix_round(ada, run)
+      plan = "### What changes\n\n#### `nil-crash`\n\nGuard it.\n\n#### `a-nit`\n\nTidy it."
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :new_issue)
+      Req.Test.expect(Rail.Linear, filed.("SFR-2"))
+
+      expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "Sent 1 changed ruling and 1 new issue."
+        assert prompt =~ ~s(<ruling_change key="a-nit" was="Fix" now="New issue">)
+        assert prompt =~ ~s(<new_issue key="a-nit" identifier="SFR-2">)
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %Run{status: :running}} = Pipeline.start_fix_round(ada, run)
+      assert %FixPlan{findings: [%FixPlan.Finding{key: "nil-crash"}]} = Pipeline.read_fix_plan(task)
     end
   end
 end

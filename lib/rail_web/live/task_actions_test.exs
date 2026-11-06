@@ -1,13 +1,17 @@
 defmodule RailWeb.Live.TaskActionsTest do
   use RailWeb.ConnCase, async: true
 
+  import Ecto.Query
   import Phoenix.LiveViewTest
+  import Rail.Git.Utils.ParseDiff
 
+  alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Round
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles
@@ -16,6 +20,11 @@ defmodule RailWeb.Live.TaskActionsTest do
   alias RailWeb.Live.TaskActions
 
   setup %{conn: conn, project: project} do
+    # What is merged is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: these pages see nothing on the default branch, as when there is no clone.
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :list_default_branch_paths, fn _project, paths -> if paths == [], do: MapSet.new() end)
+
     id = System.unique_integer([:positive])
 
     register = fn login, attrs ->
@@ -44,11 +53,54 @@ defmodule RailWeb.Live.TaskActionsTest do
 
     {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
     task = learnings_task(project, "TAT-1", :review)
-    worktree = create_temp_git_repo()
-    git!(worktree, ["update-ref", "refs/remotes/origin/main", "HEAD"])
-    File.write!(Path.join(worktree, "round.ex"), "one\ntwo\n")
-    git!(worktree, ["add", "."])
-    git!(worktree, ["commit", "-m", "Send comments as one round"])
+
+    # Git is only ever asked through Rail.Git, so the worktree is a plain directory and the stubs answer
+    # for a branch of one commit, committed and pushed, that adds round.ex.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    head = String.duplicate("b", 40)
+
+    commit = %{
+      sha: head,
+      short_sha: "bbbbbbb",
+      parent: String.duplicate("0", 40),
+      subject: "Send comments as one round",
+      at: DateTime.utc_now(),
+      label: nil,
+      merge?: false,
+      main?: false,
+      merged: nil,
+      conflicts: [],
+      files: 1,
+      additions: 2,
+      deletions: 0
+    }
+
+    stub(Git, :load_branch_history, fn _task, _rounds ->
+      %{base: "main", head: "bbbbbbb", commits: [commit], files: 1, additions: 2, deletions: 0}
+    end)
+
+    stub(Git, :branch_fingerprint, fn _worktree_path -> %{head_sha: head, dirty_digest: "clean"} end)
+    stub(Git, :worktree_dirty?, fn _worktree_path -> false end)
+    stub(Git, :branch_unpushed?, fn _worktree_path -> false end)
+
+    # Rows come back unhighlighted, which the pane draws as their text.
+    stub(Git, :load_diff, fn _scope, _task, _filter, _previous ->
+      patch = """
+      diff --git a/round.ex b/round.ex
+      new file mode 100644
+      --- /dev/null
+      +++ b/round.ex
+      @@ -0,0 +1,2 @@
+      +one
+      +two
+      """
+
+      {:ok,
+       for file <- parse_diff(patch) do
+         Map.merge(file, %{rows: Enum.map(file.rows, &Map.put(&1, :html, nil)), viewed?: false})
+       end}
+    end)
 
     {:ok, task} =
       Pipeline.update_task(task, %{
@@ -80,6 +132,24 @@ defmodule RailWeb.Live.TaskActionsTest do
     %{conn: conn, task: task, dan: dan, priya: priya, michael: michael}
   end
 
+  test "nothing offers Ready for review while the review agent works or its fix plan waits", %{
+    conn: conn,
+    task: task,
+    dan: dan
+  } do
+    lead_run = Repo.get_by!(Run, conversation_id: "sess_tat_lead")
+    {:ok, running} = Pipeline.update_run(lead_run, %{status: :running, stage_outcome: :in_progress})
+    assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+    refute has_element?(view, "#task-ready-for-review")
+
+    {:ok, _done} = Pipeline.update_run(running, %{status: :finished, stage_outcome: :done})
+    File.mkdir_p!(Path.join(task.scratch_path, "fix_plans"))
+    plan = %{"version" => 1, "round" => 1, "plan" => "### What changes\n\nRename the heading."}
+    File.write!(Path.join([task.scratch_path, "fix_plans", "TAT-1.json"]), Jason.encode!(plan))
+    assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+    refute has_element?(view, "#task-ready-for-review")
+  end
+
   test "Ready for review marks the task ready, and the header then waits on a tech lead", %{
     conn: conn,
     task: task,
@@ -97,15 +167,6 @@ defmodule RailWeb.Live.TaskActionsTest do
     assert has_element?(view, "#task-waiting", "Waiting for a tech lead: Michael Kerr or Priya Raman")
     assert has_element?(view, "[data-qa='task_status_chip']", "Ready for tech lead")
     assert %Task{marked_ready_by_id: ^dan_id} = Repo.reload!(task)
-  end
-
-  test "a teammate without the setting sees who to wait for and no Merge", %{conn: conn, task: task, dan: dan} do
-    {:ok, _marked} = Pipeline.mark_ready(Scope.for_user(dan), task)
-    assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
-
-    assert has_element?(view, "#task-waiting", "Waiting for a tech lead: Michael Kerr or Priya Raman")
-    refute has_element?(view, "#task-approve")
-    refute has_element?(view, "#task-merge")
   end
 
   test "the waiting line names the one tech lead there is, or says only that it waits when there is none", %{
@@ -126,20 +187,6 @@ defmodule RailWeb.Live.TaskActionsTest do
     assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
 
     assert has_element?(view, "#task-waiting", ~r/Waiting for a tech lead\s*$/)
-  end
-
-  test "a tech lead sees Approve and Merge, squashing into the default branch", %{
-    conn: conn,
-    task: task,
-    dan: dan,
-    priya: priya
-  } do
-    {:ok, _marked} = Pipeline.mark_ready(Scope.for_user(dan), task)
-    assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
-
-    assert has_element?(view, "#task-approve:not([disabled])", "Approve")
-    assert has_element?(view, "#task-merge[title='Squash into main']:not([disabled])", "Merge")
-    refute has_element?(view, "#task-waiting")
   end
 
   test "a refusal shows GitHub refused the merge, its reason on hover, and Merge stays to try again", %{
@@ -195,6 +242,71 @@ defmodule RailWeb.Live.TaskActionsTest do
       refute has_element?(view, "#task-approve")
       refute has_element?(view, "#task-actions-error")
     end)
+  end
+
+  test "Merge puts the open diff away before GitHub is asked, and the merged task keeps it away", %{
+    conn: conn,
+    task: task,
+    dan: dan,
+    priya: priya
+  } do
+    {:ok, _marked} = Pipeline.mark_ready(Scope.for_user(dan), task)
+    test = self()
+
+    # GitHub answers only once the test has looked at the page, so what it sees is the page mid-merge.
+    Req.Test.expect(Client, fn conn ->
+      send(test, {:merging, self()})
+      assert_receive :answer, 2_000
+      Req.Test.json(conn, %{"merged" => true, "sha" => "3c9a1f0e2b"})
+    end)
+
+    assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}?item=diff")
+    assert has_element?(view, "#diff-pane")
+
+    view |> element("#task-merge") |> render_click()
+    assert_receive {:merging, github}, 2_000
+
+    assert has_element?(view, "#diff-put-away", "Merging into main.")
+    refute has_element?(view, "#diff-pane")
+    send(github, :answer)
+
+    eventually(fn ->
+      assert has_element?(view, "#task-merged")
+      assert has_element?(view, "#diff-put-away", "Merged into main.")
+      assert has_element?(view, "#diff-put-away a[href='#{task.pr_url}']", "Open the pull request")
+      refute has_element?(view, "#diff-pane")
+    end)
+  end
+
+  test "a refused merge brings the diff back", %{conn: conn, task: task, dan: dan, priya: priya} do
+    {:ok, _marked} = Pipeline.mark_ready(Scope.for_user(dan), task)
+
+    Req.Test.expect(Client, 3, fn conn ->
+      case conn.method do
+        "PUT" -> conn |> Plug.Conn.put_status(405) |> Req.Test.json(%{"message" => "Base branch was modified."})
+        "POST" -> Req.Test.json(conn, %{"token" => "ghs_app"})
+        "GET" -> Req.Test.json(conn, %{"number" => 151, "merged" => false, "merge_commit_sha" => nil})
+      end
+    end)
+
+    assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}?item=diff")
+    view |> element("#task-merge") |> render_click()
+
+    eventually(fn ->
+      assert has_element?(view, "#task-merge-error")
+      assert has_element?(view, "#diff-pane [data-path='round.ex']")
+      refute has_element?(view, "#diff-put-away")
+    end)
+  end
+
+  test "a merged task's Diff opens put away, without reading the diff", %{conn: conn, task: task, priya: priya} do
+    {:ok, _merged} = Pipeline.update_task(task, %{merged_at: DateTime.utc_now()})
+    reject(Git, :load_diff, 4)
+
+    assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}?item=diff")
+
+    assert has_element?(view, "#diff-put-away", "Merged into main.")
+    refute has_element?(view, "#diff-loading")
   end
 
   # Each is a page drawn before another tab moved the task on, or an event sent past the hidden button.
@@ -426,7 +538,7 @@ defmodule RailWeb.Live.TaskActionsTest do
     end)
   end
 
-  test "a tech lead with no GitHub token who approves is told to sign in again", %{
+  test "a tech lead with no GitHub token who approves or merges is told to sign in again, and both buttons stay", %{
     conn: conn,
     task: task,
     dan: dan,
@@ -446,16 +558,6 @@ defmodule RailWeb.Live.TaskActionsTest do
 
       assert has_element?(view, "#task-approve:not([disabled])")
     end)
-  end
-
-  test "a tech lead with no GitHub token who merges is told to sign in again, and Merge stays", %{
-    conn: conn,
-    task: task,
-    dan: dan,
-    michael: michael
-  } do
-    {:ok, _marked} = Pipeline.mark_ready(Scope.for_user(dan), task)
-    assert {:ok, view, _html} = live(log_in_user(conn, michael), ~p"/tasks/#{task.id}")
 
     view |> element("#task-merge") |> render_click()
 
@@ -465,7 +567,7 @@ defmodule RailWeb.Live.TaskActionsTest do
     end)
   end
 
-  test "a teammate or an admin without the setting sees the approvals and the waiting line, and no Approve", %{
+  test "a teammate or an admin without the setting sees the approvals and who to wait for, and no Approve or Merge", %{
     conn: conn,
     task: task,
     dan: dan
@@ -496,7 +598,7 @@ defmodule RailWeb.Live.TaskActionsTest do
       render_async(view)
 
       assert has_element?(view, "#task-approvals", ~r/Approved by jkowalski-dev-task-actions, rnoname-tat\s*$/)
-      assert has_element?(view, "#task-waiting", "Waiting for a tech lead")
+      assert has_element?(view, "#task-waiting", "Waiting for a tech lead: Michael Kerr or Priya Raman")
       refute has_element?(view, "#task-approve")
       refute has_element?(view, "#task-merge")
     end
@@ -537,7 +639,7 @@ defmodule RailWeb.Live.TaskActionsTest do
     refute has_element?(view, "#task-merge")
   end
 
-  test "with no approvals, or a read GitHub failed, the header lists none and says nothing", %{
+  test "a tech lead sees Approve and a squashing Merge, and with no approvals or a failed read lists none, silently", %{
     conn: conn,
     task: task,
     dan: dan,
@@ -547,8 +649,10 @@ defmodule RailWeb.Live.TaskActionsTest do
     assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
     render_async(view)
 
+    assert has_element?(view, "#task-approve:not([disabled])", "Approve")
+    assert has_element?(view, "#task-merge[title='Squash into main']:not([disabled])", "Merge")
+    refute has_element?(view, "#task-waiting")
     refute has_element?(view, "#task-approvals")
-    assert has_element?(view, "#task-approve")
 
     stub(Pipeline, :list_approvals, fn _task -> {:error, {:github_api_error, 502, %{}}} end)
     assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
@@ -773,7 +877,7 @@ defmodule RailWeb.Live.TaskActionsTest do
       %{task: task}
     end
 
-    test "offers Update, counting the files that conflict, at Review and at Finalize", %{
+    test "offers Update, counting the files that conflict, at Review and at Finalize, and one not needed says so", %{
       conn: conn,
       task: %Task{id: task_id} = task,
       dan: dan
@@ -800,14 +904,9 @@ defmodule RailWeb.Live.TaskActionsTest do
 
       refute has_element?(view, "#task-conflicts")
       assert has_element?(view, "#task-update")
-    end
 
-    test "an Update the branch no longer needs says so", %{conn: conn, task: task, dan: dan} do
       expect(Pipeline, :update_branch, fn _scope, _task -> {:error, :up_to_date} end)
-
-      assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
       view |> element("#task-update") |> render_click()
-
       assert has_element?(view, "#task-actions-error[role='alert']", "The branch is already up to date.")
     end
   end
@@ -842,6 +941,30 @@ defmodule RailWeb.Live.TaskActionsTest do
     end
   end
 
+  describe "a round QA skipped" do
+    # The round changed only files nobody sees in the app, which a person may still want walked.
+    test "offers Run QA anyway, which starts it", %{conn: conn, project: project, task: task, dan: dan} do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+      {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
+
+      {:ok, %{id: run_id}} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: qa.id,
+          status: :finished,
+          stage_outcome: :skipped,
+          started_at: DateTime.utc_now()
+        })
+
+      expect(Pipeline, :retry_run, fn _scope, %{id: ^run_id} = run -> {:ok, run} end)
+
+      assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+      refute has_element?(view, "#task-retry")
+
+      view |> element("#task-run-qa", "Run QA anyway") |> render_click()
+    end
+  end
+
   describe "the initial plan at Plan" do
     setup %{project: project, dan: dan} do
       task = learnings_task(project, "TAT-2", :plan)
@@ -863,10 +986,11 @@ defmodule RailWeb.Live.TaskActionsTest do
       %{plan_task: %{task | issue: issue}, plan_run: run}
     end
 
-    test "its owner sends it to the tech leads, and is then told it is sent and can still start it", %{
+    test "its owner starts it unapproved, or sends it to the tech leads and is told so, and can still start it", %{
       conn: conn,
       plan_task: task,
-      dan: dan
+      plan_run: %{id: run_id} = run,
+      dan: %{id: dan_id} = dan
     } do
       assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
 
@@ -874,6 +998,10 @@ defmodule RailWeb.Live.TaskActionsTest do
       assert has_element?(view, "#task-start-plan", "Start without approval")
       refute has_element?(view, "#task-approve-plan")
       refute has_element?(view, "#task-plan-sent")
+
+      expect(Pipeline, :start_plan, fn %Scope{user: %{id: ^dan_id}}, %{id: ^run_id} -> {:ok, run} end)
+      view |> element("#task-start-plan") |> render_click()
+      refute has_element?(view, "#task-actions-error")
 
       view |> element("#task-send-plan") |> render_click()
       assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
@@ -883,20 +1011,6 @@ defmodule RailWeb.Live.TaskActionsTest do
       assert has_element?(view, "#task-start-plan")
       refute has_element?(view, "#task-actions-error")
       assert [%Round{ready_at: %DateTime{}}] = Pipeline.list_rounds(task)
-    end
-
-    test "its owner starts it without approval", %{
-      conn: conn,
-      plan_task: task,
-      plan_run: %{id: run_id} = run,
-      dan: %{id: dan_id} = dan
-    } do
-      expect(Pipeline, :start_plan, fn %Scope{user: %{id: ^dan_id}}, %{id: ^run_id} -> {:ok, run} end)
-
-      assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
-      view |> element("#task-start-plan") |> render_click()
-
-      refute has_element?(view, "#task-actions-error")
     end
 
     test "a tech lead who does not own it sees nothing until it is sent, then approves it", %{
@@ -925,27 +1039,52 @@ defmodule RailWeb.Live.TaskActionsTest do
       refute has_element?(view, "#task-actions-error")
     end
 
-    test "a tech lead who owns it approves it at once, and a refusal says why", %{
+    test "once sent, a tech lead sees Approve plan and its owner Sent to the tech leads, beside Ready for tech lead", %{
+      conn: conn,
+      plan_task: task,
+      plan_run: run,
+      dan: dan,
+      michael: michael
+    } do
+      {:ok, run} = Pipeline.update_run(run, %{stage_outcome: :done})
+      {:ok, _sent} = Pipeline.send_plan_to_lead(Scope.for_user(dan), run)
+
+      assert {:ok, view, _html} = live(log_in_user(conn, michael), ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#task-approve-plan", "Approve plan")
+      assert has_element?(view, "#task-status-chip", "Ready for tech lead")
+
+      assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#task-plan-sent", "Sent to the tech leads")
+      assert has_element?(view, "#task-status-chip", "Ready for tech lead")
+    end
+
+    test "with Architect off a tech lead who owns it approves the ticket alone, and the task moves to Engineer", %{
       conn: conn,
       plan_task: task,
       priya: priya
     } do
       {:ok, _owner} = Issues.update_issue(task.issue, %{owner_user_id: priya.id})
-      expect(Pipeline, :approve_plan, fn _scope, _run -> {:error, :plan_not_ready} end)
+      task.issue |> Ecto.Changeset.change(skipped_steps: [:architect]) |> Repo.update!()
+      Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: nil])
 
       assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
+      view |> element("#task-approve-plan", "Approve plan") |> render_click()
 
-      assert has_element?(view, "#task-approve-plan", "Approve plan")
-      refute has_element?(view, "#task-send-plan")
-      refute has_element?(view, "#task-start-plan")
+      refute has_element?(view, "#task-actions-error")
+      assert %Task{stage: :engineer} = Repo.reload!(task)
+      assert [%Round{plan: nil, approved_at: %DateTime{}}] = Pipeline.list_rounds(task)
+    end
 
-      view |> element("#task-approve-plan") |> render_click()
+    test "with no plan saved and every step on, there is nothing to approve", %{
+      conn: conn,
+      plan_task: task,
+      priya: priya
+    } do
+      {:ok, _owner} = Issues.update_issue(task.issue, %{owner_user_id: priya.id})
+      Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: nil])
 
-      assert has_element?(
-               view,
-               "#task-actions-error[role='alert']",
-               "The plan's owner has not sent it to the tech leads yet."
-             )
+      assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
+      refute has_element?(view, "#task-approve-plan")
     end
 
     test "a tech lead's own unsent comments hold Approve until they are sent or removed", %{
@@ -983,12 +1122,27 @@ defmodule RailWeb.Live.TaskActionsTest do
       assert has_element?(view, "#task-approve-plan:not([disabled]):not([title])", "Approve plan")
     end
 
-    test "every refusal of the plan says in a sentence what stopped it", %{
+    test "a tech lead who owns it approves it at once, and every refusal says in a sentence what stopped it", %{
       conn: conn,
       plan_task: task,
       priya: priya
     } do
+      {:ok, _owner} = Issues.update_issue(task.issue, %{owner_user_id: priya.id})
+      expect(Pipeline, :approve_plan, fn _scope, _run -> {:error, :plan_not_ready} end)
+
       assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#task-approve-plan", "Approve plan")
+      refute has_element?(view, "#task-send-plan")
+      refute has_element?(view, "#task-start-plan")
+
+      view |> element("#task-approve-plan") |> render_click()
+
+      assert has_element?(
+               view,
+               "#task-actions-error[role='alert']",
+               "The plan's owner has not sent it to the tech leads yet."
+             )
 
       for {reason, sentence} <- [
             {:stage_running, "Something is still running on this task."},

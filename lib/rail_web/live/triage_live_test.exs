@@ -4,6 +4,7 @@ defmodule RailWeb.TriageLiveTest do
   import Ecto.Query
   import Phoenix.LiveViewTest
 
+  alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
@@ -15,6 +16,13 @@ defmodule RailWeb.TriageLiveTest do
   alias Rail.Users
 
   setup %{conn: conn} do
+    # What is merged is read from the project's clone, and a pass checks the default branch out, all through
+    # Rail.Git. The project has no clone, so these see nothing on the default branch, as when there is none.
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :list_default_branch_paths, fn _project, paths -> if paths == [], do: MapSet.new() end)
+    stub(Git, :checkout_detached_worktree, fn _project, worktree_path -> {:ok, worktree_path} end)
+    stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
+
     %{project: project} = triage_project()
     %{workspace: workspace, channel: channel} = connect_slack_channel(project, users: %{"U_PRIYA" => "Priya Natarajan"})
 
@@ -562,10 +570,11 @@ defmodule RailWeb.TriageLiveTest do
     assert has_element?(view, "#triage-thread-title", "Renamed elsewhere")
   end
 
-  test "a project the user cannot access is left out of the queue, the counts and a link to its thread", %{
-    conn: conn,
-    thread: %Thread{id: thread_id}
-  } do
+  test "a project the user cannot access is left out of the queue, the counts and a link to its thread, as is an unknown thread",
+       %{
+         conn: conn,
+         thread: %Thread{id: thread_id}
+       } do
     %{project: hidden_project} = triage_project()
     %{workspace: workspace, channel: channel} = connect_slack_channel(hidden_project)
 
@@ -586,11 +595,8 @@ defmodule RailWeb.TriageLiveTest do
     refute has_element?(view, "#triage-thread")
     refute html =~ "A secret request"
     refute render(view) =~ "Hidden thread"
-  end
 
-  test "an unknown thread opens nothing", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/triage/tth_missing?filter=bogus")
-
     refute has_element?(view, "#triage-thread")
   end
 
@@ -949,30 +955,28 @@ defmodule RailWeb.TriageLiveTest do
       assert has_element?(view, "#triage-image-view[phx-key='Escape']")
     end
 
-    test "with no thread open, or nothing enlarged, image events change nothing", %{
-      conn: conn,
-      thread: thread,
-      shots: shots
-    } do
+    test "with nothing enlarged, or no thread open, image events change nothing, and one image shows no steps or position",
+         %{
+           conn: conn,
+           thread: thread,
+           shots: shots,
+           single: single
+         } do
       {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
       render_hook(view, "step_image", %{"direction" => "next"})
       render_hook(view, "image_key", %{"key" => "ArrowRight"})
       refute has_element?(view, "#triage-image-view")
 
-      {:ok, view, _html} = live(conn, ~p"/triage/tth_missing")
-      render_hook(view, "open_image", %{"message_id" => shots.id, "file_id" => "F_ONE"})
-      refute has_element?(view, "#triage-image-view")
-    end
-
-    test "a message with one image shows no steps or position", %{conn: conn, thread: thread, single: single} do
-      {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
       view |> element("#triage-image-open-#{single.id}-F_FOUR") |> render_click()
-
       assert has_element?(view, "#triage-image-name", "four.png")
       refute has_element?(view, "#triage-image-previous")
       refute has_element?(view, "#triage-image-next")
       refute has_element?(view, "#triage-image-position")
       refute has_element?(view, "#triage-image-divider")
+
+      {:ok, view, _html} = live(conn, ~p"/triage/tth_missing")
+      render_hook(view, "open_image", %{"message_id" => shots.id, "file_id" => "F_ONE"})
+      refute has_element?(view, "#triage-image-view")
     end
 
     test "a thread update keeps the view on the same image, and opening another thread closes it", %{

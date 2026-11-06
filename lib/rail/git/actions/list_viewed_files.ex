@@ -1,6 +1,6 @@
 defmodule Rail.Git.Actions.ListViewedFiles do
   @moduledoc """
-  The files this reader has marked read on a task's diff.
+  The files this reader has marked read on a task's diff, or the cards on its plan or fix plan.
   """
 
   import Ecto.Query
@@ -16,14 +16,14 @@ defmodule Rail.Git.Actions.ListViewedFiles do
   The digest is what the file looked like when it was read, so the caller can
   tell a file still read from one that has moved since.
   """
-  def list_viewed_files(%Scope{user: %{id: user_id}}, %Task{id: task_id}) do
+  def list_viewed_files(%Scope{user: %{id: user_id}}, %Task{id: task_id}, document) do
     query =
       from viewed_file in ViewedFile,
-        where: viewed_file.task_id == ^task_id and viewed_file.user_id == ^user_id,
+        where: viewed_file.task_id == ^task_id and viewed_file.user_id == ^user_id and viewed_file.document == ^document,
         select: {viewed_file.path, viewed_file.digest}
 
     query |> Repo.all() |> Map.new()
   end
 
-  def list_viewed_files(_no_user, %Task{}), do: %{}
+  def list_viewed_files(_no_user, %Task{}, _document), do: %{}
 end

@@ -96,6 +96,7 @@ function seenText(node) {
 
 // What a person sees the element say: never the source of a script or style inside it.
 export function elementText(element) {
+  // biome-ignore lint/performance/useDomNodeTextContent: textContent would read hidden text a person never sees.
   const text = typeof element.innerText === "string" ? element.innerText : seenText(element);
   return text.split(/\s+/).filter(Boolean).join(" ").slice(0, LIMITS.text);
 }
@@ -305,7 +306,9 @@ export const DesignFrame = {
     if (this.el.dataset.comments !== "true") return;
     const commenting = this.el.dataset.commenting === "true";
 
-    if (action === "c" && !commenting) this.pushEventTo(this.el, "toggle_commenting", {});
+    // The Plan item's other tabs hide this one, and a key pressed there is not meant for it.
+    if (action === "c" && !commenting && this.el.checkVisibility?.() !== false)
+      this.pushEventTo(this.el, "toggle_commenting", {});
     if (action === "escape" && commenting) this.pushEventTo(this.el, "stop_commenting", {});
   },
 
@@ -341,7 +344,8 @@ export const DesignFrame = {
 
   fit() {
     const frame = this.el.querySelector("iframe");
-    if (!frame) return;
+    // A hidden tab has no width, and a frame scaled to nothing is fitted again when it shows.
+    if (!frame || this.el.clientWidth === 0) return;
 
     const scale = fitScale(this.el.clientWidth, VIEWPORT_WIDTH);
     this.scale = scale;
@@ -405,11 +409,12 @@ function startOverlay(win) {
 
   const hover = root.querySelector("[data-kind='hover']");
   const label = hover.querySelector(".label");
+  const layer = root.querySelector(".layer");
   const selectedOutline = root.querySelector("[data-kind='selected']");
   const markerLayer = root.querySelector(".markers");
 
   let state = { commenting: false, selected: null, markers: [], version: null, scale: 1 };
-  let hovered = null;
+  let pointer = null;
   let lastMissing = null;
   let scheduled = false;
 
@@ -427,7 +432,17 @@ function startOverlay(win) {
   const draw = () => {
     scheduled = false;
 
-    if (state.commenting && hovered?.isConnected) {
+    // A page that zooms its root zooms the overlay inside it too, so every box would be drawn that much larger and
+    // further out than the viewport pixels it is measured in; the layer undoes it.
+    const zoom = host.currentCSSZoom;
+    layer.style.zoom = typeof zoom === "number" && zoom > 0 ? String(1 / zoom) : "";
+
+    // Whatever is under the pointer now: a scroll, a tooltip that hides or a page that moves changes it with no
+    // pointer move, and the outline follows the pointer, not the element it last moved over.
+    const under = state.commenting && pointer ? doc.elementFromPoint(pointer.x, pointer.y) : null;
+    const hovered = under && !isOurs(under) ? under : null;
+
+    if (hovered) {
       place(hover, hovered);
       label.textContent = "";
       label.append(hovered.localName);
@@ -506,12 +521,17 @@ function startOverlay(win) {
   win.addEventListener(
     "pointermove",
     (event) => {
-      if (!state.commenting || isOurs(event.target)) return;
-      hovered = event.target;
-      schedule();
+      pointer = { x: event.clientX, y: event.clientY };
+      if (state.commenting) schedule();
     },
     true
   );
+
+  win.addEventListener("pointerout", (event) => {
+    if (event.relatedTarget) return;
+    pointer = null;
+    schedule();
+  });
 
   // While commenting, a click picks the element and the mockup never hears of it. Pointer events are only stopped:
   // cancelling one would cancel the click it leads to.
@@ -542,6 +562,9 @@ function startOverlay(win) {
   });
 
   win.addEventListener("scroll", schedule, true);
+  // A transition or animation moves the page with no mutation to hear.
+  win.addEventListener("transitionend", schedule, true);
+  win.addEventListener("animationend", schedule, true);
   win.addEventListener("resize", schedule);
   new win.MutationObserver(schedule).observe(doc.documentElement, {
     subtree: true,

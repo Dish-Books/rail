@@ -46,7 +46,7 @@ defmodule Rail.Pipeline.Utils.CheckRunFinished do
       Repo.all(
         from r in Run,
           join: role in assoc(r, :role),
-          where: r.task_id == ^task.id and r.stage_outcome == :done,
+          where: r.task_id == ^task.id and r.stage_outcome in [:done, :skipped],
           select: role.stage
       )
 

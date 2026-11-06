@@ -1,8 +1,8 @@
 defmodule Rail.Pipeline.Utils.StartPlannedWork do
   @moduledoc """
   Starts the work a task's plan describes, as approving it or starting without approval both do: the ticket, with
-  its priority and estimate, and the picked design are published to the issue, and the task moves to Engineer,
-  where a `StartEngineer` job committed with the move starts the engineer. Unsent plan comments are deleted, since
+  its priority and estimate, and the picked design are published to the issue, and the task moves to the stage after
+  Plan, Engineer or a custom stage, where a `StartEngineer` job committed with the move starts its agent. Unsent plan comments are deleted, since
   the conversation they would go to closes. Nothing starts while a question waits on an answer.
 
   Starting is a one-way door. The task row is locked and the next stage claimed inside the same transaction, so a
@@ -47,7 +47,7 @@ defmodule Rail.Pipeline.Utils.StartPlannedWork do
 
           authors = delete_unsent_comments(task)
           {:ok, run} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
-          {:ok, task} = Pipeline.enter_stage(task, :engineer, start: false)
+          {:ok, task} = Pipeline.enter_stage(task, Issue.calculate_next_stage(task.issue, :plan), start: false)
           # Committed with the move, so the start does not depend on the caller outliving it.
           {:ok, _job} = Oban.insert(StartEngineer.new(%{task_id: task.id}))
           {run, task, authors}
@@ -89,12 +89,21 @@ defmodule Rail.Pipeline.Utils.StartPlannedWork do
   end
 
   # One write carries the ticket and the design. The tracker hears about it from the sync that write enqueues.
-  defp publish(%Task{issue: %Issue{} = issue}, ticket, nil) do
+  # With Product off the issue is the ticket, so nothing of it is written back over what the tracker has now.
+  defp publish(%Task{issue: %Issue{skipped_steps: skipped} = issue} = task, ticket, design) do
+    if :product in skipped,
+      do: publish_design(task, %{title: nil, description: issue.description, priority: nil, estimate: nil}, design),
+      else: publish_design(task, ticket, design)
+  end
+
+  defp publish_design(%Task{}, %{title: nil}, nil), do: :ok
+
+  defp publish_design(%Task{issue: %Issue{} = issue}, ticket, nil) do
     update_issue(issue, ticket_attrs(ticket, ticket.description))
   end
 
   # A tracker that cannot hold the screenshot, such as GitHub Issues, still gets the design's text.
-  defp publish(%Task{issue: %Issue{} = issue} = task, ticket, {option, screenshot}) do
+  defp publish_design(%Task{issue: %Issue{} = issue} = task, ticket, {option, screenshot}) do
     uploaded =
       case Issues.upload_asset(task.project, "#{issue.identifier}-#{option.key}.png", "image/png", screenshot) do
         {:error, :unsupported} -> {:ok, nil}

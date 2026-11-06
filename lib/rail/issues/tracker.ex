@@ -40,6 +40,12 @@ defmodule Rail.Issues.Tracker do
               {:ok, Comment.t()} | {:error, term()}
 
   @doc """
+  Links `url` to the ticket under `title`, such as the Slack thread it was reported in. Linking the same URL again
+  adds no second link.
+  """
+  @callback link_url(Issue.t(), String.t(), String.t()) :: :ok | {:error, term()}
+
+  @doc """
   The identifier Rail keeps for what `identifier` names on `project`, or `:error` when it names nothing.
   """
   @callback canonical_identifier(Project.t(), String.t()) :: {:ok, String.t()} | :error
@@ -74,6 +80,31 @@ defmodule Rail.Issues.Tracker do
   `:ok` when `user` can own a ticket here, or why not.
   """
   @callback check_assignable(User.t()) :: :ok | {:error, term()}
+
+  @doc """
+  The statuses a person can pick for `project`'s tickets, in workflow order, each with its string `:id`, its `:name` and
+  the `:state` its icon shows.
+  """
+  @callback get_statuses(Project.t()) :: {:ok, [map()]} | {:error, term()}
+
+  @doc """
+  Moves the ticket to `status`, one `c:get_statuses/1` returned, as the scope's user where the tracker can, and returns
+  the attributes Rail keeps for it as the tracker now has them.
+  """
+  @callback set_status(Scope.t(), Issue.t(), map()) :: {:ok, map()} | {:error, term()}
+
+  @doc """
+  The project's cycles oldest first, each with its dates, status, whether it is current, the team's default estimate
+  and its daily scope, started (done work included) and completed history, and the team's statuses in tracker order.
+  """
+  @callback get_cycles(Project.t()) :: {:ok, %{cycles: [map()], statuses: [map()]}} | {:error, term()}
+
+  @doc """
+  What blocks each of the tickets `external_ids` names on `project`, and what each blocks, keyed by external id.
+  Each related ticket is an unsaved `Issue`.
+  """
+  @callback get_issue_relations(Project.t(), [String.t()]) ::
+              {:ok, %{String.t() => %{blocked_by: [Issue.t()], blocks: [Issue.t()]}}} | {:error, term()}
 
   @doc """
   The tracker module for a project, an issue, or a Linear workspace.

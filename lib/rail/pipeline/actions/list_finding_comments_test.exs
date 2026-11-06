@@ -80,4 +80,18 @@ defmodule Rail.Pipeline.Actions.ListFindingCommentsTest do
 
     assert [%FindingComment{body: "Grace's."}] = Pipeline.list_finding_comments(grace, task)
   end
+
+  test "sent: true adds everyone's sent comments with their authors and findings, never another person's unsent one",
+       %{task: task, finding: finding, ada: %{user: %{id: ada_id}} = ada, grace: grace} do
+    on = %{"finding_id" => finding.id, "piece" => "fix"}
+    {:ok, %{id: sent_id}} = Pipeline.create_finding_comment(ada, task, Map.put(on, "body", "Sent."))
+    Repo.update_all(from(c in FindingComment, where: c.id == ^sent_id), set: [status: :sent])
+    {:ok, _unsent} = Pipeline.create_finding_comment(ada, task, Map.put(on, "body", "Not sent."))
+    {:ok, %{id: graces_id}} = Pipeline.create_finding_comment(grace, task, Map.put(on, "body", "Mine."))
+
+    assert [
+             %FindingComment{id: ^sent_id, user: %{id: ^ada_id}, finding: %{key: "nil-crash"}},
+             %FindingComment{id: ^graces_id, status: :unsent}
+           ] = Pipeline.list_finding_comments(grace, task, sent: true)
+  end
 end

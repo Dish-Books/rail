@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Actions.SaveDemoTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Demo
@@ -41,8 +42,11 @@ defmodule Rail.Pipeline.Actions.SaveDemoTest do
 
   # The demo is of what is on the branch now, and the panel says which commit that was.
   test "a write-up says the commit it was saved on", %{task: task} do
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
-    head_sha = String.trim(git!(task.worktree_path, ["rev-parse", "HEAD"]))
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
+    head_sha = String.duplicate("a", 40)
+    expect(Git, :branch_fingerprint, fn ^worktree -> %{head_sha: head_sha, dirty_digest: "clean"} end)
 
     assert {:ok, %Demo{commit: ^head_sha}} =
              Pipeline.save_demo(task, %{"title" => "Rounds of comments", "summary" => "Comments go as one round."})

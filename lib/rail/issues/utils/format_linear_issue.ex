@@ -6,12 +6,15 @@ defmodule Rail.Issues.Utils.FormatLinearIssue do
 
   @doc """
   The issue attributes `node` describes. Where it belongs and who owns it are
-  the caller's to add.
+  the caller's to add. The cycle and the parent are left out when `node` says nothing of them.
   """
   def format_linear_issue(%{} = node) do
     state = node["state"] || %{}
 
-    %{
+    node
+    |> cycle()
+    |> Map.merge(parent(node))
+    |> Map.merge(%{
       external_id: node["id"],
       identifier: node["identifier"],
       title: node["title"],
@@ -22,10 +25,22 @@ defmodule Rail.Issues.Utils.FormatLinearIssue do
       state_name: state["name"],
       branch_name: node["branchName"],
       url: node["url"],
-      completed_at: completed_at(node["completedAt"]),
+      completed_at: seconds(node["completedAt"]),
+      archived_at: seconds(node["archivedAt"]),
       external_updated_at: external_updated_at(node["updatedAt"])
-    }
+    })
   end
+
+  # The API nests each as an object, a webhook flattens it to an id.
+  defp cycle(%{"cycle" => %{"id" => id}}), do: %{cycle_external_id: id}
+  defp cycle(%{"cycle" => nil}), do: %{cycle_external_id: nil}
+  defp cycle(%{"cycleId" => id}), do: %{cycle_external_id: id}
+  defp cycle(_no_cycle_keys), do: %{}
+
+  defp parent(%{"parent" => %{"id" => id}}), do: %{parent_external_id: id}
+  defp parent(%{"parent" => nil}), do: %{parent_external_id: nil}
+  defp parent(%{"parentId" => id}), do: %{parent_external_id: id}
+  defp parent(_no_parent_keys), do: %{}
 
   # The column holds microseconds and `insert_all` writes the value without casting it.
   defp external_updated_at(timestamp) when is_binary(timestamp) do
@@ -37,16 +52,16 @@ defmodule Rail.Issues.Utils.FormatLinearIssue do
 
   defp external_updated_at(_missing), do: nil
 
-  # Linear sends milliseconds, but the column holds seconds and `insert_all`
+  # Linear sends milliseconds, but the columns hold seconds and `insert_all`
   # writes the value without casting it, so it is truncated here.
-  defp completed_at(timestamp) when is_binary(timestamp) do
+  defp seconds(timestamp) when is_binary(timestamp) do
     case DateTime.from_iso8601(timestamp) do
       {:ok, at, _offset} -> DateTime.truncate(at, :second)
       {:error, _reason} -> nil
     end
   end
 
-  defp completed_at(_not_completed), do: nil
+  defp seconds(_missing), do: nil
 
   # Linear's 0 means "no priority set", which Rail keeps as its default.
   defp priority(1), do: :urgent

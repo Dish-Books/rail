@@ -31,8 +31,9 @@ defmodule Rail.Pipeline.Schemas.Run do
 
   # Whether this run's stage has had its say. A run latches to `:done` when it
   # states a verdict, and `enter_stage/3` puts it back to `:in_progress` when a
-  # later stage sends the work here again.
-  @stage_outcomes [:in_progress, :done]
+  # later stage sends the work here again. A QA run is `:skipped` for a round that
+  # changed nothing a person sees, which is done for everything waiting on it.
+  @stage_outcomes [:in_progress, :done, :skipped]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "run"}
   schema "runs" do
@@ -138,7 +139,7 @@ defmodule Rail.Pipeline.Schemas.Run do
   def state(%__MODULE__{status: status}) when status in [:starting, :running], do: :running
   def state(%__MODULE__{status: status}) when status in [:waiting_for_resources, :waiting_for_usage], do: :waiting
   def state(%__MODULE__{status: :blocked_on_input}), do: :blocked
-  def state(%__MODULE__{stage_outcome: :done}), do: :done
+  def state(%__MODULE__{stage_outcome: outcome}) when outcome in [:done, :skipped], do: :done
   def state(%__MODULE__{error: error}) when is_binary(error), do: :failed
 
   def state(%__MODULE__{questions: questions}) when is_list(questions) do
@@ -196,13 +197,13 @@ defmodule Rail.Pipeline.Schemas.Run do
   Only the run of the stage the task is in can be waiting: a stage latches its
   run to `:done` and leaves it that way, so the plan run of a task already at
   engineer is a finished verdict, not an outstanding one. Requires `role`, `task`
-  and the task's `issue` to be preloaded.
+  and the task's `issue` to be preloaded, and at Plan the task's `rounds`.
 
   A blocked run stays blocked until its answers are sent, so it keeps its place
   in the queue while the human works through the batch. A run at a stage a human
   signs off is waiting on that sign-off once it is done: its ticket, design pick
-  and plan approved, its diff sent to review, its findings ruled, or, at Finalize,
-  the task marked ready for a tech lead.
+  and plan sent to the tech leads, its diff sent to review, its findings ruled, or,
+  at Finalize, the task marked ready for a tech lead.
 
   A run that failed or stopped is waiting too, and on the same person. Neither
   moves on its own - a failure is fixed by a message and a stopped run is resumed
@@ -214,7 +215,7 @@ defmodule Rail.Pipeline.Schemas.Run do
   """
   def needs_attention?(%__MODULE__{role: %Role{} = role, task: %Task{issue: %Issue{} = issue} = task} = run) do
     task.stage != :merged and is_nil(task.merged_at) and is_nil(issue.completed_at) and
-      issue.state not in [:canceled, :duplicate] and waiting_state?(state(run), role.stage, task)
+      issue.state not in [:canceled, :duplicate] and waiting_state?(state(run), role, task)
   end
 
   # A run read as its issue was deleted has no issue left to wait on anyone for.
@@ -266,10 +267,10 @@ defmodule Rail.Pipeline.Schemas.Run do
 
   def can_chat?(_other), do: false
 
-  defp waiting_state?(state, stage, %Task{} = task) do
+  defp waiting_state?(state, %Role{} = role, %Task{} = task) do
     cond do
-      task.stage == :review and stage in Task.check_stages() -> state in [:failed, :stopped]
-      stage == Task.role_stage(task.stage) -> waiting_state?(state, task)
+      task.stage == :review and role.stage in Task.check_stages() -> state in [:failed, :stopped]
+      Task.works_stage?(task, role) -> waiting_state?(state, task)
       true -> false
     end
   end
@@ -279,6 +280,8 @@ defmodule Rail.Pipeline.Schemas.Run do
   defp waiting_state?(:stopped, _task), do: true
   # Once a teammate marks it ready, a task at Finalize is the review queue's, not its owner's.
   defp waiting_state?(:done, %Task{stage: :finalize, marked_ready_at: marked}), do: is_nil(marked)
+  # A plan sent to the tech leads is theirs to approve, as a task marked ready is theirs to merge.
+  defp waiting_state?(:done, %Task{stage: :plan} = task), do: not Task.plan_sent?(task)
   defp waiting_state?(:done, %Task{stage: stage}), do: stage in [:plan, :engineer, :review]
   defp waiting_state?(_running_or_queued, _task), do: false
 

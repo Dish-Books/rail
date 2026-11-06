@@ -9,6 +9,7 @@ defmodule Rail.Pipeline.Actions.SaveFixPlan do
   import Ecto.Changeset
   import Rail.Pipeline.Utils.WriteFixPlan
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FixPlan
@@ -17,13 +18,14 @@ defmodule Rail.Pipeline.Actions.SaveFixPlan do
 
   @doc """
   Saves `attrs["plan"]` as the next version of `task`'s fix plan. Returns `{:ok, fix_plan}`, `{:error, :no_fix_plan}`
-  when none is due, `{:error, :nothing_to_fix}` for a plan that changes nothing, or `{:error, changeset}` naming
-  what to fix.
+  when none is due, `{:error, :nothing_to_fix}` for a plan that changes nothing, `{:error, {:step_off, :demo}}` for a
+  demo asked of a task whose workflow turned it off, or `{:error, changeset}` naming what to fix.
   """
   def save_fix_plan(%Task{} = task, attrs) when is_map(attrs) do
     task = Repo.preload(task, :issue)
 
-    with %FixPlan{} = fix_plan <- due(task),
+    with false <- Issue.skips_step?(task.issue, :demo) and attrs["record_demo"] == true,
+         %FixPlan{} = fix_plan <- due(task),
          :ok <- something(fix_plan, attrs),
          {:ok, saved} <- fix_plan |> FixPlan.save_changeset(attrs) |> apply_action(:update) do
       write_fix_plan(task, saved)
@@ -32,6 +34,7 @@ defmodule Rail.Pipeline.Actions.SaveFixPlan do
     else
       {:error, %Ecto.Changeset{} = changeset} -> {:error, changeset}
       {:error, :nothing_to_fix} -> {:error, :nothing_to_fix}
+      true -> {:error, {:step_off, :demo}}
       _none_due -> {:error, :no_fix_plan}
     end
   end

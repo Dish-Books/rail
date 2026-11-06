@@ -74,6 +74,14 @@ defmodule Rail.Pipeline.Schemas.DiffCommentTest do
            )
   end
 
+  test "a removed line written in the uncommitted view opens that view, a commit's comment its commit, and any other
+        the branch" do
+    assert DiffComment.calculate_view(%DiffComment{filter: :uncommitted, line_kind: :deleted}) == :uncommitted
+    assert DiffComment.calculate_view(%DiffComment{filter: :commit, commit: "abc1234"}) == {:commit, "abc1234"}
+    assert DiffComment.calculate_view(%DiffComment{filter: :uncommitted, line_kind: :added}) == :branch
+    assert DiffComment.calculate_view(%DiffComment{filter: :branch, line_kind: :deleted}) == :branch
+  end
+
   describe "the block it is sent as" do
     test "names its file and line, quotes the code around it and then the text" do
       comment = %DiffComment{

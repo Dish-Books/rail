@@ -3,10 +3,13 @@ defmodule Rail.Pipeline.Utils.SendBackTest do
 
   import Rail.Pipeline.Utils.SendBack
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
         "data" => %{

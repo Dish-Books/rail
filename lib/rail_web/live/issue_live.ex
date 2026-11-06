@@ -2,14 +2,17 @@ defmodule RailWeb.IssueLive do
   @moduledoc """
   One issue, laid out the way Linear lays it out: the title and description on
   the left with its comment threads beneath, its properties down the right. The
-  assignee can be changed and comments posted here, and both reach Linear;
-  everything else is edited in Linear and arrives by sync or webhook.
+  status and assignee can be changed and comments posted here, and all three reach
+  the tracker; everything else is edited there and arrives by sync or webhook.
   """
   use RailWeb, :live_view
 
   import RailWeb.Utils.HandleIssueEvent
+  import RailWeb.Utils.IssueRelative
+  import RailWeb.Utils.StartIssue
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Scope
@@ -18,8 +21,10 @@ defmodule RailWeb.IssueLive do
   @issue_events ["assign", "filter_assignees", "draft_comment", "comment"]
 
   def mount(_params, _session, socket) do
+    # Workflows too, since the byline names the workflow that opened the issue.
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "workflows")
       # A task started from another tab or page replaces Start at with its link.
       Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
     end
@@ -32,6 +37,8 @@ defmodule RailWeb.IssueLive do
       |> assign(:assignees, [])
       |> assign(:assignee_query, "")
       |> assign(:comment_nonce, 0)
+      |> assign(:checking_pull_request, false)
+      |> assign(:blockers, nil)
       |> assign(:pull_request, "")
       |> assign(:review_error, nil)
 
@@ -47,6 +54,7 @@ defmodule RailWeb.IssueLive do
         do: assign(socket, :assignees, Users.list_assignable_users(project_id: issue.project_id, tracker: issue.tracker)),
         else: socket
 
+    socket = socket |> link_pull_request() |> read_blockers()
     {:noreply, socket}
   end
 
@@ -56,30 +64,26 @@ defmodule RailWeb.IssueLive do
       <.issue_view
         :if={@issue}
         issue={@issue}
+        current_scope={@current_scope}
         assignees={@assignees}
         assignee_query={@assignee_query}
         comment_nonce={@comment_nonce}
+        checking_pull_request={@checking_pull_request}
         pull_request={@pull_request}
         review_error={@review_error}
         owner_editable={
           not match?(%{task: %Task{parent_task_id: parent_id}} when is_binary(parent_id), @issue)
         }
+        workflow={@issue.workflow}
+        link_workflow={Scope.admin?(@current_scope)}
+        blockers={@blockers}
       />
     </Layouts.app>
     """
   end
 
-  def handle_event("start_task", %{"stage" => stage}, socket) do
-    {:ok, stage} = Task.cast_stage(stage)
-
-    case Pipeline.start_task(socket.assigns.current_scope, socket.assigns.issue, stage) do
-      {:ok, task} ->
-        {:noreply, push_navigate(socket, to: ~p"/tasks/#{task.id}")}
-
-      {:error, reason} ->
-        socket = socket |> put_flash(:error, start_error(reason)) |> load_issue(socket.assigns.issue.id)
-        {:noreply, socket}
-    end
+  def handle_event(event, _params, socket) when event in ["start_task", "adopt_pull_request"] do
+    {:noreply, start_issue(socket, socket.assigns.issue.id, &load_issue(&1, &1.assigns.issue.id))}
   end
 
   # Held here, so a reload of the issue while it is typed keeps it.
@@ -123,14 +127,23 @@ defmodule RailWeb.IssueLive do
 
   def handle_info({:issue_comments_changed, _other_issue_id}, socket), do: {:noreply, socket}
 
-  # The tracker may have closed the issue, which takes away the offer to start it.
-  def handle_info({:issue_changed, issue_id}, %{assigns: %{issue: %{id: issue_id}}} = socket) do
-    {:noreply, load_issue(socket, issue_id)}
+  # The tracker may have closed the issue, which takes away the offer to start it, or changed its parent, a sub-issue
+  # or a blocker. Linear sends nothing for a relation, so blockers are read again when this issue or one changes.
+  def handle_info({event, changed_id}, %{assigns: %{issue: %Issue{} = issue, blockers: blockers}} = socket)
+      when event in [:issue_changed, :issue_created] do
+    socket = if issue_relative?(issue, blockers, changed_id), do: load_issue(socket, issue.id), else: socket
+    blocker_ids = for %{issue: %Issue{id: id}} <- (blockers && blockers.blocked_by ++ blockers.blocks) || [], do: id
+
+    socket = if changed_id == issue.id or changed_id in blocker_ids, do: read_blockers(socket), else: socket
+    {:noreply, socket}
   end
 
-  def handle_info({:issue_changed, _other_issue_id}, socket), do: {:noreply, socket}
+  # A sync may have renamed the workflow that opened this issue.
+  def handle_info({:workflows_changed, project_id}, %{assigns: %{issue: %{project_id: project_id}}} = socket) do
+    {:noreply, load_issue(socket, socket.assigns.issue.id)}
+  end
 
-  def handle_info({:issue_created, _issue_id}, socket), do: {:noreply, socket}
+  def handle_info({:workflows_changed, _other_project_id}, socket), do: {:noreply, socket}
 
   # Any task could be this issue's new one while it has none; once it has one, only that task's changes show here.
   def handle_info({:pipeline_changed, task_id}, %{assigns: %{issue: %{task: task} = issue}} = socket)
@@ -140,11 +153,31 @@ defmodule RailWeb.IssueLive do
 
   def handle_info({:pipeline_changed, _other_task_id}, socket), do: {:noreply, socket}
 
+  # Looking up GitHub is not something the page waits on: it offers Plan once GitHub has nothing, or cannot say.
+  def handle_async(:link_pull_request, {:ok, {:ok, _pull_request}}, socket) do
+    socket = socket |> assign(:checking_pull_request, false) |> load_issue(socket.assigns.issue.id)
+    {:noreply, socket}
+  end
+
+  def handle_async(:link_pull_request, _failed, socket) do
+    {:noreply, assign(socket, :checking_pull_request, false)}
+  end
+
+  # An answer read for an issue the page no longer shows is dropped.
+  def handle_async(:blockers, {:ok, {issue_id, blockers}}, %{assigns: %{issue: %Issue{id: issue_id}}} = socket) do
+    {:noreply, assign(socket, :blockers, blockers)}
+  end
+
+  def handle_async(:blockers, _stale_or_failed, socket), do: {:noreply, socket}
+
   defp load_issue(socket, id) do
     preload = [
       :project,
       :owner_user,
-      task: [runs: :role, parent_task: [children: :issue]],
+      :workflow,
+      :parent,
+      :children,
+      task: [:rounds, runs: :role, parent_task: [children: :issue]],
       comments: [:author_user, replies: :author_user]
     ]
 
@@ -162,10 +195,40 @@ defmodule RailWeb.IssueLive do
     end
   end
 
-  defp start_error({:worktree_failed, reason}), do: "Could not create the worktree: #{reason}"
-  defp start_error({:spawn_failed, reason, _run}), do: "Could not start the agent: #{inspect(reason)}"
-  defp start_error(:dispatch_disabled), do: "Dispatch is switched off, so no agent was started."
-  defp start_error(reason), do: "Could not start: #{inspect(reason)}"
+  # Work begun outside Rail is started at Review on its pull request, so an issue that could be started and has
+  # none linked yet is checked once; the link is kept on the issue from then on.
+  defp link_pull_request(%{assigns: %{issue: %Issue{task: nil, pr_number: nil} = issue}} = socket) do
+    scope = socket.assigns.current_scope
+
+    cond do
+      Issue.finished_state?(issue.state) ->
+        socket
+
+      # Checking from the first render, so Plan never shows only to give way to Review.
+      not connected?(socket) ->
+        assign(socket, :checking_pull_request, true)
+
+      true ->
+        socket
+        |> assign(:checking_pull_request, true)
+        |> start_async(:link_pull_request, fn -> Issues.link_pull_request(scope, issue) end)
+    end
+  end
+
+  defp link_pull_request(socket), do: socket
+
+  # Read once connected, not in `load_issue/2`, which runs on every comment and sync.
+  defp read_blockers(%{assigns: %{issue: %Issue{} = issue}} = socket) do
+    if connected?(socket) do
+      start_async(socket, :blockers, fn ->
+        {issue.id, Map.get(Issues.get_blockers([issue]), issue.external_id, %{blocked_by: [], blocks: []})}
+      end)
+    else
+      socket
+    end
+  end
+
+  defp read_blockers(socket), do: socket
 
   defp review_error(:not_a_pull_request, _project), do: "Give the pull request's number, such as #212, or its link."
   defp review_error({:other_repository, repo}, project), do: "That links to #{repo}, not #{project.github_repo}."

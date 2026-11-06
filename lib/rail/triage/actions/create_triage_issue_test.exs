@@ -1,7 +1,10 @@
 defmodule Rail.Triage.Actions.CreateTriageIssueTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
+  alias Rail.Git
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Workers.LinkTrackerUrl
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Scope
@@ -11,6 +14,12 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
   alias Rail.Triage.Schemas.Thread
 
   setup context do
+    # A pass checks the default branch out and reads the Triage prompt from it, both through Rail.Git.
+    # The project has no clone, so these answer as git would for a default branch with no .rail/prompts.
+    stub(Git, :checkout_detached_worktree, fn _project, worktree_path -> {:ok, worktree_path} end)
+    stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     %{project: project} = triage_project()
     %{workspace: workspace, channel: channel} = connect_slack_channel(project, external: context[:external] == true)
     {:ok, thread} = Triage.handle_slack_event(workspace, slack_message_event(channel, %{}))
@@ -81,7 +90,10 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
                "reply_text" => "Thanks Priya, we fixed the stuck tasks. Filed as {issue link}."
              })
 
-    assert %Thread{status: :done} = Repo.get!(Thread, thread.id)
+    assert %Thread{status: :done, permalink: "https://slack.example/archives/" <> _ts = permalink} =
+             Repo.get!(Thread, thread.id)
+
+    assert_enqueued(worker: LinkTrackerUrl, args: %{issue_id: issue_id, url: permalink, title: "Slack thread"})
     refute Repo.exists?(from(t in Task, where: t.issue_id == ^issue_id))
 
     assert %Message{sent_by_user_id: ^user_id, author_name: "Michael", text: "Thanks Priya" <> _rest} =
@@ -206,19 +218,16 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
              Triage.create_triage_issue(scope, item, %{})
   end
 
-  test "a person without Slack linked creates nothing", %{thread: thread} do
+  test "a person without Slack linked, or linked to another Slack workspace, creates nothing", %{thread: thread} do
     %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug()]})
     unlinked = Scope.for_user(%{id: "usr_unlinked"})
 
     assert {:error, :slack_not_linked} = Triage.create_triage_issue(unlinked, item, %{})
-    assert %Item{created_issue_id: nil} = Repo.get!(Item, item.id)
-  end
-
-  test "a person linked to another Slack workspace creates nothing", %{thread: thread} do
-    %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug()]})
 
     assert {:error, :slack_other_workspace} =
              Triage.create_triage_issue(Scope.for_user(slack_user("T_ELSEWHERE")), item, %{})
+
+    assert %Item{created_issue_id: nil} = Repo.get!(Item, item.id)
   end
 
   test "an item an existing issue covers is already tracked", %{project: project, thread: thread, scope: scope} do

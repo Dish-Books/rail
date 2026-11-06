@@ -4,13 +4,14 @@ defmodule Rail.Mcp.Utils.RunToolDemoCutTest do
   import Rail.Mcp.Utils.RunToolDemoCut
   import Rail.Mcp.Utils.RunToolDemoStart
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Tools
 
   setup do
     unique = System.unique_integer([:positive])
     scratch = Path.join([System.tmp_dir!(), "rail_cut_test", to_string(unique)])
-    task = %Task{id: "tsk_cut_#{unique}", scratch_path: scratch}
+    task = %Task{id: "tsk_cut_#{unique}", scratch_path: scratch, issue: %Issue{}}
 
     stub(Tools, :start_browser_session, fn ^task, "demo", _opts -> {:ok, self()} end)
 

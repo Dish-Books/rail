@@ -20,7 +20,9 @@ defmodule Rail.Mcp.Utils.RunToolDemoStart do
 
   import Rail.Mcp.Utils.NamedBrowser
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Repo
   alias Rail.Tools
 
   @doc """
@@ -28,13 +30,17 @@ defmodule Rail.Mcp.Utils.RunToolDemoStart do
   any earlier take.
   """
   def run_tool_demo_start(%Task{} = task, arguments, opts) do
-    with {:ok, name} <- filmed(task, arguments, opts) do
+    with false <- Issue.skips_step?(Repo.preload(task, :issue).issue, :demo),
+         {:ok, name} <- filmed(task, arguments, opts) do
       _discarded = Tools.stop_browser_recording(task)
       {:ok, recording} = Tools.start_browser_recording(task, name)
 
       with "" <> frame <- Tools.get_browser_frame(task, name), do: send(recording, {:browser_frame, task.id, name, frame})
 
       {:ok, "Recording. Everything from here is in the video, so do the walkthrough you rehearsed."}
+    else
+      true -> {:refused, "Not recording: the demo is off for this task's workflow, so it has no demo."}
+      refused -> refused
     end
   end
 

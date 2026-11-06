@@ -13,13 +13,18 @@ defmodule Rail.Pipeline.Actions.UpdateBranchTest do
 
   setup %{project: project} do
     task = learnings_task(project, "UPB-1", :review)
+    # Git is stubbed, so the worktree is only looked for: a plain directory stands in for it.
+    worktree_path = Path.join(System.tmp_dir!(), "rail_upb_wt_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(worktree_path)
+    on_exit(fn -> File.rm_rf(worktree_path) end)
 
-    {:ok, task} =
-      Pipeline.update_task(task, %{worktree_path: create_temp_git_repo(), marked_ready_at: DateTime.utc_now()})
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path, marked_ready_at: DateTime.utc_now()})
 
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter by vendor.", approved_at: DateTime.utc_now()})
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
     stub(Git, :base_status, fn _path, "main" -> %{behind: true, conflicts: ["lib/a.ex", "lib/b.ex"]} end)
+    stub(Git, :branch_fingerprint, fn _worktree_path -> %{head_sha: String.duplicate("a", 40), dirty_digest: "clean"} end)
 
     {:ok, %{id: ada_id} = ada} =
       Users.register_oauth_user(%{github_id: "gh_upb_ada", login: "ada-update-branch", email: "ada-upb@example.com"})
@@ -27,16 +32,19 @@ defmodule Rail.Pipeline.Actions.UpdateBranchTest do
     %{task: task, ada: user_scope(user: %{ada | project_ids: [project.id]}), ada_id: ada_id}
   end
 
-  test "starts a round, approved by whoever clicked, that merges the default branch in and names the conflicts", %{
-    task: %Task{id: task_id} = task,
-    ada: ada,
-    ada_id: ada_id
-  } do
+  test "starts a round on the branch's head, approved by whoever clicked, that merges the default branch in and names the conflicts",
+       %{
+         task: %Task{id: task_id, worktree_path: worktree_path} = task,
+         ada: ada,
+         ada_id: ada_id
+       } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
     # The start is the job's, committed with the round, so it survives the page that clicked.
     reject(Tools, :start_os_process, 2)
+    head = String.duplicate("b", 40)
+    expect(Git, :branch_fingerprint, fn ^worktree_path -> %{head_sha: head, dirty_digest: "clean"} end)
 
-    assert {:ok, %Round{number: 2, approved_by_id: ^ada_id, approved_at: %DateTime{}, plan: plan}} =
+    assert {:ok, %Round{number: 2, approved_by_id: ^ada_id, approved_at: %DateTime{}, plan: plan, base_head: ^head}} =
              Pipeline.update_branch(ada, task)
 
     assert plan =~

@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.SetDiffCommentResolvedTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
@@ -8,6 +9,8 @@ defmodule Rail.Pipeline.Actions.SetDiffCommentResolvedTest do
   alias Rail.Users
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
     Req.Test.expect(Rail.Linear, fn conn ->

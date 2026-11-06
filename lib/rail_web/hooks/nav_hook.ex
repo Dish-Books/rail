@@ -19,7 +19,11 @@ defmodule RailWeb.Hooks.NavHook do
       |> assign(:theme, "dark")
       |> assign(:show_project_switcher, false)
       |> assign(:projects, projects)
-      |> assign(:attention_count, Pipeline.count_attention(project_id: Scope.project_ids(scope)))
+      # The badge is what waits on this user, as the Overview's Waiting on you counts it.
+      |> assign(
+        :attention_count,
+        Pipeline.count_attention(project_id: Scope.project_ids(scope), owner_user_id: scope.user.id)
+      )
       |> assign(:triage_count, Triage.count_triage_threads(project_id: Scope.project_ids(scope)).waiting)
       |> assign(:current_project_id, current_project_id)
       # What a page lists: the selected project, or else every project the user can see.

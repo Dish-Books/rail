@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.CaptureIssueModal do
   @moduledoc """
-  The New Issue dialog. It keeps its own open state and form, so the page it
-  sits on only hands it the projects.
+  The New Issue dialog. It keeps its own open state, form and the issue it last
+  created, so the page it sits on only hands it the projects.
 
   Anything on the page opens it with `open/0`, which targets the component by
   its DOM id.
@@ -69,6 +69,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
               type="button"
               id="close-new-issue-button"
               data-qa="close_new_issue_button"
+              form="capture-issue-form"
               phx-click="close"
               phx-target={@myself}
               class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 text-sm font-bold p-1 cursor-pointer"
@@ -77,7 +78,72 @@ defmodule RailWeb.Components.CaptureIssueModal do
             </button>
           </div>
 
+          <div :if={@created} id="capture-created" role="status" class="space-y-4">
+            <p class="flex items-center gap-2 text-[13px] font-medium text-slate-800 dark:text-slate-200">
+              <.icon name="pi-check-circle-fill" class="size-4 text-emerald-500" />
+              <span>Created in {@created.state_name || Issue.state_label(@created.state)}</span>
+            </p>
+            <div class="min-w-0 space-y-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-3">
+              <.link
+                navigate={~p"/issues/#{@created.id}"}
+                id="capture-created-issue"
+                data-qa="capture_created_issue"
+                class="group block min-w-0 rounded-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:focus-visible:outline-blue-400"
+              >
+                <span class="font-mono text-sm text-blue-600 dark:text-blue-400 group-hover:underline">
+                  {@created.identifier}
+                </span>
+                <span class="mt-0.5 block break-words text-sm font-medium text-slate-900 dark:text-slate-100 group-hover:underline">
+                  {@created.title}
+                </span>
+              </.link>
+              <p class="flex min-w-0 items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+                <span class="truncate">{project_label(@created.project)}</span>
+                <span class="inline-flex shrink-0 items-center gap-1">
+                  <.priority_icon priority={@created.priority} />
+                  <span>{Issue.priority_label(@created.priority)}</span>
+                </span>
+              </p>
+            </div>
+            <a
+              :if={@created.url not in [nil, ""]}
+              href={@created.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              id="capture-created-tracker"
+              data-qa="capture_created_tracker"
+              class="inline-flex items-center gap-2 rounded-sm text-sm text-slate-900 dark:text-slate-100 hover:underline outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:focus-visible:outline-blue-400"
+            >
+              <.icon name="pi-arrow-square-out" class="size-4 text-slate-500 dark:text-slate-400" />
+              <span>Open in {Issue.tracker_label(@created.tracker)}</span>
+            </a>
+            <div class="flex items-center justify-end gap-3 border-t border-slate-200 dark:border-slate-700 pt-3">
+              <button
+                type="button"
+                id="capture-created-close"
+                data-qa="capture_created_close"
+                phx-click="close"
+                phx-target={@myself}
+                class="px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                id="capture-created-new"
+                data-qa="capture_created_new"
+                phx-click="new"
+                phx-target={@myself}
+                phx-mounted={JS.focus()}
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-xs font-semibold text-white shadow-xs hover:opacity-90 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900"
+              >
+                <.icon name="pi-plus-bold" class="size-3.5" />New issue
+              </button>
+            </div>
+          </div>
+
           <form
+            :if={!@created}
             id="capture-issue-form"
             phx-change="change"
             phx-submit="submit"
@@ -120,7 +186,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
                 name="title"
                 value={@title}
                 data-qa="capture_title_input"
-                autofocus
+                phx-mounted={JS.focus()}
                 placeholder="What needs doing?"
                 class="w-full px-3 py-2 text-sm rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500"
               />
@@ -188,16 +254,20 @@ defmodule RailWeb.Components.CaptureIssueModal do
                 id="capture-submit-button"
                 data-qa="capture_submit_button"
                 disabled={not @can_submit}
-                phx-disable-with="Adding..."
+                data-busy-self
                 class={[
-                  "px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-opacity",
+                  "group px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-opacity",
+                  "[&.phx-submit-loading]:opacity-60 [&.phx-submit-loading]:cursor-not-allowed",
                   not @can_submit &&
                     "bg-slate-500 dark:bg-slate-400 text-white dark:text-slate-900 opacity-50 cursor-not-allowed",
                   @can_submit &&
                     "bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer"
                 ]}
               >
-                Add to Triage (⌘Enter)
+                <span class="group-[.phx-submit-loading]:hidden">Add to Triage (⌘Enter)</span>
+                <span class="hidden items-center gap-1.5 group-[.phx-submit-loading]:inline-flex">
+                  <span class="inline-block size-3 rounded-full border-2 border-current border-t-transparent motion-safe:animate-spin" />Adding...
+                </span>
               </button>
             </div>
           </form>
@@ -206,6 +276,9 @@ defmodule RailWeb.Components.CaptureIssueModal do
     </div>
     """
   end
+
+  # ⌘N reaches the top bar's button while the dialog is open, and must not wipe what it shows.
+  def handle_event("open", _params, %{assigns: %{open: true}} = socket), do: {:noreply, socket}
 
   def handle_event("open", _params, socket) do
     socket =
@@ -221,9 +294,17 @@ defmodule RailWeb.Components.CaptureIssueModal do
     {:noreply, socket}
   end
 
+  def handle_event("new", _params, socket) do
+    socket = reset_form(socket, default_project_id(socket.assigns.projects, socket.assigns.current_project_id))
+    {:noreply, socket}
+  end
+
   def handle_event("change", params, socket) do
     {:noreply, assign_form(socket, params)}
   end
+
+  # A submit already in flight when the first one created its issue must not create a second.
+  def handle_event("submit", _params, %{assigns: %{created: %Issue{}}} = socket), do: {:noreply, socket}
 
   def handle_event("submit", params, socket) do
     socket = assign_form(socket, params)
@@ -236,7 +317,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
              description: description,
              priority: priority
            }) do
-        {:ok, _issue} -> {:noreply, close(socket)}
+        {:ok, issue} -> {:noreply, assign(socket, :created, issue)}
         {:error, reason} -> {:noreply, assign(socket, :error, error_message(reason))}
       end
     else
@@ -244,8 +325,6 @@ defmodule RailWeb.Components.CaptureIssueModal do
       nil -> {:noreply, assign(socket, :error, "Project not found")}
     end
   end
-
-  defp close(socket), do: socket |> assign(:open, false) |> reset_form(nil)
 
   defp assign_form(socket, params) do
     socket
@@ -262,6 +341,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
     |> assign(:project_id, project_id)
     |> assign(:priority, :medium)
     |> assign(:error, nil)
+    |> assign(:created, nil)
   end
 
   defp default_project_id(projects, current_project_id) do
@@ -280,6 +360,21 @@ defmodule RailWeb.Components.CaptureIssueModal do
     do: "The GitHub App needs Issues: read and write on this repository"
 
   defp error_message(:github_issues_disabled), do: "Issues are turned off on this repository"
+
+  defp error_message({:linear_graphql_error, [%{"message" => message} | _rest]}) when is_binary(message),
+    do: "Linear refused the issue: #{message}"
+
+  defp error_message({:linear_api_error, _status, %{"errors" => [%{"message" => message} | _rest]}})
+       when is_binary(message), do: "Linear refused the issue: #{message}"
+
+  defp error_message({:linear_api_error, status, _body}), do: "Linear could not create the issue (#{status})"
+  defp error_message({:linear_mutation_failed, _mutation}), do: "Linear did not create the issue"
+  defp error_message(:linear_team_not_found), do: "This project has no Linear team"
+  defp error_message(:no_workspace_token), do: "Rail is not connected to this project's Linear workspace"
+  defp error_message({:github_api_error, status, _body}), do: "GitHub could not create the issue (#{status})"
+
+  defp error_message(%Req.TransportError{} = error), do: "Could not reach the tracker (#{Exception.message(error)})"
+
   defp error_message(reason) when is_binary(reason), do: reason
   defp error_message(reason), do: inspect(reason)
 end

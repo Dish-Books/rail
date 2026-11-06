@@ -1,6 +1,7 @@
 defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Mcp
   alias Rail.Mcp.RunContext
   alias Rail.Pipeline
@@ -11,9 +12,15 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
 
   setup %{project: project} do
     task = learnings_task(project, "RSS-1", :review)
-    worktree = create_temp_git_repo()
+    # Only checked for, so a plain directory; what git says of it is stubbed.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    head = Base.encode16(:crypto.strong_rand_bytes(20), case: :lower)
+    stub(Git, :worktree_dirty?, fn ^worktree -> false end)
+    stub(Git, :branch_fingerprint, fn ^worktree -> %{head_sha: head, dirty_digest: "clean"} end)
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
     {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
 
     # A blank tab all one white, and Rail's Learnings with nothing to review, which is sparse but not blank.
@@ -33,7 +40,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
       task: task,
       worktree: worktree,
       context: context,
-      head: worktree |> git!(["rev-parse", "HEAD"]) |> String.trim(),
+      head: head,
       flat: flat,
       viewport: viewport
     }
@@ -47,14 +54,22 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
     expect(Tools, :start_browser_session, fn _task, "explorer-1", [{:existing, true} | _opts] -> {:ok, self()} end)
     short = String.slice(head, 0, 7)
 
-    assert {:ok, %{"content" => [%{"text" => "Saved as screens/file-list/" <> said}]}} =
+    picture = Base.encode64("jpeg bytes")
+
+    assert {:ok,
+            %{
+              "content" => [
+                %{"type" => "text", "text" => "Saved as screens/file-list/" <> said},
+                %{"type" => "image", "data" => ^picture, "mimeType" => "image/jpeg"}
+              ]
+            }} =
              Mcp.call_run_tool(context, "save_screen", %{
                "key" => "file-list",
                "label" => " File list just after Send ",
                "browser" => "explorer-1"
              })
 
-    assert said =~ ".jpg, the image of file-list on #{short}."
+    assert said =~ ".jpg, the image of file-list on #{short}, and the picture is attached."
     refute said =~ "back at its own width"
 
     assert [%{key: "file-list", label: "File list just after Send", commit: ^head, browser: "explorer-1"}] =
@@ -67,7 +82,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
 
     assert {:ok, _first} = Mcp.call_run_tool(context, "save_screen", arguments)
 
-    assert {:ok, %{"content" => [%{"text" => "Saved as " <> said}]}} =
+    assert {:ok, %{"content" => [%{"text" => "Saved as " <> said}, _picture]}} =
              Mcp.call_run_tool(context, "save_screen", %{arguments | "label" => "File list again"})
 
     [file, _rest] = String.split(said, ", the image", parts: 2)
@@ -130,10 +145,10 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
     stub(Tools, :start_browser_session, fn _task, "explorer-1", _opts -> {:ok, self()} end)
 
     expect(Tools, :capture_browser_evidence, fn _session, _task, "File list", [key: "file-list", width: 390] ->
-      {:ok, "screens/file-list/1.jpg"}
+      {:ok, "screens/file-list/1.jpg", "jpeg bytes"}
     end)
 
-    assert {:ok, %{"content" => [%{"text" => "Saved as screens/file-list/1.jpg" <> said}]}} =
+    assert {:ok, %{"content" => [%{"text" => "Saved as screens/file-list/1.jpg" <> said}, _picture]}} =
              Mcp.call_run_tool(context, "save_screen", %{
                "key" => "file-list",
                "label" => "File list",
@@ -141,7 +156,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
                "width" => 390
              })
 
-    # Clearing Rail's width also ends one an explorer's script set, which the script then has to set again.
+    # Clearing Rail's width also ends one QA's script set, which the script then has to set again.
     assert said =~ "The tab is back at its own width now, so a script holding a resize has to set it again."
   end
 
@@ -149,10 +164,10 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
     stub(Tools, :start_browser_session, fn _task, "explorer-1", _opts -> {:ok, self()} end)
 
     expect(Tools, :capture_browser_evidence, fn _session, _task, "File list", [key: "file-list", width: nil] ->
-      {:ok, "screens/file-list/1.jpg"}
+      {:ok, "screens/file-list/1.jpg", "jpeg bytes"}
     end)
 
-    assert {:ok, %{"content" => [%{"text" => "Saved as screens/file-list/1.jpg" <> _rest}]}} =
+    assert {:ok, %{"content" => [%{"text" => "Saved as screens/file-list/1.jpg" <> _rest}, _picture]}} =
              Mcp.call_run_tool(context, "save_screen", %{
                "key" => "file-list",
                "label" => "File list",
@@ -185,7 +200,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
 
   # A picture of uncommitted work belongs to no commit, so it could never say which one it shows.
   test "a worktree with uncommitted changes is refused before any browser", %{context: context, worktree: worktree} do
-    File.write!(Path.join(worktree, "wip.ex"), "uncommitted\n")
+    expect(Git, :worktree_dirty?, fn ^worktree -> true end)
     reject(Tools, :start_browser_session, 3)
 
     assert {:error, {:refused, "Refused, nothing saved. The worktree has uncommitted changes" <> _rest}} =

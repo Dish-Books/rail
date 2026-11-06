@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Schemas.RunTest do
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
@@ -332,6 +333,30 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     }
 
     assert Run.needs_attention?(done)
+  end
+
+  # Sending hands the plan to the tech leads, as marking ready hands a task at Finalize to the review queue.
+  test "a done Plan run on a plan sent to the tech leads waits on nobody, and one not sent or approved waits" do
+    sent = %Round{number: 1, ready_at: DateTime.utc_now()}
+
+    done = %Run{
+      status: :finished,
+      stage_outcome: :done,
+      role: %Role{stage: :plan},
+      task: %Task{stage: :plan, merged_at: nil, issue: %Issue{}, rounds: [sent]}
+    }
+
+    refute Run.needs_attention?(done)
+    assert Run.needs_attention?(%{done | task: %{done.task | rounds: [%{sent | ready_at: nil}]}})
+    assert Run.needs_attention?(%{done | task: %{done.task | rounds: [%{sent | approved_at: DateTime.utc_now()}]}})
+  end
+
+  test "a Plan run on a sent plan that asks a question, fails or stops still waits on its owner" do
+    task = %Task{stage: :plan, merged_at: nil, issue: %Issue{}, rounds: [%Round{number: 1, ready_at: DateTime.utc_now()}]}
+
+    assert Run.needs_attention?(%Run{status: :blocked_on_input, role: %Role{stage: :plan}, task: task})
+    assert Run.needs_attention?(%Run{status: :finished, error: "It went wrong", role: %Role{stage: :plan}, task: task})
+    assert Run.needs_attention?(%Run{status: :finished, role: %Role{stage: :plan}, task: task})
   end
 
   test "a done run of a stage the task has already left needs nothing" do

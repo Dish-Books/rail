@@ -18,6 +18,10 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
+    stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Rail.Git, :branch_fingerprint, fn _worktree_path -> nil end)
+    stub(Rail.Git, :remove_worktree, fn _repo_path, _worktree_path -> :ok end)
+    stub(Rail.Git, :delete_branch, fn _repo_path, _branch -> :ok end)
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
     stub(Rail.Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
 

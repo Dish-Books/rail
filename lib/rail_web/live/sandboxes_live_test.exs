@@ -16,6 +16,13 @@ defmodule RailWeb.SandboxesLiveTest do
   alias Rail.Users
 
   setup %{conn: conn, project: project} do
+    # A role's prompt is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: these see no prompt file on the default branch, as when there is no clone. A task Linear
+    # deletes takes its worktree and branch in that clone with it.
+    stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Rail.Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
+    stub(Rail.Git, :delete_branch, fn _clone_path, _branch -> :ok end)
+
     id = System.unique_integer([:positive])
 
     # Anyone signed in reads the page, admin or not.

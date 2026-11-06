@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Utils.StartRoleRun do
   the check Plan and the review agent have read each plan they save.
   """
 
+  import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.PrepareWorktree
   import Rail.Pipeline.Utils.StartWorktreeSetup
 
@@ -25,16 +26,19 @@ defmodule Rail.Pipeline.Utils.StartRoleRun do
     {task, worktree_path} = worktree(task)
     {:ok, %Run{} = run} = Pipeline.start_or_resume_run(task, role, worktree_path, opts)
 
-    if worktree_path do
-      case start_worktree_setup(run) do
-        # The run's own role is the stored row; this one carries the prompt the repo merged.
-        :not_needed -> start_agent(%{run | role: role})
-        {:ok, os_process} -> {:ok, os_process.run}
-        {:error, %Run{} = failed} -> {:ok, failed}
+    {:ok, settled} =
+      if worktree_path do
+        case start_worktree_setup(run) do
+          # The run's own role is the stored row; this one carries the prompt the repo merged.
+          :not_needed -> start_agent(%{run | role: role})
+          {:ok, os_process} -> {:ok, os_process.run}
+          {:error, %Run{} = failed} -> {:ok, failed}
+        end
+      else
+        {:ok, fail(run, "Could not prepare the worktree at #{task.worktree_path}.")}
       end
-    else
-      {:ok, fail(run, "Could not prepare the worktree at #{task.worktree_path}.")}
-    end
+
+    {:ok, broadcast_pipeline_changed(settled)}
   end
 
   defp start_agent(%Run{} = run) do
@@ -67,4 +71,7 @@ defmodule Rail.Pipeline.Utils.StartRoleRun do
 
   defp start_process(%Run{role: %Role{stage: stage}} = run) when stage in [:qa, :review, :demo],
     do: Pipeline.start_check_run(run)
+
+  defp start_process(%Run{role: %Role{custom_stage: name}} = run) when is_binary(name),
+    do: Pipeline.start_custom_stage_run(run)
 end

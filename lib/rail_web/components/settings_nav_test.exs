@@ -17,6 +17,7 @@ defmodule RailWeb.Components.SettingsNavTest do
 
     assert html =~ "Connected Accounts"
     refute html =~ "tab-projects"
+    refute html =~ "tab-workflows"
   end
 
   test "renders all tabs for admin user with active tab highlighted" do
@@ -30,6 +31,7 @@ defmodule RailWeb.Components.SettingsNavTest do
 
     assert html =~ "Connected Accounts"
     assert html =~ "tab-projects"
+    assert html =~ "tab-workflows"
     assert html =~ "border-indigo-500 text-indigo-600 font-semibold"
   end
 end

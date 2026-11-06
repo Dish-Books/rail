@@ -44,6 +44,8 @@ defmodule Rail.Pipeline.Actions.PickDesignOption do
       end
 
       write_scratch_file(Path.join(dir, "picked"), option.key)
+      # During a turn the task reads the same as before, so nothing else tells an open page the design moved.
+      Pipeline.broadcast_output_saved(run.task)
       {:ok, told}
     end
   end

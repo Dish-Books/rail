@@ -1,14 +1,16 @@
 defmodule Rail.Pipeline.Utils.CheckPlan do
   @moduledoc false
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
 
   @doc """
   Checks that `task`'s plan is whole enough to send on: a ticket, a plan and, when there are design options, a
-  pick the plan is saved for with a screenshot as new as its page. Returns `{:ok, round, design}`, `design` being
-  `{option, screenshot}` or `nil` when no screen changes, or `{:error, reason}` naming what is missing.
+  pick the plan is saved for with a screenshot as new as its page. With Architect off it needs no plan, and the pick
+  alone. Returns `{:ok, round, design}`, `design` being `{option, screenshot}` or `nil` when no screen changes, or
+  `{:error, reason}` naming what is missing.
   """
   def check_plan(%Task{} = task) do
     with {:ok, %Round{} = round} <- plan(task),
@@ -17,19 +19,22 @@ defmodule Rail.Pipeline.Utils.CheckPlan do
     end
   end
 
-  defp plan(%Task{} = task) do
+  defp plan(%Task{issue: %Issue{} = issue} = task) do
     case Pipeline.read_plan(task) do
       %Round{plan: plan} = round when is_binary(plan) -> {:ok, round}
-      %Round{} -> {:error, :no_plan}
+      %Round{} = round -> if Issue.skips_step?(issue, :architect), do: {:ok, round}, else: {:error, :no_plan}
       nil -> {:error, :no_ticket}
     end
   end
 
-  # With no options there is no screen, and the ticket goes out alone.
+  # With no options there is no screen, and the ticket goes out alone. With no plan, the pick is what goes out.
   defp design(%Task{} = task, %Round{design: design}) do
-    written_for = design && design.key
+    manifest = Pipeline.read_design(task, pages: false)
 
-    case Pipeline.read_design(task, pages: false) do
+    written_for =
+      if Issue.skips_step?(task.issue, :architect), do: manifest && manifest.picked, else: design && design.key
+
+    case manifest do
       %{options: []} -> {:ok, nil}
       %{picked: nil} -> {:error, :nothing_picked}
       %{picked: ^written_for, options: options} -> options |> Enum.find(&(&1.key == written_for)) |> screenshot()

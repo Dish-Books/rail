@@ -22,6 +22,9 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   `[qa]`, `[demo]` - so driving the page reads apart from reporting on it. A
   save or a round of questions is not logged at all: the transcript already shows the call.
 
+  A tool that photographs the page answers with the picture as an image block
+  beside its text.
+
   A refusal is the agent's to fix, so it comes back as one sentence naming each
   field; any other failure is Rail's own, and is said to be.
   """
@@ -46,6 +49,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   import Rail.Mcp.Utils.RunToolSaveReport
   import Rail.Mcp.Utils.RunToolSaveReview
   import Rail.Mcp.Utils.RunToolSaveScreen
+  import Rail.Mcp.Utils.RunToolSaveStageOutput
   import Rail.Mcp.Utils.ToolAllowed
   import Rail.Mcp.Utils.WithUpstreamToken
 
@@ -65,7 +69,8 @@ defmodule Rail.Mcp.Actions.CallRunTool do
     "save_fix_plan",
     "save_report",
     "save_demo",
-    "save_screen"
+    "save_screen",
+    "save_stage_output"
   ]
 
   @doc """
@@ -106,6 +111,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
 
         case result do
           {:ok, text} -> {:ok, %{"content" => [%{"type" => "text", "text" => text}]}}
+          {:ok, text, picture} -> {:ok, %{"content" => [%{"type" => "text", "text" => text}, image(picture)]}}
           {:refused, text} -> {:error, {:refused, text}}
           {:error, reason} -> {:error, {:rail_failed, reason}}
         end
@@ -114,6 +120,9 @@ defmodule Rail.Mcp.Actions.CallRunTool do
         {:error, {:rail_failed, reason}}
     end
   end
+
+  # A picture rides in the reply itself, so the agent sees it without a second call to read the file.
+  defp image(jpeg), do: %{"type" => "image", "data" => Base.encode64(jpeg), "mimeType" => "image/jpeg"}
 
   defp refusal({:error, %Ecto.Changeset{} = changeset}), do: {:refused, sentence(changeset)}
   defp refusal(result), do: result
@@ -131,13 +140,18 @@ defmodule Rail.Mcp.Actions.CallRunTool do
       end
 
     nested =
-      for {field, changes} when is_list(changes) <- changeset.changes,
-          {%Ecto.Changeset{valid?: false} = child, index} <- Enum.with_index(changes, 1),
-          error <- errors(child, at(prefix, "#{field} #{index}")),
+      for {field, changes} <- changeset.changes,
+          {%Ecto.Changeset{valid?: false} = child, at} <- children(at(prefix, field), changes),
+          error <- errors(child, at),
           do: error
 
     own ++ nested
   end
+
+  # An entry in a list is named by its place in it; a single embed by its field alone.
+  defp children(at, changes) when is_list(changes), do: Enum.with_index(changes, &{&1, "#{at} #{&2 + 1}"})
+  defp children(at, %Ecto.Changeset{} = child), do: [{child, at}]
+  defp children(_at, _change), do: []
 
   defp at(nil, field), do: to_string(field)
   defp at(prefix, field), do: "#{prefix} #{field}"
@@ -236,6 +250,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp run("save_fix_plan", task, arguments, opts), do: run_tool_save_fix_plan(task, arguments, opts)
   defp run("save_report", task, arguments, opts), do: run_tool_save_report(task, arguments, opts)
 
+  defp run("save_stage_output", task, arguments, opts), do: run_tool_save_stage_output(task, arguments, opts)
   defp run("save_demo", task, arguments, opts), do: run_tool_save_demo(task, arguments, opts)
   defp run("ask_questions", task, arguments, opts), do: run_tool_ask_questions(task, arguments, opts)
 

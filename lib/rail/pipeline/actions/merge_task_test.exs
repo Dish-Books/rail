@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
   import Rail.Pipeline.Utils.BuildTask
 
+  alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Workers.AdvanceTrackerState
@@ -12,10 +13,13 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.AdvanceSplit
   alias Rail.Pipeline.Workers.CleanupMergedTask
+  alias Rail.Pipeline.Workers.NotifyOwner
   alias Rail.Scope
   alias Rail.Users
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     Req.Test.stub(Rail.Linear, fn conn ->
       n = System.unique_integer([:positive])
 
@@ -85,6 +89,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: task.issue_id})
     refute_enqueued(worker: AdvanceSplit)
     assert [%Oban.Job{args: %{"task_id" => ^task_id}}] = all_enqueued(worker: CleanupMergedTask)
+    assert [%Oban.Job{args: %{"task_id" => ^task_id}}] = all_enqueued(worker: NotifyOwner)
   end
 
   test "a lead with no GitHub token, or one GitHub no longer takes, signs in again and the claim is let go", %{
@@ -104,6 +109,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert {:error, :no_github_token} = Pipeline.merge_task(Scope.for_user(tokenless), task)
     assert %Task{stage: :finalize, merged_at: nil, merge_started_at: nil, merge_error: nil} = Repo.reload!(task)
     refute_enqueued(worker: CleanupMergedTask)
+    refute_enqueued(worker: NotifyOwner)
   end
 
   test "the system, which is nobody on GitHub, merges as the app", %{project: project, task: task} do
@@ -248,6 +254,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert %Task{stage: :merged, merge_started_at: nil} = Repo.reload!(task)
     assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: task.issue_id})
     assert_enqueued(worker: CleanupMergedTask, args: %{task_id: task.id})
+    assert_enqueued(worker: NotifyOwner, args: %{task_id: task.id})
 
     # Merged by someone Rail does not know, it names nobody rather than whoever clicked.
     for merged_by <- [%{"login" => "stranger"}, nil] do

@@ -3,6 +3,7 @@ defmodule RailWeb.OverviewLive do
   use RailWeb, :live_view
 
   import RailWeb.Utils.ChildStatus
+  import RailWeb.Utils.StageLabel, only: [custom_stage_waiting?: 2]
 
   alias Rail.Issues
   alias Rail.Pipeline
@@ -162,7 +163,7 @@ defmodule RailWeb.OverviewLive do
     user_id = socket.assigns.current_scope.user.id
     # A nil owner means no filter, so the own view must always name the user.
     owner_user_id = if everyone, do: nil, else: user_id
-    preload = [:role, :questions, task: [:project, :issue, parent_task: :issue]]
+    preload = [:role, :questions, task: [:project, :issue, :rounds, parent_task: :issue]]
 
     # A reload that overlaps an issue's deletion can read a task or run whose issue is already gone.
     runs =
@@ -186,12 +187,13 @@ defmodule RailWeb.OverviewLive do
     blocked_on_user = Enum.count(blocked, &(&1.status.task.issue.owner_user_id == user_id))
 
     # Shipped means the tracker completed the issue. Sixty days covers this month's
-    # count and the month it is compared with.
+    # count and the month it is compared with, by which time the tracker may have archived it.
     %{issues: completed} =
       Issues.list_issues(
         project_id: project_id,
         owner_user_id: owner_user_id,
         show_finished: true,
+        archived: true,
         completed_after: DateTime.shift(now, day: -60)
       )
 
@@ -214,7 +216,10 @@ defmodule RailWeb.OverviewLive do
     |> assign(:throughput, throughput(completed, DateTime.to_date(now)))
     |> assign(:dispatch_disabled, Application.get_env(:rail, :no_dispatch, false))
     # The rail badge sits beside these stats, so it comes from the same reload.
-    |> assign(:attention_count, Pipeline.count_attention(project_id: Scope.project_ids(socket.assigns.current_scope)))
+    |> assign(
+      :attention_count,
+      Pipeline.count_attention(project_id: Scope.project_ids(socket.assigns.current_scope), owner_user_id: user_id)
+    )
   end
 
   # A split is one piece of work, so its children are read through their parent, which they are cleaned up with.
@@ -330,7 +335,13 @@ defmodule RailWeb.OverviewLive do
       run.role.stage in [:review_lead | Task.check_stages()] and is_struct(round_start, DateTime) and
         is_struct(run.completed_at, DateTime) and DateTime.before?(run.completed_at, round_start)
 
-    state = if reopened? and Run.state(run) == :stopped, do: :done, else: Run.state(run)
+    # A custom stage's agent stops once its file is saved, which hands the file over as Plan's does.
+    state =
+      cond do
+        reopened? and Run.state(run) == :stopped -> :done
+        Task.works_stage?(run.task, run.role) and custom_stage_waiting?(run.task, run) -> :done
+        true -> Run.state(run)
+      end
 
     ended =
       case state do
@@ -348,7 +359,7 @@ defmodule RailWeb.OverviewLive do
   # A run at a stage a human signs off has handed its work over when it is done,
   # whether or not the human has since reviewed it and moved the task on.
   defp done_text(run, key) do
-    if run.role.stage in [:plan, :engineer, :review_lead],
+    if run.role.stage in [:plan, :engineer, :review_lead] or is_binary(run.role.custom_stage),
       do: "says #{key} is ready for review",
       else: "finished on #{key}"
   end
@@ -403,7 +414,7 @@ defmodule RailWeb.OverviewLive do
   end
 
   defp build_in_progress_entry(task, run, user_id, now) do
-    state = Run.state(run)
+    state = if custom_stage_waiting?(task, run), do: :done, else: Run.state(run)
 
     changed_at =
       case state do

@@ -8,7 +8,7 @@ defmodule Rail.Pipeline.Actions.SaveFixPlanTest do
   alias Rail.Pipeline.Schemas.Task
 
   @plan "Guard it.\n\n### What changes\n\n#### `nil-crash`\n\nGuard nil.\n\n#### Comment 1\n\nKept.\n\n" <>
-          "### File-level changes\n\n- `lib/a.ex`: guards nil. For `nil-crash` and comment 1.\n\n### Verification\n\nRun it."
+          "### File-level changes\n\n#### `lib/a.ex`\n\nGuards nil. For `nil-crash` and comment 1.\n\n### Verification\n\nRun it."
 
   setup do
     scratch = Path.join(System.tmp_dir!(), "save_fix_plan_#{System.unique_integer([:positive])}")
@@ -97,7 +97,7 @@ defmodule Rail.Pipeline.Actions.SaveFixPlanTest do
 
     plan =
       "### Changes to the plan\n\n- Criterion 1: a dot.\n\n### What changes\n\n#### Changes to the plan\n\n" <>
-        "The heading takes a dot.\n\n### File-level changes\n\n- `lib/a.ex`: the dot. For the changes to the plan."
+        "The heading takes a dot.\n\n### File-level changes\n\n#### `lib/a.ex`\n\nThe dot. For the changes to the plan."
 
     assert {:ok, %FixPlan{version: 1, round: 1, head: "abc", findings: [], covered_keys: []}} =
              Pipeline.save_fix_plan(%{task | stage: :finalize}, %{"plan" => plan, "description" => "A dot."})
@@ -123,6 +123,16 @@ defmodule Rail.Pipeline.Actions.SaveFixPlanTest do
              Pipeline.save_fix_plan(task, %{"plan" => @plan, "record_demo" => true})
 
     assert %FixPlan{record_demo: true} = Pipeline.read_fix_plan(task)
+  end
+
+  test "a task whose workflow turned the demo off refuses a plan asking for one, and saves one that does not", %{
+    task: task
+  } do
+    task = %{task | issue: %{task.issue | skipped_steps: [:demo]}}
+
+    assert {:error, {:step_off, :demo}} = Pipeline.save_fix_plan(task, %{"plan" => @plan, "record_demo" => true})
+    assert %FixPlan{plan: nil} = Pipeline.read_fix_plan(task)
+    assert {:ok, %FixPlan{record_demo: false}} = Pipeline.save_fix_plan(task, %{"plan" => @plan})
   end
 
   # A changed ticket is said where the person approving reads it, before anything is approved on it.

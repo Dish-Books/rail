@@ -363,6 +363,10 @@ defmodule RailWeb.Components.LearningsQueue do
   end
 
   defp calculate_match_line(%{search_unavailable: true}), do: "Search is unavailable right now"
+
+  defp calculate_match_line(%{status: :review, query: query, proposals: proposals}) when query != "",
+    do: "#{calculate_plural(length(proposals), "match", "matches")}, best first"
+
   defp calculate_match_line(%{status: :review, proposals: proposals}), do: "#{length(proposals)} to review, oldest first"
 
   defp calculate_match_line(%{query: query, learnings: learnings}) when query != "",
@@ -378,9 +382,10 @@ defmodule RailWeb.Components.LearningsQueue do
       else: "#{calculate_count(shown)} #{word}, newest first"
   end
 
-  defp calculate_empty(%{status: :review, proposals: []}), do: :nothing_to_review
-  defp calculate_empty(%{status: :review}), do: nil
   defp calculate_empty(%{search_unavailable: true}), do: nil
+  defp calculate_empty(%{status: :review, proposals: [_first | _rest]}), do: nil
+  defp calculate_empty(%{status: :review, query: query}) when query != "", do: :no_match
+  defp calculate_empty(%{status: :review}), do: :nothing_to_review
   defp calculate_empty(%{learnings: [_first | _rest]}), do: nil
   defp calculate_empty(%{query: query}) when query != "", do: :no_match
 

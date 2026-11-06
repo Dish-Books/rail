@@ -19,9 +19,9 @@ defmodule Rail.Issues.Actions.CreateIssue do
   Creates the ticket and inserts the issue it came back as.
 
   `attrs` carries `:title` and `:description`, and optionally `:priority`, `:estimate`,
-  `:owner_user_id` and `:parent`, the issue it is a sub-issue of. The ticket is opened in
-  triage, or in Todo for a sub-issue, whose work is already planned. Broadcasts
-  `{:issue_created, issue_id}` on `"issues"`.
+  `:owner_user_id`, `:workflow_id`, the workflow opening it, `:skipped_steps`, the steps its file
+  turned off, `:stages`, the `IssueStage`s its file named, and `:parent`, the issue it is a sub-issue of. The ticket is opened in triage, or in Todo for a sub-issue, whose work is
+  already planned. Broadcasts `{:issue_created, issue_id}` on `"issues"`.
   """
   def create_issue(%Scope{} = scope, %Project{} = project, %{} = attrs) do
     state = if attrs[:parent], do: :todo, else: :triage
@@ -33,14 +33,22 @@ defmodule Rail.Issues.Actions.CreateIssue do
           project_id: project.id,
           owner_user_id: attrs[:owner_user_id],
           priority: attrs[:priority] || :medium,
-          estimate: attrs[:estimate]
+          estimate: attrs[:estimate],
+          workflow_id: attrs[:workflow_id]
         })
 
       # A tracker's webhook can announce the ticket before this insert, so the row it saved is kept.
-      %Issue{}
+      # Set on the struct rather than cast, so no tracker write can change the steps after; `Issue.changeset/2`
+      # takes no cycle or parent, which GitHub never sends.
+      %Issue{
+        skipped_steps: attrs[:skipped_steps] || [],
+        stages: attrs[:stages] || [],
+        cycle_external_id: tracked[:cycle_external_id],
+        parent_external_id: tracked[:parent_external_id]
+      }
       |> Issue.changeset(local)
       |> Repo.insert(
-        on_conflict: {:replace_all_except, [:id, :branch_name, :inserted_at]},
+        on_conflict: {:replace_all_except, [:id, :branch_name, :inserted_at, :cycle_external_id, :parent_external_id]},
         conflict_target: :external_id,
         returning: true
       )

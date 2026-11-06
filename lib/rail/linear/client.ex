@@ -43,12 +43,29 @@ defmodule Rail.Linear.Client do
     name
     type
   }
+  cycle {
+    id
+  }
+  parent {
+    id
+  }
   branchName
   url
   completedAt
   updatedAt
   archivedAt
   trashed
+  """
+
+  @relation_fields """
+  id
+  identifier
+  title
+  url
+  state {
+    name
+    type
+  }
   """
 
   @comment_fields """
@@ -189,6 +206,7 @@ defmodule Rail.Linear.Client do
           states {
             nodes {
               id
+              name
               type
               position
             }
@@ -200,6 +218,86 @@ defmodule Rail.Linear.Client do
 
     with {:ok, token} <- token(project, opts) do
       execute_query(token, query, %{"teamKey" => project.key}, opts)
+    end
+  end
+
+  @doc """
+  Fetches the project's team by its id, with whether it runs cycles, its default estimate, its statuses and up to
+  100 cycles that ended within the past year or are still to come, each with its daily history.
+  """
+  def cycles(%Project{} = project, opts \\ []) do
+    query = """
+    query Cycles($teamId: String!, $since: DateTimeOrDuration!) {
+      team(id: $teamId) {
+        cyclesEnabled
+        defaultIssueEstimate
+        states {
+          nodes {
+            id
+            name
+            type
+            position
+          }
+        }
+        cycles(first: 100, filter: {endsAt: {gt: $since}}) {
+          nodes {
+            id
+            number
+            name
+            startsAt
+            endsAt
+            scopeHistory
+            inProgressScopeHistory
+            completedScopeHistory
+          }
+        }
+      }
+    }
+    """
+
+    since = DateTime.utc_now() |> DateTime.shift(day: -365) |> DateTime.to_iso8601()
+
+    with {:ok, token} <- token(project, opts) do
+      execute_query(token, query, %{"teamId" => project.linear_team_id, "since" => since}, opts)
+    end
+  end
+
+  @doc """
+  Fetches up to 100 of the issues `external_ids` names that block or are blocked by another, each with up to 20
+  relations each way.
+  """
+  def issue_relations(%Project{} = project, external_ids, opts \\ []) when is_list(external_ids) do
+    query = """
+    query IssueRelations($ids: [ID!]!) {
+      issues(
+        first: 100
+        filter: {id: {in: $ids}, or: [{hasBlockedByRelations: {eq: true}}, {hasBlockingRelations: {eq: true}}]}
+      ) {
+        nodes {
+          id
+          relations(first: 20) {
+            nodes {
+              type
+              relatedIssue {
+                #{@relation_fields}
+              }
+            }
+          }
+          inverseRelations(first: 20) {
+            nodes {
+              type
+              issue {
+                #{@relation_fields}
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+
+    with {:ok, token} <- token(project, opts) do
+      execute_query(token, query, %{"ids" => external_ids}, opts)
     end
   end
 
@@ -280,13 +378,16 @@ defmodule Rail.Linear.Client do
   end
 
   @doc """
-  Updates a ticket. `input` is Linear's `IssueUpdateInput`.
+  Updates a ticket and returns it as it now reads. `input` is Linear's `IssueUpdateInput`.
   """
   def update_issue(%Project{} = project, issue_id, %{} = input, opts \\ []) do
     query = """
     mutation IssueUpdate($id: String!, $input: IssueUpdateInput!) {
       issueUpdate(id: $id, input: $input) {
         success
+        issue {
+          #{@issue_fields}
+        }
       }
     }
     """
@@ -363,6 +464,23 @@ defmodule Rail.Linear.Client do
 
     with {:ok, token} <- token(project, opts) do
       execute_query(token, query, %{"input" => input}, opts)
+    end
+  end
+
+  @doc """
+  Links `url` to a ticket under `title`. Linear keeps one link per URL on a ticket, so linking it again changes nothing.
+  """
+  def link_url(%Project{} = project, issue_id, url, title, opts \\ []) do
+    query = """
+    mutation AttachmentLinkURL($issueId: String!, $url: String!, $title: String) {
+      attachmentLinkURL(issueId: $issueId, url: $url, title: $title) {
+        success
+      }
+    }
+    """
+
+    with {:ok, token} <- token(project, opts) do
+      execute_query(token, query, %{"issueId" => issue_id, "url" => url, "title" => title}, opts)
     end
   end
 

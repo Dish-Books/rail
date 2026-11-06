@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.SavePlan do
   """
 
   import Ecto.Changeset
+  import Rail.Pipeline.Utils.BroadcastPipelineChanged
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -19,7 +20,8 @@ defmodule Rail.Pipeline.Actions.SavePlan do
   Saves `attrs` on `task`'s round: the ticket's `title`, `description`, `priority` and `estimate`, the `plan`, the
   `design` option key the plan is written for, and `record_demo`, whether the round should end with a demo. A
   priority or estimate never saved is the issue's.
-  Returns `{:ok, round}`, `{:error, :round_approved}` once the plan is approved, or `{:error, changeset}`.
+  Returns `{:ok, round}`, `{:error, :round_approved}` once the plan is approved, `{:error, {:step_off, step}}` for
+  a part whose step the task's workflow turned off, or `{:error, changeset}`.
   """
   def save_plan(%Task{} = task, attrs) when is_map(attrs) do
     %Task{issue: %Issue{} = issue} = task = Repo.preload(task, :issue)
@@ -32,17 +34,30 @@ defmodule Rail.Pipeline.Actions.SavePlan do
     # Round 1 is made by the first save that is accepted, so a refused one leaves no round behind.
     round = Pipeline.read_plan(task) || %Round{task_id: task.id, number: 1}
 
-    with %Round{approved_at: nil} <- round,
+    with :ok <- check_steps(issue, given),
+         %Round{approved_at: nil} <- round,
          {:ok, design} <- design(task, given),
          ticket = Map.merge(kept(round, issue), Map.take(given, @ticket)),
          attrs =
            given |> Map.take(["plan", "record_demo"]) |> Map.put("ticket", ticket) |> Map.merge(design),
          {:ok, saved} <- round |> Round.plan_changeset(attrs) |> Repo.insert_or_update() do
       Pipeline.broadcast_output_saved(task)
+      # Overview hears only this, and a save takes a sent plan back from the tech leads.
+      broadcast_pipeline_changed(task)
       {:ok, saved}
     else
       %Round{approved_at: %DateTime{}} -> {:error, :round_approved}
+      {:error, {:step_off, step}} -> {:error, {:step_off, step}}
       {:error, changeset} -> {:error, changeset}
+    end
+  end
+
+  defp check_steps(%Issue{} = issue, given) do
+    cond do
+      Issue.skips_step?(issue, :product) and Enum.any?(@ticket, &is_map_key(given, &1)) -> {:error, {:step_off, :product}}
+      Issue.skips_step?(issue, :architect) and is_map_key(given, "plan") -> {:error, {:step_off, :architect}}
+      Issue.skips_step?(issue, :demo) and given["record_demo"] == true -> {:error, {:step_off, :demo}}
+      true -> :ok
     end
   end
 

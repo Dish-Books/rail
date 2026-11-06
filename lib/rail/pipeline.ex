@@ -3,7 +3,7 @@ defmodule Rail.Pipeline do
   Context boundary for the Rail development pipeline.
 
   A task is created at `:plan`, where one agent writes the plan on the task's first
-  round: a ticket, three design options when the change has a screen, and one
+  round: a ticket, at least three design options when the change has a screen, and one
   implementation plan. The human picks an option, and one approval publishes the
   ticket and the picked design and marks the round approved. Engineer
   builds it and commits it, keeping the branch up to date with the default branch
@@ -21,6 +21,9 @@ defmodule Rail.Pipeline do
   what the turn committed. A task never goes back to Engineer, and it waits at
   Review, ready to merge, once nothing is left to rule or fix.
 
+  A workflow's file can add custom stages before Plan, Engineer or Review. Each is one agent with the file's prompt
+  that saves one markdown file, waits on a person's Approve like Plan, and hands the file to every later stage.
+
   A task split before splitting was retired waits at Split, its children each an issue and a task of their own,
   until the last child merges.
 
@@ -37,7 +40,8 @@ defmodule Rail.Pipeline do
 
   defdelegate enter_stage(task, stage, opts \\ []), to: Actions.EnterStage
 
-  defdelegate start_plan_run(issue_or_run), to: Actions.StartPlanRun
+  defdelegate start_plan_run(scope, issue), to: Actions.StartPlanRun
+  defdelegate start_plan_run(run), to: Actions.StartPlanRun
   @decorate can?(resource: :tasks, action: :approve)
   defdelegate approve_plan(scope, run), to: Actions.ApprovePlan
 
@@ -53,9 +57,14 @@ defmodule Rail.Pipeline do
 
   defdelegate start_engineer_run(run), to: Actions.StartEngineerRun
   defdelegate hand_over_work(scope, run), to: Actions.HandOverWork
-  defdelegate send_to_review(run), to: Actions.SendToReview
+  defdelegate send_to_next_stage(run), to: Actions.SendToNextStage
   defdelegate run_ci(scope, run), to: Actions.RunCi
   defdelegate get_ci_status(run), to: Actions.GetCiStatus
+
+  defdelegate start_custom_stage_run(run), to: Actions.StartCustomStageRun
+  defdelegate save_stage_output(task, attrs), to: Actions.SaveStageOutput
+  defdelegate read_stage_outputs(task), to: Actions.ReadStageOutputs
+  defdelegate approve_stage_output(scope, run), to: Actions.ApproveStageOutput
 
   defdelegate start_review_run(run), to: Actions.StartReviewRun
   defdelegate start_check_run(run), to: Actions.StartCheckRun
@@ -64,6 +73,7 @@ defmodule Rail.Pipeline do
   defdelegate save_finding(task, attrs), to: Actions.SaveFinding
   defdelegate list_findings(task), to: Actions.ListFindings
   defdelegate decide_finding(scope, finding, decision), to: Actions.DecideFinding
+  defdelegate file_finding_issues(scope, task, findings), to: Actions.FileFindingIssues
   defdelegate save_review(task), to: Actions.SaveReview
   defdelegate read_review(task), to: Actions.ReadReview
   defdelegate read_fix_plan(task), to: Actions.ReadFixPlan
@@ -101,14 +111,17 @@ defmodule Rail.Pipeline do
   defdelegate save_screen(task, attrs), to: Actions.SaveScreen
   defdelegate list_screens(task), to: Actions.ListScreens
 
-  defdelegate start_task(scope, issue, stage), to: Actions.StartTask
+  defdelegate start_task(scope, issue), to: Actions.StartTask
   defdelegate start_task(scope, issue, stage, pull_request), to: Actions.StartTask
+  defdelegate adopt_pull_request(scope, issue), to: Actions.AdoptPullRequest
   defdelegate create_task(issue, stage), to: Actions.CreateTask
   defdelegate list_tasks(opts \\ []), to: Actions.ListTasks
   defdelegate update_task(task, attrs), to: Actions.UpdateTask
   defdelegate get_task(id), to: Actions.GetTask
   defdelegate cleanup_task(task), to: Actions.CleanupTask
-  defdelegate discard_task(task), to: Actions.DiscardTask
+  defdelegate purge_task(task), to: Actions.PurgeTask
+  defdelegate discard_task(scope, task), to: Actions.DiscardTask
+  defdelegate return_to_plan(scope, task), to: Actions.ReturnToPlan
 
   defdelegate ask_questions(run, questions), to: Actions.AskQuestions
   defdelegate answer_question(scope, question, answer), to: Actions.AnswerQuestion
@@ -122,16 +135,21 @@ defmodule Rail.Pipeline do
   defdelegate create_diff_comment(scope, task, attrs), to: Actions.CreateDiffComment
   defdelegate list_diff_comments(scope, task, opts \\ []), to: Actions.ListDiffComments
   defdelegate delete_diff_comment(scope, comment), to: Actions.DeleteDiffComment
+  defdelegate update_diff_comment(scope, comment, attrs), to: Actions.UpdateDiffComment
   defdelegate set_diff_comment_resolved(scope, comment, resolved?), to: Actions.SetDiffCommentResolved
   defdelegate create_screen_comment(scope, task, attrs), to: Actions.CreateScreenComment
-  defdelegate list_screen_comments(scope, task), to: Actions.ListScreenComments
+  defdelegate list_screen_comments(scope, task, opts \\ []), to: Actions.ListScreenComments
   defdelegate delete_screen_comment(scope, comment), to: Actions.DeleteScreenComment
+  defdelegate update_screen_comment(scope, comment, attrs), to: Actions.UpdateScreenComment
   defdelegate create_finding_comment(scope, task, attrs), to: Actions.CreateFindingComment
-  defdelegate list_finding_comments(scope, task), to: Actions.ListFindingComments
+  defdelegate list_finding_comments(scope, task, opts \\ []), to: Actions.ListFindingComments
   defdelegate delete_finding_comment(scope, comment), to: Actions.DeleteFindingComment
+  defdelegate update_finding_comment(scope, comment, attrs), to: Actions.UpdateFindingComment
   defdelegate create_plan_comment(scope, run, attrs), to: Actions.CreatePlanComment
-  defdelegate list_plan_comments(scope, task), to: Actions.ListPlanComments
+  defdelegate list_plan_comments(scope, task, opts \\ []), to: Actions.ListPlanComments
   defdelegate delete_plan_comment(scope, comment), to: Actions.DeletePlanComment
+  defdelegate update_plan_comment(scope, comment, attrs), to: Actions.UpdatePlanComment
+  defdelegate list_comments(scope, task), to: Actions.ListComments
   defdelegate send_plan_comments(scope, run), to: Actions.SendPlanComments
   defdelegate stop_and_send_message(scope, run, opts \\ []), to: Actions.StopAndSendMessage
   defdelegate stop_run(scope, run, opts \\ []), to: Actions.StopRun

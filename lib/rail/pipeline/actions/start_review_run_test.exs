@@ -1,7 +1,9 @@
 defmodule Rail.Pipeline.Actions.StartReviewRunTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.Round
@@ -35,9 +37,14 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Filter invoices by vendor."})
     {:ok, task} = Pipeline.create_task(issue, :review)
-    worktree_path = create_temp_git_repo()
+    # HEAD and the diff are asked of Rail.Git, so the worktree is a plain directory and the stubs answer for a
+    # branch on one commit with nothing changed.
+    worktree_path = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree_path)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: String.duplicate("a", 40), dirty_digest: "clean"} end)
+    stub(Git, :load_diff, fn _scope, _task, :branch -> {:ok, []} end)
 
     {:ok, run} = Pipeline.start_or_resume_run(task, role, worktree_path)
     # Between rounds, where the human rules.
@@ -47,26 +54,11 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
   end
 
   # Each of the others is a run Rail started, so the review agent is spawned alone, on what they reported.
-  test "spawns the review agent on its own model with no agents of its own, handed the round's reports", %{
-    task: task,
-    run: run
-  } do
+  test "spawns the review agent on its own model with no agents of its own, handed the round's reports and not the design page or its images",
+       %{task: task, run: run} do
     File.mkdir_p!(Path.join(task.scratch_path, "reports"))
     File.write!(Path.join([task.scratch_path, "reports", "qa.md"]), "Saving twice shows two rows.")
     File.write!(Path.join([task.scratch_path, "reports", "review.md"]), "Nothing to report.")
-
-    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt, "--model", "claude-opus-5-5" | _rest] = argv ->
-      refute "--agents" in argv
-      assert prompt =~ "The report QA saved this round:\n\n<report from=\"qa\">\nSaving twice shows two rows.\n</report>"
-      assert prompt =~ "<report from=\"review\">\nNothing to report.\n</report>"
-      refute prompt =~ "<report from=\"engineer\">"
-      {:ok, %OsProcess{run: spawned}}
-    end)
-
-    assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_review_run(run)
-  end
-
-  test "the review agent is not handed the design page or its images", %{task: task, run: run} do
     design_dir = Path.join(task.scratch_path, "design")
     File.mkdir_p!(design_dir)
     File.write!(Path.join(design_dir, "manifest.json"), ~s({"options": [{"key": "cards", "title": "Cards"}]}))
@@ -77,13 +69,44 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       ~s(<h1>REVIEW-DESIGN-MARKER</h1><img src="data:image/png;base64,#{String.duplicate("iVBORw0K", 1_000)}">)
     )
 
-    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt, "--model", "claude-opus-5-5" | _rest] = argv ->
+      refute "--agents" in argv
+      assert prompt =~ "The report QA saved this round:\n\n<report from=\"qa\">\nSaving twice shows two rows.\n</report>"
+      assert prompt =~ "<report from=\"review\">\nNothing to report.\n</report>"
+      refute prompt =~ "<report from=\"engineer\">"
       refute prompt =~ "REVIEW-DESIGN-MARKER"
       refute prompt =~ "data:image"
       {:ok, %OsProcess{run: spawned}}
     end)
 
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_review_run(run)
+  end
+
+  test "the review agent is handed the file each earlier custom stage saved, under its stage's name", %{
+    task: task,
+    run: run
+  } do
+    stages = [
+      %IssueStage{stage: :plan},
+      %IssueStage{stage: :engineer},
+      %IssueStage{stage: :custom, name: "License check", prompt: "Check each license."},
+      %IssueStage{stage: :review}
+    ]
+
+    Repo.preload(task, :issue).issue
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.put_embed(:stages, stages)
+    |> Repo.update!()
+
+    File.mkdir_p!(Path.join(task.scratch_path, "stages"))
+    File.write!(Path.join([task.scratch_path, "stages", "3-license-check.md"]), "sweet_xml 0.7.5 is AGPL-3.0.\n")
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ ~s(<stage_output stage="License check">\nsweet_xml 0.7.5 is AGPL-3.0.\n</stage_output>)
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
   end
 
   test "the brief lists the findings already on the task with their rounds, rulings, places and notes", %{
@@ -111,9 +134,9 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
 
     {:ok, %{round: 1}} = Pipeline.save_review(task)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :fix)
-    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: String.duplicate("b", 40), dirty_digest: "clean"} end)
     {:ok, %{round: 2}} = Pipeline.save_review(task)
-    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 2"])
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: String.duplicate("c", 40), dirty_digest: "clean"} end)
     {:ok, _carried} = Pipeline.save_finding(task, %{key: "send-twice", status: "not_fixed", note: "Still twice."})
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
@@ -124,10 +147,10 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       assert prompt =~ "  Rule: A round is sent once, however many times Send is pressed."
       assert prompt =~ "  Place 1: Engineer tab, Diff toolbar, Send button"
       assert prompt =~ "  Place 2: lib/a.ex:22"
-      assert prompt =~ ~r/  Round 1, raised on [0-9a-f]{7}: Seen by explorer-1\./
+      assert prompt =~ "  Round 1, raised on aaaaaaa: Seen by explorer-1."
       assert prompt =~ "  Round 1, ruled Fix"
-      assert prompt =~ ~r/  Round 3, not_fixed on [0-9a-f]{7}: Still twice\./
-      assert prompt =~ ~r/  Round 3, carried on [0-9a-f]{7}/
+      assert prompt =~ "  Round 3, not_fixed on ccccccc: Still twice."
+      assert prompt =~ "  Round 3, carried on ccccccc"
 
       {:ok, %OsProcess{run: spawned}}
     end)
@@ -166,6 +189,22 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
   end
 
+  test "briefs the review agent of a task whose workflow turned the demo off to ask for none", %{
+    task: task,
+    run: run
+  } do
+    Repo.preload(task, :issue).issue |> Ecto.Changeset.change(skipped_steps: [:demo]) |> Repo.update!()
+    reject(@prepare_turn, :prepare_turn, 1)
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "The demo is off for this task's workflow, so never pass `record_demo`."
+      refute prompt =~ "Pass `record_demo: true`"
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
+  end
+
   test "a fixed finding, one ruled Don't fix and one from before rules read as such, and the plan is the specification",
        %{
          task: task,
@@ -188,6 +227,8 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
 
     {:ok, dismissed} = Pipeline.save_finding(task, Map.merge(attrs, %{key: "left-alone", title: "Left alone"}))
     {:ok, _dismissed} = Pipeline.decide_finding(system_scope(), dismissed, :skip)
+    {:ok, follow_up} = Pipeline.save_finding(task, Map.merge(attrs, %{key: "follow-up", title: "A follow-up"}))
+    {:ok, _filed_later} = Pipeline.decide_finding(system_scope(), follow_up, :new_issue)
 
     {:ok, _fixed} =
       Pipeline.save_finding(task, Map.merge(attrs, %{key: "already-fixed", title: "Already fixed"}))
@@ -220,6 +261,9 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       assert prompt =~
                "- `left-alone` [round 1, minor code, human ruled: Don't fix, status: open] Left alone (lib/a.ex:3)"
 
+      assert prompt =~ "human ruled: New issue, status: open] A follow-up"
+      assert prompt =~ "  Round 1, ruled New issue"
+
       assert prompt =~
                "- `already-fixed` [round 1, minor code, human ruled: not yet, status: fixed, fixed in #{short}] Already fixed"
 
@@ -249,7 +293,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     } do
       stub_vertex(%{"Repo.insert!" => vector([1.0])})
 
-      stub(Rail.Git, :load_diff, fn _scope, _task, :branch ->
+      stub(Git, :load_diff, fn _scope, _task, :branch ->
         {:ok,
          [
            %{
@@ -282,7 +326,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     end
 
     test "a worktree that is gone gives no per-file rules", %{project: project, run: run} do
-      stub(Rail.Git, :load_diff, fn _scope, _task, :branch -> {:error, :no_worktree} end)
+      stub(Git, :load_diff, fn _scope, _task, :branch -> {:error, :no_worktree} end)
       learning(project, %{rule: "Pinned anyway", kind: :convention, pinned: true})
 
       expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->

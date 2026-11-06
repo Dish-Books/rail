@@ -25,6 +25,12 @@ defmodule Rail.Projects do
   @decorate can?(resource: :projects, action: :update)
   defdelegate update_project(scope, project, attrs), to: Actions.UpdateProject
 
+  @decorate can?(resource: :projects, action: :update)
+  defdelegate read_env_file(scope, project), to: Actions.ReadEnvFile
+
+  @decorate can?(resource: :projects, action: :update)
+  defdelegate save_env_file(scope, project, attrs), to: Actions.SaveEnvFile
+
   defdelegate list_slack_workspaces(), to: Actions.ListSlackWorkspaces
 
   defdelegate get_slack_workspace(by), to: Actions.GetSlackWorkspace

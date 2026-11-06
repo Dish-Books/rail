@@ -9,7 +9,6 @@ defmodule Rail.Tools.FollowerTest do
   import Rail.Pipeline.Utils.QuestionQueue
 
   alias Ecto.Adapters.SQL.Sandbox
-  alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -30,6 +29,10 @@ defmodule Rail.Tools.FollowerTest do
   @moduletag :real_spawn
 
   setup %{project: project} do
+    # A role's prompt is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: these see no prompt file on the default branch, as when there is no clone.
+    stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     # The Follower reads the stream in its CLI's format, which comes off the run's role.
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
@@ -1156,7 +1159,11 @@ defmodule Rail.Tools.FollowerTest do
     stream = Path.join(tmp_dir, "resumed_command.log")
     File.write!(stream, "setting up\n")
     File.write!("#{stream}.exit", "0\n")
-    Req.Test.stub(Client, &Req.Test.json(&1, %{"token" => "ghs_token"}))
+
+    # A setup that exits 0 carries its task on into its stage, from the Follower's own process, so Mimic is
+    # global for that process to read the same Rail.Git: the task's worktree cannot be made, as with no clone.
+    set_mimic_global()
+    stub(Rail.Git, :get_or_create_worktree, fn _project, _task -> {:error, "fatal: not a git repository"} end)
 
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["0.05"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
@@ -1182,7 +1189,6 @@ defmodule Rail.Tools.FollowerTest do
       )
 
     Sandbox.allow(Repo, self(), follower_pid)
-    Req.Test.allow(Client, self(), follower_pid)
 
     assert_receive {:os_process_finished, %OsProcess{exit_code: 0}, %{exit_code: 0, error: nil}}, 5_000
   end

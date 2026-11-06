@@ -8,6 +8,8 @@ defmodule RailWeb.Utils.CalculateDiffPane do
   same reply as the event that moved it.
   """
 
+  use RailWeb, :verified_routes
+
   @doc """
   The pane's `frame`, which only changes when files come or go or a comment's
   file leaves the view (`stray`), then the assigns of its `toolbar`, its file
@@ -16,7 +18,9 @@ defmodule RailWeb.Utils.CalculateDiffPane do
   after each line with comments or the comment being written under it, and the
   comments that no longer have their line are `lifted` to the top of it. Only
   unsent comments are counted, since the counts are of what Send would send.
-  `filter` is the view: `:branch`, `:uncommitted` or `{:commit, sha}`.
+  `filter` is the view: `:branch`, `:uncommitted` or `{:commit, sha}`. A picture's
+  section carries the `image` addresses of its `old` and `new` sides, each `nil`
+  where the file has no such side; any other file's is `nil`.
   """
   def calculate_diff_pane(assigns) do
     %{files: files, query: query, target: target} = assigns
@@ -141,9 +145,31 @@ defmodule RailWeb.Utils.CalculateDiffPane do
       commentable?: assigns.commentable?,
       viewed?: file.viewed?,
       collapsed?: file.path in assigns.collapsed,
-      expanded_gaps: Map.take(assigns.expanded_gaps, gap_keys)
+      expanded_gaps: Map.take(assigns.expanded_gaps, gap_keys),
+      image: image(file, assigns)
     }
   end
+
+  # The digest rides along so a picture that changed is fetched again rather than
+  # kept from the last time it was drawn.
+  defp image(%{image?: true} = file, assigns) do
+    %{
+      old: if(file.status != :added, do: image_src(assigns, :old, file.old_path || file.path, file.digest)),
+      new: if(file.status != :deleted, do: image_src(assigns, :new, file.path, file.digest))
+    }
+  end
+
+  defp image(_file, _assigns), do: nil
+
+  defp image_src(assigns, side, path, digest) do
+    query = Enum.reject([path: path, view: view_param(assigns.filter), v: digest], &is_nil(elem(&1, 1)))
+
+    ~p"/tasks/#{assigns.task_id}/diff/#{side}?#{query}"
+  end
+
+  defp view_param(:branch), do: nil
+  defp view_param(:uncommitted), do: "uncommitted"
+  defp view_param({:commit, sha}), do: sha
 
   defp unsent(comments), do: Enum.count(comments, &(&1.status == :unsent))
 

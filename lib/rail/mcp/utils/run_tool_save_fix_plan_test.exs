@@ -6,7 +6,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveFixPlanTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
 
-  @plan "### What changes\n\n#### `nil-crash`\n\nGuard nil.\n\n### File-level changes\n\n- `lib/a.ex`: For `nil-crash`."
+  @plan "### What changes\n\n#### `nil-crash`\n\nGuard nil.\n\n### File-level changes\n\n#### `lib/a.ex`\n\nFor `nil-crash`."
 
   setup do
     scratch = Path.join(System.tmp_dir!(), "rt_save_fix_plan_#{System.unique_integer([:positive])}")
@@ -43,5 +43,12 @@ defmodule Rail.Mcp.Utils.RunToolSaveFixPlanTest do
 
     assert {:refused, "Nothing saved: nothing is ruled Fix" <> _rest} =
              run_tool_save_fix_plan(task, %{"plan" => "Nothing to fix.\n\n### What changes"}, [])
+  end
+
+  test "a demo asked of a task whose workflow turned it off says the demo is off", %{task: task} do
+    task = %{task | issue: %{task.issue | skipped_steps: [:demo]}}
+
+    assert {:refused, "Nothing saved: the demo is off for this task, so leave out `record_demo`."} =
+             run_tool_save_fix_plan(task, %{"plan" => @plan, "record_demo" => true}, [])
   end
 end

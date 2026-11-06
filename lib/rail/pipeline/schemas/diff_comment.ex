@@ -61,6 +61,15 @@ defmodule Rail.Pipeline.Schemas.DiffComment do
   end
 
   @doc """
+  Builds a changeset that changes only the comment's text, for its author editing it before it is sent.
+  """
+  def edit_changeset(%__MODULE__{} = comment, attrs) do
+    comment
+    |> cast(attrs, [:body])
+    |> validate_required([:body])
+  end
+
+  @doc """
   The lines around `row` in its hunk of `rows`, a file's diff rows: up to six
   either side, never past the hunk, each with its diff glyph and `row` marked `>`.
   """
@@ -90,6 +99,14 @@ defmodule Rail.Pipeline.Schemas.DiffComment do
   """
   def calculate_order(comments) when is_list(comments),
     do: Enum.sort_by(comments, &{&1.path, DateTime.to_unix(&1.inserted_at, :microsecond), &1.id})
+
+  @doc """
+  The diff view `comment` opens in: its commit's when written in one, the uncommitted changes for a removed line
+  written there, whose number is only that view's, and otherwise the branch, where it is drawn under its line.
+  """
+  def calculate_view(%__MODULE__{filter: :commit, commit: commit}), do: {:commit, commit}
+  def calculate_view(%__MODULE__{filter: :uncommitted, line_kind: :deleted}), do: :uncommitted
+  def calculate_view(%__MODULE__{}), do: :branch
 
   @doc """
   Writes `comment` as the block the engineer or the Review lead is sent: its file and line, the commit when it was

@@ -44,7 +44,11 @@ defmodule Rail.Learnings.Actions.BackfillLearningsTest do
     elsewhere = Path.join([Backend.config_dir(backend), "projects", "-tmp-repos-elsewhere-#{unique}", "memory"])
     File.mkdir_p!(memory)
     File.mkdir_p!(elsewhere)
-    on_exit(fn -> File.rm_rf(Path.dirname(memory)) && File.rm_rf(Path.dirname(elsewhere)) end)
+
+    on_exit(fn ->
+      File.rm_rf(Path.dirname(memory))
+      File.rm_rf(Path.dirname(elsewhere))
+    end)
 
     File.write!(Path.join(memory, "MEMORY.md"), "- [Read git objects](read-git.md)\n")
 

@@ -35,24 +35,28 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Invoice filters"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
-
-    # Review only takes a branch the remote has, so pushing here has to reach one.
-    remote = create_temp_git_repo(prefix: "rail_git_remote", initial_commit: false)
-    git!(remote, ["config", "receive.denyCurrentBranch", "ignore"])
-    repo = create_temp_git_repo()
-    git!(repo, ["remote", "add", "origin", remote])
-    git!(repo, ["push", "--set-upstream", "origin", "main"])
-    File.write!(Path.join(repo, "feature.ex"), "one\n")
-    git!(repo, ["add", "."])
-    git!(repo, ["commit", "-m", "CMW-1: add the vendor filter"])
-
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: repo})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
+    # Git is only ever asked through Rail.Git, so the worktree is a plain directory the stubs answer from: it holds
+    # an `unpushed` file while the branch has a commit the remote does not, and a push removes it. It starts with the
+    # engineer's one commit not yet pushed, on the commit whose sha is all a's, up to date with main.
+    repo = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(repo)
+    File.write!(Path.join(repo, "unpushed"), "")
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: repo})
+
+    stub(Git, :branch_unpushed?, fn path -> File.exists?(Path.join(path, "unpushed")) end)
+
     stub(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
-      git!(path, ["push", "origin", "HEAD"])
+      File.rm!(Path.join(path, "unpushed"))
       :ok
     end)
+
+    stub(Git, :branch_fingerprint, fn _path ->
+      %{head_sha: String.duplicate("a", 40), dirty_digest: String.duplicate("0", 64)}
+    end)
+
+    stub(Git, :base_status, fn _path, "main" -> %{behind: false, conflicts: []} end)
 
     # The check fetches with a token of its own, which the pull request tests would count.
     stub(Git, :check_push, fn _task -> :ok end)
@@ -91,24 +95,27 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
   end
 
   describe "at Engineer" do
-    test "with no CI, the pushed commit goes on to review", %{scope: scope, run: run, task: task, repo: repo} do
+    test "with no CI, the pushed commit goes on to review", %{scope: scope, run: run, task: %Task{id: task_id} = task} do
       {:ok, run} = Pipeline.update_run(run, %{error: "CI passed, but the branch could not be pushed: rejected"})
 
+      expect(Git, :push_branch, fn ^scope, %Task{id: ^task_id, worktree_path: path} ->
+        File.rm!(Path.join(path, "unpushed"))
+        :ok
+      end)
+
       assert {:ok, %Run{stage_outcome: :done}} = Pipeline.hand_over_work(scope, run)
-      refute Git.branch_unpushed?(repo)
       assert %Task{stage: :review} = Repo.reload!(task)
       assert %Run{stage_outcome: :done, review_on_ci_pass: false, error: nil} = Repo.reload!(run)
     end
 
-    # Work left uncommitted is not handed over: the agent commits what is finished.
+    # Work left uncommitted is not handed over: the agent commits what is finished, so only commits are asked about.
     test "a branch with nothing unpushed is refused with nothing sent", %{
       scope: scope,
       run: run,
       task: task,
       repo: repo
     } do
-      git!(repo, ["push", "origin", "HEAD"])
-      File.write!(Path.join(repo, "later.ex"), "uncommitted\n")
+      File.rm!(Path.join(repo, "unpushed"))
       reject(&Git.push_branch/2)
 
       assert {:error, :nothing_to_send} = Pipeline.hand_over_work(scope, run)
@@ -119,13 +126,9 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
     test "a branch that rewrote commits already pushed is refused, with nothing pushed", %{
       scope: scope,
       run: run,
-      task: task,
-      repo: repo
+      task: %Task{id: task_id} = task
     } do
-      {:ok, task} = Pipeline.update_task(task, %{worktree_name: "main"})
-      stub(Git, :check_push, &call_original(Git, :check_push, [&1]))
-      git!(repo, ["push", "origin", "HEAD"])
-      git!(repo, ["commit", "--amend", "--allow-empty", "-m", "CMW-1: add the vendor filter, reworded"])
+      expect(Git, :check_push, fn %Task{id: ^task_id} -> {:error, :history_rewritten} end)
       reject(&Git.push_branch/2)
 
       assert {:error, :history_rewritten} = Pipeline.hand_over_work(scope, run)
@@ -138,14 +141,14 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
       run: run,
       task: task
     } do
-      stub(Git, :push_branch, fn _scope, _task -> {:error, "remote rejected"} end)
+      expect(Git, :push_branch, fn _scope, _task -> {:error, "remote rejected"} end)
 
       assert {:error, "remote rejected"} = Pipeline.hand_over_work(scope, run)
       assert %Run{review_on_ci_pass: false} = Repo.reload!(run)
       assert %Task{stage: :engineer} = Repo.reload!(task)
 
-      stub(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
-        git!(path, ["push", "origin", "HEAD"])
+      expect(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
+        File.rm!(Path.join(path, "unpushed"))
         :ok
       end)
 
@@ -157,8 +160,7 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
       scope: scope,
       project: project,
       run: run,
-      task: task,
-      repo: repo
+      task: %Task{id: task_id} = task
     } do
       {:ok, review_role} = Roles.get_role(project_id: project.id, stage: :review)
 
@@ -171,35 +173,23 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
         })
 
       {:ok, run} = Pipeline.update_run(run, %{error: "CI passed, but the branch could not be pushed: rejected"})
+      expect(Git, :push_branch, fn ^scope, %Task{id: ^task_id} -> :ok end)
 
       assert {:error, :stage_running} = Pipeline.hand_over_work(scope, run)
-      refute Git.branch_unpushed?(repo)
       assert %Run{error: nil} = Repo.reload!(run)
       assert %Task{stage: :engineer} = Repo.reload!(task)
     end
 
-    # Once Engineer hands the branch on it is Review's, and the next round's engineer hands its fixes on.
-    test "the engineer's hand-over on a task at Review is refused, with nothing pushed and no go-ahead left", %{
-      scope: scope,
-      run: run,
-      task: task
-    } do
+    # Once Engineer hands the branch on it is Review's, and the next round's engineer hands its fixes on. The diff
+    # pane can hold a run whose task it loaded before someone else sent it on.
+    test "the engineer's hand-over on a task at Review is refused, with nothing pushed and no go-ahead left, even from a page that still thinks the task is at engineer",
+         %{scope: scope, run: run, task: task} do
       {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
       reject(&Git.push_branch/2)
 
       assert {:error, {:invalid_stage, :review}} = Pipeline.hand_over_work(scope, run)
       assert %Run{review_on_ci_pass: false} = Repo.reload!(run)
       assert %Task{stage: :review} = Repo.reload!(task)
-    end
-
-    # The diff pane can hold a run whose task it loaded before someone else sent it on.
-    test "a push from a page that still thinks the task is at engineer is refused", %{
-      scope: scope,
-      run: run,
-      task: task
-    } do
-      {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
-      reject(&Git.push_branch/2)
 
       assert {:error, {:invalid_stage, :review}} = Pipeline.hand_over_work(scope, %{run | task: task})
     end
@@ -244,8 +234,7 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
       scope: scope,
       project: project,
       run: run,
-      task: task,
-      repo: repo
+      task: %Task{id: task_id} = task
     } do
       {:ok, _project} = Projects.update_project(scope, project, %{ci_command: "mise run ci"})
 
@@ -255,7 +244,7 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
         task_id: task.id,
         kind: :ci,
         exit_code: 0,
-        head_sha: String.trim(git!(repo, ["rev-parse", "HEAD"])),
+        head_sha: String.duplicate("a", 40),
         stream_path: "/tmp/cmw-ci.log",
         status: :finished,
         started_at: DateTime.utc_now()
@@ -264,8 +253,12 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
 
       reject(Tools, :start_command_process, 4)
 
+      expect(Git, :push_branch, fn ^scope, %Task{id: ^task_id, worktree_path: path} ->
+        File.rm!(Path.join(path, "unpushed"))
+        :ok
+      end)
+
       assert {:ok, %Run{}} = Pipeline.hand_over_work(scope, run)
-      refute Git.branch_unpushed?(repo)
       assert %Task{stage: :review} = Repo.reload!(task)
     end
 

@@ -1,7 +1,9 @@
 defmodule Rail.Pipeline.Actions.RunFinishedTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   import Rail.Pipeline.Utils.QuestionQueue
+  import Rail.Pipeline.Utils.WithTaskLock
 
   alias Rail.Git
   alias Rail.GitHub.Client
@@ -11,7 +13,9 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.NotifyOwner
   alias Rail.Projects
+  alias Rail.Projects.Schemas.Project
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.BrowserSession
@@ -43,6 +47,22 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Run Finished Issue"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+    # Git is only ever asked through Rail.Git, so a test's worktree is this plain directory and the stubs answer
+    # for a branch on one commit, pushed, clean and level with main, with no prompts merged to main. A test about
+    # what a turn committed or left says so with its own.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    head = String.duplicate("a", 40)
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: head, dirty_digest: "clean"} end)
+    stub(Git, :branch_unpushed?, fn _path -> false end)
+    stub(Git, :worktree_dirty?, fn _path -> false end)
+    stub(Git, :base_status, fn _path, "main" -> %{behind: false, conflicts: []} end)
+
+    stub(Git, :read_default_branch_file, fn _project, path ->
+      {:error, "fatal: path '#{path}' does not exist in 'refs/remotes/origin/main'"}
+    end)
 
     # Plan checks that its agent left a ticket and a plan behind, so a run meant to
     # read as clean needs both there.
@@ -98,10 +118,14 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       end
     end)
 
-    %{project: project, task: task, roles: roles, exited: exited}
+    %{project: project, task: task, worktree: worktree, head: head, roles: roles, exited: exited}
   end
 
-  test "records the exit against the run and marks the process finished", %{exited: exited} do
+  test "records the exit against the run, marks the process finished and tells whoever is watching the pipeline", %{
+    task: %Task{id: task_id},
+    exited: exited
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
     {run, os_process} = exited.(:plan, %{})
 
     assert {:ok, %Run{status: :finished, exit_code: 0, completed_at: %DateTime{}}} =
@@ -109,6 +133,44 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     assert %OsProcess{status: :finished} = Repo.reload!(os_process)
     assert %Run{status: :finished} = Repo.reload!(run)
+    assert_received {:pipeline_changed, ^task_id}
+  end
+
+  test "a custom stage's turn leaves the task at the stage, saved file or not, since only Approve moves it on", %{
+    project: project,
+    task: task
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :custom, custom_stage: "License check"})
+    {:ok, role} = Roles.get_custom_stage_role(project.id, "License check")
+
+    for _turn <- 1..2 do
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: role.id,
+          status: :running,
+          conversation_id: "sess_custom_stage",
+          started_at: DateTime.utc_now()
+        })
+
+      {:ok, os_process} =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: task.id,
+          stream_path: "/tmp/run_finished/#{run.id}.ndjson",
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
+        |> Repo.insert()
+
+      assert {:ok, %Run{status: :finished, stage_outcome: :in_progress, error: nil}} =
+               Pipeline.run_finished(os_process, %{exit_code: 0})
+
+      assert %Task{stage: :custom, custom_stage: "License check"} = Repo.reload!(task)
+      Repo.delete!(Repo.reload!(os_process))
+      Repo.delete!(Repo.reload!(run))
+    end
   end
 
   test "usage accumulates across the processes a run is carried by", %{exited: exited} do
@@ -124,33 +186,43 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   test "a non-zero exit records the error and concludes nothing", %{task: task, exited: exited} do
-    {_run, os_process} = exited.(:plan, %{})
+    {%Run{id: run_id}, %OsProcess{id: os_process_id} = os_process} = exited.(:plan, %{})
 
     assert {:ok, %Run{exit_code: 2, error: "Exited with code 2", stage_outcome: :in_progress}} =
              Pipeline.run_finished(os_process, %{exit_code: 2, error: "Exited with code 2"})
 
     assert %Task{stage: :plan} = Repo.reload!(task)
+    assert_enqueued(worker: NotifyOwner, args: %{run_id: run_id, os_process_id: os_process_id})
   end
 
-  test "a settled run tells whoever is watching the pipeline", %{task: %Task{id: task_id}, exited: exited} do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
-    {_run, os_process} = exited.(:plan, %{})
+  test "a chat reply that fails on a run already done tells nobody", %{exited: exited} do
+    {_run, os_process} = exited.(:plan, %{stage_outcome: :done})
 
-    assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    assert_received {:pipeline_changed, ^task_id}
+    assert {:ok, %Run{error: "Exited with code 2", stage_outcome: :done}} =
+             Pipeline.run_finished(os_process, %{exit_code: 2, error: "Exited with code 2"})
+
+    refute_enqueued(worker: NotifyOwner)
   end
 
-  test "a process whose run is gone has nothing to settle", %{task: %Task{id: task_id}, exited: exited} do
+  test "a process whose run is gone has nothing to settle, with an outcome or without", %{
+    task: %Task{id: task_id},
+    exited: exited
+  } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
     {run, os_process} = exited.(:plan, %{})
     Repo.delete!(run)
 
     assert {:error, :invalid_state} = Pipeline.run_finished(os_process)
+    assert {:error, :invalid_state} = Pipeline.run_finished(os_process, %{exit_code: 0})
     refute_received {:pipeline_changed, ^task_id}
   end
 
-  test "a message queued while the run worked goes out once it is idle", %{task: task, exited: exited} do
-    {:ok, _task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+  test "a message queued while the run worked goes out once it is idle", %{
+    task: task,
+    worktree: worktree,
+    exited: exited
+  } do
+    {:ok, _task} = Pipeline.update_task(task, %{worktree_path: worktree})
     {run, os_process} = exited.(:plan, %{pending_chat: "Please also add a test"})
 
     test_pid = self()
@@ -168,8 +240,21 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert Enum.any?(argv, &(&1 =~ "Please also add a test"))
   end
 
+  test "a turn that has its say with a message queued tells nobody, since the message goes straight back", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, _task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+    {_run, os_process} = exited.(:plan, %{pending_chat: "Please also add a test"})
+
+    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0}, async: false)
+    refute_enqueued(worker: NotifyOwner)
+  end
+
   test "a run that came back clean latches done and moves nothing", %{task: task, exited: exited} do
-    {run, os_process} = exited.(:plan, %{})
+    {%Run{id: run_id} = run, %OsProcess{id: os_process_id} = os_process} = exited.(:plan, %{})
 
     Pipeline.append_run_events(run.id, nil, ["The ticket is written."])
 
@@ -177,6 +262,17 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     # Plan hands on only when a human approves; the exit itself moves nothing.
     assert %Task{stage: :plan} = Repo.reload!(task)
+
+    assert [%Oban.Job{args: %{"run_id" => ^run_id, "os_process_id" => ^os_process_id}}] =
+             all_enqueued(worker: NotifyOwner)
+  end
+
+  test "a turn someone stopped tells nobody, however it ended", %{exited: exited} do
+    {_run, os_process} = exited.(:plan, %{})
+    {:ok, os_process} = os_process |> Ecto.Changeset.change(ended_reason: :stopped) |> Repo.update()
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    refute_enqueued(worker: NotifyOwner)
   end
 
   test "a run that already had its say is left alone however often it exits", %{task: task, exited: exited} do
@@ -186,6 +282,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :plan} = Repo.reload!(task)
+    refute_enqueued(worker: NotifyOwner)
   end
 
   test "a run that asked something parks on it rather than concluding", %{task: task, exited: exited} do
@@ -195,6 +292,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert {:ok, %Run{stage_outcome: :in_progress}} = Pipeline.run_finished(os_process, %{exit_code: 0})
 
     assert [%{prompt: "Which database?"}] = pending_questions(task.id)
+    assert_enqueued(worker: NotifyOwner, args: %{run_id: run.id})
   end
 
   test "a review agent turn that saved its review leaves the task at review with what it found", %{
@@ -250,12 +348,32 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
            ] = Repo.all(from s in BrowserSession, where: s.task_id == ^task.id, order_by: s.name)
   end
 
+  test "an engineer turn that ends closes the browser it retook screenshots in", %{
+    task: task,
+    worktree: worktree,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
+
+    %BrowserSession{}
+    |> BrowserSession.changeset(%{task_id: task.id, name: "engineer", status: :running})
+    |> Repo.insert!()
+
+    {_run, os_process} = exited.(:engineer, %{})
+
+    assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: -1})
+
+    assert [%BrowserSession{name: "engineer", status: :finished, ended_reason: :closed}] =
+             Repo.all(from s in BrowserSession, where: s.task_id == ^task.id)
+  end
+
   # The code reviewer started beside QA, so QA's finish starts nothing while it works.
   test "a QA turn that saved its report latches done and starts nothing while the other checks work", %{
     task: task,
+    worktree: worktree,
     exited: exited
   } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: worktree})
     {:ok, _saved} = Pipeline.save_report(task, :qa, "Two rows.")
     {_run, os_process} = exited.(:qa, %{})
     reject(Tools, :start_os_process, 2)
@@ -307,10 +425,9 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   # The process is settled before the stage's finish runs, so a finish that raises
   # would otherwise unwind leaving a run that looks finished, moved nothing and
   # said nothing about why.
-  test "a finish that blows up says so on the run", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+  test "a finish that blows up says so on the run", %{task: task, worktree: worktree, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: worktree})
     {:ok, _pass} = Pipeline.save_review(task)
-    stub(Git, :branch_unpushed?, fn _path -> false end)
     stub(Git, :branch_fingerprint, fn _path -> raise "git fell over" end)
 
     {_run, os_process} = exited.(:review_lead, %{})
@@ -330,9 +447,10 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
-  test "an engineer turn stopped part way hands nothing over", %{task: task, exited: exited} do
-    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+  test "an engineer turn stopped part way hands nothing over", %{task: task, worktree: worktree, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
     {_run, os_process} = exited.(:engineer, %{})
+    stub(Git, :branch_unpushed?, fn _path -> true end)
 
     reject(&Pipeline.hand_over_work/2)
 
@@ -341,9 +459,10 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   test "an engineer turn that committed nothing new stays open for the turn that does", %{
     task: task,
+    worktree: worktree,
     exited: exited
   } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
     {_run, os_process} = exited.(:engineer, %{})
 
     stub(Git, :branch_unpushed?, fn _path -> false end)
@@ -353,9 +472,14 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 
-  test "an engineer turn that committed hands its commits over and has its say", %{task: task, exited: exited} do
-    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+  test "an engineer turn that committed hands its commits over and has its say", %{
+    task: task,
+    worktree: worktree,
+    exited: exited
+  } do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
     {%Run{id: run_id}, os_process} = exited.(:engineer, %{})
+    expect(Git, :branch_unpushed?, fn ^worktree -> true end)
 
     expect(Pipeline, :hand_over_work, fn _scope, %Run{id: ^run_id} = run -> {:ok, run} end)
 
@@ -363,12 +487,11 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   # What the turn left uncommitted is not sent on, so it is said rather than lost.
-  test "an engineer turn says what it left uncommitted", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
-    File.write!(Path.join(task.worktree_path, "tracked.txt"), "changed\n")
+  test "an engineer turn says what it left uncommitted", %{task: task, worktree: worktree, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
     {run, os_process} = exited.(:engineer, %{})
 
-    stub(Git, :branch_unpushed?, fn _path -> false end)
+    stub(Git, :worktree_dirty?, fn ^worktree -> true end)
 
     assert {:ok, %Run{stage_outcome: :in_progress, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
 
@@ -378,9 +501,14 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   # One hand-over per round, not one per turn: a latched run says nothing more, so the
   # chat turns a human has with it after it finished never send anything on again.
-  test "an engineer run that already had its say does not hand over a second time", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+  test "an engineer run that already had its say does not hand over a second time", %{
+    task: task,
+    worktree: worktree,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
     {_run, os_process} = exited.(:engineer, %{stage_outcome: :done})
+    stub(Git, :branch_unpushed?, fn _path -> true end)
 
     reject(&Pipeline.hand_over_work/2)
 
@@ -391,11 +519,13 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   # Past Engineer the round is the checking agents', so an engineer turn there leaves the task where it is.
   test "an engineer turn after the task left Engineer moves nothing, whatever it changed", %{
     task: task,
+    worktree: worktree,
     exited: exited
   } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: worktree})
     {_run, os_process} = exited.(:engineer, %{stage_outcome: :done})
-    File.write!(Path.join(task.worktree_path, "unknown.ex"), "when\n")
+    stub(Git, :branch_unpushed?, fn _path -> true end)
+    stub(Git, :worktree_dirty?, fn _path -> true end)
 
     reject(&Pipeline.hand_over_work/2)
 
@@ -403,7 +533,10 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
-  test "a Plan run that left no plan stays open for the message that fixes it", %{task: task, exited: exited} do
+  test "a Plan run that left no plan, or no ticket, stays open for the message that fixes it", %{
+    task: task,
+    exited: exited
+  } do
     Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: nil])
     {_run, os_process} = exited.(:plan, %{})
 
@@ -411,9 +544,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
              Pipeline.run_finished(os_process, %{exit_code: 0})
 
     assert %Task{stage: :plan} = Repo.reload!(task)
-  end
 
-  test "a Plan run that left no ticket stays open for the message that fixes it", %{task: task, exited: exited} do
     Repo.delete_all(from(r in Round, where: r.task_id == ^task.id))
     {_run, os_process} = exited.(:plan, %{})
 
@@ -436,7 +567,10 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     {_run, os_process} = exited.(:plan, %{})
 
     assert {:ok,
-            %Run{stage_outcome: :in_progress, error: "The Plan agent saved 2 design options. It needs 3, or a pick."}} =
+            %Run{
+              stage_outcome: :in_progress,
+              error: "The Plan agent saved 2 design options. It needs at least 3, or a pick."
+            }} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
   end
 
@@ -463,7 +597,8 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert %Task{stage: :plan} = Repo.reload!(task)
   end
 
-  test "an outcome that arrives with string keys settles the same way", %{exited: exited} do
+  test "an outcome with string keys settles the same way, one with no exit code as a clean exit, and a usage record under a string key is taken as it is",
+       %{exited: exited} do
     {_run, os_process} = exited.(:plan, %{})
 
     assert {:ok, %Run{exit_code: 3, error: "It went wrong"}} =
@@ -472,16 +607,12 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
                "error" => "It went wrong",
                "usage" => %{input_tokens: 4, output_tokens: 2}
              })
-  end
 
-  test "an outcome with no exit code settles as a clean exit", %{exited: exited} do
     {_run, os_process} = exited.(:plan, %{})
 
     assert {:ok, %Run{exit_code: 0, usage: %Run.Usage{input_tokens: 4}}} =
              Pipeline.run_finished(os_process, %{usage: %{input_tokens: 4}})
-  end
 
-  test "a usage record under a string key is taken as it is", %{exited: exited} do
     {_run, os_process} = exited.(:plan, %{})
 
     assert {:ok, %Run{usage: %Run.Usage{output_tokens: 6}}} =
@@ -501,14 +632,10 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert {:ok, %Run{exit_code: 1, error: "Recorded earlier"}} = Pipeline.run_finished(os_process)
   end
 
-  test "a run parked on a question stays parked when its process exits", %{exited: exited} do
-    {_run, os_process} = exited.(:plan, %{status: :blocked_on_input})
-
-    assert {:ok, %Run{status: :blocked_on_input}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-  end
-
   # It has been waiting on the human since it stopped to ask, not since a later exit.
-  test "a run still parked on a question keeps the time it stopped to ask", %{exited: exited} do
+  test "a run parked on a question stays parked when its process exits, and keeps the time it stopped to ask", %{
+    exited: exited
+  } do
     asked_at = DateTime.shift(DateTime.utc_now(), minute: -3)
     {_run, os_process} = exited.(:plan, %{status: :blocked_on_input, completed_at: asked_at})
 
@@ -528,10 +655,11 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   test "a worktree setup that succeeded marks the worktree set up and enters the stage it held up", %{
     task: task,
+    worktree: worktree,
     roles: roles,
     exited: exited
   } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :plan, worktree_path: create_temp_git_repo()})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :plan, worktree_path: worktree})
     {_run, os_process} = exited.(:plan, %{})
     os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
     %{id: plan_role_id} = roles[:plan]
@@ -559,9 +687,10 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   test "a worktree set up under a conversation already going sends the message that was waiting", %{
     task: task,
+    worktree: worktree,
     exited: exited
   } do
-    {:ok, _task} = Pipeline.update_task(task, %{stage: :plan, worktree_path: create_temp_git_repo()})
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :plan, worktree_path: worktree})
     {run, _agent_process} = exited.(:plan, %{status: :finished, pending_chat: "Keep going"})
 
     setup_process =
@@ -590,9 +719,10 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   test "a message typed while a new worktree was set up waits for the stage's first turn", %{
     task: task,
+    worktree: worktree,
     exited: exited
   } do
-    {:ok, _task} = Pipeline.update_task(task, %{stage: :plan, worktree_path: create_temp_git_repo()})
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :plan, worktree_path: worktree})
     {run, os_process} = exited.(:plan, %{pending_chat: "Also check the logs"})
     os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
 
@@ -631,22 +761,21 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     refute_received {:started, _other}
   end
 
-  test "a worktree set up on a retried check at Review restarts only that check", %{
+  # A sibling running is under way; one an earlier round finished is started again with the rest.
+  test "a worktree set up on a retried check at Review leaves a sibling under way running", %{
     task: task,
     roles: roles,
     exited: exited
   } do
     {:ok, _task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+    task |> Pipeline.read_plan() |> Ecto.Changeset.change(record_demo: true) |> Repo.update!()
     {_run, os_process} = exited.(:qa, %{})
     os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
 
-    {:ok, _reviewing} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: roles[:review].id,
-        status: :failed,
-        started_at: DateTime.utc_now()
-      })
+    for {stage, status} <- [review: :running, demo: :finished] do
+      {:ok, _sibling} =
+        Pipeline.create_run(%{task_id: task.id, role_id: roles[stage].id, status: status, started_at: DateTime.utc_now()})
+    end
 
     test_pid = self()
 
@@ -658,6 +787,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert {:ok, %Run{status: :running}} = Pipeline.run_finished(os_process, %{exit_code: 0})
 
     assert_received {:started, :qa}
+    assert_received {:started, :demo}
     refute_received {:started, _other}
   end
 
@@ -672,11 +802,112 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert %Task{stage: :review, worktree_setup_at: %DateTime{}} = Repo.reload!(task)
   end
 
+  describe "a worktree setup on a project with a .env" do
+    # A clone of its own, since a .env in the shared project's would reach other tests' worktrees. The .env is
+    # read and written as a plain file, so the clone is a plain directory beside the worktree.
+    setup %{task: task, worktree: worktree} do
+      clone = Path.join(task.scratch_path, "clone")
+      File.mkdir_p!(clone)
+      File.write!(Path.join(clone, ".env"), "FOO=bar\n")
+      unique = System.unique_integer([:positive])
+
+      {:ok, %Project{id: project_id}} =
+        Projects.create_project(system_scope(), %{
+          name: "Setup Env",
+          github_repo: "example/setup-env-#{unique}",
+          github_installation_id: 1,
+          key: "senv#{unique}",
+          default_branch: "main",
+          clone_path: clone,
+          worktree_setup_script: "scripts/setup.sh"
+        })
+
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: worktree})
+      Repo.update_all(from(t in Task, where: t.id == ^task.id), set: [project_id: project_id])
+
+      :ok
+    end
+
+    test "that succeeded leaves the clone's lines in the worktree's .env", %{worktree: worktree, exited: exited} do
+      {_run, os_process} = exited.(:plan, %{})
+      os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+
+      assert {:ok, %Run{status: :finished, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+      assert File.read!(Path.join(worktree, ".env")) =~ "\nFOO=bar\n"
+    end
+
+    test "that failed leaves the worktree with no .env", %{worktree: worktree, exited: exited} do
+      {_run, os_process} = exited.(:plan, %{})
+      os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+
+      assert {:ok, %Run{error: "The worktree setup script failed" <> _rest}} =
+               Pipeline.run_finished(os_process, %{exit_code: 1, error: "Exited with code 1"})
+
+      refute File.exists?(Path.join(worktree, ".env"))
+    end
+
+    test "whose .env cannot be written fails, is not set up, and enters no stage", %{
+      task: task,
+      worktree: worktree,
+      exited: exited
+    } do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
+      File.mkdir_p!(Path.join(worktree, ".env"))
+      {%Run{id: setup_run_id}, os_process} = exited.(:engineer, %{})
+      os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok, %Run{error: "Rail could not write the project's .env into the worktree (" <> _rest}} =
+               Pipeline.run_finished(os_process, %{exit_code: 0})
+
+      assert %Task{worktree_setup_at: nil} = Repo.reload!(task)
+      assert [%Run{id: ^setup_run_id}] = Repo.all(from(r in Run, where: r.task_id == ^task.id))
+    end
+
+    test "whose .env cannot be written keeps a message queued during it, and starts nothing", %{
+      task: task,
+      worktree: worktree,
+      exited: exited
+    } do
+      {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
+      File.mkdir_p!(Path.join(worktree, ".env"))
+      {run, os_process} = exited.(:engineer, %{pending_chat: "Also check the logs"})
+      os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+
+      reject(Tools, :start_command_process, 4)
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok, %Run{error: "Rail could not write the project's .env into the worktree" <> _rest}} =
+               Pipeline.run_finished(os_process, %{exit_code: 0}, async: false)
+
+      assert %Run{pending_chat: "Also check the logs"} = Repo.reload!(run)
+    end
+
+    test "that failed keeps a message queued during it, and starts nothing", %{task: task, exited: exited} do
+      {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
+      {run, os_process} = exited.(:engineer, %{pending_chat: "Also check the logs"})
+      os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+
+      reject(Tools, :start_command_process, 4)
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok, %Run{error: "The worktree setup script failed" <> _rest}} =
+               Pipeline.run_finished(os_process, %{exit_code: 1, error: "Exited with code 1"}, async: false)
+
+      assert %Run{pending_chat: "Also check the logs"} = Repo.reload!(run)
+      assert_enqueued(worker: NotifyOwner, args: %{run_id: run.id})
+    end
+  end
+
   describe "an engineer hand-over into a machine with no room for its CI" do
     # Another run's sandbox holds all 4 CPUs the test machine has (config/test.exs).
-    setup %{project: project, task: task, roles: roles} do
+    setup %{project: project, task: task, worktree: worktree, roles: roles} do
       {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
-      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
+      # The engineer committed, and the remote takes the branch as it stands.
+      stub(Git, :branch_unpushed?, fn _path -> true end)
+      stub(Git, :check_push, fn _task -> :ok end)
       stub(Git, :credential_env, fn _project -> {:ok, %{"RAIL_GIT_TOKEN" => "ghs_token"}} end)
 
       {:ok, other} =
@@ -718,6 +949,49 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
              Pipeline.run_finished(os_process, %{exit_code: 0})
   end
 
+  test "CI that passes while Discard holds the task's lock pushes nothing once its run is gone", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
+    {%Run{id: run_id}, os_process} = exited.(:engineer, %{})
+    os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
+
+    reject(Git, :push_branch, 2)
+
+    pending =
+      with_task_lock(task.id, fn ->
+        pending = Elixir.Task.async(fn -> Pipeline.run_finished(os_process, %{exit_code: 0}) end)
+        refute Elixir.Task.yield(pending, 100)
+        Repo.delete_all(from(r in Run, where: r.id == ^run_id))
+        pending
+      end)
+
+    assert {:error, :invalid_state} = Elixir.Task.await(pending)
+  end
+
+  test "an engineer turn that ends while Discard holds the task's lock hands nothing over once its run is gone", %{
+    task: task,
+    worktree: worktree,
+    exited: exited
+  } do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
+    {%Run{id: run_id}, os_process} = exited.(:engineer, %{})
+    stub(Git, :branch_unpushed?, fn _path -> true end)
+
+    reject(&Pipeline.hand_over_work/2)
+
+    pending =
+      with_task_lock(task.id, fn ->
+        pending = Elixir.Task.async(fn -> Pipeline.run_finished(os_process, %{exit_code: 0}) end)
+        refute Elixir.Task.yield(pending, 100)
+        Repo.delete_all(from(r in Run, where: r.id == ^run_id))
+        pending
+      end)
+
+    assert {:error, :invalid_state} = Elixir.Task.await(pending)
+  end
+
   test "CI that passed on a branch that will not push says so and is not done", %{task: task, exited: exited} do
     {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
     {_run, os_process} = exited.(:engineer, %{review_on_ci_pass: true})
@@ -734,8 +1008,12 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
              Pipeline.run_finished(os_process, %{exit_code: 0})
   end
 
-  test "CI that failed goes back to the engineer with the end of its output", %{task: task, exited: exited} do
-    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+  test "CI that failed goes back to the engineer with the end of its output", %{
+    task: task,
+    worktree: worktree,
+    exited: exited
+  } do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
     {run, os_process} = exited.(:engineer, %{review_on_ci_pass: true})
     stream_path = Path.join(task.scratch_path, "ci.log")
     File.mkdir_p!(task.scratch_path)
@@ -770,21 +1048,18 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   test "CI that failed resumes the engineer on the prompt merged to the project's .rail/prompts", %{
-    project: project,
     task: task,
+    worktree: worktree,
     exited: exited
   } do
-    remote = create_temp_git_repo(prefix: "rail_ci_prompt_remote")
-    File.mkdir_p!(Path.join(remote, ".rail/prompts"))
-    File.write!(Path.join(remote, ".rail/prompts/engineer.md"), "From the repo.\n")
-    git!(remote, ["add", "."])
-    git!(remote, ["commit", "-m", "add prompt"])
-    clone = create_temp_git_repo(prefix: "rail_ci_prompt_clone")
-    git!(clone, ["remote", "add", "origin", remote])
-    git!(clone, ["fetch", "origin", "main"])
-    {:ok, _project} = Projects.update_project(system_scope(), project, %{clone_path: clone})
+    # The prompt is read off the default branch as fetched, which Rail.Git answers.
+    stub(Git, :read_default_branch_file, fn _project, path ->
+      if path == ".rail/prompts/engineer.md",
+        do: {:ok, "From the repo.\n"},
+        else: {:error, "fatal: path '#{path}' does not exist in 'refs/remotes/origin/main'"}
+    end)
 
-    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
     {_run, os_process} = exited.(:engineer, %{})
     os_process = os_process |> OsProcess.changeset(%{kind: :ci, command: "mise run ci"}) |> Repo.update!()
 
@@ -796,8 +1071,8 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert {:ok, %Run{status: :running}} = Pipeline.run_finished(os_process, %{exit_code: 1})
   end
 
-  test "CI that timed out goes back to the engineer saying so", %{task: task, exited: exited} do
-    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+  test "CI that timed out goes back to the engineer saying so", %{task: task, worktree: worktree, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
     {_run, os_process} = exited.(:engineer, %{})
 
     os_process =
@@ -842,8 +1117,12 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
              Pipeline.run_finished(os_process, %{exit_code: -1})
   end
 
-  test "CI that failed with dispatch off says the engineer was not resumed", %{task: task, exited: exited} do
-    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+  test "CI that failed with dispatch off says the engineer was not resumed", %{
+    task: task,
+    worktree: worktree,
+    exited: exited
+  } do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
     {_run, os_process} = exited.(:engineer, %{})
     os_process = os_process |> OsProcess.changeset(%{kind: :ci, command: "mise run ci"}) |> Repo.update!()
 
@@ -853,8 +1132,8 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
              Pipeline.run_finished(os_process, %{exit_code: 1})
   end
 
-  test "CI that failed and could not resume the engineer keeps why", %{task: task, exited: exited} do
-    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+  test "CI that failed and could not resume the engineer keeps why", %{task: task, worktree: worktree, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
     {run, os_process} = exited.(:engineer, %{})
     os_process = os_process |> OsProcess.changeset(%{kind: :ci, command: "mise run ci"}) |> Repo.update!()
 
@@ -879,28 +1158,14 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   describe "CI that passed on a commit" do
-    # Review only takes a branch the remote has, on a commit CI passed, so the
-    # worktree is one CI's pass can really push.
-    setup %{project: project, task: task} do
+    # Review only takes a branch the remote has, on a commit CI passed, so CI's pass pushes HEAD, after which
+    # the branch reads as pushed, and CI ran on the commit the worktree is on.
+    setup %{project: project, task: task, worktree: worktree, head: head} do
       {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
+      expect(Git, :push_branch, fn _scope, %Task{worktree_path: ^worktree} -> :ok end)
 
-      remote = create_temp_git_repo(prefix: "rail_git_remote", initial_commit: false)
-      git!(remote, ["config", "receive.denyCurrentBranch", "ignore"])
-      repo = create_temp_git_repo()
-      git!(repo, ["remote", "add", "origin", remote])
-      git!(repo, ["push", "--set-upstream", "origin", "main"])
-      File.write!(Path.join(repo, "feature.ex"), "the engineer's work\n")
-      git!(repo, ["add", "."])
-      git!(repo, ["commit", "-m", "the engineer's work"])
-
-      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: repo})
-
-      stub(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
-        git!(path, ["push", "origin", "HEAD"])
-        :ok
-      end)
-
-      %{task: task, repo: repo, ci: %{kind: :ci, exit_code: 0, head_sha: String.trim(git!(repo, ["rev-parse", "HEAD"]))}}
+      %{task: task, ci: %{kind: :ci, exit_code: 0, head_sha: head}}
     end
 
     test "a human asked for goes on to review with nobody clicking", %{task: task, exited: exited, ci: ci} do
@@ -935,13 +1200,12 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     test "a human asked for, with a commit made since CI ran, stays in engineer and says why", %{
       task: task,
-      repo: repo,
       exited: exited,
       ci: ci
     } do
       {run, os_process} = exited.(:engineer, %{review_on_ci_pass: true})
       os_process = os_process |> OsProcess.changeset(ci) |> Repo.update!()
-      git!(repo, ["commit", "--allow-empty", "-m", "committed since"])
+      stub(Git, :branch_fingerprint, fn _path -> %{head_sha: String.duplicate("b", 40), dirty_digest: "clean"} end)
 
       reject(Tools, :start_os_process, 2)
 
@@ -980,10 +1244,12 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   test "an engineer that committed and asks something parks on it rather than handing over", %{
     task: task,
+    worktree: worktree,
     exited: exited
   } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
     {run, os_process} = exited.(:engineer, %{})
+    stub(Git, :branch_unpushed?, fn _path -> true end)
     {:ok, _asked} = Pipeline.ask_questions(run, [%{"prompt" => "Keep both migrations?"}])
 
     reject(&Pipeline.hand_over_work/2)
@@ -993,8 +1259,8 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   describe "a review agent an earlier round latched, then messaged" do
-    setup %{task: task, roles: roles} do
-      {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+    setup %{task: task, worktree: worktree, roles: roles} do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: worktree})
 
       {:ok, %Run{id: run_id} = run} =
         Pipeline.create_run(%{
@@ -1089,6 +1355,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
       refute Enum.any?(lines, &String.starts_with?(&1, "[human]"))
       refute Enum.any?(lines, &(&1 =~ "When asked"))
+      refute_enqueued(worker: NotifyOwner)
     end
 
     test "waits while a person still has a question to answer", %{task: task, exited: exited} do
@@ -1103,6 +1370,8 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
       assert [%Question{answered_by_rail: true, delivered_at: nil}, %Question{status: :pending}] =
                Repo.all(from q in Question, where: q.task_id == ^task.id, order_by: [asc: q.inserted_at, asc: q.id])
+
+      assert_enqueued(worker: NotifyOwner, args: %{run_id: run.id})
     end
 
     test "waits on a turn a person stopped, rather than resuming it", %{task: task, exited: exited} do

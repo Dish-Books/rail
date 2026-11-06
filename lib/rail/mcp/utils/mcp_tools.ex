@@ -8,13 +8,14 @@ defmodule Rail.Mcp.Utils.McpTools do
   `Rail.Mcp.Actions.CallRunTool` is what runs them. A name that is not on a run's
   list is a name to forward, so this is also the gate.
 
-  Three registers, because Review's explorers and its demo recorder drive the
-  same browser for different reasons. `@browser_tools` is the browser itself and
-  belongs to neither: an explorer drives it to find out whether the change works,
-  the recorder drives it to show that it does, and the page does not care which.
-  Rail holds it, so it can keep the session alive between calls, film and stream
-  it, and take the whole thing down when the task leaves Review. Every other stage
-  reads code, and a browser would be a thing to get lost in.
+  Three registers, because Review's explorers, its demo recorder and the
+  engineer drive the same browser for different reasons. `@browser_tools` is the
+  browser itself and belongs to none of them: an explorer drives it to find out
+  whether the change works, the recorder to show that it does, and the engineer
+  to retake the screenshots the repository commits, such as a help center's, and
+  the page does not care which. Rail holds it, so it can keep the session alive
+  between calls, film and stream it, and take it down when the turn ends. Every
+  other stage reads code, and a browser would be a thing to get lost in.
 
   Rail does not drive it. `browser_connect` hands the agent its tab's DevTools
   address and a driver, and the agent writes and runs its own scripts against
@@ -99,7 +100,7 @@ defmodule Rail.Mcp.Utils.McpTools do
             "type" => "string",
             "description" =>
               "A name for this browser, a few letters, digits, spaces or dashes. Leave it out: yours is named for " <>
-                "your part, `qa`, `screens` or `demo`, and another name is another browser signed in as another account."
+                "your part, `qa`, `screens`, `demo` or `engineer`, and another name is another browser signed in as another account."
           },
           "account" => %{
             "type" => "string",
@@ -199,8 +200,8 @@ defmodule Rail.Mcp.Utils.McpTools do
       "name" => "qa_shot",
       "description" =>
         "Photograph the page and save it in the QA folder. Say what the picture is of; Rail names the file " <>
-          "and returns its path, which goes in your report for a finding's evidence: the path, never " <>
-          "the picture. Take it at the point a check asserts something on screen, not after every keystroke. A " <>
+          "and returns its path with the picture attached, so you check it in the same turn. The path goes in " <>
+          "your report for a finding's evidence: the path, never the picture. Take it at the point a check asserts something on screen, not after every keystroke. A " <>
           "picture all one color is refused and nothing is saved.",
       "inputSchema" => %{
         "type" => "object",
@@ -218,7 +219,7 @@ defmodule Rail.Mcp.Utils.McpTools do
         "Photograph one screen state the change affects and save it as that state's image for HEAD's commit. It " <>
           "replaces the state's earlier picture each round. Take it of the state as the change leaves it, under the " <>
           "same `key` every round. Refused while the worktree has uncommitted changes, and for a picture all one color, " <>
-          "which keeps the earlier one. Returns the path, which a finding can cite as evidence.",
+          "which keeps the earlier one. Returns the path, which a finding can cite as evidence, with the picture attached.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
@@ -298,7 +299,8 @@ defmodule Rail.Mcp.Utils.McpTools do
       "description" =>
         "Save one design option once its page `<key>.html` and screenshot `<key>.png` exist in the design " <>
           "folder, and save it again whenever it changes. The panel shows each option as it is saved, while " <>
-          "the others are still being built. Three options before the human picks, and only the picked one after.",
+          "the others are still being built. Three options come first, and more can follow under new keys before " <>
+          "the human picks. Only the picked one can be saved after.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
@@ -450,8 +452,9 @@ defmodule Rail.Mcp.Utils.McpTools do
           },
           "recommendation" => %{
             "type" => "string",
-            "enum" => ["fix", "skip"],
-            "description" => "Whether you would fix it. Your advice; the human decides."
+            "enum" => ["fix", "skip", "new_issue"],
+            "description" =>
+              "Whether you would fix it, skip it or file it as a new issue. Your advice; the human decides."
           },
           "checklist_rule" => %{
             "type" => "string",
@@ -505,9 +508,12 @@ defmodule Rail.Mcp.Utils.McpTools do
           "approves it in Rail, which starts an engineer on it. Markdown: a short summary, then `### What changes` " <>
           "with a `#### `key`` for each finding to fix, by its key in backticks, and a `#### Comment N` for each " <>
           "comment the human sent, by its " <>
-          "number, each saying what will change or why nothing will. Then `### File-level changes`, one bullet per " <>
-          "file starting with its path in backticks, each ending with the item it is " <>
-          "for: the finding's key in backticks or `comment N`. Then `### Verification`. Leave out the last two when " <>
+          "number, each saying what will change or why nothing will. Then `### File-level changes`, a card per file " <>
+          "as the first plan's `### Changes` has: a `#### `path`` heading, followed by `deleted` when the file goes; " <>
+          "a sentence or two on what changes in it, naming the item it is for by the finding's key in backticks or " <>
+          "`comment N`; then, when it adds or changes public functions, one fenced block of their signatures; then, " <>
+          "when there is code the fix turns on, one fenced block marked `sketch`, such as ```elixir sketch, holding " <>
+          "only that code. Then `### Verification`. Leave out the last two when " <>
           "nothing will change, but save no plan in which nothing changes: name the findings to rule Skip instead. " <>
           "A `### Changes to the plan` section comes first when the human asked to change the " <>
           "ticket, its criteria or the first plan. A plan that leaves out a finding to fix or a comment is refused " <>
@@ -588,6 +594,20 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   ]
 
+  @stage_output_tools [
+    %{
+      "name" => "save_stage_output",
+      "description" =>
+        "Save this stage's output: one markdown file, the whole of it. The person reviewing the stage reads it, and " <>
+          "every later stage is given it. Each save replaces the last, so save the whole file every time.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{"markdown" => %{"type" => "string", "description" => "The whole file, in markdown."}},
+        "required" => ["markdown"]
+      }
+    }
+  ]
+
   @question_tools [
     %{
       "name" => "ask_questions",
@@ -641,10 +661,11 @@ defmodule Rail.Mcp.Utils.McpTools do
 
   @doc """
   The tools Rail serves this run itself: the save tools each agent hands its output over with, the browser for
-  the two that drive the app, `ask_questions` for the agents a person talks to, and the knowledge base for all.
+  the three that drive the app, `ask_questions` for the agents a person talks to, and the knowledge base for all. A
+  custom stage's role saves its file with `save_stage_output`.
   """
   def mcp_tools(%Role{stage: :plan}), do: @design_tools ++ @plan_tools ++ @question_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :engineer}), do: @report_tools ++ @question_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :engineer}), do: @browser_tools ++ @report_tools ++ @question_tools ++ @knowledge_tools
   def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @qa_tools ++ @report_tools ++ @knowledge_tools
   def mcp_tools(%Role{stage: :review}), do: @report_tools ++ @knowledge_tools
 
@@ -652,6 +673,9 @@ defmodule Rail.Mcp.Utils.McpTools do
 
   def mcp_tools(%Role{stage: :review_lead}),
     do: @review_lead_tools ++ @design_tools ++ @question_tools ++ @knowledge_tools
+
+  def mcp_tools(%Role{custom_stage: name}) when is_binary(name),
+    do: @stage_output_tools ++ @question_tools ++ @knowledge_tools
 
   def mcp_tools(%Role{}), do: @knowledge_tools
 end

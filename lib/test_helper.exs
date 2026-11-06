@@ -150,4 +150,8 @@ end
 :persistent_term.put({RailTest, :project}, %{project | linear_workspace: workspace})
 :persistent_term.put({RailTest, :github_project}, github_project)
 
+# A data migration run against a database already seeded queues jobs for the seeded projects, and a committed job
+# shows in every test's `all_enqueued`.
+Rail.Repo.delete_all("oban_jobs")
+
 Ecto.Adapters.SQL.Sandbox.mode(Rail.Repo, :manual)

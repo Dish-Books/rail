@@ -5,7 +5,7 @@ defmodule RailCredo.MixProject do
     [
       app: :rail_credo,
       version: "0.1.0",
-      elixir: "~> 1.19",
+      elixir: "~> 1.20",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -40,7 +40,7 @@ defmodule RailCredo.MixProject do
     [
       {:excoveralls, "~> 0.18", only: :test},
       {:credo, "~> 1.7"},
-      {:jump_credo_checks, "~> 0.2", runtime: false},
+      {:jump_credo_checks, "~> 0.7", runtime: false},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false}
     ]
   end

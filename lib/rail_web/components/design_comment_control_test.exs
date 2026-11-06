@@ -1,6 +1,7 @@
 defmodule RailWeb.Components.DesignCommentControlTest do
   use RailWeb.ConnCase, async: true
 
+  import Phoenix.Component, only: [sigil_H: 2]
   import Phoenix.LiveViewTest
 
   alias RailWeb.Components.DesignCommentControl
@@ -39,5 +40,30 @@ defmodule RailWeb.Components.DesignCommentControlTest do
 
     assert html |> Floki.parse_fragment!() |> Floki.find("#design-comment-hint") |> Floki.text() =~
              "Pick a design to comment on it."
+  end
+
+  test "what it is given sits at the row's right end, after the hint, and the toggle stays as it was" do
+    assigns = %{}
+
+    html =
+      rendered_to_string(~H"""
+      <DesignCommentControl.design_comment_control
+        commenting={false}
+        disabled_reason="Pick a design to comment on it."
+        target={nil}
+      >
+        Use this design
+      </DesignCommentControl.design_comment_control>
+      """)
+
+    assert [toggle, hint, right_end] = html |> Floki.parse_fragment!() |> Floki.find("#design-comment-control > *")
+
+    assert Floki.attribute(toggle, "id") == ["design-comment-toggle"]
+    assert Floki.attribute(toggle, "disabled") != []
+    assert Floki.attribute(hint, "id") == ["design-comment-hint"]
+    assert Floki.text(right_end) =~ "Use this design"
+    assert [class] = Floki.attribute(right_end, "class")
+    assert class =~ "ml-auto"
+    assert class =~ "shrink-0"
   end
 end

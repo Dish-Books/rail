@@ -4,6 +4,7 @@ defmodule RailWeb.Utils.RunStateStyleTest do
   import RailWeb.Utils.RunStateStyle
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
@@ -83,9 +84,9 @@ defmodule RailWeb.Utils.RunStateStyleTest do
     assert run_state_style(done, task) == run_state_style(done)
   end
 
-  test "each Finalize state takes its own colour and icon, whatever the run is doing" do
+  test "each Finalize state takes its own colour and icon while the run is idle" do
     now = DateTime.utc_now()
-    run = %Run{status: :running}
+    run = %Run{status: :finished, stage_outcome: :done}
 
     assert %{icon: "pi-flag", text_class: "text-amber" <> _amber, pill_label: "Ready to finalize"} =
              run_state_style(run, %Task{stage: :finalize})
@@ -101,5 +102,26 @@ defmodule RailWeb.Utils.RunStateStyleTest do
 
     assert %{icon: "pi-git-merge", text_class: "text-emerald" <> _emerald, chip_class: "bg-emerald" <> _chip} =
              run_state_style(run, %Task{stage: :merged, merged_at: now})
+  end
+
+  test "a plan sent to the tech leads looks like Finalize's ready state once its run is done, and like its run otherwise" do
+    sent = %Task{stage: :plan, rounds: [%Round{number: 1, ready_at: DateTime.utc_now()}]}
+    blocked = %Run{status: :blocked_on_input}
+
+    assert %{icon: "pi-seal-check", text_class: "text-amber" <> _amber, pill_label: "Ready for tech lead"} =
+             run_state_style(%Run{status: :finished, stage_outcome: :done}, sent)
+
+    assert run_state_style(blocked, sent) == run_state_style(blocked)
+  end
+
+  test "a Finalize task whose run a comment resumed looks like that run, unless it is merging" do
+    now = DateTime.utc_now()
+    running = %Run{status: :running, stage_outcome: :done}
+
+    assert run_state_style(running, %Task{stage: :finalize}) == run_state_style(running)
+    assert run_state_style(running, %Task{stage: :finalize, marked_ready_at: now}) == run_state_style(running)
+
+    assert %{pill_label: "Merging"} =
+             run_state_style(running, %Task{stage: :finalize, marked_ready_at: now, merge_started_at: now})
   end
 end

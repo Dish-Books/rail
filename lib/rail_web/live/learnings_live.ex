@@ -161,10 +161,8 @@ defmodule RailWeb.LearningsLive do
     {:noreply, push_patch(socket, to: list_path(socket.assigns, status: status))}
   end
 
-  # Proposals are not searched, so a search typed while reviewing looks through the active rules.
   def handle_event("search", %{"q" => query}, socket) do
-    status = if socket.assigns.status == :review and String.trim(query) != "", do: :active, else: socket.assigns.status
-    {:noreply, push_patch(socket, to: list_path(socket.assigns, q: query, status: status))}
+    {:noreply, push_patch(socket, to: list_path(socket.assigns, q: query))}
   end
 
   def handle_event("filter_kind", %{"kind" => kind}, socket) do
@@ -381,15 +379,15 @@ defmodule RailWeb.LearningsLive do
 
   # A reload with the same search reuses its embedding, so a broadcast costs no Vertex request.
   defp query_embedding(%{query: ""}, _status), do: nil
-  defp query_embedding(_assigns, :review), do: nil
   defp query_embedding(%{query: query, query_embedding: {query, {:ok, _vector}} = cached}, _status), do: cached
   defp query_embedding(%{query: query}, _status), do: {query, Learnings.embed_query(query)}
 
-  defp list(assigns, project_id, :review, _query_embedding) do
-    {[], Learnings.list_learning_proposals(project_id: project_id, kind: assigns.kind), false}
-  end
-
   defp list(_assigns, _project_id, _status, {_query, {:error, _unembeddable}}), do: {[], [], true}
+
+  defp list(assigns, project_id, :review, query_embedding) do
+    embedding = with {_query, {:ok, vector}} <- query_embedding, do: vector
+    {[], Learnings.list_learning_proposals(project_id: project_id, kind: assigns.kind, embedding: embedding), false}
+  end
 
   defp list(assigns, project_id, status, query_embedding) do
     {:ok, learnings} =

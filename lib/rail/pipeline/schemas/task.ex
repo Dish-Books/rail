@@ -19,8 +19,10 @@ defmodule Rail.Pipeline.Schemas.Task do
   # The linear pipeline, then stages a task can be parked in off that path.
   # `:split` is a parent whose children carry the work, and it waits there until they merge.
   # `:finalize` has no run of its own: the Review lead's run stays the task's while a person merges it.
+  # `:custom` is one of the custom stages its issue's workflow named, which `custom_stage` says.
   @stages [
     :plan,
+    :custom,
     :engineer,
     :review,
     :finalize,
@@ -31,6 +33,7 @@ defmodule Rail.Pipeline.Schemas.Task do
   @primary_key {:id, UXID, autogenerate: true, prefix: "tsk"}
   schema "tasks" do
     field :stage, Ecto.Enum, values: @stages, default: :plan
+    field :custom_stage, :string
     field :worktree_name, :string
     field :worktree_path, :string
     field :scratch_path, :string
@@ -81,6 +84,7 @@ defmodule Rail.Pipeline.Schemas.Task do
   @cast_fields [
     :issue_id,
     :stage,
+    :custom_stage,
     :worktree_name,
     :worktree_path,
     :scratch_path,
@@ -134,6 +138,31 @@ defmodule Rail.Pipeline.Schemas.Task do
     |> unique_constraint(:split_position, name: :tasks_parent_task_id_split_position_index)
     |> validate_number(:split_position, greater_than: 0)
     |> validate_builds_on()
+    |> validate_custom_stage()
+  end
+
+  @doc """
+  A changeset putting the task back at Plan for Back to Plan: its pull request, worktree slot and setup, Finalize
+  and merge fields and base check are cleared, since all of them belong to the work it erases.
+  """
+  def return_to_plan_changeset(%__MODULE__{} = task) do
+    change(task,
+      stage: :plan,
+      pr_number: nil,
+      pr_url: nil,
+      pr_is_draft: nil,
+      worktree_slot: nil,
+      worktree_setup_at: nil,
+      marked_ready_at: nil,
+      marked_ready_by_id: nil,
+      base_behind: false,
+      base_conflicts: [],
+      base_checked_at: nil,
+      merge_started_at: nil,
+      merge_error: nil,
+      merge_error_at: nil,
+      merge_sha: nil
+    )
   end
 
   @doc """
@@ -170,15 +199,43 @@ defmodule Rail.Pipeline.Schemas.Task do
   def running?(%__MODULE__{runs: runs}) when is_list(runs), do: Enum.any?(runs, &Run.running?/1)
   def running?(%__MODULE__{}), do: false
 
+  @doc """
+  True when `task` is at Plan with its first round sent to the tech leads and not approved, so the plan waits on
+  them. Requires `rounds` to be preloaded, and reads a task without them as not sent.
+  """
+  def plan_sent?(%__MODULE__{stage: :plan, rounds: [%Round{ready_at: %DateTime{}, approved_at: nil} | _later]}), do: true
+
+  def plan_sent?(%__MODULE__{}), do: false
+
   def stages, do: @stages
 
   @doc """
   The stage of the role a person talks to about a task at `stage`: at Review and Finalize that is the review
-  agent, beside the runs that check each round.
+  agent, beside the runs that check each round. No role's stage is `:custom`; `works_stage?/2` finds that one.
   """
   def role_stage(:review), do: :review_lead
   def role_stage(:finalize), do: :review_lead
   def role_stage(stage) when is_atom(stage), do: stage
+
+  @doc """
+  True when `role` works the stage `task` is at: at a custom stage the role of that stage's name, and otherwise the
+  one `role_stage/1` names.
+  """
+  def works_stage?(%__MODULE__{stage: :custom, custom_stage: name}, %Role{custom_stage: role_name}),
+    do: is_binary(name) and name == role_name
+
+  def works_stage?(%__MODULE__{stage: stage}, %Role{stage: role_stage}),
+    do: is_atom(role_stage) and role_stage != nil and role_stage == role_stage(stage)
+
+  @doc "The stage `task` is at as its issue's sequence names it, a custom one as `{:custom, name}`."
+  def current_stage(%__MODULE__{stage: :custom, custom_stage: name}), do: {:custom, name}
+  def current_stage(%__MODULE__{stage: stage}), do: stage
+
+  @doc "The issue's entry, with its prompt, for the custom stage `task` is at, or nil. Requires `issue`."
+  def custom_stage(%__MODULE__{stage: :custom, custom_stage: name, issue: %Issue{} = issue}),
+    do: Issue.custom_stage(issue, name)
+
+  def custom_stage(%__MODULE__{}), do: nil
 
   @checks [:qa, :review]
 
@@ -189,9 +246,8 @@ defmodule Rail.Pipeline.Schemas.Task do
   The run that says where this task stands: the latest at its stage, or at Review a check started since the review
   agent last was and not done yet, in flight first, since that agent waits on it. Requires `runs` with their `role`.
   """
-  def stage_run(%__MODULE__{runs: runs, stage: stage}) when is_list(runs) do
-    role_stage = role_stage(stage)
-    stage_runs = for %Run{role: %Role{stage: ^role_stage}} = run <- runs, do: run
+  def stage_run(%__MODULE__{runs: runs, stage: stage} = task) when is_list(runs) do
+    stage_runs = for %Run{role: %Role{} = role} = run <- runs, works_stage?(task, role), do: run
     latest = Enum.max_by(stage_runs, &(&1.started_at || &1.inserted_at), DateTime, fn -> nil end)
 
     holding =
@@ -245,12 +301,16 @@ defmodule Rail.Pipeline.Schemas.Task do
     {canceled, for(position <- builds_on, not Map.has_key?(by_position, position), do: "child #{position}")}
   end
 
+  def stage_label(%__MODULE__{stage: :custom, custom_stage: name}), do: name
+  def stage_label(%__MODULE__{stage: stage}), do: stage_label(stage)
+  def stage_label({:custom, name}) when is_binary(name), do: name
   def stage_label(:plan), do: "Plan"
   def stage_label(:engineer), do: "Implement"
   def stage_label(:review), do: "Review"
   def stage_label(:finalize), do: "Finalize"
   def stage_label(:merged), do: "Merged"
   def stage_label(:split), do: "Split"
+  def stage_label(:custom), do: "Custom stage"
   def stage_label(_other), do: nil
 
   def cast_stage(stage) when is_atom(stage) do
@@ -273,6 +333,13 @@ defmodule Rail.Pipeline.Schemas.Task do
         do: [],
         else: [builds_on: "must name only earlier children"]
     end)
+  end
+
+  # A custom stage names which, and no other stage keeps a name from one it left.
+  defp validate_custom_stage(changeset) do
+    if get_field(changeset, :stage) == :custom,
+      do: validate_required(changeset, [:custom_stage]),
+      else: put_change(changeset, :custom_stage, nil)
   end
 
   defp merge_claimed?(%DateTime{} = started), do: DateTime.diff(DateTime.utc_now(), started) < @merge_claim_seconds

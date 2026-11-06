@@ -53,6 +53,43 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
     assert %{line: %{label: "File 2"}} = groups |> hd() |> Map.fetch!(:cards) |> Enum.at(1)
   end
 
+  test "a repo whose app is not rail groups its cards by its own contexts and web" do
+    plan =
+      String.replace(sheet_plan(), "### Acceptance criteria", """
+      #### `lib/dishbooks/recipes/actions/import_recipe.ex`
+
+      Imports it.
+
+      #### `lib/dishbooks_web/live/recipe_live.ex`
+
+      Shows it.
+
+      #### `lib/dishbooks/recipes.ex`
+
+      Delegates.
+
+      ### Acceptance criteria
+      """)
+
+    assert %{groups: groups} = build_plan_sheet(plan)
+
+    assert [
+             {"recipes", "lib/dishbooks/recipes",
+              ["lib/dishbooks/recipes/actions/import_recipe.ex", "lib/dishbooks/recipes.ex"]},
+             {"web", "lib/dishbooks_web", ["lib/dishbooks_web/live/recipe_live.ex"]}
+           ] = groups |> Enum.map(&{&1.name, &1.directory, Enum.map(&1.cards, fn card -> card.path end)}) |> Enum.take(-2)
+  end
+
+  test "a card's signatures and sketch are highlighted" do
+    def = ~s(<span class="l-keyword-function">def</span> <span class="l-function">send_back_to_architect</span>)
+
+    assert %{
+             cards: [
+               %{signatures: [%{html: ^def <> _signature}], sketch: [%{html: ^def <> _sketch} | _lines]} | _cards
+             ]
+           } = build_plan_sheet(sheet_plan())
+  end
+
   test "the lines hold every part in the order it is drawn, the sketch's included, each with a key of its own" do
     assert %{lines: lines} = build_plan_sheet(sheet_plan())
 
@@ -169,6 +206,23 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
              for(card <- cards, line <- card.prose, line.text == "The new action replaces it.", do: line)
 
     assert first != second
+  end
+
+  test "a card's digest moves when its own text changes, and not when another card's does" do
+    digests = fn plan -> plan |> build_plan_sheet() |> Map.fetch!(:cards) |> Map.new(&{&1.path, &1.digest}) end
+    before = digests.(sheet_plan())
+
+    after_revision =
+      sheet_plan()
+      |> String.replace("Adds the Send back button beside Send to QA.", "Adds the Send back button under the footer.")
+      |> digests.()
+
+    assert before["lib/rail_web/live/review_stage.ex"] != after_revision["lib/rail_web/live/review_stage.ex"]
+
+    assert Map.delete(before, "lib/rail_web/live/review_stage.ex") ==
+             Map.delete(after_revision, "lib/rail_web/live/review_stage.ex")
+
+    assert before |> Map.values() |> Enum.uniq() |> length() == map_size(before)
   end
 
   test "a plan without Data changes, criteria or Verification has no such part, and one that does not lay out has none" do

@@ -6,19 +6,24 @@ defmodule RailWeb.Live.TaskActions do
     it, also after its owner started it, while a "Plan not approved" chip says it has not been. At Plan, Approve
     waits on the lead's own unsent plan comments, which approving would delete;
   - a branch the default branch has moved past: Update, which merges it in as a round of its own;
-  - a review with nothing left to fix: Ready for review, then a tech lead's Approve and Merge.
+  - a round QA skipped as changing nothing a person sees: Run QA anyway;
+  - a review with nothing left to fix: Ready for review, then a tech lead's Approve and Merge, none of them while
+    the review agent works or its fix plan waits.
 
   A later round's plan is approved where it is read, beside it, so it is not here.
   """
   use RailWeb, :live_component
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
   alias Rail.Users
+  alias RailWeb.Live.DiffView
 
   @impl true
   def update(assigns, socket) do
@@ -67,6 +72,18 @@ defmodule RailWeb.Live.TaskActions do
         title={@failed.error}
       >
         <.icon name="pi-arrow-clockwise" class="size-4" />Retry {@failed.role.name}
+      </.button>
+
+      <.button
+        :if={@skipped}
+        id="task-run-qa"
+        phx-click="retry"
+        phx-value-run={@skipped.id}
+        phx-target={@myself}
+        phx-disable-with="Starting…"
+        title="This round changed only files nobody sees in the app, so QA did not run on it."
+      >
+        <.icon name="pi-play" class="size-4" />Run QA anyway
       </.button>
 
       <span
@@ -260,8 +277,10 @@ defmodule RailWeb.Live.TaskActions do
 
   def handle_event("merge", _params, %{assigns: %{merging: true}} = socket), do: {:noreply, socket}
 
+  # The open diff is put away first: its update is queued ahead of every redraw the merge sends.
   def handle_event("merge", _params, socket) do
     %{current_scope: scope, task: task} = socket.assigns
+    send_update(DiffView, id: "diff-view", merging: true)
 
     socket =
       socket
@@ -299,6 +318,7 @@ defmodule RailWeb.Live.TaskActions do
   @impl true
   def handle_async(:merge, {:ok, result}, socket) do
     send(self(), :task_changed)
+    send_update(DiffView, id: "diff-view", merging: false)
 
     error =
       case result do
@@ -313,6 +333,7 @@ defmodule RailWeb.Live.TaskActions do
 
   def handle_async(:merge, {:exit, _reason}, socket) do
     send(self(), :task_changed)
+    send_update(DiffView, id: "diff-view", merging: false)
     socket = socket |> assign(:merging, false) |> assign(:error, "The merge did not finish. Try again.")
     {:noreply, socket}
   end
@@ -369,13 +390,14 @@ defmodule RailWeb.Live.TaskActions do
   defp load(socket) do
     %{task: task, current_scope: scope} = socket.assigns
     tech_lead = Scope.tech_lead?(scope)
-    state = if task.stage in [:finalize, :merged], do: Task.finalize_state(task)
+    state = if task.stage == :merged or (task.stage == :finalize and not revising?(task)), do: Task.finalize_state(task)
 
     socket
     |> assign(:tech_lead, tech_lead)
     |> assign(:state, state)
     |> assign(:plan_run, plan_run(task))
     |> assign(:failed, failed_run(task))
+    |> assign(:skipped, skipped_run(task))
     |> assign(:plan, plan_actions(task, socket.assigns[:rounds] || Pipeline.list_rounds(task), scope, tech_lead))
     |> assign_unsent_comments()
     |> assign(:update, task.stage in [:review, :finalize] and task.base_behind and is_nil(task.cleaned_up_at))
@@ -383,6 +405,12 @@ defmodule RailWeb.Live.TaskActions do
       :tech_leads,
       if(tech_lead or state in [nil, :not_ready, :merged], do: [], else: Users.list_tech_leads(task.project_id))
     )
+  end
+
+  # Changes are coming while the review agent works or its fix plan waits, so nothing is ready to review or merge.
+  defp revising?(%Task{runs: runs} = task) do
+    Enum.any?(runs, &(match?(%Run{role: %Role{stage: :review_lead}}, &1) and Run.running?(&1))) or
+      match?(%FixPlan{approved_at: nil}, Pipeline.read_fix_plan(task))
   end
 
   defp plan_run(%Task{runs: runs}) when is_list(runs), do: Enum.find(runs, &match?(%Run{role: %Role{stage: :plan}}, &1))
@@ -397,13 +425,23 @@ defmodule RailWeb.Live.TaskActions do
 
   defp failed_run(%Task{}), do: nil
 
+  # QA skipped on a round that changed nothing a person sees, which a person may still want walked.
+  defp skipped_run(%Task{runs: runs, stage: :review} = task) when is_list(runs) do
+    if not Task.running?(task), do: Enum.find(runs, &(&1.role.stage == :qa and &1.stage_outcome == :skipped))
+  end
+
+  defp skipped_run(%Task{}), do: nil
+
   # What the initial plan asks of this reader. Its owner sends it or starts it; a tech lead approves it once sent,
   # straight away when they own it, and later when the owner started it without approval.
   defp plan_actions(%Task{} = task, rounds, %Scope{} = scope, lead?) do
     none = %{send: false, start: false, approve: false, sent: false, unapproved: false}
+    first = List.first(rounds)
+    # With Architect off the ticket is all there is to approve.
+    written? = match?(%Round{plan: plan} when is_binary(plan), first) or Issue.skips_step?(task.issue, :architect)
 
-    case List.first(rounds) do
-      %Round{approved_at: nil, plan: plan, ready_at: ready_at} when task.stage == :plan and is_binary(plan) ->
+    case first do
+      %Round{approved_at: nil, ready_at: ready_at} when task.stage == :plan and written? ->
         initial_plan(
           none,
           Task.owned_by?(task, scope),

@@ -10,7 +10,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
 
   A review that leaves nothing to rule, nothing to fix and no plan finishes by itself, taking the pull request out
   of draft. A message the human queued holds it, as anyone's unsent finding, diff or screen comment does: they
-  have more to say.
+  have more to say. So does a finding ruled New issue and not yet filed, since only a person's Send files it.
   """
 
   import Ecto.Query
@@ -51,13 +51,17 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
       plan != nil or run.pending_chat != nil or List.last(passes).finished_at != nil ->
         run
 
-      Enum.any?(findings, &Finding.undecided?/1) or unsent_comments?(task) ->
+      waiting_on_person?(findings, task) ->
         run
 
       true ->
         %{run | task: finish_review(task)}
     end
   end
+
+  # Only a person's Send files a New issue finding, so one unfiled waits on them as an unruled one does.
+  defp waiting_on_person?(findings, %Task{} = task),
+    do: Enum.any?(findings, &(Finding.undecided?(&1) or Finding.awaiting_issue?(&1))) or unsent_comments?(task)
 
   defp unsent_comments?(%Task{id: task_id}) do
     Repo.exists?(from c in FindingComment, where: c.task_id == ^task_id and c.status == :unsent) or

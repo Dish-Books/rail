@@ -1,6 +1,8 @@
 defmodule Rail.Pipeline.Actions.SendMessageTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.WithTaskLock
+
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -9,6 +11,9 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
+    stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Rail.Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -47,10 +52,41 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
 
   test "a message to an idle run goes out now", %{idle: idle} do
     run = idle.()
+    test = self()
 
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    # The spawn is in the background; waited on, so it never outlives the test's stubs.
+    stub(Tools, :start_os_process, fn spawned, _argv ->
+      send(test, {:spawned, spawned.id})
+      {:ok, %OsProcess{run: spawned}}
+    end)
 
-    assert {:ok, :sent, %Run{}} = Pipeline.send_message(system_scope(), run, "Please add a test")
+    assert {:ok, :sent, %Run{id: run_id}} = Pipeline.send_message(system_scope(), run, "Please add a test")
+    assert_receive {:spawned, ^run_id}
+  end
+
+  test "a message whose run is deleted while it waits on the task's lock starts nothing", %{idle: idle} do
+    %Run{id: run_id, task_id: task_id} = run = idle.()
+    test = self()
+
+    stub(Rail.Git, :get_or_create_worktree, fn _project, task ->
+      send(test, :worktree)
+      {:ok, task.worktree_path}
+    end)
+
+    stub(Tools, :start_os_process, fn spawned, _argv ->
+      send(test, :spawned)
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    with_task_lock(task_id, fn ->
+      assert {:ok, :sent, %Run{}} = Pipeline.send_message(system_scope(), run, "Please add a test")
+      # Long enough for a dispatch that took no lock to have made its worktree.
+      refute_receive :worktree, 200
+      Repo.delete_all(from(r in Run, where: r.id == ^run_id))
+    end)
+
+    refute_receive :worktree, 300
+    refute_received :spawned
   end
 
   test "a message to a working run waits on it", %{idle: idle} do
@@ -133,5 +169,27 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
 
     assert {:error, {:invalid_stage, :review}} = Pipeline.send_message(system_scope(), run, "One more thing")
     assert [] = Pipeline.list_run_events(run)
+  end
+
+  test "a custom stage's conversation takes messages at its stage, and closes once the task moves past it", %{
+    project: project,
+    task: task
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :custom, custom_stage: "License check"})
+    {:ok, role} = Roles.get_custom_stage_role(project.id, "License check")
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :running,
+        conversation_id: "sess_send_custom",
+        started_at: DateTime.utc_now()
+      })
+
+    assert {:ok, :queued, %Run{}} = Pipeline.send_message(system_scope(), run, "Say which screens.")
+
+    {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
+    assert {:error, {:invalid_stage, :review}} = Pipeline.send_message(system_scope(), run, "One more thing")
   end
 end

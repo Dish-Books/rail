@@ -1,0 +1,375 @@
+defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
+  use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
+
+  alias Rail.Git
+  alias Rail.GitHub.Client
+  alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Tracker
+  alias Rail.Issues.Workers.AdvanceTrackerState
+  alias Rail.Issues.Workers.SyncIssue
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
+  alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
+  alias Rail.Projects.Schemas.Project
+  alias Rail.Roles
+  alias Rail.Scope
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Users
+
+  setup %{project: %{linear_workspace_id: workspace_id}} do
+    scope = system_scope()
+
+    # Git is only ever asked through Rail.Git, so the clone is a plain directory, and a worktree made from it one
+    # under it.
+    clone_path = Path.join(System.tmp_dir!(), "rail_adopt_#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(clone_path) end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
+    {:ok, %Project{id: project_id} = project} =
+      Projects.create_project(scope, %{
+        name: "Adopt Project",
+        github_repo: "org/adopt",
+        github_installation_id: 7003,
+        key: "ADP",
+        default_branch: "main",
+        clone_path: clone_path,
+        linear_state_ids: %{"in_review" => "st_in_review"},
+        linear_workspace_id: workspace_id
+      })
+
+    for stage <- [:qa, :review, :review_lead] do
+      {:ok, _role} =
+        Roles.create_role(scope, project, %{
+          cli: :claude,
+          stage: stage,
+          name: "#{stage} role",
+          model: "claude-opus-5-5",
+          system_prompt: "You are the #{stage} agent."
+        })
+    end
+
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_adopt_1",
+        identifier: "ADP-1",
+        title: "Filter invoices by vendor",
+        description: "Lets a person narrow the invoice list to one vendor.",
+        branch_name: "outside/vendor-filter",
+        state: :in_progress
+      })
+      |> Repo.insert!()
+
+    pull_request = %{
+      "number" => 12,
+      "state" => "open",
+      "draft" => false,
+      "html_url" => "https://github.com/org/adopt/pull/12",
+      "head" => %{"ref" => "outside/vendor-filter", "repo" => %{"full_name" => "org/adopt"}},
+      "base" => %{"ref" => "main"}
+    }
+
+    Req.Test.stub(Client, fn conn ->
+      case conn.request_path do
+        "/app/installations/7003/access_tokens" -> Req.Test.json(conn, %{"token" => "ghs_token"})
+        "/repos/org/adopt/pulls" -> Req.Test.json(conn, [pull_request])
+      end
+    end)
+
+    # Every task's scratch directory is under its project's, and this project is the test's own.
+    on_exit(fn -> File.rm_rf(Path.join(Application.fetch_env!(:rail, :scratch_root), project.id)) end)
+
+    # The pull request's branch is on the remote alone, as one pushed from someone's own checkout is, so it is
+    # fetched into the clone and the task's worktree made on it.
+    stub(Git, :fetch_branch, fn %Project{id: ^project_id}, "outside/vendor-filter" -> :ok end)
+
+    stub(Git, :get_or_create_worktree, fn %Project{id: ^project_id},
+                                          %Task{worktree_name: "outside/vendor-filter", worktree_path: path} ->
+      File.mkdir_p!(path)
+      {:ok, path}
+    end)
+
+    stub(Git, :base_status, fn _path, "main" -> %{behind: false, conflicts: []} end)
+
+    # The repo merged no prompts of its own, so each role keeps its stored one.
+    stub(Git, :read_default_branch_file, fn %Project{id: ^project_id}, path ->
+      {:error, "fatal: path '#{path}' does not exist in 'refs/remotes/origin/main'"}
+    end)
+
+    stub(Git, :branch_fingerprint, fn _path ->
+      %{head_sha: String.duplicate("a", 40), dirty_digest: String.duplicate("0", 64)}
+    end)
+
+    {:ok, starter} =
+      Users.register_oauth_user(%{github_id: "gh_adopter", login: "adopter", email: "adopter@example.com"})
+
+    {:ok, starter} = Users.update_user(scope, starter, %{project_ids: [project.id]})
+    starter = starter |> Ecto.Changeset.change(linear_user_id: "lin_usr_adopter") |> Repo.update!()
+
+    %{scope: scope, project: project, issue: issue, pull_request: pull_request, starter: starter}
+  end
+
+  test "starts the issue's task at Review on the pull request's branch, with QA and the code reviewer checking it", %{
+    scope: scope,
+    project: %Project{id: project_id} = project,
+    issue: issue
+  } do
+    expect(Git, :fetch_branch, fn %Project{id: ^project_id}, "outside/vendor-filter" -> :ok end)
+    expect(Tools, :start_os_process, 2, fn %Run{} = run, _argv -> {:ok, %OsProcess{run: run}} end)
+
+    assert {:ok, %Task{} = task} = Pipeline.adopt_pull_request(scope, issue)
+
+    worktree_path = Path.join(project.clone_path, ".worktrees/outside/vendor-filter")
+
+    assert %Task{
+             stage: :review,
+             worktree_name: "outside/vendor-filter",
+             worktree_path: ^worktree_path,
+             pr_number: 12,
+             pr_url: "https://github.com/org/adopt/pull/12",
+             pr_is_draft: false,
+             worktree_slot: slot
+           } = Repo.reload!(task)
+
+    assert is_integer(slot)
+    assert File.dir?(worktree_path)
+
+    # Nothing was planned, so the issue is the ticket and the round counts as approved.
+    assert [
+             %Round{
+               number: 1,
+               plan: nil,
+               approved_at: %DateTime{},
+               ticket: %Round.Ticket{
+                 title: "Filter invoices by vendor",
+                 description: "Lets a person narrow the invoice list to one vendor."
+               }
+             }
+           ] = Pipeline.list_rounds(task)
+
+    started = for %Run{status: :running} = run <- Repo.all(Run), run.task_id == task.id, do: Repo.preload(run, :role)
+    assert started |> Enum.map(& &1.role.stage) |> Enum.sort() == [:qa, :review]
+  end
+
+  test "the person who adopts an unassigned issue owns it, and its ticket moves to In Review", %{
+    issue: %{id: issue_id} = issue,
+    starter: %{id: starter_id} = starter
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+    stub(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{run: run}} end)
+
+    expect(Tracker.Linear, :advance_issue, fn %Issue{id: ^issue_id, owner_user_id: ^starter_id}, :in_review -> :ok end)
+
+    assert {:ok, %Task{stage: :review}} = Pipeline.adopt_pull_request(Scope.for_user(starter), issue)
+
+    assert %Issue{owner_user_id: ^starter_id} = Repo.reload!(issue)
+    assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id, fields: ["owner_user_id"]})
+    assert_received {:issue_changed, ^issue_id}
+    assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+  end
+
+  test "an issue a teammate owns keeps that owner, and the page still hears of the start", %{
+    issue: %{id: issue_id} = issue,
+    starter: starter
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+    stub(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{run: run}} end)
+
+    {:ok, %{id: teammate_id}} =
+      Users.register_oauth_user(%{github_id: "gh_adopt_mate", login: "adopt-mate", email: "adopt-mate@example.com"})
+
+    issue = issue |> Ecto.Changeset.change(owner_user_id: teammate_id) |> Repo.update!()
+
+    assert {:ok, %Task{}} = Pipeline.adopt_pull_request(Scope.for_user(starter), issue)
+
+    assert %Issue{owner_user_id: ^teammate_id} = Repo.reload!(issue)
+    refute_enqueued(worker: SyncIssue)
+    assert_received {:issue_changed, ^issue_id}
+  end
+
+  test "an adoption tells open pages again once the checks' runs exist, so they do not stay at Queued", %{
+    issue: %{id: issue_id} = issue,
+    starter: starter
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
+    stub(Git, :base_status, fn _path, "main" ->
+      assert_received {:issue_changed, ^issue_id}
+      %{behind: false, conflicts: []}
+    end)
+
+    stub(Tools, :start_os_process, fn %Run{} = run, _argv ->
+      refute_received {:issue_changed, ^issue_id}
+      {:ok, %OsProcess{run: run}}
+    end)
+
+    assert {:ok, %Task{}} = Pipeline.adopt_pull_request(Scope.for_user(starter), issue)
+    assert_received {:issue_changed, ^issue_id}
+  end
+
+  test "a person who never linked Linear adopts it with the issue left unassigned", %{
+    project: project,
+    issue: issue
+  } do
+    stub(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{run: run}} end)
+
+    {:ok, unlinked} =
+      Users.register_oauth_user(%{github_id: "gh_adopt_none", login: "adopt-none", email: "adopt-none@example.com"})
+
+    {:ok, unlinked} = Users.update_user(system_scope(), unlinked, %{project_ids: [project.id]})
+
+    assert {:ok, %Task{}} = Pipeline.adopt_pull_request(Scope.for_user(unlinked), issue)
+
+    assert %Issue{owner_user_id: nil} = Repo.reload!(issue)
+    refute_enqueued(worker: SyncIssue)
+  end
+
+  test "an adoption that fails claims nothing and leaves no task", %{
+    issue: %{id: issue_id} = issue,
+    starter: starter
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+    scope = Scope.for_user(starter)
+
+    # Claiming locks the issue's row, which a git fetch must not hold, so no owner is set yet in here.
+    expect(Git, :get_or_create_worktree, fn _project, %Task{issue_id: ^issue_id} ->
+      assert %Issue{owner_user_id: nil} = Repo.get!(Issue, issue_id)
+      {:error, "no checkout"}
+    end)
+
+    assert {:error, "no checkout"} = Pipeline.adopt_pull_request(scope, issue)
+
+    Req.Test.stub(Client, fn conn ->
+      case conn.request_path do
+        "/app/installations/" <> _id -> Req.Test.json(conn, %{"token" => "ghs_token"})
+        "/repos/org/adopt/pulls" -> Req.Test.json(conn, [])
+      end
+    end)
+
+    assert {:error, :no_pull_request} = Pipeline.adopt_pull_request(scope, issue)
+
+    refute Repo.get_by(Task, issue_id: issue_id)
+    assert %Issue{owner_user_id: nil} = Repo.reload!(issue)
+    refute_enqueued(worker: SyncIssue)
+    refute_enqueued(worker: AdvanceTrackerState)
+    refute_received {:issue_changed, ^issue_id}
+  end
+
+  test "sets the worktree up once, and starts every check when the setup finishes", %{
+    scope: scope,
+    project: project,
+    issue: issue
+  } do
+    {:ok, _project} = Projects.update_project(scope, project, %{worktree_setup_script: "scripts/setup.sh"})
+
+    expect(Tools, :start_command_process, fn %Run{} = run, :setup, "./scripts/setup.sh", _opts ->
+      {:ok, %OsProcess{kind: :setup, run: run}}
+    end)
+
+    assert {:ok, %Task{} = task} = Pipeline.adopt_pull_request(scope, issue)
+    assert [%Run{status: :running} = setting_up] = Repo.all(from r in Run, where: r.task_id == ^task.id)
+
+    setup =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: setting_up.id,
+        task_id: task.id,
+        kind: :setup,
+        command: "./scripts/setup.sh",
+        stream_path: "/tmp/#{setting_up.id}-setup.log",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+    # Two agents in all, both once the setup is done.
+    expect(Tools, :start_os_process, 2, fn %Run{} = run, _argv -> {:ok, %OsProcess{run: run}} end)
+
+    assert {:ok, %Run{status: :running}} = Pipeline.run_finished(setup, %{exit_code: 0})
+    assert %Task{worktree_setup_at: %DateTime{}} = Repo.reload!(task)
+
+    started = Repo.all(from r in Run, where: r.task_id == ^task.id and r.status == :running, preload: :role)
+    assert started |> Enum.map(& &1.role.stage) |> Enum.sort() == [:qa, :review]
+  end
+
+  test "refuses a pull request Rail cannot take through Review, and leaves the issue without a task", %{
+    scope: scope,
+    issue: issue,
+    pull_request: pull_request
+  } do
+    reject(Tools, :start_os_process, 2)
+
+    for {changed, reason} <- [
+          {%{"head" => %{"ref" => "outside/vendor-filter", "repo" => %{"full_name" => "someone/adopt"}}},
+           :pull_request_from_fork},
+          {%{"head" => %{"ref" => "outside/vendor-filter", "repo" => nil}}, :pull_request_from_fork},
+          {%{"base" => %{"ref" => "release"}}, {:pull_request_base, "release"}}
+        ] do
+      Req.Test.stub(Client, fn conn ->
+        case conn.request_path do
+          "/app/installations/" <> _id -> Req.Test.json(conn, %{"token" => "ghs_token"})
+          "/repos/org/adopt/pulls" -> Req.Test.json(conn, [Map.merge(pull_request, changed)])
+        end
+      end)
+
+      assert {:error, ^reason} = Pipeline.adopt_pull_request(scope, issue)
+    end
+
+    Req.Test.stub(Client, fn conn ->
+      case conn.request_path do
+        "/app/installations/" <> _id -> Req.Test.json(conn, %{"token" => "ghs_token"})
+        "/repos/org/adopt/pulls" -> Req.Test.json(conn, [])
+      end
+    end)
+
+    assert {:error, :no_pull_request} = Pipeline.adopt_pull_request(scope, issue)
+    refute Repo.get_by(Task, issue_id: issue.id)
+  end
+
+  test "refuses an issue that already has a task, a branch another task works on, and an issue the user cannot see", %{
+    scope: scope,
+    project: project,
+    issue: issue
+  } do
+    stub(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{run: run}} end)
+
+    assert {:error, :not_found} = Pipeline.adopt_pull_request(user_scope(project_ids: []), issue)
+
+    assert {:ok, %Task{}} = Pipeline.adopt_pull_request(scope, issue)
+    assert {:error, :task_exists} = Pipeline.adopt_pull_request(scope, issue)
+
+    other =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_adopt_2",
+        identifier: "ADP-2",
+        title: "The same branch",
+        branch_name: "outside/vendor-filter",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    assert {:error, :pull_request_taken} = Pipeline.adopt_pull_request(scope, other)
+  end
+
+  test "leaves the issue without a task when the branch will not fetch or check out", %{scope: scope, issue: issue} do
+    expect(Git, :fetch_branch, fn _project, _branch -> {:error, "no fetch"} end)
+
+    assert {:error, "no fetch"} = Pipeline.adopt_pull_request(scope, issue)
+    refute Repo.get_by(Task, issue_id: issue.id)
+
+    expect(Git, :get_or_create_worktree, fn _project, _task -> {:error, "no checkout"} end)
+
+    assert {:error, "no checkout"} = Pipeline.adopt_pull_request(scope, issue)
+    refute Repo.get_by(Task, issue_id: issue.id)
+  end
+end

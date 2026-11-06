@@ -23,6 +23,63 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
     %{project: project, other_project: other_project}
   end
 
+  test "list_issues narrows to a cycle before the priority counts are taken", %{project: %Project{id: project_id}} do
+    insert = fn external_id, cycle, priority ->
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project_id,
+        external_id: external_id,
+        identifier: external_id,
+        title: external_id,
+        state: :todo,
+        priority: priority,
+        cycle_external_id: cycle
+      })
+      |> Repo.insert!()
+    end
+
+    %Issue{id: high_id} = insert.("lin_lc1", "cyc_list", :high)
+    %Issue{id: low_id} = insert.("lin_lc2", "cyc_list", :low)
+    insert.("lin_lc3", "cyc_other", :high)
+    insert.("lin_lc4", nil, :high)
+
+    assert %{issues: [%Issue{id: ^high_id}], total: 1, priority_counts: %{high: 1, low: 1} = counts} =
+             Issues.list_issues(project_id: project_id, cycle_id: "cyc_list", priority: :high)
+
+    assert map_size(counts) == 2
+
+    assert %{total: 2, issues: issues} = Issues.list_issues(project_id: project_id, cycle_id: "cyc_list")
+    assert Enum.sort([high_id, low_id]) == issues |> Enum.map(& &1.id) |> Enum.sort()
+  end
+
+  test "list_issues takes a list of cycles, as it does of projects", %{
+    project: %Project{id: project_id},
+    other_project: %Project{id: other_id}
+  } do
+    insert = fn external_id, project_id, cycle ->
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project_id,
+        external_id: external_id,
+        identifier: external_id,
+        title: external_id,
+        state: :todo,
+        cycle_external_id: cycle
+      })
+      |> Repo.insert!()
+    end
+
+    %Issue{id: here_id} = insert.("lin_lcl1", project_id, "cyc_here")
+    %Issue{id: there_id} = insert.("lin_lcl2", other_id, "cyc_there")
+    insert.("lin_lcl3", project_id, "cyc_elsewhere")
+    insert.("lin_lcl4", other_id, nil)
+
+    assert %{total: 2, issues: issues} =
+             Issues.list_issues(project_id: [project_id, other_id], cycle_id: ["cyc_here", "cyc_there"])
+
+    assert Enum.sort([here_id, there_id]) == issues |> Enum.map(& &1.id) |> Enum.sort()
+  end
+
   test "list_issues filters by project, state and whether finished issues show", %{
     project: %Project{id: project_id},
     other_project: other_project
@@ -212,6 +269,32 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
 
     assert %{issues: [%Issue{id: ^recent_id}]} =
              Issues.list_issues(show_finished: true, completed_after: ~U[2026-09-01 00:00:00Z])
+  end
+
+  test "list_issues leaves out an archived issue no task holds, unless asked for every one", %{project: project} do
+    issue = fn external_id, archived_at ->
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project.id,
+        external_id: external_id,
+        identifier: "LI1-#{external_id}",
+        title: external_id,
+        state: :done,
+        archived_at: archived_at
+      })
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+    end
+
+    %Issue{id: live_id} = issue.("live", nil)
+    %Issue{id: untasked_id} = issue.("archived_untasked", ~U[2026-10-06 00:00:00Z])
+    %Issue{id: tasked_id} = tasked = issue.("archived_tasked", ~U[2026-10-06 00:00:00Z])
+    {:ok, _task} = Pipeline.create_task(tasked, :merged)
+
+    ids = fn opts -> opts |> Issues.list_issues() |> Map.fetch!(:issues) |> Enum.map(& &1.id) |> Enum.sort() end
+
+    assert ids.(show_finished: true) == Enum.sort([live_id, tasked_id])
+    assert ids.(show_finished: true, archived: true) == Enum.sort([live_id, untasked_id, tasked_id])
   end
 
   test "list_issues narrows to the issues a user owns", %{project: project} do

@@ -3,7 +3,7 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   Where a finished CI run leaves the engineer's run it ran on.
 
   A pass is what lets the branch be pushed, and a commit that asked for review
-  then gets it: the engineer's work goes to Review. A failure goes back to the
+  then gets it: the engineer's work goes on to the next stage. A failure goes back to the
   engineer with the output that says why, until it has failed three times in a
   row with nobody stepping in; then it waits for a person.
   """
@@ -91,7 +91,7 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   defp review?(%Run{review_on_ci_pass: review?, pending_chat: queued}), do: review? and is_nil(queued)
 
   defp review(%Run{} = pushed) do
-    case Pipeline.send_to_review(pushed) do
+    case Pipeline.send_to_next_stage(pushed) do
       {:ok, %Run{} = sent} ->
         %{sent | task: pushed.task, role: pushed.role}
 

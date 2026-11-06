@@ -58,7 +58,10 @@ defmodule RailWeb.DesignControllerTest do
     assert get_resp_header(conn, "cache-control") == ["private, no-store"]
   end
 
-  test "asked without comments=1, as Open asks, the page is served exactly as saved", %{conn: conn, task: task} do
+  test "asked without comments=1, as the frame asks before a pick, the page is served exactly as saved", %{
+    conn: conn,
+    task: task
+  } do
     for query <- [%{}, %{"comments" => "0"}, %{"comments" => "true"}] do
       assert conn |> get(~p"/tasks/#{task.id}/design/cards?#{query}") |> html_response(200) == "<h1>Cards</h1>"
     end

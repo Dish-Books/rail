@@ -40,15 +40,48 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidenceTest do
 
   # Rail names the file from the caption, so nothing arriving from a model ever becomes a path.
   test "a caption becomes the filename under shots, and the caller is told which", %{task: task} do
-    assert {:ok, "shots/the-bill-total-as-rendered-" <> _unique = file} =
+    assert {:ok, "shots/the-bill-total-as-rendered-" <> _unique = file, "jpeg bytes"} =
              Tools.capture_browser_evidence(:session, task, "The bill total, as rendered")
 
     assert String.ends_with?(file, ".jpg")
     assert File.read!(Path.join([task.scratch_path, "qa", file])) == "jpeg bytes"
   end
 
+  # The agent is shown the picture, and one wider than a model looks at only swells the conversation.
+  test "a wide picture is shown shrunk to 1568 on its longest side, and saved at full size", %{task: task} do
+    stub(BrowserSession, :call, fn
+      _session, "Page.getLayoutMetrics", _params ->
+        {:ok,
+         %{
+           "cssVisualViewport" => %{
+             "pageX" => 0,
+             "pageY" => 0,
+             "clientWidth" => 1920,
+             "clientHeight" => 1080,
+             "scale" => 1
+           }
+         }}
+
+      _session, "Page.captureScreenshot", %{format: "png"} ->
+        {:ok, %{"data" => Base.encode64(File.read!("test/support/fixtures/empty_list_page.png"))}}
+
+      _session, "Page.captureScreenshot", %{format: "jpeg", clip: %{scale: 1}} ->
+        {:ok, %{"data" => Base.encode64("full jpeg")}}
+
+      _session, "Page.captureScreenshot", %{format: "jpeg", clip: %{width: 1920, height: 1080, scale: scale}} ->
+        assert_in_delta scale, 1568 / 1920, 0.0001
+        {:ok, %{"data" => Base.encode64("small jpeg")}}
+
+      _session, _method, _params ->
+        {:ok, %{}}
+    end)
+
+    assert {:ok, file, "small jpeg"} = Tools.capture_browser_evidence(:session, task, "The bill")
+    assert File.read!(Path.join([task.scratch_path, "qa", file])) == "full jpeg"
+  end
+
   test "a screen state's shot goes in that state's folder, named for when it was taken", %{task: task} do
-    assert {:ok, "screens/file-list-after-send/" <> stamp} =
+    assert {:ok, "screens/file-list-after-send/" <> stamp, _preview} =
              Tools.capture_browser_evidence(:session, task, "File list just after Send", key: "file-list-after-send")
 
     assert {_microseconds, ".jpg"} = Integer.parse(stamp)
@@ -56,8 +89,8 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidenceTest do
 
   # Two pictures with one caption are two pictures, so neither writes over the other.
   test "the same caption twice saves two files", %{task: task} do
-    {:ok, first} = Tools.capture_browser_evidence(:session, task, "The saved bill")
-    {:ok, second} = Tools.capture_browser_evidence(:session, task, "The saved bill")
+    {:ok, first, _preview} = Tools.capture_browser_evidence(:session, task, "The saved bill")
+    {:ok, second, _preview} = Tools.capture_browser_evidence(:session, task, "The saved bill")
 
     assert first != second
     assert [_first, _second] = Path.wildcard(Path.join([task.scratch_path, "qa", "shots", "*.jpg"]))
@@ -65,7 +98,7 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidenceTest do
 
   # A caption with nothing a filesystem would keep still has to land somewhere.
   test "a caption made of nothing a filename can hold still saves", %{task: task} do
-    assert {:ok, "shots/shot-" <> _unique} = Tools.capture_browser_evidence(:session, task, "!!!")
+    assert {:ok, "shots/shot-" <> _unique, _preview} = Tools.capture_browser_evidence(:session, task, "!!!")
   end
 
   # A tab still on about:blank, or a page that has not painted, is no picture of anything.
@@ -87,7 +120,7 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidenceTest do
 
   # Flat is about color, never about how much is on the page.
   test "an empty list with only its nothing-here line is saved on the first take", %{task: task} do
-    assert {:ok, "screens/learnings-empty/" <> _stamp = file} =
+    assert {:ok, "screens/learnings-empty/" <> _stamp = file, _preview} =
              Tools.capture_browser_evidence(:session, task, "Learnings with nothing to review", key: "learnings-empty")
 
     assert File.exists?(Path.join([task.scratch_path, "qa", file]))
@@ -123,7 +156,8 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidenceTest do
         {:ok, %{"data" => Base.encode64("jpeg bytes")}}
     end)
 
-    assert {:ok, "shots/at-1024-" <> _unique} = Tools.capture_browser_evidence(:session, task, "At 1024", width: 1024)
+    assert {:ok, "shots/at-1024-" <> _unique, _preview} =
+             Tools.capture_browser_evidence(:session, task, "At 1024", width: 1024)
 
     clip = %{x: 0, y: 1200, width: 1009, height: 1080, scale: 1}
 
@@ -223,7 +257,7 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidenceTest do
 
     # The same page at 320 through Rail's width, and through an explorer's script holding its own resize.
     for opts <- [[width: 320], []] do
-      assert {:ok, _file} = Tools.capture_browser_evidence(:session, task, "Issues at 320", opts)
+      assert {:ok, _file, _preview} = Tools.capture_browser_evidence(:session, task, "Issues at 320", opts)
       assert_received {:clip, %{x: 0, y: 0, width: 320, height: 1080, scale: 1}}
     end
   end
@@ -244,9 +278,10 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidenceTest do
         {:ok, %{"data" => Base.encode64("jpeg bytes")}}
     end)
 
-    assert {:ok, _file} = Tools.capture_browser_evidence(:session, task, "At the window's width")
+    assert {:ok, _file, _preview} = Tools.capture_browser_evidence(:session, task, "At the window's width")
 
-    assert {:messages, [{:cdp, "Runtime.evaluate"}, {:cdp, "Page.captureScreenshot"}]} = Process.info(self(), :messages)
+    assert {:messages, [{:cdp, "Runtime.evaluate"}, {:cdp, "Page.captureScreenshot"}, {:cdp, "Page.captureScreenshot"}]} =
+             Process.info(self(), :messages)
   end
 
   # Chrome picks a filter per row, and a row read through the wrong one would make a flat picture look busy.

@@ -13,6 +13,12 @@ defmodule Rail.Tools.Actions.StartAfterUsageResetTest do
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
+    # A role's prompt is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: these see no prompt file on the default branch, as when there is no clone.
+    stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    # An engineer turn that ends asks git whether it left uncommitted work; the worktree here is a plain directory.
+    stub(Rail.Git, :worktree_dirty?, fn _worktree_path -> false end)
+
     unique = System.unique_integer([:positive])
     tmp_dir = Path.join(System.tmp_dir!(), "usage_reset_test_#{unique}")
     File.mkdir_p!(Path.join(tmp_dir, "worktree"))

@@ -22,6 +22,18 @@ defmodule RailWeb.Components.PlanSheet do
   attr :draft, :map, default: nil, doc: "the line the comment box is open under"
   attr :offered, :boolean, default: false, doc: "the reader can comment now"
 
+  attr :reviewed, :map,
+    default: nil,
+    doc: "the reader's marks, each card's path to the digest it had when marked; without them no card takes one"
+
+  attr :default_paths, :any,
+    default: nil,
+    doc: "the cards' paths on the default branch, or nil when the clone could not say"
+
+  attr :project, :any,
+    default: nil,
+    doc: "whose GitHub repository and default branch a path links to, with `default_paths`"
+
   def plan_sheet(assigns) do
     assigns =
       assigns
@@ -106,37 +118,22 @@ defmodule RailWeb.Components.PlanSheet do
         </ul>
       </section>
 
-      <section id="plan-changes">
-        <.line line={@sheet.changes_title} on={@on} target={@target} class="mb-2">
-          <.heading title="Changes" subtitle="Grouped by where the code goes" />
-        </.line>
-        <details
-          :for={group <- @sheet.groups}
-          id={"#{@base}-group-#{group.slug}"}
-          data-qa="plan_group"
-          open
-          phx-mounted={JS.ignore_attributes(["open"])}
-          class="group/fold mt-3 first-of-type:mt-0 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/40"
-        >
-          <summary class="list-none [&::-webkit-details-marker]:hidden flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800/70 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500">
-            <.icon
-              name="pi-caret-right-bold"
-              class="size-[13px] text-slate-400 group-open/fold:rotate-90 motion-safe:transition-transform"
-            />
-            <.icon name="pi-folder-simple-fill" class="size-[18px] text-slate-400" />
-            <span class="font-mono text-[15px] font-bold text-slate-900 dark:text-slate-100">
-              {group.name}
-            </span>
-            <span class="min-w-0 font-mono text-[12px] text-slate-500 truncate">{group.directory}</span>
-            <span class="ml-auto shrink-0 text-[12.5px] text-slate-600 dark:text-slate-300">
-              {length(group.cards)} {if length(group.cards) == 1, do: "file", else: "files"}
-            </span>
-          </summary>
-          <div class="space-y-2 px-2.5 pb-2.5">
-            <.card :for={card <- group.cards} card={card} base={@base} on={@on} target={@target} />
-          </div>
-        </details>
-      </section>
+      <.plan_cards
+        id="plan-changes"
+        base={@base}
+        title_line={@sheet.changes_title}
+        groups={@sheet.groups}
+        cards={@sheet.cards}
+        reviewed={@reviewed}
+        default_paths={@default_paths}
+        project={@project}
+        on={@on}
+        target={@target}
+      >
+        <:heading :let={subtitle}>
+          <.heading title="Changes" subtitle={subtitle} />
+        </:heading>
+      </.plan_cards>
 
       <section :if={@rows != []} id="plan-criteria">
         <.line line={@sheet.criteria.title_line} on={@on} target={@target} class="mb-2">
@@ -165,85 +162,6 @@ defmodule RailWeb.Components.PlanSheet do
         </.line>
         <.line :for={line <- @sheet.verification.lines} line={line} on={@on} target={@target} />
       </section>
-    </div>
-    """
-  end
-
-  attr :card, :map, required: true
-  attr :base, :string, required: true
-  attr :on, :map, required: true
-  attr :target, :any, required: true
-
-  defp card(assigns) do
-    ~H"""
-    <div
-      id={"#{@base}-card-#{@card.number}"}
-      data-qa="plan_card"
-      class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
-    >
-      <div class="px-4 py-1.5">
-        <.line line={@card.line} on={@on} target={@target}>
-          <div class="flex items-center gap-2.5 py-1">
-            <span
-              :if={@card.deleted?}
-              data-qa="plan_card_deleted"
-              class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset ring-red-500/50 text-red-700 dark:text-red-300"
-            >
-              Deleted
-            </span>
-            <span
-              class="min-w-0 truncate font-mono text-[13px] font-semibold text-slate-900 dark:text-slate-100"
-              title={@card.path}
-            >
-              {@card.path}
-            </span>
-          </div>
-        </.line>
-        <.line :for={line <- @card.prose} line={line} on={@on} target={@target} />
-      </div>
-
-      <div
-        :if={@card.signatures != []}
-        data-qa="plan_card_signatures"
-        class="py-1.5 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950/50 last:rounded-b-xl"
-      >
-        <.line
-          :for={line <- @card.signatures}
-          line={line}
-          layout={:code}
-          framed={false}
-          on={@on}
-          target={@target}
-        />
-      </div>
-
-      <details
-        :if={@card.sketch != []}
-        id={"#{@base}-sketch-#{@card.id}"}
-        data-qa="plan_card_sketch"
-        open={Enum.any?(@card.sketch, &Map.has_key?(@on.placed, &1.key))}
-        phx-mounted={JS.ignore_attributes(["open"])}
-        class="group/sketch border-t border-slate-200 dark:border-slate-700"
-      >
-        <summary class="list-none [&::-webkit-details-marker]:hidden flex items-center gap-1 px-4 py-1.5 text-[12px] font-semibold text-indigo-600 dark:text-indigo-300 hover:text-indigo-500 dark:hover:text-indigo-200 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500">
-          <.icon
-            name="pi-caret-right-fill"
-            class="size-[10px] group-open/sketch:rotate-90 motion-safe:transition-transform"
-          />
-          <span class="group-open/sketch:hidden">Show code</span>
-          <span class="hidden group-open/sketch:inline">Hide code</span>
-        </summary>
-        <div class="py-1.5 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 rounded-b-xl">
-          <.line
-            :for={line <- @card.sketch}
-            line={line}
-            layout={:code}
-            framed={false}
-            on={@on}
-            target={@target}
-          />
-        </div>
-      </details>
     </div>
     """
   end

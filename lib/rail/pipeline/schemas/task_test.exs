@@ -1,16 +1,22 @@
 defmodule Rail.Pipeline.Schemas.TaskTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles
+  alias Rail.Roles.Schemas.Role
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -36,13 +42,13 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     %{project: project, issue: issue, issue_id: issue_id, task: task, task_id: task_id, role: role}
   end
 
-  test "an issue has at most one task", %{project: project, issue: issue, issue_id: issue_id, task_id: task_id} do
+  test "an issue has at most one task", %{project: project, issue: issue, issue_id: issue_id} do
     attrs = %{issue_id: issue_id, worktree_name: "wt", worktree_path: "/tmp/wt", scratch_path: "/tmp/scratch"}
 
     assert {:error, changeset} = %Task{} |> Task.changeset(attrs, project.id) |> Repo.insert()
     assert %{issue_id: ["has already been taken"]} = errors_on(changeset)
 
-    assert {:ok, %Task{id: ^task_id}} = Pipeline.create_task(issue, :plan)
+    assert {:error, :task_exists} = Pipeline.create_task(issue, :plan)
   end
 
   test "changeset validates required fields" do
@@ -140,13 +146,71 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     assert Task.running?(%{task | runs: [idle, busy]})
   end
 
+  test "plan_sent?/1 is true only at Plan with the first round sent and not approved, and false without rounds" do
+    now = DateTime.utc_now()
+    sent = %Round{number: 1, ready_at: now}
+
+    assert Task.plan_sent?(%Task{stage: :plan, rounds: [sent, %Round{number: 2}]})
+    refute Task.plan_sent?(%Task{stage: :plan, rounds: [%{sent | ready_at: nil}]})
+    refute Task.plan_sent?(%Task{stage: :plan, rounds: [%{sent | approved_at: now}]})
+    refute Task.plan_sent?(%Task{stage: :engineer, rounds: [sent]})
+    refute Task.plan_sent?(%Task{stage: :plan, rounds: []})
+    refute Task.plan_sent?(%Task{stage: :plan})
+  end
+
   test "worktree_present?/1 answers for the directory, not the path", %{task: task} do
+    refute Task.worktree_present?(task)
+
+    # Not under the seeded project's clone path, which once on disk is where every later test's real git runs.
+    task = %{task | worktree_path: Path.join(System.tmp_dir!(), "rail_wtp_#{System.unique_integer([:positive])}")}
     refute Task.worktree_present?(task)
 
     File.mkdir_p!(task.worktree_path)
     on_exit(fn -> File.rm_rf(task.worktree_path) end)
 
     assert Task.worktree_present?(task)
+  end
+
+  test "return_to_plan_changeset/1 puts the task at Plan and clears what belonged to its work" do
+    now = DateTime.utc_now()
+
+    task = %Task{
+      stage: :finalize,
+      pr_number: 212,
+      pr_url: "https://github.com/org/repo/pull/212",
+      pr_is_draft: false,
+      worktree_slot: 7,
+      worktree_setup_at: now,
+      marked_ready_at: now,
+      marked_ready_by_id: "usr_ready",
+      base_behind: true,
+      base_conflicts: ["lib/a.ex"],
+      base_checked_at: now,
+      merge_started_at: now,
+      merge_error: "Refused",
+      merge_error_at: now,
+      merge_sha: "abc",
+      worktree_name: "dsc-1-kept"
+    }
+
+    assert %Task{
+             stage: :plan,
+             pr_number: nil,
+             pr_url: nil,
+             pr_is_draft: nil,
+             worktree_slot: nil,
+             worktree_setup_at: nil,
+             marked_ready_at: nil,
+             marked_ready_by_id: nil,
+             base_behind: false,
+             base_conflicts: [],
+             base_checked_at: nil,
+             merge_started_at: nil,
+             merge_error: nil,
+             merge_error_at: nil,
+             merge_sha: nil,
+             worktree_name: "dsc-1-kept"
+           } = task |> Task.return_to_plan_changeset() |> Ecto.Changeset.apply_changes()
   end
 
   test "stages/0 keeps every stage a row could have been written with" do
@@ -159,6 +223,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   test "stage_label/1 names each stage" do
     assert Enum.map(Task.stages(), &Task.stage_label/1) == [
              "Plan",
+             "Custom stage",
              "Implement",
              "Review",
              "Finalize",
@@ -173,6 +238,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   test "role_stage/1 names the Review lead for Review and Finalize and every other stage's own role" do
     assert Enum.map(Task.stages(), &Task.role_stage/1) == [
              :plan,
+             :custom,
              :engineer,
              :review_lead,
              :review_lead,
@@ -299,5 +365,36 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
 
     assert Task.finalize_state(%Task{marked_ready_at: stale, merge_started_at: stale}) == :ready
     assert Task.finalize_state(%Task{marked_ready_at: stale, merge_started_at: stale, merge_error: "No"}) == :refused
+  end
+
+  test "a task at a custom stage is worked by that stage's role and not by Engineer's, and names the stage" do
+    engineer = %Role{stage: :engineer}
+    license = %Role{custom_stage: "License check"}
+    prompt = %IssueStage{stage: :custom, name: "License check", prompt: "Check each license."}
+    task = %Task{stage: :custom, custom_stage: "License check", issue: %Issue{stages: [prompt]}}
+
+    assert Task.works_stage?(task, license)
+    refute Task.works_stage?(task, engineer)
+    refute Task.works_stage?(task, %Role{custom_stage: "Missing strings"})
+    assert Task.works_stage?(%Task{stage: :engineer}, engineer)
+    refute Task.works_stage?(%Task{stage: :engineer}, license)
+    assert Task.works_stage?(%Task{stage: :review}, %Role{stage: :review_lead})
+
+    assert Task.current_stage(task) == {:custom, "License check"}
+    assert Task.current_stage(%Task{stage: :review}) == :review
+    assert Task.custom_stage(task) == prompt
+    assert Task.custom_stage(%Task{stage: :engineer}) == nil
+    assert Task.stage_label(task) == "License check"
+    assert Task.stage_label(%Task{stage: :engineer}) == "Implement"
+    assert Task.stage_label({:custom, "License check"}) == "License check"
+  end
+
+  test "a custom stage needs its name, and any other stage drops the name of one it left", %{task: task} do
+    assert %{custom_stage: ["can't be blank"]} = errors_on(Task.changeset(task, %{stage: :custom}))
+
+    {:ok, licensed} = task |> Task.changeset(%{stage: :custom, custom_stage: "License check"}) |> Repo.update()
+
+    assert {:ok, %Task{stage: :review, custom_stage: nil}} =
+             licensed |> Task.changeset(%{stage: :review}) |> Repo.update()
   end
 end

@@ -6,30 +6,49 @@ defmodule RailWeb.Components.IssueView do
   The issue page and the task page's first tab are the same view of the same
   thing, so both render this; the task page hides the section pointing at the
   task the reader is already on. The events it raises - `assign`,
-  `filter_assignees`, `comment`, `draft_comment`, `start_task`, `draft_review`,
+  `filter_assignees`, `comment`, `draft_comment`, `start_task`, `adopt_pull_request`, `draft_review`,
   `start_review` - belong to whichever LiveView renders it.
   """
   use RailWeb, :html
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Workflows.Schemas.Workflow
+  alias RailWeb.Components.StatusPicker
 
   attr :issue, :any, required: true
+  attr :current_scope, :any, required: true
   attr :assignees, :list, required: true
   attr :assignee_query, :string, required: true
   attr :comment_nonce, :integer, required: true
   attr :show_task, :boolean, default: true
+  # While GitHub is asked for a pull request the issue's work was opened as, which it would start at Review on.
+  attr :checking_pull_request, :boolean, default: false
   # A child of a split is owned through its parent, so its owner is read here, not changed.
   attr :owner_editable, :boolean, default: true
   # What was typed into Start at's pull request field, kept with the reason it was refused.
   attr :pull_request, :string, default: ""
   attr :review_error, :string, default: nil
+  # The workflow that opened the issue, named under its title; only admins can follow it to Settings.
+  attr :workflow, :any, default: nil
+  attr :link_workflow, :boolean, default: false
+  # What blocks the issue and what it blocks, as `Rail.Issues.get_blockers/1` reads them; nil until Linear answers.
+  attr :blockers, :any, default: nil
 
   def issue_view(assigns) do
-    # A task works on a branch of its own, which a pull request handed over names rather than the tracker.
+    blocked_by = (assigns.blockers && assigns.blockers.blocked_by) || []
+    {done, total} = Issue.calculate_sub_issue_count(assigns.issue)
+
     assigns =
-      assign(
-        assigns,
+      assigns
+      |> assign(:parent, Issue.calculate_parent(assigns.issue))
+      |> assign(:blocked_by, blocked_by)
+      |> assign(:open_blocker_count, length(Issue.calculate_open_blockers(blocked_by)))
+      |> assign(:blocks, (assigns.blockers && assigns.blockers.blocks) || [])
+      |> assign(:sub_issues, Enum.map(Issue.calculate_children(assigns.issue), &%{issue: &1, in_project: true}))
+      |> assign(:sub_issue_count, "#{done}/#{total}")
+      # A task works on a branch of its own, which a pull request handed over names rather than the tracker.
+      |> assign(
         :branch,
         case assigns.issue.task do
           %Task{worktree_name: name} when is_binary(name) -> name
@@ -48,18 +67,51 @@ defmodule RailWeb.Components.IssueView do
           Issues
         </.link>
         <.icon name="pi-caret-right" class="h-3 w-3" />
+        <.link
+          :if={@parent}
+          navigate={~p"/issues/#{@parent.identifier}"}
+          id="issue-parent-link"
+          title={@parent.title}
+          class="font-mono hover:text-slate-900 dark:hover:text-slate-100"
+        >
+          {@parent.identifier}
+        </.link>
+        <.icon :if={@parent} name="pi-caret-right" class="h-3 w-3" />
         <span id="issue-identifier" class="font-mono">{@issue.identifier}</span>
       </nav>
 
       <div class="flex flex-col lg:flex-row gap-10">
         <article class="flex-1 min-w-0 space-y-6">
-          <h1
-            id="issue-title"
-            data-qa="issue-title"
-            class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100"
-          >
-            {@issue.title}
-          </h1>
+          <div class="space-y-2">
+            <h1
+              id="issue-title"
+              data-qa="issue-title"
+              class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100"
+            >
+              {@issue.title}
+            </h1>
+            <p
+              :if={@workflow}
+              id="issue-workflow-byline"
+              class="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"
+            >
+              <.icon name="pi-repeat" class="h-4 w-4" />
+              <span>
+                Opened by the <.link
+                  :if={@link_workflow}
+                  navigate={~p"/settings/workflows"}
+                  id="issue-workflow-link"
+                  title="Settings › Workflows"
+                  class="font-medium text-slate-700 dark:text-slate-200 underline decoration-slate-400 dark:decoration-slate-600 underline-offset-2 hover:decoration-slate-300 focus-visible:outline-2 focus-visible:outline-indigo-500 rounded"
+                  phx-no-format
+                >{Workflow.name(@workflow)}</.link>
+                <span :if={!@link_workflow} class="font-medium text-slate-700 dark:text-slate-200">
+                  {Workflow.name(@workflow)}
+                </span>
+                workflow on {Calendar.strftime(@issue.inserted_at, "%b %-d, %H:%M")} UTC
+              </span>
+            </p>
+          </div>
 
           <div id="issue-description" data-qa="issue-description">
             <.markdown
@@ -75,6 +127,31 @@ defmodule RailWeb.Components.IssueView do
               No description
             </p>
           </div>
+
+          <.issue_relation_list
+            :if={@blocked_by != []}
+            id="issue-blocked-by"
+            title="Blocked by"
+            count={to_string(@open_blocker_count)}
+            entries={@blocked_by}
+            blocked
+          />
+
+          <.issue_relation_list
+            :if={@blocks != []}
+            id="issue-blocks"
+            title="Blocks"
+            count={to_string(length(@blocks))}
+            entries={@blocks}
+          />
+
+          <.issue_relation_list
+            :if={@sub_issues != []}
+            id="issue-sub-issues"
+            title="Sub-issues"
+            count={@sub_issue_count}
+            entries={@sub_issues}
+          />
 
           <section
             id="issue-comments"
@@ -134,24 +211,54 @@ defmodule RailWeb.Components.IssueView do
               class="space-y-2"
             >
               <p class="text-xs text-slate-500 dark:text-slate-400">Start at</p>
-              <div class="flex gap-1.5">
+              <p
+                :if={@checking_pull_request}
+                id="issue-start-checking"
+                class="text-xs text-slate-400 dark:text-slate-500"
+              >
+                Looking for a pull request...
+              </p>
+              <div :if={not @checking_pull_request} class="flex gap-1.5">
                 <button
-                  :for={stage <- [:plan]}
+                  :if={is_nil(@issue.pr_number)}
                   type="button"
-                  id={"issue-start-#{stage}"}
-                  data-qa={"issue-start-#{stage}"}
+                  id="issue-start-plan"
+                  data-qa="issue-start-plan"
                   phx-click="start_task"
-                  phx-value-stage={stage}
                   class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 cursor-pointer"
                 >
                   <.icon name="pi-play" class="h-3.5 w-3.5" />
-                  <span>{Task.stage_label(stage)}</span>
+                  <span>{Task.stage_label(hd(Issue.calculate_stages(@issue)))}</span>
+                </button>
+                <button
+                  :if={@issue.pr_number}
+                  type="button"
+                  id="issue-start-review"
+                  data-qa="issue-start-review"
+                  phx-click="adopt_pull_request"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 cursor-pointer"
+                >
+                  <.icon name="pi-git-pull-request" class="h-3.5 w-3.5" />
+                  <span>{Task.stage_label(:review)}</span>
                 </button>
               </div>
+              <a
+                :if={@issue.pr_number}
+                href={@issue.pr_url}
+                target="_blank"
+                rel="noopener"
+                id="issue-pull-request"
+                data-qa="issue-pull-request"
+                class="flex items-baseline gap-1.5 text-xs text-slate-500 dark:text-slate-400 hover:underline"
+              >
+                <span class="font-mono">#{@issue.pr_number}</span>
+                <span class="truncate">{@issue.pr_title}</span>
+              </a>
 
               <form
-                id="issue-start-review"
-                data-qa="issue-start-review"
+                :if={not @checking_pull_request and is_nil(@issue.pr_number)}
+                id="issue-hand-over"
+                data-qa="issue-hand-over"
                 phx-change="draft_review"
                 phx-submit="start_review"
                 class="mt-3 space-y-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 p-3"
@@ -190,10 +297,13 @@ defmodule RailWeb.Components.IssueView do
           <section class="space-y-3">
             <h2 class="text-xs font-medium text-slate-500 dark:text-slate-400">Properties</h2>
 
-            <div id="issue-status" data-qa="issue-status" class="flex items-center gap-2.5">
-              <.status_icon state={@issue.state} />
-              <span>{@issue.state_name || Issue.state_label(@issue.state)}</span>
-            </div>
+            <.live_component
+              module={StatusPicker}
+              id={"issue-status-picker-#{@issue.id}"}
+              issue={@issue}
+              current_scope={@current_scope}
+              labeled
+            />
 
             <div id="issue-priority" data-qa="issue-priority" class="flex items-center gap-2.5">
               <.priority_icon priority={@issue.priority} />

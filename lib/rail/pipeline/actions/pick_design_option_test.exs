@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -9,6 +10,9 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
     scope = system_scope()
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
@@ -26,7 +30,11 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Pick Design"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+    # Git is stubbed, so the worktree is only ever looked for: a plain directory stands in for it.
+    worktree_path = Path.join(System.tmp_dir!(), "rail_pkd_wt_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(worktree_path)
+    on_exit(fn -> File.rm_rf(worktree_path) end)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     design_dir = Path.join(task.scratch_path, "design")
     File.mkdir_p!(design_dir)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
@@ -55,14 +63,16 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
   end
 
   test "a pick at Plan records the pick, deletes the others and says only what was picked", %{
-    task: task,
+    task: %{id: task_id} = task,
     run: run,
     design_dir: dir
   } do
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
 
     assert {:ok, %Run{}} = Pipeline.pick_design_option(system_scope(), run, "table")
 
+    assert_received {:output_saved, ^task_id}
     assert File.read!(Path.join(dir, "picked")) == "table"
     assert Enum.sort(File.ls!(dir)) == ["manifest.json", "picked", "table.html", "table.png"]
     assert %{picked: "table", options: [%{key: "table", title: "Table"}]} = Pipeline.read_design(task)
@@ -137,25 +147,35 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
   end
 
   test "a pick while Plan is working is recorded without a message, for the next one sent to carry", %{
-    task: task,
+    task: %{id: task_id} = task,
     run: run,
     design_dir: dir
   } do
     {:ok, working} = Pipeline.update_run(run, %{status: :running})
     reject(&Tools.start_os_process/2)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
 
     assert {:ok, %Run{status: :running, pending_chat: nil}} =
              Pipeline.pick_design_option(system_scope(), working, "cards")
 
+    assert_received {:output_saved, ^task_id}
     assert Enum.sort(File.ls!(dir)) == ["cards.html", "cards.png", "manifest.json", "picked"]
     assert File.read!(Path.join(dir, "picked")) == "cards"
     assert %{picked: "cards", options: [%{key: "cards"}]} = Pipeline.read_design(task)
   end
 
-  test "a task at Engineer has nothing left to pick", %{task: task, run: run, design_dir: dir, manifest: manifest} do
+  test "a task at Engineer has nothing left to pick", %{
+    task: %{id: task_id} = task,
+    run: run,
+    design_dir: dir,
+    manifest: manifest
+  } do
     {:ok, _moved} = Pipeline.update_task(task, %{stage: :engineer})
+    Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
 
     assert {:error, {:invalid_stage, :engineer}} = Pipeline.pick_design_option(system_scope(), run, "cards")
+
+    refute_received {:output_saved, ^task_id}
 
     assert Enum.sort(File.ls!(dir)) ==
              ["cards.html", "cards.png", "manifest.json", "table.html", "table.png", "timeline.html", "timeline.png"]

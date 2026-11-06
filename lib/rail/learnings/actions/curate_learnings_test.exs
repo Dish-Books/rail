@@ -2,6 +2,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Learnings
   alias Rail.Learnings.Schemas.CuratorPass
@@ -15,6 +16,12 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
   alias Rail.Tools
 
   setup do
+    # A pass checks the default branch out and reads its role's prompt from it, both through Rail.Git.
+    # The project has no clone, so these answer as git would for a default branch with no .rail/prompts.
+    stub(Git, :checkout_detached_worktree, fn _project, worktree_path -> {:ok, worktree_path} end)
+    stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     %{project: project} = triage_project()
 
     {:ok, _curator} =
@@ -202,6 +209,66 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     assert_received {:posted, text}
     assert text =~ "• Three tasks (3 finished tasks)"
     refute text =~ "Provisional since"
+  end
+
+  test "a provisional rule proposed for retiring is deleted, also those waiting from earlier passes, while an active rule's retire waits",
+       %{project: project} do
+    provisional =
+      Repo.insert!(%Learning{project_id: project.id, status: :provisional, rule: "Old habit", kind: :convention})
+
+    earlier =
+      for n <- 1..10,
+          do: Repo.insert!(%Learning{project_id: project.id, status: :provisional, rule: "Stale #{n}", kind: :convention})
+
+    active = Repo.insert!(%Learning{project_id: project.id, status: :active, rule: "House rule", kind: :convention})
+
+    waiting =
+      for learning <- earlier,
+          do: Repo.insert!(%LearningProposal{project_id: project.id, action: :retire, learning_id: learning.id})
+
+    %{workspace: workspace, channel: channel} = connect_slack_channel(project)
+
+    {:ok, _project} =
+      Projects.update_project(system_scope(), project, %{
+        "learnings_slack_workspace_id" => workspace.id,
+        "learnings_channel_external_id" => channel.external_id
+      })
+
+    test = self()
+
+    Req.Test.stub(Rail.Slack, fn conn ->
+      case conn.request_path do
+        "/api/chat.postMessage" ->
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+          send(test, {:posted, Jason.decode!(body)["text"]})
+          Req.Test.json(conn, %{"ok" => true, "ts" => "1790000000.000903"})
+
+        "/api/chat.getPermalink" ->
+          Req.Test.json(conn, %{"ok" => true, "permalink" => "https://slack.example/p4"})
+      end
+    end)
+
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
+      proposals = [
+        %{"action" => "retire", "learning" => provisional.id, "summary" => "code gone"},
+        %{"action" => "retire", "learning" => active.id, "summary" => "code gone"}
+      ]
+
+      File.write!(Path.join(opts[:cd], "result.json"), Jason.encode!(%{"proposals" => proposals}))
+      {:ok, ""}
+    end)
+
+    {:ok, _pass} = Learnings.curate_learnings(project)
+
+    refute Repo.reload(provisional)
+    refute Enum.any?(earlier, &Repo.reload/1)
+    refute Enum.any?(waiting, &Repo.reload/1)
+    assert %Learning{status: :active} = Repo.reload!(active)
+    assert %LearningProposal{status: :pending} = Repo.get_by!(LearningProposal, learning_id: active.id)
+    assert_received {:posted, text}
+    assert text =~ "*Deleted 11 provisional*"
+    assert text =~ "…and 1 more"
+    refute text =~ "• House rule"
   end
 
   test "a later sighting linked to a pending add counts towards activating it", %{
@@ -767,8 +834,20 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     assert %LearningProposal{status: :pending} = Repo.reload!(proposal)
   end
 
-  test "the pass's folder is gone after it, whether it finished or failed", %{project: project} do
+  test "the pass's folder and its checkout of the default branch are gone after it, whether it finished or failed", %{
+    project: %{id: project_id, clone_path: clone_path} = project
+  } do
     test = self()
+
+    expect(Git, :checkout_detached_worktree, 2, fn %{id: ^project_id}, checkout ->
+      send(test, {:checked_out, checkout})
+      {:ok, checkout}
+    end)
+
+    expect(Git, :remove_worktree, 2, fn ^clone_path, checkout ->
+      send(test, {:removed, checkout})
+      :ok
+    end)
 
     expect(Tools, :run_agent, fn _role, _argv, opts ->
       send(test, {:dir, opts[:cd]})
@@ -779,6 +858,8 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     assert {:ok, _pass} = Learnings.curate_learnings(project)
     assert_received {:dir, dir}
     refute File.exists?(dir)
+    assert_received {:checked_out, checkout}
+    assert_received {:removed, ^checkout}
 
     expect(Tools, :run_agent, fn _role, _argv, opts ->
       send(test, {:dir, opts[:cd]})
@@ -788,6 +869,8 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     assert {:error, _failed} = Learnings.curate_learnings(project)
     assert_received {:dir, failed_dir}
     refute File.exists?(failed_dir)
+    assert_received {:checked_out, failed_checkout}
+    assert_received {:removed, ^failed_checkout}
   end
 
   test "an add citing a sighting that made a provisional rule leaves the sighting with that rule", %{

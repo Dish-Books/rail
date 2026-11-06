@@ -20,8 +20,16 @@ defmodule RailWeb.Components.Nav do
       <!-- Top Group: Logo and Destinations -->
       <div class="flex flex-col items-center space-y-3 py-2">
         <!-- Brand / Leading -->
-        <div class="flex items-center py-1" id="app-brand" title="Rail">
-          <div class="flex items-center justify-center h-8 w-8 rounded-lg bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 shrink-0">
+        <div class="flex items-center py-1">
+          <!-- No hover background, so the way home does not read as another destination. -->
+          <.link
+            navigate={~p"/"}
+            id="app-brand"
+            data-qa="app_brand"
+            title="Rail"
+            aria-label="Rail"
+            class="flex items-center justify-center h-8 w-8 rounded-lg bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+          >
             <svg viewBox="0 0 64 64" class="h-8 w-8" fill="none" aria-hidden="true" id="brand-mark">
               <mask id="brand-mark-rails" stroke-linejoin="round">
                 <path
@@ -37,7 +45,7 @@ defmodule RailWeb.Components.Nav do
               </mask>
               <rect width="64" height="52" fill="currentColor" mask="url(#brand-mark-rails)" />
             </svg>
-          </div>
+          </.link>
         </div>
 
         <!-- Destinations List -->
@@ -179,6 +187,7 @@ defmodule RailWeb.Components.Nav do
     <header
       id="top-app-bar"
       data-qa="top_app_bar"
+      phx-hook="Shortcuts"
       class="h-11 px-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shrink-0 z-20"
     >
       <!-- Left Group: Section Title & Project Filter -->

@@ -22,6 +22,7 @@ defmodule Rail.Learnings do
   defdelegate retrieve_learnings(target, queries), to: Actions.RetrieveLearnings
   defdelegate record_corrections(task, records), to: Actions.RecordCorrections
   defdelegate record_overrides(task, findings), to: Actions.RecordOverrides
+  defdelegate delete_task_observations(task), to: Actions.DeleteTaskObservations
   defdelegate match_past_answer(task, question), to: Actions.MatchPastAnswer
   defdelegate handle_issue_finished(issue), to: Actions.HandleIssueFinished
   defdelegate extract_task_learnings(task), to: Actions.ExtractTaskLearnings

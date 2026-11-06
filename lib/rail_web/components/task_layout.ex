@@ -5,10 +5,12 @@ defmodule RailWeb.Components.TaskLayout do
   """
   use RailWeb, :html
 
-  import RailWeb.Utils.StageLabel, only: [ready_to_merge?: 2, review_waiting?: 2]
+  import RailWeb.Utils.StageLabel, only: [ready_to_merge?: 2, review_waiting?: 2, sent_plan_waiting?: 2]
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Workflows.Schemas.Workflow
 
   attr :task, :any, required: true
   attr :run, :any, default: nil
@@ -21,6 +23,8 @@ defmodule RailWeb.Components.TaskLayout do
   # Said in place of the stage, `%{label:, icon:, class:}`, by a split parent or a child waiting on its
   # siblings, neither of which has a branch to show yet.
   attr :status, :map, default: nil
+  # Only admins can follow the workflow's name to Settings > Workflows.
+  attr :link_workflow, :boolean, default: false
 
   slot :breadcrumb
   slot :meta
@@ -33,6 +37,7 @@ defmodule RailWeb.Components.TaskLayout do
       assigns
       |> assign(:sandbox_line, if(is_map_key(assigns.line || %{}, :position), do: assigns.line))
       |> assign(:starts_at, if(is_map_key(assigns.line || %{}, :accounts), do: assigns.line.resets_at))
+      |> assign(:workflow, if(match?(%Workflow{}, assigns.task.issue.workflow), do: assigns.task.issue.workflow))
 
     ~H"""
     <div class="-m-6 h-[calc(100%+3rem)] flex flex-col min-h-0">
@@ -76,7 +81,9 @@ defmodule RailWeb.Components.TaskLayout do
             <.icon
               :if={
                 @line != nil or ready_to_merge?(@task, @stage_run) or
-                  review_waiting?(@task, @stage_run) or @task.stage in [:finalize, :merged]
+                  review_waiting?(@task, @stage_run) or sent_plan_waiting?(@task, @stage_run) or
+                  @task.stage in [:finalize, :merged] or
+                  (@task.stage == :custom and Run.state(@stage_run) == :stopped)
               }
               name={chip_style(@task, @stage_run).icon}
               class={[
@@ -130,6 +137,37 @@ defmodule RailWeb.Components.TaskLayout do
           >
             <.icon name="pi-git-pull-request" class="size-4" /> PR #{@task.pr_number}
           </a>
+
+          <span
+            :if={@workflow}
+            id="task-workflow"
+            data-qa="task_workflow"
+            class="inline-flex flex-wrap items-center gap-x-1.5 min-w-0"
+          >
+            <.icon name="pi-repeat" class="size-4 shrink-0" />
+            <.link
+              :if={@link_workflow}
+              navigate={~p"/settings/workflows"}
+              id="task-workflow-link"
+              title="Settings › Workflows"
+              class="font-medium text-slate-700 dark:text-slate-200 underline decoration-slate-400 dark:decoration-slate-600 underline-offset-2 hover:decoration-slate-300 focus-visible:outline-2 focus-visible:outline-indigo-500 rounded wrap-break-word min-w-0"
+            >
+              {Workflow.name(@workflow)}
+            </.link>
+            <span
+              :if={!@link_workflow}
+              id="task-workflow-name"
+              class="font-medium text-slate-700 dark:text-slate-200 wrap-break-word min-w-0"
+            >
+              {Workflow.name(@workflow)}
+            </span>
+            <.stage_sequence
+              id="task-stage-sequence"
+              skipped={@task.issue.skipped_steps}
+              stages={@task.issue.stages}
+              layout={:inline}
+            />
+          </span>
 
           <.link
             :if={@sandbox_line}
