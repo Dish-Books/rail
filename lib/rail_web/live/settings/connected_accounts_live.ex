@@ -10,6 +10,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
   def mount(_params, _session, socket) do
     current_scope = socket.assigns.current_scope
     user = current_scope && current_scope.user
+    if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "users")
 
     socket =
       socket
@@ -23,6 +24,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
       |> assign(:slack_connected, Scope.slack_linked?(current_scope))
       |> assign(:slack_name, user && user.slack_name)
       |> assign(:slack_notifications, user != nil and user.slack_notifications)
+      |> assign(:slack_notifications_error, nil)
       |> assign(:signing_error, nil)
       |> assign(:repository_access, repository_access(socket.assigns.projects))
       |> assign(:mcp_servers, Enum.filter(Mcp.list_servers(), &(&1.enabled and &1.auth == :oauth)))
@@ -336,6 +338,16 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
                     Notify me about my tasks
                   </h4>
                   <p
+                    :if={@slack_notifications_error}
+                    id="slack-notifications-error"
+                    role="alert"
+                    class="mt-0.5 flex items-start gap-1.5 text-sm text-red-600 dark:text-red-400"
+                  >
+                    <.icon name="pi-warning-circle" class="size-4 mt-0.5 shrink-0" />
+                    <span>{@slack_notifications_error}</span>
+                  </p>
+                  <p
+                    :if={!@slack_notifications_error}
                     id="slack-notifications-message"
                     class="mt-0.5 text-sm text-slate-500 dark:text-slate-400"
                   >
@@ -354,24 +366,20 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
                   {if @slack_notifications, do: "On", else: "Off"}
                 </span>
 
-                <label class={[
-                  "inline-flex items-center gap-2 text-xs",
-                  @slack_connected && "cursor-pointer",
-                  not @slack_connected && "cursor-not-allowed opacity-50"
-                ]}>
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    id="slack-notifications-switch"
-                    checked={@slack_notifications}
-                    disabled={not @slack_connected}
-                    phx-click="set_slack_notifications"
-                    phx-value-on={to_string(not @slack_notifications)}
-                    aria-label="Notify me about my tasks in Slack"
-                    class="peer sr-only"
-                  />
-                  <span class="relative h-5 w-9 shrink-0 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-indigo-600 after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-indigo-500"></span>
-                </label>
+                <%!-- A button shows only what the server rendered, where a checkbox the browser flipped can stay on. --%>
+                <button
+                  type="button"
+                  role="switch"
+                  id="slack-notifications-switch"
+                  aria-checked={to_string(@slack_notifications)}
+                  disabled={not @slack_connected}
+                  phx-click="set_slack_notifications"
+                  phx-value-on={to_string(not @slack_notifications)}
+                  aria-label="Notify me about my tasks in Slack"
+                  class="group shrink-0 rounded-full cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
+                >
+                  <span class="relative block h-5 w-9 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors group-aria-checked:bg-indigo-600 after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:transition-transform group-aria-checked:after:translate-x-4"></span>
+                </button>
               </div>
             </div>
 
@@ -486,6 +494,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
           |> assign(:slack_connected, false)
           |> assign(:slack_name, nil)
           |> assign(:slack_notifications, updated_user.slack_notifications)
+          |> assign(:slack_notifications_error, nil)
 
         {:noreply, socket}
 
@@ -498,7 +507,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
     socket =
       case Users.set_slack_notifications(socket.assigns.current_scope, on == "true") do
         {:ok, user} ->
-          apply_user(socket, user)
+          socket |> apply_user(user) |> assign(:slack_notifications_error, nil)
 
         # Slack was disconnected in another tab, so the page catches up with it.
         {:error, %Ecto.Changeset{data: %User{} = user}} ->
@@ -506,6 +515,10 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
           |> apply_user(user)
           |> assign(:slack_connected, Scope.slack_linked?(Scope.for_user(user)))
           |> assign(:slack_name, user.slack_name)
+          |> assign(:slack_notifications_error, nil)
+
+        {:error, reason} ->
+          assign(socket, :slack_notifications_error, slack_notifications_error_message(reason))
       end
 
     {:noreply, socket}
@@ -520,6 +533,15 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
 
     {:noreply, assign(socket, :mcp_connected_ids, mcp_connected_ids(scope))}
   end
+
+  def handle_info({:users_changed, id}, %{assigns: %{current_user: %User{id: id}}} = socket) do
+    {:ok, user} = Users.get_user(id: id)
+    socket = apply_user(socket, user)
+    socket = if user.slack_notifications, do: assign(socket, :slack_notifications_error, nil), else: socket
+    {:noreply, socket}
+  end
+
+  def handle_info({:users_changed, _someone_else}, socket), do: {:noreply, socket}
 
   attr :label, :string, required: true
   attr :src, :any, default: nil
@@ -560,6 +582,25 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
     do: "Rail messages you when a task you own waits on you, and when someone else merges it."
 
   defp slack_notifications_message(true, false), do: "Off. Rail sends you nothing in Slack."
+
+  defp slack_notifications_error_message({:slack_error, "messages_tab_disabled"}),
+    do:
+      "The Rail app's Messages tab is off, so Slack refused the message. " <>
+        "An admin turns it on under App Home in the Slack app's settings."
+
+  defp slack_notifications_error_message({:slack_error, reason})
+       when reason in ["invalid_auth", "token_revoked", "account_inactive", "not_authed"],
+       do:
+         "Slack refused the message because the workspace's bot token is no longer valid. " <>
+           "An admin replaces it under Settings, Slack."
+
+  defp slack_notifications_error_message({:slack_error, reason}) when is_binary(reason),
+    do: "Slack refused the message: #{reason}. An admin checks the Rail app's settings at api.slack.com/apps."
+
+  defp slack_notifications_error_message(:not_found),
+    do: "Rail has no Slack workspace for your Slack account. An admin adds it under Settings, Slack."
+
+  defp slack_notifications_error_message(_status_or_transport), do: "Rail could not reach Slack. Try again."
 
   defp signing_message(:missing_scope) do
     "Rail's GitHub App is missing the SSH signing keys permission. An admin grants it on the app, then you authorize it again."

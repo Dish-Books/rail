@@ -17,6 +17,8 @@ defmodule Rail.Pipeline.Workers.NotifyOwnerTest do
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
+  setup {Req.Test, :verify_on_exit!}
+
   setup %{project: project} do
     unique = System.unique_integer([:positive])
 
@@ -43,11 +45,21 @@ defmodule Rail.Pipeline.Workers.NotifyOwnerTest do
     {:ok, owner} =
       Users.update_user(system_scope(), owner, %{name: "Maya Kowalski", slack_user_id: "U_MAYA", slack_team_id: team_id})
 
-    {:ok, owner} = Users.set_slack_notifications(Scope.for_user(owner), true)
-    Repo.update_all(from(i in Issue, where: i.id == ^issue.id), set: [owner_user_id: owner.id])
-
     Req.Test.expect(Slack, &Req.Test.json(&1, %{"ok" => true, "team_id" => team_id}))
     {:ok, _workspace} = Projects.create_slack_workspace(system_scope(), %{"name" => "Acme", "token" => "xoxb-bot"})
+
+    # Turning notifications on sends a first message of its own, before any the job sends.
+    first_message = fn ->
+      Req.Test.expect(Slack, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        assert %{"channel" => "U_MAYA", "text" => "Rail will message you here" <> _rest} = Jason.decode!(body)
+        Req.Test.json(conn, %{"ok" => true, "ts" => "1790000000.000001"})
+      end)
+    end
+
+    first_message.()
+    {:ok, owner} = Users.set_slack_notifications(Scope.for_user(owner), true)
+    Repo.update_all(from(i in Issue, where: i.id == ^issue.id), set: [owner_user_id: owner.id])
 
     roles =
       Map.new([:plan, :engineer, :qa, :review_lead], fn stage ->
@@ -80,7 +92,7 @@ defmodule Rail.Pipeline.Workers.NotifyOwnerTest do
       end)
     end
 
-    %{task: task, issue: issue, owner: owner, run: run, posted: posted, unique: unique}
+    %{task: task, issue: issue, owner: owner, run: run, posted: posted, first_message: first_message, unique: unique}
   end
 
   describe "a turn that left the task waiting" do
@@ -259,12 +271,13 @@ defmodule Rail.Pipeline.Workers.NotifyOwnerTest do
   end
 
   describe "the owner" do
-    test "with notifications off gets nothing", %{owner: owner, run: run, posted: posted} do
+    test "with notifications off gets nothing", %{owner: owner, run: run, posted: posted, first_message: first_message} do
       %Run{id: run_id} = run.(:plan, %{stage_outcome: :done})
 
       {:ok, _off} = Users.set_slack_notifications(Scope.for_user(owner), false)
       assert :ok = perform_job(NotifyOwner, %{run_id: run_id, os_process_id: "osp_1"})
 
+      first_message.()
       {:ok, _on} = Users.set_slack_notifications(Scope.for_user(owner), true)
       posted.()
       assert :ok = perform_job(NotifyOwner, %{run_id: run_id, os_process_id: "osp_2"})
