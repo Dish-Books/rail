@@ -215,6 +215,27 @@ export function readDraft(storage, key) {
   }
 }
 
+// Safari on iPad sends no click for a tap on a plain element, so a finger or pen picks on pointerup, and the click
+// that may follow its press picks nothing. A click with no press before it came from a keyboard.
+export function picksElement(event, press) {
+  if (event.type === "pointerup") {
+    return (
+      (event.pointerType === "touch" || event.pointerType === "pen") && event.isPrimary !== false && event.button === 0
+    );
+  }
+  if (event.type === "click") return press === null || press === "mouse";
+  return false;
+}
+
+// Cancelling a pointer event cancels the click it leads to, and cancelling a touch stops a finger scrolling the design.
+export function cancelsEvent(type) {
+  return !type.startsWith("pointer") && !type.startsWith("touch");
+}
+
+export function drawsHover(event) {
+  return event.pointerType !== "touch";
+}
+
 export function shouldStartOverlay(script) {
   return Boolean(script && typeof script.hasAttribute === "function" && script.hasAttribute(OVERLAY_MARK));
 }
@@ -521,6 +542,7 @@ function startOverlay(win) {
   win.addEventListener(
     "pointermove",
     (event) => {
+      if (!drawsHover(event)) return;
       pointer = { x: event.clientX, y: event.clientY };
       if (state.commenting) schedule();
     },
@@ -533,25 +555,42 @@ function startOverlay(win) {
     schedule();
   });
 
-  // While commenting, a click picks the element and the mockup never hears of it. Pointer events are only stopped:
-  // cancelling one would cancel the click it leads to.
-  const swallow = (event) => {
-    if (!state.commenting) return;
-    if (!event.type.startsWith("pointer")) event.preventDefault();
-    event.stopImmediatePropagation();
+  // While commenting, a click or a tap picks the element and the mockup never hears of it.
+  let press = null;
+  const pick = (event) => {
+    if (!isOurs(event.target)) post({ kind: "select", ...describeElement(event.target, doc) });
   };
 
-  for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "dblclick", "auxclick", "submit"]) {
-    win.addEventListener(type, swallow, true);
-  }
+  const swallow = (event) => {
+    if (event.type === "pointerdown") press = event.pointerType || null;
+    if (!state.commenting) return;
+    if (cancelsEvent(event.type)) event.preventDefault();
+    event.stopImmediatePropagation();
+    if (event.type === "pointerup" && picksElement(event, press)) pick(event);
+  };
+
+  const swallowed = [
+    "pointerdown",
+    "mousedown",
+    "pointerup",
+    "mouseup",
+    "dblclick",
+    "auxclick",
+    "submit",
+    "touchstart",
+    "touchmove",
+    "touchend"
+  ];
+  for (const type of swallowed) win.addEventListener(type, swallow, true);
 
   win.addEventListener(
     "click",
     (event) => {
+      const picks = picksElement(event, press);
+      press = null;
       if (!state.commenting) return;
       swallow(event);
-      if (isOurs(event.target)) return;
-      post({ kind: "select", ...describeElement(event.target, doc) });
+      if (picks) pick(event);
     },
     true
   );
