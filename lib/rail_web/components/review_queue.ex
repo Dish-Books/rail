@@ -7,7 +7,7 @@ defmodule RailWeb.Components.ReviewQueue do
 
   alias Rail.Pipeline.Schemas.Task
 
-  # Tasks from `Rail.Pipeline.list_tasks(ready: true)`, each with its project, issue and who marked it.
+  # Tasks from `Rail.Pipeline.list_tasks(ready: true)`, each with its project and who marked it, and the issue it loads.
   attr :tasks, :list, required: true
   attr :now, DateTime, required: true
 

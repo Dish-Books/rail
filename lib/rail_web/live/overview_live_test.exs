@@ -1412,6 +1412,87 @@ defmodule RailWeb.OverviewLiveTest do
       refute has_element?(lead_view, queued)
     end
 
+    # A lead's Overview reloads on every change, so an owner's save or Linear's delete can land between its reads.
+    test "a plan saved again or an issue deleted in the middle of a lead's reload leaves its queue", %{
+      project: project,
+      user: user,
+      roles: roles,
+      task_for: task_for
+    } do
+      {:ok, lead} =
+        Users.register_oauth_user(%{github_id: "gh_ovl_mid_lead", login: "ovl-mid-lead", email: "mid@example.com"})
+
+      {:ok, lead} = Users.update_user(system_scope(), lead, %{tech_lead: true, project_ids: [project.id]})
+      {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+
+      [saved, deleted] =
+        for title <- ["Saved mid-reload", "Deleted mid-reload"] do
+          task = task_for.(title, %{stage: :plan})
+          on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+          {:ok, run} =
+            Pipeline.create_run(%{
+              task_id: task.id,
+              role_id: roles[:plan].id,
+              status: :finished,
+              stage_outcome: :done,
+              started_at: DateTime.utc_now(),
+              completed_at: DateTime.utc_now()
+            })
+
+          Repo.insert!(%Round{
+            task_id: task.id,
+            number: 1,
+            plan: "A plan.",
+            ticket: %Round.Ticket{title: "T", description: "D"}
+          })
+
+          {:ok, _sent} = Pipeline.send_plan_to_lead(Scope.for_user(user), run)
+          task
+        end
+
+      reviewed =
+        task_for.("Deleted from review", %{stage: :finalize, pr_number: 161, marked_ready_at: DateTime.utc_now()})
+
+      assert {:ok, %{pid: lead_pid} = lead_view, _html} = live(log_in_user(build_conn(), lead), ~p"/")
+      assert has_element?(lead_view, "#plan-queue-count", "2 plans")
+      assert has_element?(lead_view, "#review-queue-count", "1 task")
+      remove = &%{"type" => "Issue", "action" => "remove", "data" => %{"id" => &1.issue.external_id}}
+
+      # Each write lands once, inside the lead's own read of its queue: the review queue's, then Plans to approve's.
+      for {name, read, write} <- [
+            {"review", ~s("marked_ready_at" IS NULL),
+             fn -> Issues.handle_linear_webhook(workspace, remove.(reviewed)) end},
+            {"plan", ~s(JOIN "rounds"),
+             fn ->
+               {:ok, _saved} = Pipeline.save_plan(saved, %{title: "Saved again"})
+               Issues.handle_linear_webhook(workspace, remove.(deleted))
+             end}
+          ] do
+        handler = "overview-mid-reload-#{name}-#{inspect(lead_pid)}"
+        on_exit(fn -> :telemetry.detach(handler) end)
+
+        :ok =
+          :telemetry.attach(
+            handler,
+            [:rail, :repo, :query],
+            fn _event, _measurements, metadata, _config ->
+              if self() == lead_pid and metadata.source == "tasks" and metadata.query =~ read do
+                :telemetry.detach(handler)
+                {:ok, %Issue{}} = write.()
+              end
+            end,
+            nil
+          )
+      end
+
+      send(lead_pid, {:pipeline_changed, saved.id})
+      # The reload the writes land in renders the rows it read; the broadcasts the writes send reload it again.
+      assert has_element?(lead_view, "#plan-queue-count", "2 plans")
+      refute has_element?(lead_view, "#plan-queue-section")
+      assert has_element?(lead_view, "#review-queue-empty")
+    end
+
     test "a run whose questions are all answered leads as ready to send", %{
       conn: conn,
       roles: roles,

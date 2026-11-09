@@ -17,9 +17,10 @@ defmodule Rail.Pipeline.Actions.ListTasks do
   `:parent_task_id` keeps one split's children, in their order unless `:order_by` says otherwise, and
   `split_child: true` every child of every split.
   `ready: true` keeps the review queue: tasks at Finalize marked ready and not merged, whose issue Linear has
-  not closed, oldest mark first.
+  not closed, oldest mark first, with the issue loaded.
   `plan_ready: true` keeps the tech leads' plans to approve: tasks whose first round's plan was sent and is not
-  approved, started or not, oldest sent first.
+  approved, started or not, oldest sent first, with the issue and that round as `rounds` loaded.
+  Both load these in the query that filters, so whether a row shows and what it shows come from one read.
   Cleaned-up tasks are left out unless `include_cleaned_up: true`.
   """
   def list_tasks(opts \\ []) do
@@ -93,15 +94,18 @@ defmodule Rail.Pipeline.Actions.ListTasks do
     |> with_named_binding(:issue, &join(&1, :inner, [task: t], i in assoc(t, :issue), as: ^&2))
     |> where([task: t], t.stage == :finalize and not is_nil(t.marked_ready_at) and is_nil(t.merged_at))
     |> where([issue: i], is_nil(i.completed_at) and i.state not in ^Issue.finished_states())
+    |> preload([issue: i], issue: i)
   end
 
   defp filter_ready(query, nil), do: query
 
   defp filter_plan_ready(query, true) do
     query
+    |> with_named_binding(:issue, &join(&1, :inner, [task: t], i in assoc(t, :issue), as: ^&2))
     |> join(:inner, [task: t], r in Round, as: :round, on: r.task_id == t.id and r.number == 1)
     |> where([round: r], not is_nil(r.ready_at) and is_nil(r.approved_at))
     |> order_by([task: t, round: r], asc: r.ready_at, asc: t.id)
+    |> preload([issue: i, round: r], issue: i, rounds: r)
   end
 
   defp filter_plan_ready(query, nil), do: query

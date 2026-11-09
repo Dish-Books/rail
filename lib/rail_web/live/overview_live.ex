@@ -200,8 +200,7 @@ defmodule RailWeb.OverviewLive do
     sandboxes = load_sandboxes()
 
     # Every ready task in the switcher's projects, whoever owns it, so My work and Everyone show one queue.
-    review_queue =
-      Pipeline.list_tasks(project_id: project_id, ready: true, preload: [:project, :issue, :marked_ready_by])
+    review_queue = Pipeline.list_tasks(project_id: project_id, ready: true, preload: [:project, :marked_ready_by])
 
     socket
     |> assign(:now, now)
@@ -469,7 +468,7 @@ defmodule RailWeb.OverviewLive do
   # Plans waiting on a tech lead, for the tech leads, who are the ones to approve them.
   defp plan_queue(scope, project_id) do
     if Scope.tech_lead?(scope),
-      do: Pipeline.list_tasks(project_id: project_id, plan_ready: true, preload: [:project, :issue, :rounds]),
+      do: Pipeline.list_tasks(project_id: project_id, plan_ready: true, preload: [:project]),
       else: []
   end
 end

@@ -9,7 +9,7 @@ defmodule RailWeb.Components.PlanQueue do
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
 
-  # Tasks from `Rail.Pipeline.list_tasks(plan_ready: true)`, each with its project, issue and rounds.
+  # Tasks from `Rail.Pipeline.list_tasks(plan_ready: true)`, each with its project, and the issue and round it loads.
   attr :tasks, :list, required: true
   attr :now, DateTime, required: true
 

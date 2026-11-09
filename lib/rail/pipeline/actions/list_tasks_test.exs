@@ -7,10 +7,12 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Users
 
   setup %{project: project} do
@@ -372,5 +374,140 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         do: {:ok, _marked} = Pipeline.update_task(task, %{stage: :finalize, marked_ready_at: marked})
 
     assert [%Task{id: ^low_id}, %Task{id: ^high_id}] = Pipeline.list_tasks(project_id: project.id, ready: true)
+  end
+
+  test "plan_ready: true keeps a plan only while it is sent, ordered by its latest send", %{
+    project: project,
+    task: %Task{id: first_id} = first
+  } do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_plan_ready_2", "identifier" => "LTS-2", "title" => "Second"}
+          }
+        }
+      })
+    end)
+
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Second"})
+    {:ok, %Task{id: second_id} = second} = Pipeline.create_task(issue, :plan)
+    {:ok, plan_role} = Roles.get_role(project_id: project.id, stage: :plan)
+
+    [first_run, second_run] =
+      for task <- [first, second] do
+        Repo.insert!(%Round{
+          task_id: task.id,
+          number: 1,
+          plan: "A plan.",
+          ticket: %Round.Ticket{title: "T", description: "D"}
+        })
+
+        {:ok, run} =
+          Pipeline.create_run(%{
+            task_id: task.id,
+            role_id: plan_role.id,
+            status: :finished,
+            stage_outcome: :done,
+            started_at: DateTime.utc_now(),
+            completed_at: DateTime.utc_now()
+          })
+
+        run
+      end
+
+    assert [] = Pipeline.list_tasks(project_id: project.id, plan_ready: true)
+
+    {:ok, _sent} = Pipeline.send_plan_to_lead(system_scope(), first_run)
+    {:ok, _sent} = Pipeline.send_plan_to_lead(system_scope(), second_run)
+    assert [%Task{id: ^first_id}, %Task{id: ^second_id}] = Pipeline.list_tasks(project_id: project.id, plan_ready: true)
+
+    {:ok, _saved} = Pipeline.save_plan(first, %{title: "Saved again"})
+    assert [%Task{id: ^second_id}] = Pipeline.list_tasks(project_id: project.id, plan_ready: true)
+
+    {:ok, %Round{ready_at: resent_at}} = Pipeline.send_plan_to_lead(system_scope(), first_run)
+
+    assert [%Task{id: ^second_id}, %Task{id: ^first_id, rounds: [%Round{ready_at: ^resent_at}]}] =
+             Pipeline.list_tasks(project_id: project.id, plan_ready: true)
+  end
+
+  # Overview reloads while an owner saves or Linear deletes an issue: a queue's row is read in the query that kept it.
+  describe "a write landing between a queue's read and its preloads" do
+    setup %{task: %Task{id: task_id}} do
+      %Round{id: round_id} =
+        Repo.insert!(%Round{
+          task_id: task_id,
+          number: 1,
+          plan: "A plan.",
+          ticket: %Round.Ticket{title: "T", description: "D"},
+          ready_at: DateTime.utc_now()
+        })
+
+      test_pid = self()
+      handler = "list-tasks-#{inspect(test_pid)}"
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      # The handler sees every test's queries, so only this test's own read of tasks lands the write, once.
+      after_read = fn write ->
+        :ok =
+          :telemetry.attach(
+            handler,
+            [:rail, :repo, :query],
+            fn _event, _measurements, metadata, _config ->
+              if self() == test_pid and metadata.source == "tasks" do
+                :telemetry.detach(handler)
+                write.()
+              end
+            end,
+            nil
+          )
+      end
+
+      %{round_id: round_id, after_read: after_read}
+    end
+
+    test "plan_ready: true keeps the round it read sent when the plan is saved again", %{
+      project: project,
+      task: %Task{id: task_id} = task,
+      round_id: round_id,
+      after_read: after_read
+    } do
+      after_read.(fn -> {:ok, _saved} = Pipeline.save_plan(task, %{title: "Saved again"}) end)
+
+      assert [%Task{id: ^task_id, rounds: [%Round{id: ^round_id, ready_at: %DateTime{}}]}] =
+               Pipeline.list_tasks(project_id: project.id, plan_ready: true, preload: [:rounds])
+
+      assert [] = Pipeline.list_tasks(project_id: project.id, plan_ready: true)
+    end
+
+    test "plan_ready: true keeps the issue it read when the issue is deleted", %{
+      project: project,
+      issue: %Issue{id: issue_id} = issue,
+      task: %Task{id: task_id},
+      after_read: after_read
+    } do
+      after_read.(fn -> Repo.delete!(issue) end)
+
+      assert [%Task{id: ^task_id, issue: %Issue{id: ^issue_id}}] =
+               Pipeline.list_tasks(project_id: project.id, plan_ready: true, preload: [:issue])
+
+      assert [] = Pipeline.list_tasks(project_id: project.id, plan_ready: true)
+    end
+
+    test "ready: true keeps the issue it read when the issue is deleted", %{
+      project: project,
+      issue: %Issue{id: issue_id} = issue,
+      task: %Task{id: task_id} = task,
+      after_read: after_read
+    } do
+      {:ok, _ready} = Pipeline.update_task(task, %{stage: :finalize, marked_ready_at: DateTime.utc_now()})
+      after_read.(fn -> Repo.delete!(issue) end)
+
+      assert [%Task{id: ^task_id, issue: %Issue{id: ^issue_id}}] =
+               Pipeline.list_tasks(project_id: project.id, ready: true, preload: [:issue])
+
+      assert [] = Pipeline.list_tasks(project_id: project.id, ready: true)
+    end
   end
 end
