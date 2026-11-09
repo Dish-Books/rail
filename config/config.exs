@@ -100,7 +100,7 @@ config :rail,
   generators: [timestamp_type: :utc_datetime_usec]
 
 config :tailwind,
-  version: "4.3.3",
+  version: "4.3.5",
   rail: [
     args: ~w(
       --input=css/app.css
