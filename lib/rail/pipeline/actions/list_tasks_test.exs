@@ -7,6 +7,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
@@ -372,5 +373,15 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         do: {:ok, _marked} = Pipeline.update_task(task, %{stage: :finalize, marked_ready_at: marked})
 
     assert [%Task{id: ^low_id}, %Task{id: ^high_id}] = Pipeline.list_tasks(project_id: project.id, ready: true)
+  end
+
+  # The queue reads the sent time off the round, so it must be the round the filter matched, not a later read.
+  test "plan_ready: true carries the sent first round it matched, and no other", %{task: %Task{id: task_id}} do
+    sent_at = DateTime.utc_now()
+    %Round{id: round_id} = Repo.insert!(%Round{task_id: task_id, number: 1, plan: "Plan", ready_at: sent_at})
+    Repo.insert!(%Round{task_id: task_id, number: 2, plan: "Plan"})
+
+    assert [%Task{id: ^task_id, rounds: [%Round{id: ^round_id, ready_at: ^sent_at}]}] =
+             Pipeline.list_tasks(plan_ready: true)
   end
 end

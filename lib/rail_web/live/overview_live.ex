@@ -469,7 +469,7 @@ defmodule RailWeb.OverviewLive do
   # Plans waiting on a tech lead, for the tech leads, who are the ones to approve them.
   defp plan_queue(scope, project_id) do
     if Scope.tech_lead?(scope),
-      do: Pipeline.list_tasks(project_id: project_id, plan_ready: true, preload: [:project, :issue, :rounds]),
+      do: Pipeline.list_tasks(project_id: project_id, plan_ready: true, preload: [:project, :issue]),
       else: []
   end
 end

@@ -9,7 +9,7 @@ defmodule RailWeb.Components.PlanQueue do
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
 
-  # Tasks from `Rail.Pipeline.list_tasks(plan_ready: true)`, each with its project, issue and rounds.
+  # Tasks from `Rail.Pipeline.list_tasks(plan_ready: true)`, each with its project, issue and the sent round.
   attr :tasks, :list, required: true
   attr :now, DateTime, required: true
 
@@ -58,5 +58,5 @@ defmodule RailWeb.Components.PlanQueue do
     """
   end
 
-  defp sent_at(%Task{rounds: [%Round{ready_at: %DateTime{} = at} | _later]}), do: at
+  defp sent_at(%Task{rounds: [%Round{ready_at: %DateTime{} = at}]}), do: at
 end
