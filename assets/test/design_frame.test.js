@@ -5,14 +5,17 @@ import {
   CUT_MARK,
   captureElement,
   elementText,
+  cancelsEvent,
   checkMessage,
   cutHtml,
   describeElement,
+  drawsHover,
   fitScale,
   keepDraft,
   keyAction,
   LIMITS,
   markerBox,
+  picksElement,
   previewScale,
   readDraft,
   resolveSelector,
@@ -342,5 +345,47 @@ describe("the overlay", () => {
     assert.equal(shouldStartOverlay(null), false);
     assert.equal(shouldStartOverlay({ hasAttribute: () => false }), false);
     assert.equal(shouldStartOverlay({ hasAttribute: (name) => name === "data-rail-overlay" }), true);
+  });
+});
+
+describe("picking an element", () => {
+  const up = (pointerType, fields = {}) => ({ type: "pointerup", pointerType, isPrimary: true, button: 0, ...fields });
+
+  it("picks on the lift of a finger or a pen, which Safari on iPad sends where it sends no click", () => {
+    assert.equal(picksElement(up("touch"), "touch"), true);
+    assert.equal(picksElement(up("pen"), "pen"), true);
+  });
+
+  it("leaves a mouse to its click, and picks nothing for a second finger or another button", () => {
+    assert.equal(picksElement(up("mouse"), "mouse"), false);
+    assert.equal(picksElement(up("touch", { isPrimary: false }), "touch"), false);
+    assert.equal(picksElement(up("pen", { button: 2 }), "pen"), false);
+  });
+
+  it("picks on a click after a mouse press or a keyboard, and not after a finger or pen already picked", () => {
+    assert.equal(picksElement({ type: "click" }, "mouse"), true);
+    assert.equal(picksElement({ type: "click" }, null), true);
+    assert.equal(picksElement({ type: "click" }, "touch"), false);
+    assert.equal(picksElement({ type: "click" }, "pen"), false);
+  });
+
+  it("picks on nothing else", () => {
+    assert.equal(picksElement({ type: "pointerdown", pointerType: "touch", isPrimary: true, button: 0 }, null), false);
+    assert.equal(picksElement({ type: "touchend" }, "touch"), false);
+  });
+
+  it("stops pointer and touch events without cancelling them, so a finger still scrolls the design", () => {
+    for (const type of ["pointerdown", "pointerup", "touchstart", "touchmove", "touchend"]) {
+      assert.equal(cancelsEvent(type), false);
+    }
+    for (const type of ["click", "mousedown", "mouseup", "dblclick", "auxclick", "submit"]) {
+      assert.equal(cancelsEvent(type), true);
+    }
+  });
+
+  it("outlines what a mouse or pen moves over, never what a finger drags across", () => {
+    assert.equal(drawsHover({ pointerType: "touch" }), false);
+    assert.equal(drawsHover({ pointerType: "mouse" }), true);
+    assert.equal(drawsHover({ pointerType: "pen" }), true);
   });
 });

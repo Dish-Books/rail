@@ -1329,15 +1329,17 @@ defmodule RailWeb.Live.PlanStage do
   # Named for its element, so a box on another element mounts afresh and takes the focus.
   defp draft_key(draft), do: :erlang.phash2({draft.selector, draft.x, draft.y})
 
-  # Under the element when there is room below it, above it when there is room above, and otherwise, for an element
-  # covering most of the frame, inside it near the element's top, so the frame never clips the box.
+  # Under the element when there is room below it, above it when there is room above, and otherwise near the element's
+  # top; then moved just far enough to fit the frame, so in a short frame it may cover its element.
   defp box_style(draft) do
     left = "left: clamp(8px, #{percent(draft.x, 1920)}%, calc(100% - 448px)); width: min(440px, calc(100% - 16px));"
+    # 136px is the box's height plus a margin, so a capped box stops just inside the frame's edge.
+    fit = fn offset -> "min(calc(#{offset}% + 10px), calc(100% - 136px))" end
 
     cond do
-      draft.y + draft.height <= 1080 * 0.6 -> "#{left} top: calc(#{percent(draft.y + draft.height, 1080)}% + 10px);"
-      draft.y >= 1080 * 0.4 -> "#{left} bottom: calc(#{percent(1080 - draft.y, 1080)}% + 10px);"
-      true -> "#{left} top: calc(#{percent(draft.y, 1080)}% + 10px);"
+      draft.y + draft.height <= 1080 * 0.6 -> "#{left} top: #{fit.(percent(draft.y + draft.height, 1080))};"
+      draft.y >= 1080 * 0.4 -> "#{left} bottom: #{fit.(percent(1080 - draft.y, 1080))};"
+      true -> "#{left} top: #{fit.(percent(draft.y, 1080))};"
     end
   end
 

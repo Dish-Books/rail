@@ -8,8 +8,8 @@ _.file = ".env"
 elixir = "1.20.5-otp-29"
 erlang = "29.1.2"
 node = "26.13.0"
-pnpm = "12.16.1"
-prek = "0.5.9"
+pnpm = "12.18.0"
+prek = "0.5.10"
 
 [hooks]
 # Installs .git/hooks/pre-push, shared by every worktree. docs/local-ci.md.
