@@ -7,9 +7,9 @@
   "dependencies": {
     "@phosphor-icons/core": "^2.1.1",
     "@phosphor-icons/web": "2.1.2",
-    "@tailwindcss/browser": "4.3.3"
+    "@tailwindcss/browser": "4.3.5"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.4"
+    "@biomejs/biome": "2.6.6"
   }
 }

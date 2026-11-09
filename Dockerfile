@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
-ARG ELIXIR_IMAGE="hexpm/elixir:1.20.5-erlang-29.1.2-debian-trixie-20261027-slim"
-ARG RUNNER_IMAGE="debian:trixie-20261027-slim"
+ARG ELIXIR_IMAGE="hexpm/elixir:1.20.5-erlang-29.1.2-debian-trixie-20261104-slim"
+ARG RUNNER_IMAGE="debian:trixie-20261104-slim"
 ARG NODE_IMAGE="node:26.13.0-trixie-slim"
 
 # Node for the sandbox. Trixie's is 20, and the browser driver agents run needs the global
@@ -14,7 +14,7 @@ FROM ${NODE_IMAGE} AS node
 FROM ${ELIXIR_IMAGE} AS build
 
 # Keep in step with mise.toml.
-ARG PNPM_VERSION=12.16.1
+ARG PNPM_VERSION=12.18.0
 
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
     build-essential \
@@ -111,14 +111,14 @@ RUN curl -fsSL https://mise.run | sh
 
 # Claude Code, pinned: the layer is cached and the auto-updater is off, so the
 # version only moves when this does. Bump it to pick up a new model.
-ARG CLAUDE_CODE_VERSION=2.1.316
+ARG CLAUDE_CODE_VERSION=2.1.319
 RUN curl -fsSL https://claude.ai/install.sh | bash -s -- "${CLAUDE_CODE_VERSION}"
 
 # prek on PATH, not only through mise. A pre-push hook calls prek by the path it
 # was installed from, and falls back to a bare `prek` when that path is gone -
 # which it is whenever the hook was written from a mise data dir that did not
 # survive, such as a sandbox's own home. Keep in step with mise.toml.
-ARG PREK_VERSION=0.5.9
+ARG PREK_VERSION=0.5.10
 RUN curl --proto '=https' --tlsv1.2 -LsSf \
     "https://github.com/j178/prek/releases/download/v${PREK_VERSION}/prek-installer.sh" \
   | PREK_NO_MODIFY_PATH=1 sh
