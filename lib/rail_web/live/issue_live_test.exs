@@ -710,12 +710,14 @@ defmodule RailWeb.IssueLiveTest do
 
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
     render_async(view)
+    assert has_element?(view, "#issue-start-plan")
 
     {:ok, task} = issue |> Repo.preload(:project) |> Pipeline.create_task(:plan)
     reject(&Pipeline.start_task/2)
     allow(Pipeline, self(), view.pid)
 
-    view |> element("#issue-start-plan") |> render_click()
+    # Sent as the event, since another async test's broadcast can show the page its task first and hide the button.
+    render_click(view, "start_task", %{})
 
     assert_redirect(view, ~p"/tasks/#{task.id}")
   end
