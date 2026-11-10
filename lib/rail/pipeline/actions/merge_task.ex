@@ -2,7 +2,9 @@ defmodule Rail.Pipeline.Actions.MergeTask do
   @moduledoc """
   A tech lead's Merge on Finalize: the merge is claimed and broadcast, so every tab shows Merging and a second
   click is refused, then the pull request is squash-merged on GitHub outside any transaction. A refusal is kept
-  with GitHub's message unless the pull request was merged there already; a merge records who and the sha,
+  with GitHub's message unless the pull request was merged there already, or was a draft, which is taken out of
+  draft and merged once more. A kept refusal queues a check of the branch against a fresh fetch of the default
+  branch, so Update shows when that is what stood in the way; a merge records who and the sha,
   starts the parent's next children, queues the task's cleanup and its owner's message, and enters Merged.
   """
 
@@ -16,6 +18,7 @@ defmodule Rail.Pipeline.Actions.MergeTask do
   alias Rail.Pipeline.Workers.AdvanceSplit
   alias Rail.Pipeline.Workers.CleanupMergedTask
   alias Rail.Pipeline.Workers.NotifyOwner
+  alias Rail.Pipeline.Workers.RecheckBase
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Scope
@@ -37,20 +40,20 @@ defmodule Rail.Pipeline.Actions.MergeTask do
       task = %{Repo.reload!(task) | project: task.project}
       broadcast_pipeline_changed(task)
 
-      case merge(scope, task) do
-        {:ok, sha} ->
-          merged(task, %{merged_at: DateTime.utc_now(), merged_by_id: scope.user && scope.user.id, merge_sha: sha})
-
-        # Nothing was asked of GitHub as anyone, so there is no refusal to keep: the claim is let go and the lead told.
-        {:error, :no_github_token} ->
-          task |> Task.changeset(%{merge_started_at: nil}) |> Repo.update!() |> broadcast_pipeline_changed()
-          {:error, :no_github_token}
-
-        {:error, reason} ->
-          merged_elsewhere(task, reason)
-      end
+      scope |> merge(task) |> settle(scope, task, :first)
     end
   end
+
+  defp settle({:ok, sha}, %Scope{} = scope, %Task{} = task, _attempt),
+    do: merged(task, %{merged_at: DateTime.utc_now(), merged_by_id: scope.user && scope.user.id, merge_sha: sha})
+
+  # Nothing was asked of GitHub as anyone, so there is no refusal to keep: the claim is let go and the lead told.
+  defp settle({:error, :no_github_token}, _scope, %Task{} = task, _attempt) do
+    task |> Task.changeset(%{merge_started_at: nil}) |> Repo.update!() |> broadcast_pipeline_changed()
+    {:error, :no_github_token}
+  end
+
+  defp settle({:error, reason}, %Scope{} = scope, %Task{} = task, attempt), do: read_refusal(scope, task, reason, attempt)
 
   # Work its owner started without approval merges only once a lead approved the plan. A task with no round
   # never had a plan to approve.
@@ -132,16 +135,40 @@ defmodule Rail.Pipeline.Actions.MergeTask do
     Pipeline.enter_stage(task, :merged, start: false)
   end
 
-  # A pull request merged on GitHub is turned away as unmergeable, so it is read before the refusal is kept. Who
-  # merged it and when are GitHub's, not the clicker's, and a merger with no Rail account is left unnamed.
-  defp merged_elsewhere(%Task{project: %Project{} = project} = task, reason) do
+  # The pull request is read before a refusal is kept, since what GitHub turns away may be merged there already,
+  # or still a draft, which Rail opens it as and may have failed to take it out of once Review finished.
+  defp read_refusal(%Scope{} = scope, %Task{project: %Project{} = project} = task, reason, attempt) do
     with {:ok, token} <- GitHub.installation_token(project.github_installation_id),
-         {:ok, %{"merged" => true, "merge_commit_sha" => "" <> sha, "merged_at" => "" <> at} = pull} <-
-           GitHub.get_pull_request(token, project.github_repo, task.pr_number),
+         {:ok, pull} <- GitHub.get_pull_request(token, project.github_repo, task.pr_number) do
+      case pull do
+        %{"merged" => true} -> merged_elsewhere(task, pull, reason)
+        %{"draft" => true, "node_id" => "" <> node_id} when attempt == :first -> undraft(scope, task, token, node_id)
+        _open -> refused(task, reason)
+      end
+    else
+      _unread -> refused(task, reason)
+    end
+  end
+
+  # Who merged it and when are GitHub's, not the clicker's, and a merger with no Rail account is left unnamed.
+  defp merged_elsewhere(%Task{} = task, pull, reason) do
+    with %{"merge_commit_sha" => "" <> sha, "merged_at" => "" <> at} <- pull,
          {:ok, merged_at, _offset} <- DateTime.from_iso8601(at) do
       merged(task, %{merged_at: merged_at, merged_by_id: merger_id(pull["merged_by"]), merge_sha: sha})
     else
-      _unmerged_or_unread -> refused(task, reason)
+      _unreadable -> refused(task, reason)
+    end
+  end
+
+  # A draft is taken out of draft as the app, like Review does, and the merge asked for once more, still claimed.
+  defp undraft(%Scope{} = scope, %Task{} = task, token, node_id) do
+    case GitHub.mark_pull_request_ready(token, node_id) do
+      :ok ->
+        task = task |> Task.changeset(%{pr_is_draft: false}) |> Repo.update!()
+        scope |> merge(task) |> settle(scope, task, :undrafted)
+
+      {:error, reason} ->
+        refused(task, {:still_draft, reason})
     end
   end
 
@@ -154,16 +181,30 @@ defmodule Rail.Pipeline.Actions.MergeTask do
 
   defp merger_id(_unknown), do: nil
 
+  # The default branch moving under the pull request is the usual refusal, and Rail may not have fetched it yet, so
+  # the branch is checked against a fresh fetch: when it is behind, Update shows beside the refusal.
   defp refused(%Task{} = task, reason) do
     message = message(reason)
 
-    task
-    |> Task.changeset(%{merge_error: message, merge_error_at: DateTime.utc_now(), merge_started_at: nil})
-    |> Repo.update!()
-    |> broadcast_pipeline_changed()
+    {:ok, task} =
+      Repo.transaction(fn ->
+        {:ok, _job} = %{task_id: task.id} |> RecheckBase.new() |> Oban.insert()
 
+        task
+        |> Task.changeset(%{merge_error: message, merge_error_at: DateTime.utc_now(), merge_started_at: nil})
+        |> Repo.update!()
+      end)
+
+    broadcast_pipeline_changed(task)
     {:error, {:merge_refused, message}}
   end
+
+  # GraphQL answers a mutation it turned down with 200 and its errors, rather than a status of its own.
+  defp message({:still_draft, {:github_api_error, _status, %{"errors" => [%{"message" => "" <> said} | _rest]}}}),
+    do: "The pull request is a draft, and GitHub would not take it out of draft: #{said}"
+
+  defp message({:still_draft, reason}),
+    do: "The pull request is a draft, and GitHub would not take it out of draft: #{message(reason)}"
 
   defp message({:github_api_error, _status, %{"message" => message}}) when is_binary(message), do: message
   defp message({:github_api_error, status, _body}), do: "GitHub answered #{status}."

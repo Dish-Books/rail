@@ -14,6 +14,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   alias Rail.Pipeline.Workers.AdvanceSplit
   alias Rail.Pipeline.Workers.CleanupMergedTask
   alias Rail.Pipeline.Workers.NotifyOwner
+  alias Rail.Pipeline.Workers.RecheckBase
   alias Rail.Scope
   alias Rail.Users
 
@@ -288,6 +289,8 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     assert {:error, {:merge_refused, "Not mergeable"}} = Pipeline.merge_task(scope, task)
     assert %Task{stage: :finalize, merged_at: nil, merge_error: "Not mergeable"} = Repo.reload!(task)
+    # The default branch may have moved under it unfetched, so the branch is checked again to offer Update.
+    assert_enqueued(worker: RecheckBase, args: %{task_id: task.id})
 
     Req.Test.stub(Client, fn conn ->
       case {conn.method, conn.request_path} do
@@ -299,7 +302,137 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     assert {:error, {:merge_refused, "Not mergeable"}} = Pipeline.merge_task(scope, task)
     assert %Task{stage: :finalize, merged_at: nil} = Repo.reload!(task)
+
+    # Merged, GitHub says, but with no commit or time to record, so the refusal is kept rather than a merge guessed.
+    Req.Test.stub(Client, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"PUT", _merge} -> conn |> Plug.Conn.put_status(405) |> Req.Test.json(%{"message" => "Not mergeable"})
+        {"POST", _token} -> Req.Test.json(conn, %{"token" => "ghs_app"})
+        {"GET", _pull} -> Req.Test.json(conn, %{"number" => 151, "merged" => true, "merge_commit_sha" => nil})
+      end
+    end)
+
+    assert {:error, {:merge_refused, "Not mergeable"}} = Pipeline.merge_task(scope, task)
+    assert %Task{stage: :finalize, merged_at: nil} = Repo.reload!(task)
     refute_enqueued(worker: CleanupMergedTask)
+  end
+
+  test "a pull request stuck in draft is taken out of draft and merged as the lead", %{
+    task: task,
+    lead: %{id: lead_id},
+    scope: scope
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{pr_is_draft: true})
+    {:ok, undrafted} = Agent.start_link(fn -> false end)
+
+    Req.Test.stub(Client, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"PUT", "/repos/example/test-seed/pulls/151/merge"} ->
+          if Agent.get(undrafted, & &1) do
+            assert ["Bearer gho_priya"] = Plug.Conn.get_req_header(conn, "authorization")
+            Req.Test.json(conn, %{"merged" => true, "sha" => "9f8e7d6c5b"})
+          else
+            conn |> Plug.Conn.put_status(405) |> Req.Test.json(%{"message" => "Pull Request is still a draft"})
+          end
+
+        {"POST", "/app/installations/1/access_tokens"} ->
+          Req.Test.json(conn, %{"token" => "ghs_app"})
+
+        {"GET", "/repos/example/test-seed/pulls/151"} ->
+          Req.Test.json(conn, %{"number" => 151, "merged" => false, "draft" => true, "node_id" => "PR_kw151"})
+
+        {"POST", "/graphql"} ->
+          assert ["Bearer ghs_app"] = Plug.Conn.get_req_header(conn, "authorization")
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+          assert %{"variables" => %{"id" => "PR_kw151"}} = Jason.decode!(body)
+          Agent.update(undrafted, fn _was -> true end)
+
+          Req.Test.json(conn, %{"data" => %{"markPullRequestReadyForReview" => %{"pullRequest" => %{"isDraft" => false}}}})
+      end
+    end)
+
+    assert {:ok, %Task{stage: :merged, merged_by_id: ^lead_id, merge_sha: "9f8e7d6c5b", merge_error: nil}} =
+             Pipeline.merge_task(scope, task)
+
+    assert %Task{pr_is_draft: false, merge_started_at: nil} = Repo.reload!(task)
+    refute_enqueued(worker: RecheckBase)
+  end
+
+  test "a draft GitHub will not take out of draft, or that is refused again, keeps a refusal saying why", %{
+    task: task,
+    scope: scope
+  } do
+    draft = fn conn ->
+      Req.Test.json(conn, %{"number" => 151, "merged" => false, "draft" => true, "node_id" => "PR_kw151"})
+    end
+
+    Req.Test.stub(Client, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"PUT", _merge} ->
+          conn |> Plug.Conn.put_status(405) |> Req.Test.json(%{"message" => "Pull Request is still a draft"})
+
+        {"POST", "/app/installations/1/access_tokens"} ->
+          Req.Test.json(conn, %{"token" => "ghs_app"})
+
+        {"GET", _pull} ->
+          draft.(conn)
+
+        {"POST", "/graphql"} ->
+          Req.Test.json(conn, %{"errors" => [%{"message" => "Resource not accessible by integration"}]})
+      end
+    end)
+
+    message =
+      "The pull request is a draft, and GitHub would not take it out of draft: Resource not accessible by integration"
+
+    assert {:error, {:merge_refused, ^message}} = Pipeline.merge_task(scope, task)
+    assert %Task{stage: :finalize, merge_error: ^message, merge_started_at: nil} = Repo.reload!(task)
+
+    # GraphQL itself down says so the way any other refusal does.
+    Req.Test.stub(Client, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"PUT", _merge} ->
+          conn |> Plug.Conn.put_status(405) |> Req.Test.json(%{"message" => "Pull Request is still a draft"})
+
+        {"POST", "/app/installations/1/access_tokens"} ->
+          Req.Test.json(conn, %{"token" => "ghs_app"})
+
+        {"GET", _pull} ->
+          draft.(conn)
+
+        {"POST", "/graphql"} ->
+          conn |> Plug.Conn.put_status(502) |> Req.Test.json(%{})
+      end
+    end)
+
+    assert {:error,
+            {:merge_refused,
+             "The pull request is a draft, and GitHub would not take it out of draft: GitHub answered 502."}} =
+             Pipeline.merge_task(scope, Repo.reload!(task))
+
+    # Taken out of draft but refused again, it is asked once more only, and GitHub's second refusal is kept.
+    {:ok, merges} = Agent.start_link(fn -> 0 end)
+
+    Req.Test.stub(Client, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"PUT", _merge} ->
+          Agent.update(merges, &(&1 + 1))
+          conn |> Plug.Conn.put_status(405) |> Req.Test.json(%{"message" => "Pull Request is still a draft"})
+
+        {"POST", "/app/installations/1/access_tokens"} ->
+          Req.Test.json(conn, %{"token" => "ghs_app"})
+
+        {"GET", _pull} ->
+          draft.(conn)
+
+        {"POST", "/graphql"} ->
+          Req.Test.json(conn, %{"data" => %{"markPullRequestReadyForReview" => %{"pullRequest" => %{"isDraft" => false}}}})
+      end
+    end)
+
+    assert {:error, {:merge_refused, "Pull Request is still a draft"}} = Pipeline.merge_task(scope, Repo.reload!(task))
+    assert 2 = Agent.get(merges, & &1)
+    assert %Task{stage: :finalize, merge_error: "Pull Request is still a draft"} = Repo.reload!(task)
   end
 
   test "a refusal GitHub gives no message for, or that never reached GitHub, still says why", %{
