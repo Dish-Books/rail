@@ -1,7 +1,9 @@
 defmodule RailWeb.GithubWebhookControllerTest do
   use RailWeb.ConnCase, async: true
 
+  alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Projects
   alias Rail.Repo
 
   setup %{conn: conn} do
@@ -76,5 +78,60 @@ defmodule RailWeb.GithubWebhookControllerTest do
 
     ping = Jason.encode!(%{"zen" => "Anything added dilutes everything else."})
     assert conn |> sign.(ping, "ping") |> post(~p"/webhooks/github", ping) |> json_response(200) == %{"ignored" => true}
+  end
+
+  test "hands a Rail-tracked project only its pull requests, so its GitHub issues are never mirrored", %{
+    conn: conn,
+    sign: sign
+  } do
+    key = "Hook#{System.unique_integer([:positive])}"
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Rail-tracked",
+        github_repo: "example/#{key}",
+        github_installation_id: 1,
+        tracker: :local,
+        key: key,
+        default_branch: "main",
+        clone_path: "/tmp/#{key}"
+      })
+
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Merged on GitHub"})
+    %Issue{id: issue_id} = Repo.update!(Issue.pull_request_changeset(issue, %{pr_number: 12}))
+    delivery = %{"repository" => %{"full_name" => "example/#{key}"}, "installation" => %{"id" => 1}}
+    opened = Jason.encode!(Map.merge(delivery, %{"action" => "opened", "issue" => github_issue_json()}))
+
+    assert conn |> sign.(opened, "issues") |> post(~p"/webhooks/github", opened) |> json_response(200) == %{
+             "ignored" => true
+           }
+
+    merged =
+      delivery
+      |> Map.merge(%{
+        "action" => "closed",
+        "pull_request" => %{"merged" => true, "number" => 12, "head" => %{"ref" => "x"}, "base" => %{"ref" => "main"}}
+      })
+      |> Jason.encode!()
+
+    assert conn |> sign.(merged, "pull_request") |> post(~p"/webhooks/github", merged) |> json_response(200) == %{
+             "received" => true
+           }
+
+    assert %Issue{state: :done} = Repo.get!(Issue, issue_id)
+  end
+
+  test "ignores a Linear-tracked project's pull request", %{conn: conn, sign: sign, project: project} do
+    body =
+      Jason.encode!(%{
+        "action" => "closed",
+        "pull_request" => %{"merged" => true, "number" => 12, "head" => %{"ref" => "x"}, "base" => %{"ref" => "main"}},
+        "repository" => %{"full_name" => project.github_repo},
+        "installation" => %{"id" => project.github_installation_id}
+      })
+
+    assert conn |> sign.(body, "pull_request") |> post(~p"/webhooks/github", body) |> json_response(200) == %{
+             "ignored" => true
+           }
   end
 end
