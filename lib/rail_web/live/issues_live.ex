@@ -541,6 +541,18 @@ defmodule RailWeb.IssuesLive do
     {:noreply, socket}
   end
 
+  # Only a relation change reads blockers again, so a Linear project's list is not asked about on every change.
+  def handle_info({:issue_relations_changed, ids}, socket) do
+    issues = shown_issues(socket.assigns)
+
+    socket =
+      if Enum.any?(issues, &(&1.id in ids)),
+        do: read_blockers(socket, socket.assigns.blockers_for, issues),
+        else: socket
+
+    {:noreply, socket}
+  end
+
   def handle_info({:issue_comments_changed, _issue_id}, socket), do: {:noreply, socket}
 
   def handle_info({:workflows_changed, _project_id}, socket), do: {:noreply, reload_data(socket)}

@@ -100,7 +100,7 @@ defmodule Rail.Issues.Tracker do
 
   @doc """
   What blocks each of the tickets `external_ids` names on `project`, and what each blocks, keyed by external id.
-  Each related ticket is an unsaved `Issue`.
+  Each related ticket is an `Issue`.
   """
   @callback get_issue_relations(Project.t(), [String.t()]) ::
               {:ok, %{String.t() => %{blocked_by: [Issue.t()], blocks: [Issue.t()]}}} | {:error, term()}

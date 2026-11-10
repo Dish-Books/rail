@@ -3482,6 +3482,53 @@ defmodule RailWeb.IssuesLiveTest do
       refute has_element?(view, "#issue-card-#{blocked.id} [data-qa='issue-blocked']")
     end
 
+    test "a Rail-tracked issue's edits and blockers reach the list without a reload, and others' relations do not", %{
+      conn: conn
+    } do
+      key = "Lst#{System.unique_integer([:positive])}"
+
+      {:ok, local} =
+        Projects.create_project(system_scope(), %{
+          name: "Rail-tracked",
+          github_repo: "example/#{key}",
+          github_installation_id: 1,
+          tracker: :local,
+          key: key,
+          default_branch: "main",
+          clone_path: "/tmp/#{key}"
+        })
+
+      {:ok, %Issue{id: blocked_id} = blocked} = Issues.create_issue(system_scope(), local, %{title: "Waits"})
+
+      {:ok, %Issue{identifier: blocker_identifier} = blocker} =
+        Issues.create_issue(system_scope(), local, %{title: "Goes first"})
+
+      stub(Issues, :get_blockers, fn issues -> call_original(Issues, :get_blockers, [issues]) end)
+
+      conn = init_test_session(conn, %{selected_project_id: local.id})
+      {:ok, view, _html} = live(conn, ~p"/issues")
+      render_async(view)
+      refute has_element?(view, "#issue-card-#{blocked_id} [data-qa='issue-blocked']")
+
+      {:ok, _issue} = Issues.edit_issue(system_scope(), blocked, %{"title" => "Waits its turn", "priority" => "urgent"})
+      assert has_element?(view, "#issue-card-#{blocked_id} [data-qa='issue-title']", "Waits its turn")
+      assert has_element?(view, "#issue-card-#{blocked_id} [data-qa='issue-priority-badge']", "Urgent")
+
+      :ok = Issues.block_issue(system_scope(), blocker, blocked)
+      render_async(view)
+
+      assert has_element?(
+               view,
+               "#issue-card-#{blocked_id} [data-qa='issue-blocked'][title='Blocked by #{blocker_identifier}']"
+             )
+
+      # A relation between issues the list does not show reads nothing again.
+      stub(Issues, :get_blockers, fn _issues -> raise "read again" end)
+      send(view.pid, {:issue_relations_changed, ["iss_elsewhere", "iss_other"]})
+      render_async(view)
+      assert has_element?(view, "#issue-card-#{blocked_id} [data-qa='issue-blocked']")
+    end
+
     test "blockers Linear fails to read leave the rows unmarked", %{conn: conn, insert: insert} do
       blocked = insert.("NST-7", %{})
       stub(Issues, :get_blockers, fn _issues -> raise "Linear is down" end)

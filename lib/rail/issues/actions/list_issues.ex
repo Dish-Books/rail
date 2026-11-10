@@ -12,7 +12,8 @@ defmodule Rail.Issues.Actions.ListIssues do
   match in all.
 
   Options: `:project_id` (one id or a list), `:owner_user_id`, `:cycle_id` (Linear's id for the cycle, or a list), `:state`,
-  `:show_finished`, `:search`, `:completed_after`, `:archived`, `:priority`, `:limit`, `:offset` and `:preload`.
+  `:show_finished`, `:search`, `:completed_after`, `:archived`, `:priority`, `:exclude_ids`, `:limit`, `:offset` and
+  `:preload`.
 
   An issue archived in its tracker is left out unless a task holds it, or
   `archived: true` asks for every one.
@@ -32,6 +33,7 @@ defmodule Rail.Issues.Actions.ListIssues do
       |> filter_search(opts[:search])
       |> filter_completed_after(opts[:completed_after])
       |> filter_archived(Keyword.get(opts, :archived, false))
+      |> filter_excluded(opts[:exclude_ids])
 
     priority_counts =
       matching
@@ -92,6 +94,9 @@ defmodule Rail.Issues.Actions.ListIssues do
 
   defp filter_archived(query, false),
     do: where(query, [i], is_nil(i.archived_at) or i.id in subquery(from(t in Task, select: t.issue_id)))
+
+  defp filter_excluded(query, nil), do: query
+  defp filter_excluded(query, ids) when is_list(ids), do: where(query, [i], i.id not in ^ids)
 
   defp filter_priority(query, nil), do: query
   defp filter_priority(query, priority), do: where(query, [i], i.priority == ^priority)

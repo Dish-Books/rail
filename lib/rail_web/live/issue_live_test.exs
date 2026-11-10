@@ -10,6 +10,7 @@ defmodule RailWeb.IssueLiveTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Issues.Workers.LinearSync
+  alias Rail.Issues.Workers.LinkTrackerUrl
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
@@ -1375,5 +1376,237 @@ defmodule RailWeb.IssueLiveTest do
       render_async(view)
       refute_received :blockers_read
     end
+  end
+
+  describe "a Rail-tracked issue" do
+    setup %{user: user, project: project} do
+      key = "Edp#{System.unique_integer([:positive])}"
+
+      {:ok, local} =
+        Projects.create_project(system_scope(), %{
+          name: "Rail-tracked",
+          github_repo: "example/#{key}",
+          github_installation_id: 1,
+          tracker: :local,
+          key: key,
+          default_branch: "main",
+          clone_path: "/tmp/#{key}"
+        })
+
+      {:ok, _user} = Users.update_user(system_scope(), user, %{project_ids: [project.id, local.id]})
+      {:ok, issue} = Issues.create_issue(system_scope(), local, %{title: "Filed as it was", description: "Old"})
+      # Blockers come from Rail's own relations here, so they are read for real.
+      stub(Issues, :get_blockers, fn issues -> call_original(Issues, :get_blockers, [issues]) end)
+
+      %{local: local, issue: issue}
+    end
+
+    test "the title, priority and estimate save as they are picked, and every open page shows them", %{
+      conn: conn,
+      issue: %Issue{id: issue_id}
+    } do
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+      {:ok, second, _html} = live(conn, ~p"/issues/#{issue_id}")
+
+      assert has_element?(view, "#issue-title-#{issue_id}[contenteditable='true'][data-saved='Filed as it was']")
+
+      view |> element("#issue-title-#{issue_id}") |> render_hook("edit_issue", %{"title" => "Renamed in place"})
+      view |> element("#issue-priority-urgent") |> render_click()
+      view |> element("#issue-estimate-8") |> render_click()
+
+      assert %Issue{title: "Renamed in place", priority: :urgent, estimate: 8} = Repo.get!(Issue, issue_id)
+      assert has_element?(second, "#issue-title-#{issue_id}[data-saved='Renamed in place']")
+      assert has_element?(second, "#issue-priority", "Urgent")
+      assert has_element?(second, "#issue-estimate", "8 Points")
+
+      view |> element("#issue-estimate-none") |> render_click()
+      assert has_element?(second, "#issue-estimate", "No points")
+    end
+
+    test "an emptied title saves nothing, and the page keeps the saved one", %{conn: conn, issue: %Issue{id: issue_id}} do
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+
+      view |> element("#issue-title-#{issue_id}") |> render_hook("edit_issue", %{"title" => "  "})
+
+      assert %Issue{title: "Filed as it was"} = Repo.get!(Issue, issue_id)
+      assert has_element?(view, "#issue-title-#{issue_id}[data-saved='Filed as it was']")
+    end
+
+    test "only the title, priority and estimate are taken from the page's event", %{
+      conn: conn,
+      issue: %Issue{id: issue_id}
+    } do
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+
+      view
+      |> element("#issue-title-#{issue_id}")
+      |> render_hook("edit_issue", %{"title" => "Renamed", "description" => "Overwritten"})
+
+      assert %Issue{title: "Renamed", description: "Old"} = Repo.get!(Issue, issue_id)
+    end
+
+    test "an estimate the menu does not offer is shown as it is, in its place", %{
+      conn: conn,
+      issue: %Issue{id: issue_id} = issue
+    } do
+      {:ok, _issue} = Issues.edit_issue(system_scope(), issue, %{"estimate" => "4"})
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+
+      assert has_element?(view, "#issue-estimate", "4 Points")
+      assert has_element?(view, "#issue-estimate-menu li:nth-child(5) #issue-estimate-4")
+      assert has_element?(view, "#issue-estimate-1", "1 Point")
+    end
+
+    test "a parent is searched for and set, the breadcrumb and its Sub-issues follow, and clearing removes both", %{
+      conn: conn,
+      local: local,
+      issue: %Issue{id: issue_id} = issue
+    } do
+      {:ok, %Issue{id: parent_id, identifier: parent_identifier}} =
+        Issues.create_issue(system_scope(), local, %{title: "Review sends one round"})
+
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+      {:ok, parent_page, _html} = live(conn, ~p"/issues/#{parent_id}")
+      picker = "#issue-parent-picker-#{issue_id}"
+
+      assert has_element?(view, "#issue-parent", "No parent")
+      view |> element("#issue-parent") |> render_click()
+      view |> form("#{picker}-search-form", %{q: "one round"}) |> render_change()
+      view |> element("#{picker}-issue-#{parent_id}") |> render_click()
+
+      assert has_element?(view, "#issue-parent-link", parent_identifier)
+      assert has_element?(view, "#issue-parent", "Review sends one round")
+      refute has_element?(view, "#{picker}-menu")
+      assert has_element?(parent_page, "#issue-sub-issues-#{issue.identifier}")
+
+      view |> element("#issue-parent") |> render_click()
+      view |> element("#{picker}-none") |> render_click()
+
+      refute has_element?(view, "#issue-parent-link")
+      refute has_element?(parent_page, "#issue-sub-issues")
+    end
+
+    test "the issue and its direct sub-issues are not offered as its parent, and one further down is refused", %{
+      conn: conn,
+      local: local,
+      issue: %Issue{id: issue_id} = issue
+    } do
+      {:ok, %Issue{id: child_id} = child} = Issues.create_issue(system_scope(), local, %{title: "Child", parent: issue})
+
+      {:ok, %Issue{id: grandchild_id, identifier: grandchild_identifier}} =
+        Issues.create_issue(system_scope(), local, %{title: "Grandchild", parent: child})
+
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+      picker = "#issue-parent-picker-#{issue_id}"
+      view |> element("#issue-parent") |> render_click()
+
+      refute has_element?(view, "#{picker}-issue-#{issue_id}")
+      refute has_element?(view, "#{picker}-issue-#{child_id}")
+      view |> element("#{picker}-issue-#{grandchild_id}") |> render_click()
+
+      assert has_element?(view, "#{picker}-error", "#{grandchild_identifier} is a sub-issue of this issue")
+      assert %Issue{parent_external_id: nil} = Repo.get!(Issue, issue_id)
+
+      # Escape closes the menu and its reason.
+      view |> element(picker) |> render_keydown(%{"key" => "Escape"})
+      refute has_element?(view, "#{picker}-menu")
+    end
+
+    test "a blocker added on one issue shows on both pages without a reload, and removing it clears both", %{
+      conn: conn,
+      local: local,
+      issue: %Issue{id: issue_id, identifier: identifier}
+    } do
+      {:ok, %Issue{id: blocker_id, identifier: blocker_identifier}} =
+        Issues.create_issue(system_scope(), local, %{title: "Goes first"})
+
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+      {:ok, blocker_page, _html} = live(conn, ~p"/issues/#{blocker_id}")
+      render_async(view)
+      picker = "#issue-blocked-by-picker-#{issue_id}"
+
+      view |> element("#{picker}-trigger") |> render_click()
+      refute has_element?(view, "#{picker}-issue-#{issue_id}")
+      view |> element("#{picker}-issue-#{blocker_id}") |> render_click()
+
+      render_async(view)
+      render_async(blocker_page)
+      assert has_element?(view, "#issue-blocked-by-#{blocker_identifier}", "Goes first")
+      assert has_element?(blocker_page, "#issue-blocks-#{identifier}", "Filed as it was")
+
+      # Related either way, so neither picker offers it again.
+      view |> element("#issue-blocks-picker-#{issue_id}-trigger") |> render_click()
+      refute has_element?(view, "#issue-blocks-picker-#{issue_id}-issue-#{blocker_id}")
+
+      blocker_page |> element("#issue-blocks-#{identifier}-remove") |> render_click()
+
+      render_async(view)
+      render_async(blocker_page)
+      refute has_element?(view, "#issue-blocked-by")
+      refute has_element?(blocker_page, "#issue-blocks")
+    end
+
+    test "a relation naming an issue the page does not show removes nothing", %{
+      conn: conn,
+      local: local,
+      issue: %Issue{id: issue_id} = issue
+    } do
+      {:ok, first} = Issues.create_issue(system_scope(), local, %{title: "First"})
+      {:ok, second} = Issues.create_issue(system_scope(), local, %{title: "Second"})
+      :ok = Issues.block_issue(system_scope(), first, second)
+      :ok = Issues.block_issue(system_scope(), first, issue)
+
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+      render_async(view)
+
+      render_click(view, "remove_relation", %{"blocker_id" => first.id, "blocked_id" => second.id})
+      render_click(view, "remove_relation", %{"blocker_id" => "iss_missing", "blocked_id" => issue_id})
+
+      assert %{blocked_by: [], blocks: [_second, _issue]} =
+               Issues.get_blockers([%{first | project: local}])[first.external_id]
+    end
+
+    test "a link triage made is listed once and opens in a new tab", %{conn: conn, issue: %Issue{id: issue_id}} do
+      args = %{issue_id: issue_id, url: "https://dishbooks.slack.com/archives/C07/p17", title: "Slack thread"}
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+
+      assert :ok = perform_job(LinkTrackerUrl, args)
+      assert :ok = perform_job(LinkTrackerUrl, args)
+
+      assert [_link] =
+               view
+               |> render()
+               |> Floki.parse_document!()
+               |> Floki.find("a[href='https://dishbooks.slack.com/archives/C07/p17'][target='_blank']")
+
+      assert has_element?(view, "a[href='https://dishbooks.slack.com/archives/C07/p17'] .pi-slack-logo")
+      assert has_element?(view, "a[href='https://dishbooks.slack.com/archives/C07/p17']", "Slack thread")
+
+      assert :ok = perform_job(LinkTrackerUrl, %{args | url: "https://example.com/doc", title: "Doc"})
+      assert has_element?(view, "a[href='https://example.com/doc'] .pi-link-simple")
+    end
+  end
+
+  test "a Linear issue's page offers nothing to edit", %{conn: conn, project: project} do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_read_only",
+        identifier: "IPG-40",
+        title: "Kept in Linear",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    {:ok, view, _html} = live(conn, ~p"/issues/#{issue.id}")
+
+    assert has_element?(view, "h1#issue-title:not([contenteditable])", "Kept in Linear")
+    assert has_element?(view, "div#issue-priority")
+    assert has_element?(view, "div#issue-estimate")
+    refute has_element?(view, "[phx-hook='IssueDescription']")
+    refute has_element?(view, "#issue-parent")
+    refute has_element?(view, "#issue-relation-pickers")
+    refute has_element?(view, "[id^='issue-drop-overlay']")
   end
 end

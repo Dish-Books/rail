@@ -1851,6 +1851,51 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "#task-page")
   end
 
+  test "the Issue tab edits a Rail-tracked issue's priority and follows its blockers without a reload", %{conn: conn} do
+    key = "Tab#{System.unique_integer([:positive])}"
+
+    {:ok, local} =
+      Projects.create_project(system_scope(), %{
+        name: "Rail-tracked",
+        github_repo: "example/#{key}",
+        github_installation_id: 1,
+        tracker: :local,
+        key: key,
+        default_branch: "main",
+        clone_path: "/tmp/#{key}"
+      })
+
+    {:ok, %Issue{id: issue_id} = issue} = Issues.create_issue(system_scope(), local, %{title: "Kept in Rail"})
+
+    {:ok, %Issue{identifier: blocker_identifier} = blocker} =
+      Issues.create_issue(system_scope(), local, %{title: "First"})
+
+    {:ok, task} = Pipeline.create_task(issue, :plan)
+    stub(Issues, :get_blockers, fn issues -> call_original(Issues, :get_blockers, [issues]) end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
+    render_async(view)
+
+    view |> element("#issue-priority-high") |> render_click()
+
+    assert %Issue{priority: :high} = Repo.get!(Issue, issue_id)
+    assert has_element?(view, "#issue-priority", "High")
+
+    :ok = Issues.block_issue(system_scope(), blocker, issue)
+    render_async(view)
+    assert has_element?(view, "#issue-blocked-by-#{blocker_identifier}", "First")
+
+    # Another pair's relation, or one heard on another tab, reads nothing again.
+    {:ok, third} = Issues.create_issue(system_scope(), local, %{title: "Third"})
+    :ok = Issues.block_issue(system_scope(), blocker, third)
+    render_async(view)
+    assert has_element?(view, "#issue-blocked-by-#{blocker_identifier}")
+
+    render_patch(view, ~p"/tasks/#{task.id}?item=plan")
+    :ok = Issues.unblock_issue(system_scope(), blocker, issue)
+    refute has_element?(view, "#issue-blocked-by")
+  end
+
   test "the Issue tab changes the status from Properties and leaves the task where it is", %{
     conn: conn,
     task: %{id: task_id, stage: stage, issue_id: issue_id} = task

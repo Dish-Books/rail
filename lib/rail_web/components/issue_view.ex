@@ -6,15 +6,19 @@ defmodule RailWeb.Components.IssueView do
   The issue page and the task page's first tab are the same view of the same
   thing, so both render this; the task page hides the section pointing at the
   task the reader is already on. The events it raises - `assign`,
-  `filter_assignees`, `comment`, `draft_comment`, `start_task`, `adopt_pull_request` - belong
-  to whichever LiveView renders it.
+  `filter_assignees`, `comment`, `draft_comment`, `start_task`, `adopt_pull_request`, and for a
+  Rail-tracked issue `edit_issue` and `remove_relation` - belong to whichever LiveView renders it.
   """
   use RailWeb, :html
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Workflows.Schemas.Workflow
+  alias RailWeb.Components.DescriptionEditor
+  alias RailWeb.Components.IssuePicker
   alias RailWeb.Components.StatusPicker
+
+  @estimates [nil, 1, 2, 3, 5, 8, 13]
 
   attr :issue, :any, required: true
   attr :current_scope, :any, required: true
@@ -33,22 +37,36 @@ defmodule RailWeb.Components.IssueView do
   attr :blockers, :any, default: nil
 
   def issue_view(assigns) do
-    blocked_by = (assigns.blockers && assigns.blockers.blocked_by) || []
-    {done, total} = Issue.calculate_sub_issue_count(assigns.issue)
+    %Issue{id: issue_id} = issue = assigns.issue
+    {done, total} = Issue.calculate_sub_issue_count(issue)
+    sub_issues = Enum.map(Issue.calculate_children(issue), &%{issue: &1, in_project: true})
+
+    # Each row says which way its relation points, so its x removes that one.
+    blocked_by =
+      for entry <- (assigns.blockers && assigns.blockers.blocked_by) || [],
+          do: Map.put(entry, :remove, %{blocker_id: entry.issue.id, blocked_id: issue_id})
+
+    blocks =
+      for entry <- (assigns.blockers && assigns.blockers.blocks) || [],
+          do: Map.put(entry, :remove, %{blocker_id: issue_id, blocked_id: entry.issue.id})
 
     assigns =
       assigns
-      |> assign(:parent, Issue.calculate_parent(assigns.issue))
+      |> assign(:editable, issue.tracker == :local)
+      |> assign(:parent, Issue.calculate_parent(issue))
       |> assign(:blocked_by, blocked_by)
       |> assign(:open_blocker_count, length(Issue.calculate_open_blockers(blocked_by)))
-      |> assign(:blocks, (assigns.blockers && assigns.blockers.blocks) || [])
-      |> assign(:sub_issues, Enum.map(Issue.calculate_children(assigns.issue), &%{issue: &1, in_project: true}))
+      |> assign(:blocks, blocks)
+      |> assign(:related_ids, [issue_id | Enum.map(blocked_by ++ blocks, & &1.issue.id)])
+      |> assign(:sub_issues, sub_issues)
+      |> assign(:parent_exclude_ids, [issue_id | Enum.map(sub_issues, & &1.issue.id)])
+      |> assign(:links, if(is_list(issue.links), do: issue.links, else: []))
       |> assign(:sub_issue_count, "#{done}/#{total}")
       # A Rail-tracked issue's link is this page.
       |> assign(:show_tracker_link, assigns.issue.url not in [nil, ""] and assigns.issue.tracker != :local)
 
     ~H"""
-    <div id="issue-page" data-qa="issue-page" class="max-w-5xl mx-auto space-y-6">
+    <div id="issue-page" data-qa="issue-page" class="relative max-w-5xl mx-auto space-y-6">
       <nav class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
         <.link
           navigate={~p"/issues"}
@@ -75,12 +93,28 @@ defmodule RailWeb.Components.IssueView do
         <article class="flex-1 min-w-0 space-y-6">
           <div class="space-y-2">
             <h1
+              :if={!@editable}
               id="issue-title"
               data-qa="issue-title"
               class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100"
             >
               {@issue.title}
             </h1>
+            <%!-- LiveView leaves the heading alone; the saved title rides on data-saved, which the hook takes when it can. --%>
+            <h1
+              :if={@editable}
+              id={"issue-title-#{@issue.id}"}
+              data-qa="issue-title"
+              phx-hook="IssueTitle"
+              phx-update="ignore"
+              contenteditable="true"
+              role="textbox"
+              aria-label="Title"
+              data-saved={@issue.title}
+              data-placeholder="Issue title"
+              phx-no-format
+              class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100 break-words cursor-text focus:outline-none"
+            >{@issue.title}</h1>
             <p
               :if={@workflow}
               id="issue-workflow-byline"
@@ -104,7 +138,16 @@ defmodule RailWeb.Components.IssueView do
             </p>
           </div>
 
-          <div id="issue-description" data-qa="issue-description">
+          <.live_component
+            :if={@editable}
+            module={DescriptionEditor}
+            id={"issue-description-editor-#{@issue.id}"}
+            issue={@issue}
+            current_scope={@current_scope}
+            overlay_id={"issue-drop-overlay-#{@issue.id}"}
+          />
+
+          <div :if={!@editable} id="issue-description" data-qa="issue-description">
             <.markdown
               :if={@issue.description not in [nil, ""]}
               content={@issue.description}
@@ -126,6 +169,7 @@ defmodule RailWeb.Components.IssueView do
             count={to_string(@open_blocker_count)}
             entries={@blocked_by}
             blocked
+            removable={@editable}
           />
 
           <.issue_relation_list
@@ -134,7 +178,31 @@ defmodule RailWeb.Components.IssueView do
             title="Blocks"
             count={to_string(length(@blocks))}
             entries={@blocks}
+            removable={@editable}
           />
+
+          <div
+            :if={@editable}
+            id="issue-relation-pickers"
+            class="flex flex-wrap items-center gap-1 -mx-2"
+          >
+            <.live_component
+              module={IssuePicker}
+              id={"issue-blocked-by-picker-#{@issue.id}"}
+              kind={:blocked_by}
+              issue={@issue}
+              exclude_ids={@related_ids}
+              current_scope={@current_scope}
+            />
+            <.live_component
+              module={IssuePicker}
+              id={"issue-blocks-picker-#{@issue.id}"}
+              kind={:blocks}
+              issue={@issue}
+              exclude_ids={@related_ids}
+              current_scope={@current_scope}
+            />
+          </div>
 
           <.issue_relation_list
             :if={@sub_issues != []}
@@ -266,10 +334,31 @@ defmodule RailWeb.Components.IssueView do
               labeled
             />
 
-            <div id="issue-priority" data-qa="issue-priority" class="flex items-center gap-2.5">
+            <div
+              :if={!@editable}
+              id="issue-priority"
+              data-qa="issue-priority"
+              class="flex items-center gap-2.5"
+            >
               <.priority_icon priority={@issue.priority} />
               <span>{Issue.priority_label(@issue.priority)}</span>
             </div>
+
+            <.property_menu
+              :if={@editable}
+              id="issue-priority"
+              options={
+                for priority <- Issue.priorities(), do: {priority, Issue.priority_label(priority)}
+              }
+              current={@issue.priority}
+              field="priority"
+            >
+              <:trigger>
+                <.priority_icon priority={@issue.priority} />
+                <span>{Issue.priority_label(@issue.priority)}</span>
+              </:trigger>
+              <:option :let={priority}><.priority_icon priority={priority} /></:option>
+            </.property_menu>
 
             <div
               :if={!@owner_editable}
@@ -356,11 +445,47 @@ defmodule RailWeb.Components.IssueView do
               </div>
             </div>
 
-            <div id="issue-estimate" data-qa="issue-estimate" class="flex items-center gap-2.5">
+            <div
+              :if={!@editable}
+              id="issue-estimate"
+              data-qa="issue-estimate"
+              class="flex items-center gap-2.5"
+            >
               <.icon name="pi-triangle" class="h-4 w-4 text-slate-500 dark:text-slate-400" />
               <span :if={@issue.estimate}>{@issue.estimate} Points</span>
               <span :if={!@issue.estimate} class="text-slate-400 dark:text-slate-500">No points</span>
             </div>
+
+            <.property_menu
+              :if={@editable}
+              id="issue-estimate"
+              options={
+                for estimate <- estimates(@issue.estimate), do: {estimate, estimate_label(estimate)}
+              }
+              current={@issue.estimate}
+              field="estimate"
+            >
+              <:trigger>
+                <.icon name="pi-triangle" class="h-4 w-4 text-slate-500 dark:text-slate-400" />
+                <span class={!@issue.estimate && "text-slate-400 dark:text-slate-500"}>
+                  {estimate_label(@issue.estimate)}
+                </span>
+              </:trigger>
+              <:option>
+                <.icon name="pi-triangle" class="h-4 w-4 text-slate-500 dark:text-slate-400" />
+              </:option>
+            </.property_menu>
+
+            <.live_component
+              :if={@editable}
+              module={IssuePicker}
+              id={"issue-parent-picker-#{@issue.id}"}
+              kind={:parent}
+              issue={@issue}
+              parent={@parent}
+              exclude_ids={@parent_exclude_ids}
+              current_scope={@current_scope}
+            />
           </section>
 
           <section class="space-y-3">
@@ -368,8 +493,22 @@ defmodule RailWeb.Components.IssueView do
             <p id="issue-project">{@issue.project.name}</p>
           </section>
 
-          <section :if={@show_tracker_link or @issue.branch_name} class="space-y-3">
+          <section :if={@show_tracker_link or @links != [] or @issue.branch_name} class="space-y-3">
             <h2 class="text-xs font-medium text-slate-500 dark:text-slate-400">Links</h2>
+
+            <a
+              :for={link <- @links}
+              href={link.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              id={"issue-link-#{link.id}"}
+              title={link.url}
+              class="flex items-center gap-2.5 text-slate-900 dark:text-slate-100 hover:underline rounded focus-visible:outline-2 focus-visible:outline-blue-500"
+            >
+              <.icon name={link_icon(link.url)} class="h-4 w-4 text-slate-500 dark:text-slate-400" />
+              <span class="flex-1 min-w-0 truncate">{link.title}</span>
+              <.icon name="pi-arrow-square-out" class="h-4 w-4 text-slate-400 dark:text-slate-500" />
+            </a>
 
             <a
               :if={@show_tracker_link}
@@ -405,6 +544,76 @@ defmodule RailWeb.Components.IssueView do
             </button>
           </section>
         </aside>
+      </div>
+
+      <%!-- The description's hook shows this while files are dragged over the page; a drop anywhere goes into it. --%>
+      <div
+        :if={@editable}
+        id={"issue-drop-overlay-#{@issue.id}"}
+        class="hidden absolute -inset-3 z-30 rounded-xl border-2 border-dashed border-blue-500 bg-blue-500/10 justify-center pointer-events-none"
+      >
+        <div class="sticky top-[40vh] self-start mt-[40vh] flex items-center gap-2 h-fit px-4 py-2 rounded-full bg-white dark:bg-slate-900 border border-blue-500 text-sm font-medium text-slate-900 dark:text-slate-100 shadow-lg">
+          <.icon name="pi-image" class="h-4 w-4 text-blue-500 dark:text-blue-400" />Drop to add to the description
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :options, :list, required: true
+  attr :current, :any, required: true
+  attr :field, :string, required: true
+  slot :trigger, required: true
+  slot :option, required: true
+
+  # A Properties line that opens a menu of values, each applied as it is picked.
+  defp property_menu(assigns) do
+    ~H"""
+    <div
+      class="relative"
+      phx-click-away={JS.hide(to: "##{@id}-menu")}
+      phx-window-keydown={JS.hide(to: "##{@id}-menu")}
+      phx-key="Escape"
+    >
+      <button
+        type="button"
+        id={@id}
+        data-qa={@id}
+        aria-haspopup="menu"
+        phx-click={JS.toggle(to: "##{@id}-menu") |> JS.focus_first(to: "##{@id}-menu")}
+        class="-mx-2 w-[calc(100%+1rem)] flex items-center gap-2.5 px-2 py-1 rounded-lg text-left hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500"
+      >
+        {render_slot(@trigger)}
+      </button>
+
+      <div
+        id={"#{@id}-menu"}
+        role="menu"
+        class="hidden absolute z-20 left-0 top-full mt-1 w-48 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg"
+      >
+        <ul class="max-h-80 overflow-y-auto p-1">
+          <li :for={{value, label} <- @options}>
+            <button
+              type="button"
+              role="menuitem"
+              id={"#{@id}-#{value || "none"}"}
+              phx-click={
+                JS.push("edit_issue", value: %{@field => value || ""})
+                |> JS.hide(to: "##{@id}-menu")
+                |> JS.focus(to: "##{@id}")
+              }
+              class={[
+                "w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500",
+                value == @current && "bg-slate-100 dark:bg-slate-800"
+              ]}
+            >
+              {render_slot(@option, value)}
+              <span>{label}</span>
+              <.icon :if={value == @current} name="pi-check" class="h-4 w-4 ml-auto shrink-0" />
+            </button>
+          </li>
+        </ul>
       </div>
     </div>
     """
@@ -478,6 +687,20 @@ defmodule RailWeb.Components.IssueView do
   end
 
   defp user_name(user), do: user.name || user.login
+
+  # An estimate the menu does not offer is shown as it is, in its place.
+  defp estimates(current) when is_integer(current) and current not in @estimates,
+    do: [nil | Enum.sort([current | tl(@estimates)])]
+
+  defp estimates(_offered), do: @estimates
+
+  defp estimate_label(nil), do: "No points"
+  defp estimate_label(1), do: "1 Point"
+  defp estimate_label(estimate), do: "#{estimate} Points"
+
+  defp link_icon(url) do
+    if (URI.parse(url).host || "") =~ ~r/(^|\.)slack\.com$/, do: "pi-slack-logo", else: "pi-link-simple"
+  end
 
   # Threads are the comments that answer nothing; their replies hang off them.
   defp threads(comments), do: comments |> Enum.filter(&is_nil(&1.parent_id)) |> by_time()

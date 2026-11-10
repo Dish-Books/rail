@@ -62,7 +62,7 @@ defmodule RailWeb.TaskLive do
   @agents [:plan, :engineer, :qa, :review, :demo, :review_lead]
 
   # What the Issue tab's owner menu and comments raise, handled as the issue page handles them.
-  @issue_events ["assign", "filter_assignees", "draft_comment", "comment"]
+  @issue_events ["assign", "filter_assignees", "draft_comment", "comment", "edit_issue", "remove_relation"]
 
   def mount(_params, _session, socket) do
     socket =
@@ -642,6 +642,13 @@ defmodule RailWeb.TaskLive do
     end
   end
 
+  def handle_info({:issue_relations_changed, ids}, %{assigns: %{issue: %Issue{id: issue_id}}} = socket) do
+    socket = if issue_id in ids, do: read_blockers(socket, true), else: socket
+    {:noreply, socket}
+  end
+
+  def handle_info({:issue_relations_changed, _ids}, socket), do: {:noreply, socket}
+
   def handle_info({event, _id}, socket) when event in [:issue_comments_changed, :issues_synced] do
     {:noreply, socket}
   end
@@ -1104,6 +1111,7 @@ defmodule RailWeb.TaskLive do
       :owner_user,
       :parent,
       :children,
+      :links,
       task: [runs: :role],
       comments: [:author_user, replies: :author_user]
     ]

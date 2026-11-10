@@ -12,6 +12,9 @@ defmodule RailWeb.IssueAssetController do
       conn
       |> put_resp_content_type(content_type)
       |> put_resp_header("cache-control", "private, max-age=3600")
+      # People upload these files, so none may run script as Rail when opened on its own.
+      |> put_resp_header("x-content-type-options", "nosniff")
+      |> put_resp_header("content-security-policy", "sandbox")
       |> send_resp(200, body)
     else
       _missing -> send_resp(conn, 404, "Not found")

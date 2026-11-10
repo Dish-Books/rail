@@ -155,6 +155,7 @@ defmodule RailWeb.OverviewLive do
   # Neither moves a task.
   def handle_info({:issue_created, _issue_id}, socket), do: {:noreply, socket}
   def handle_info({:issue_comments_changed, _issue_id}, socket), do: {:noreply, socket}
+  def handle_info({:issue_relations_changed, _issue_ids}, socket), do: {:noreply, socket}
 
   # The overview is the tasks in flight and the runs behind them; a task stands
   # where the latest run at its own stage left it.

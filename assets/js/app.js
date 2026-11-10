@@ -16,6 +16,8 @@ import { DiffSection } from "./hooks/diff_section";
 import { DiffWrap } from "./hooks/diff_wrap";
 import { Elapsed } from "./hooks/elapsed";
 import { ImageFallback } from "./hooks/image_fallback";
+import { IssueDescription } from "./hooks/issue_description";
+import { IssueTitle } from "./hooks/issue_title";
 import { JumpToLine } from "./hooks/jump_to_line";
 import { LocalResetTime } from "./hooks/local_reset_time";
 import { LocalTime } from "./hooks/local_time";
@@ -48,7 +50,9 @@ const Hooks = {
   ScrollSelectedTab,
   ImageFallback,
   SidebarResize,
-  StatusMenu
+  StatusMenu,
+  IssueTitle,
+  IssueDescription
 };
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content");

@@ -226,6 +226,10 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
              priority_counts: %{urgent: 1, high: 2, low: 1, medium: 1}
            } = Issues.list_issues(priority: :high)
 
+    # Leaving issues out happens before the limit, so the page still fills.
+    assert %{issues: [%Issue{id: ^third}, %Issue{id: ^fourth}]} =
+             Issues.list_issues(limit: 2, exclude_ids: [first, second])
+
     # Updating the oldest issue brings it to the top.
     issues |> List.first() |> Issue.changeset(%{title: "Touched"}) |> Repo.update!()
     assert %{issues: [%Issue{id: ^fifth}]} = Issues.list_issues(limit: 1)

@@ -129,6 +129,9 @@ defmodule RailWeb.IssueAssetControllerTest do
     served = get(conn, "/issues/#{issue_id}/assets/#{name}")
     assert response(served, 200) == "PNG_BYTES"
     assert response_content_type(served, :png) =~ "image/png"
+    # A person uploads these, so none may run script as Rail when opened on its own.
+    assert ["nosniff"] = get_resp_header(served, "x-content-type-options")
+    assert ["sandbox"] = get_resp_header(served, "content-security-policy")
 
     other_path = "/r2_bucket/#{other_id}/#{name}"
 
