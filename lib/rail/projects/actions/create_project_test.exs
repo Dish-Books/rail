@@ -111,7 +111,7 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
              Projects.create_project(
                scope,
                Map.put(
-                 %{attrs | github_repo: "example/unlinked", key: "UNL"},
+                 %{attrs | github_repo: "example/unlinked", key: "UNLCP"},
                  :linear_workspace_id,
                  "lw_missing"
                )

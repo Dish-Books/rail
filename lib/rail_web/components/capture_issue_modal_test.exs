@@ -75,7 +75,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         name: "Inactive Project",
         github_repo: "org/capture-13105",
         github_installation_id: 13_105,
-        key: "INA",
+        key: "INACIM",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13105",
         linear_state_ids: %{"triage" => "st_triage"},
@@ -520,7 +520,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         name: "Other Project",
         github_repo: "org/capture-13120",
         github_installation_id: 13_120,
-        key: "OTH",
+        key: "OTHCIM",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13120",
         linear_state_ids: %{"triage" => "st_triage"},
@@ -539,7 +539,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
              live(init_test_session(log_in_user(conn, user), %{selected_project_id: project.id}), ~p"/issues")
 
     stub(Rail.Issues, :create_issue, fn _scope, project, attrs ->
-      {:ok, %Issue{id: "iss_reset", identifier: "OTH-1", title: attrs.title, state: :triage, project: project}}
+      {:ok, %Issue{id: "iss_reset", identifier: "OTHCIM-1", title: attrs.title, state: :triage, project: project}}
     end)
 
     filled = %{"title" => "Filed", "description" => "Body", "project_id" => other.id, "priority" => "low"}
