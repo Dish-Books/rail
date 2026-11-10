@@ -72,6 +72,16 @@ defmodule RailWeb.Components.Nav do
           />
 
           <.nav_item
+            section={:testing}
+            active={@current_section == :testing}
+            label="Testing"
+            icon_active="pi-test-tube-fill"
+            icon_inactive="pi-test-tube"
+            href={~p"/testing"}
+            attention_count={0}
+          />
+
+          <.nav_item
             section={:issues}
             active={@current_section == :issues}
             label="Issues"
@@ -388,6 +398,7 @@ defmodule RailWeb.Components.Nav do
   defp section_title(:issues), do: "Issues"
   defp section_title(:sandboxes), do: "Sandboxes"
   defp section_title(:triage), do: "Triage"
+  defp section_title(:testing), do: "Testing"
   defp section_title(:learnings), do: "Learnings"
 
   defp section_title(section)

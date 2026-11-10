@@ -12,7 +12,9 @@ defmodule Rail.Issues.Actions.ListIssues do
   match in all.
 
   Options: `:project_id` (one id or a list), `:owner_user_id`, `:cycle_id` (Linear's id for the cycle, or a list), `:state`,
-  `:show_finished`, `:search`, `:completed_after`, `:archived`, `:priority`, `:limit`, `:offset` and `:preload`.
+  `:show_finished`, `:search`, `:completed_after`, `:archived`, `:priority`, `:testing`, `:limit`, `:offset` and `:preload`.
+
+  `testing: true` narrows to the testing queue, archived tickets included, oldest Done first.
 
   An issue archived in its tracker is left out unless a task holds it, or
   `archived: true` asks for every one.
@@ -28,10 +30,11 @@ defmodule Rail.Issues.Actions.ListIssues do
       |> filter_owner(opts[:owner_user_id])
       |> filter_cycle(opts[:cycle_id])
       |> filter_state(opts[:state])
-      |> filter_finished(Keyword.get(opts, :show_finished, false))
+      |> filter_finished(Keyword.get(opts, :show_finished, opts[:testing] == true))
       |> filter_search(opts[:search])
       |> filter_completed_after(opts[:completed_after])
-      |> filter_archived(Keyword.get(opts, :archived, false))
+      |> filter_archived(Keyword.get(opts, :archived, opts[:testing] == true))
+      |> filter_testing(opts[:testing])
 
     priority_counts =
       matching
@@ -43,7 +46,7 @@ defmodule Rail.Issues.Actions.ListIssues do
     issues =
       matching
       |> filter_priority(opts[:priority])
-      |> order_by([i], desc: i.updated_at, desc: i.id)
+      |> order_issues(opts[:testing])
       |> limit_to(opts[:limit])
       |> offset_by(opts[:offset])
       |> preload(^Keyword.get(opts, :preload, []))
@@ -93,8 +96,15 @@ defmodule Rail.Issues.Actions.ListIssues do
   defp filter_archived(query, false),
     do: where(query, [i], is_nil(i.archived_at) or i.id in subquery(from(t in Task, select: t.issue_id)))
 
+  defp filter_testing(query, true), do: where(query, [i], i.state == :done and i.testing_state in ^[:waiting, :testing])
+
+  defp filter_testing(query, _off), do: query
+
   defp filter_priority(query, nil), do: query
   defp filter_priority(query, priority), do: where(query, [i], i.priority == ^priority)
+
+  defp order_issues(query, true), do: order_by(query, [i], asc: i.completed_at, asc: i.id)
+  defp order_issues(query, _off), do: order_by(query, [i], desc: i.updated_at, desc: i.id)
 
   defp limit_to(query, nil), do: query
   defp limit_to(query, limit), do: limit(query, ^limit)

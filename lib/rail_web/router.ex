@@ -113,6 +113,8 @@ defmodule RailWeb.Router do
       live "/sandboxes", SandboxesLive
       live "/triage", TriageLive
       live "/triage/:id", TriageLive
+      live "/testing", TestingLive
+      live "/testing/:id", TestingLive
       live "/tasks/:id", TaskLive
       live "/settings/connected-accounts", Settings.ConnectedAccountsLive
     end

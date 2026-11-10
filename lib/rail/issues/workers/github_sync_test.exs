@@ -118,6 +118,42 @@ defmodule Rail.Issues.Workers.GithubSyncTest do
     assert_enqueued(worker: GithubSync, args: %{project_id: project_id, pass: "comments", page: 1})
   end
 
+  test "an issue the sync closes as completed waits for testing, and one it inserts already closed does not", %{
+    github_project: %{id: project_id} = project
+  } do
+    active = github_issue(project, %{number: 14, state: :in_review})
+    recently = DateTime.utc_now() |> DateTime.shift(day: -1) |> DateTime.to_iso8601()
+
+    Req.Test.expect(Client, 2, fn conn ->
+      case conn.request_path do
+        "/app/installations/1/access_tokens" ->
+          Req.Test.json(conn, %{"token" => "ghs_token"})
+
+        "/repos/example/test-gh/issues" ->
+          Req.Test.json(conn, [
+            github_issue_json(%{
+              "node_id" => active.external_id,
+              "number" => 14,
+              "state" => "closed",
+              "state_reason" => "completed",
+              "closed_at" => recently
+            }),
+            github_issue_json(%{
+              "number" => 15,
+              "state" => "closed",
+              "state_reason" => "completed",
+              "closed_at" => recently
+            })
+          ])
+      end
+    end)
+
+    assert :ok = perform_job(GithubSync, %{project_id: project_id, pass: "closed", page: 1})
+
+    assert %Issue{state: :done, testing_state: :waiting} = Repo.reload!(active)
+    assert %Issue{state: :done, testing_state: nil} = Repo.get_by!(Issue, project_id: project_id, number: 15)
+  end
+
   test "Rail's owner stays unless GitHub names a different Rail user", %{github_project: %{id: project_id} = project} do
     [%{id: kept_id}, %{id: other_id}] =
       Enum.map(["7001", "7002"], fn github_id ->

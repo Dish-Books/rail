@@ -5,7 +5,7 @@ defmodule RailWeb.Components.IssueView do
 
   The issue page and the task page's first tab are the same view of the same
   thing, so both render this; the task page hides the section pointing at the
-  task the reader is already on. The events it raises - `assign`,
+  task the reader is already on. The testing page renders it read-only, raising no events. The events it raises - `assign`,
   `filter_assignees`, `comment`, `draft_comment`, `start_task`, `adopt_pull_request` - belong
   to whichever LiveView renders it.
   """
@@ -18,9 +18,11 @@ defmodule RailWeb.Components.IssueView do
 
   attr :issue, :any, required: true
   attr :current_scope, :any, required: true
-  attr :assignees, :list, required: true
-  attr :assignee_query, :string, required: true
-  attr :comment_nonce, :integer, required: true
+  attr :assignees, :list, default: []
+  attr :assignee_query, :string, default: ""
+  attr :comment_nonce, :integer, default: 0
+  # The testing page shows the ticket with no status or owner menu and no comment box.
+  attr :read_only, :boolean, default: false
   attr :show_task, :boolean, default: true
   # While GitHub is asked for a pull request the issue's work was opened as, which it would start at Review on.
   attr :checking_pull_request, :boolean, default: false
@@ -46,6 +48,7 @@ defmodule RailWeb.Components.IssueView do
       |> assign(:sub_issue_count, "#{done}/#{total}")
       # A Rail-tracked issue's link is this page.
       |> assign(:show_tracker_link, assigns.issue.url not in [nil, ""] and assigns.issue.tracker != :local)
+      |> assign(:show_testing_link, Issue.in_testing_queue?(assigns.issue))
 
     ~H"""
     <div id="issue-page" data-qa="issue-page" class="max-w-5xl mx-auto space-y-6">
@@ -164,6 +167,7 @@ defmodule RailWeb.Components.IssueView do
               </div>
 
               <.comment_form
+                :if={!@read_only}
                 id={"comment-reply-form-#{thread.id}"}
                 nonce={@comment_nonce}
                 parent_id={thread.id}
@@ -171,7 +175,10 @@ defmodule RailWeb.Components.IssueView do
               />
             </div>
 
-            <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+            <div
+              :if={!@read_only}
+              class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+            >
               <.comment_form
                 id="issue-comment-form"
                 nonce={@comment_nonce}
@@ -258,7 +265,13 @@ defmodule RailWeb.Components.IssueView do
           <section class="space-y-3">
             <h2 class="text-xs font-medium text-slate-500 dark:text-slate-400">Properties</h2>
 
+            <div :if={@read_only} id="issue-status" class="flex items-center gap-2.5">
+              <.status_icon state={Issue.calculate_shown_state(@issue)} />
+              <span>{Issue.calculate_status_name(@issue)}</span>
+            </div>
+
             <.live_component
+              :if={!@read_only}
               module={StatusPicker}
               id={"issue-status-picker-#{@issue.id}"}
               issue={@issue}
@@ -272,7 +285,7 @@ defmodule RailWeb.Components.IssueView do
             </div>
 
             <div
-              :if={!@owner_editable}
+              :if={!@owner_editable or @read_only}
               id="issue-owner"
               data-qa="issue-owner"
               class="flex items-center gap-2.5"
@@ -283,7 +296,7 @@ defmodule RailWeb.Components.IssueView do
             </div>
 
             <div
-              :if={@owner_editable}
+              :if={@owner_editable and !@read_only}
               class="relative"
               phx-click-away={JS.hide(to: "#issue-owner-menu")}
             >
@@ -360,6 +373,19 @@ defmodule RailWeb.Components.IssueView do
               <.icon name="pi-triangle" class="h-4 w-4 text-slate-500 dark:text-slate-400" />
               <span :if={@issue.estimate}>{@issue.estimate} Points</span>
               <span :if={!@issue.estimate} class="text-slate-400 dark:text-slate-500">No points</span>
+            </div>
+
+            <div :if={@issue.testing_state} id="issue-testing" class="flex items-center gap-2.5">
+              <.link
+                :if={@show_testing_link}
+                navigate={~p"/testing/#{@issue.id}"}
+                id="issue-testing-link"
+                title="Open on the Testing page"
+                class="rounded hover:opacity-80 focus-visible:outline-2 focus-visible:outline-blue-500"
+              >
+                <.testing_badge state={@issue.testing_state} />
+              </.link>
+              <.testing_badge :if={!@show_testing_link} state={@issue.testing_state} />
             </div>
           </section>
 

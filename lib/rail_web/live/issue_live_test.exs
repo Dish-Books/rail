@@ -583,6 +583,52 @@ defmodule RailWeb.IssueLiveTest do
     refute has_element?(view, "#issue-start-architect")
   end
 
+  test "a Tested ticket's page reads Tested and still offers its status, owner and comment controls", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_tested",
+        identifier: "IPG-40",
+        title: "Tested already",
+        state: :in_review
+      })
+      |> Repo.insert!()
+      |> Issue.tracker_changeset(%{state: :done, state_name: "Done"})
+      |> Repo.update!()
+
+    {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    assert has_element?(view, "#issue-testing-link[href='/testing/#{issue.id}'] [data-testing-state='waiting']")
+
+    {:ok, _tested} = Issues.mark_issue_tested(system_scope(), issue)
+
+    assert has_element?(view, "#issue-testing [data-testing-state='tested']", "Tested")
+    refute has_element?(view, "#issue-testing-link")
+    assert has_element?(view, "#issue-status-picker-#{issue.id}")
+    assert has_element?(view, "#issue-owner-menu")
+    assert has_element?(view, "#issue-comment-form")
+  end
+
+  test "an issue that never reached Done since testing shipped shows no testing line", %{conn: conn, project: project} do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_untested",
+        identifier: "IPG-41",
+        title: "Done before",
+        state: :done
+      })
+      |> Repo.insert!()
+
+    {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    assert has_element?(view, "#issue-title", "Done before")
+    refute has_element?(view, "#issue-testing")
+  end
+
   test "an issue whose work has a pull request links it, and offers Review in place of Plan", %{
     conn: conn,
     project: project

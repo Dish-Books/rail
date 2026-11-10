@@ -273,6 +273,38 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
              Issues.create_issue(system_scope(), project, %{title: "Planned already"})
   end
 
+  test "create_issue/2 keeps the testing state and notes of a row saved first", %{project: project} do
+    mirrored =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_TST-86",
+        identifier: "TST-86",
+        title: "Tested already",
+        state: :in_review
+      })
+      |> Repo.insert!()
+      |> Issue.tracker_changeset(%{state: :done})
+      |> Repo.update!()
+
+    {:ok, _noted} = Issues.save_testing_notes(system_scope(), mirrored, "Checked the export")
+    {:ok, _tested} = Issues.mark_issue_tested(system_scope(), mirrored)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_TST-86", "identifier" => "TST-86", "title" => "Tested already"}
+          }
+        }
+      })
+    end)
+
+    assert {:ok, %Issue{testing_state: :tested, testing_notes: "Checked the export"}} =
+             Issues.create_issue(system_scope(), project, %{title: "Tested already"})
+  end
+
   test "create_issue/2 returns an error when Linear does not create it", %{project: project} do
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => false}}})

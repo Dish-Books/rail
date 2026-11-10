@@ -326,4 +326,74 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
     assert %{issues: [%Issue{id: ^mine_id}], total: 1} = Issues.list_issues(owner_user_id: owner_id)
     assert %{total: 2} = Issues.list_issues()
   end
+
+  test "testing: true lists the queue in the projects asked for, archived ones too, oldest Done first", %{
+    project: %Project{id: project_id},
+    other_project: %Project{id: other_id}
+  } do
+    done = fn external_id, project_id, completed_at ->
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project_id,
+        external_id: external_id,
+        identifier: external_id,
+        title: external_id,
+        state: :in_review
+      })
+      |> Repo.insert!()
+      |> Issue.tracker_changeset(%{state: :done, completed_at: completed_at})
+      |> Repo.update!()
+    end
+
+    %Issue{id: newer_id} = done.("lin_q1", project_id, ~U[2026-11-09 10:00:00Z])
+    %Issue{id: older_id} = done.("lin_q2", project_id, ~U[2026-11-08 10:00:00Z])
+
+    %Issue{id: archived_id} =
+      "lin_q3"
+      |> done.(project_id, ~U[2026-11-09 12:00:00Z])
+      |> Issue.tracker_changeset(%{archived_at: ~U[2026-11-10 00:00:00Z]})
+      |> Repo.update!()
+
+    %Issue{id: testing_id} = done.("lin_q4", project_id, ~U[2026-11-09 11:00:00Z])
+    {:ok, _noted} = Issues.save_testing_notes(system_scope(), %Issue{id: testing_id, project_id: project_id}, "Trying")
+
+    tested = done.("lin_q5", project_id, ~U[2026-11-07 10:00:00Z])
+    {:ok, _tested} = Issues.mark_issue_tested(system_scope(), tested)
+
+    "lin_q6"
+    |> done.(project_id, ~U[2026-11-07 10:00:00Z])
+    |> Issue.tracker_changeset(%{state: :canceled})
+    |> Repo.update!()
+
+    "lin_q7"
+    |> done.(project_id, ~U[2026-11-07 10:00:00Z])
+    |> Issue.tracker_changeset(%{state: :duplicate})
+    |> Repo.update!()
+
+    done.("lin_q8", other_id, ~U[2026-11-07 10:00:00Z])
+
+    # Done before testing shipped: inserted already Done, so the trigger never ran.
+    %Issue{}
+    |> Issue.tracker_changeset(%{
+      project_id: project_id,
+      external_id: "lin_q9",
+      identifier: "lin_q9",
+      title: "lin_q9",
+      state: :done,
+      completed_at: ~U[2026-11-01 10:00:00Z]
+    })
+    |> Repo.insert!()
+
+    assert %{
+             issues: [
+               %Issue{id: ^older_id, testing_state: :waiting},
+               %Issue{id: ^newer_id},
+               %Issue{id: ^testing_id, testing_state: :testing},
+               %Issue{id: ^archived_id}
+             ],
+             total: 4
+           } = Issues.list_issues(project_id: project_id, testing: true)
+
+    assert %{total: 5} = Issues.list_issues(project_id: [project_id, other_id], testing: true)
+  end
 end

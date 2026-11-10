@@ -17,6 +17,8 @@ defmodule Rail.Issues.Schemas.Issue do
   @started_states [:in_progress, :in_review]
   @optional_steps [:product, :design, :architect, :demo]
   @plan_steps [:product, :design, :architect]
+  @testing_states [:waiting, :testing, :tested, :sent_to_triage]
+  @queued_testing_states [:waiting, :testing]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "iss"}
   schema "issues" do
@@ -48,6 +50,9 @@ defmodule Rail.Issues.Schemas.Issue do
     field :skipped_steps, {:array, Ecto.Enum}, values: @optional_steps, default: []
     # The stages its workflow's file named, custom ones with their prompts, copied the same way; empty runs the built-ins.
     embeds_many :stages, IssueStage, on_replace: :delete
+    # Where its testing stands since it last reached Done, and what the testers wrote. A trigger sets both on that move.
+    field :testing_state, Ecto.Enum, values: @testing_states, read_after_writes: true
+    field :testing_notes, :string, read_after_writes: true
     # Linear's ids for its cycle and its parent, which only the tracker sets.
     field :cycle_external_id, :string
 
@@ -137,6 +142,15 @@ defmodule Rail.Issues.Schemas.Issue do
   """
   def pull_request_changeset(issue, attrs), do: cast(issue, attrs, [:pr_number, :pr_url, :pr_title])
 
+  @doc "Casts only the testing notes, and moves a Waiting ticket to In testing once they hold more than whitespace."
+  def testing_notes_changeset(%__MODULE__{} = issue, attrs) do
+    changeset = cast(issue, attrs, [:testing_notes], empty_values: [])
+
+    if issue.testing_state == :waiting and String.trim(get_field(changeset, :testing_notes) || "") != "",
+      do: put_change(changeset, :testing_state, :testing),
+      else: changeset
+  end
+
   def priorities, do: @priorities
   def states, do: @states
   def finished_states, do: @finished_states
@@ -160,6 +174,18 @@ defmodule Rail.Issues.Schemas.Issue do
   def state_label(:canceled), do: "Canceled"
   def state_label(:duplicate), do: "Duplicate"
   def state_label(_other), do: nil
+
+  def testing_states, do: @testing_states
+
+  def testing_label(:waiting), do: "Waiting"
+  def testing_label(:testing), do: "In testing"
+  def testing_label(:tested), do: "Tested"
+  def testing_label(:sent_to_triage), do: "Sent to triage"
+  def testing_label(_other), do: nil
+
+  @doc "Whether the ticket is in the testing queue: in Done, and Waiting or In testing."
+  def in_testing_queue?(%__MODULE__{state: :done, testing_state: testing}), do: testing in @queued_testing_states
+  def in_testing_queue?(%__MODULE__{}), do: false
 
   @doc "The steps a workflow can turn off: Product, Design and Architect in Plan, and the demo in Review."
   def optional_steps, do: @optional_steps

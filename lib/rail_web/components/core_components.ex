@@ -86,6 +86,8 @@ defmodule RailWeb.CoreComponents do
   defdelegate stage_sequence(assigns), to: Components.StageSequence
   defdelegate status_icon(assigns), to: Components.IssueIcons
   defdelegate task_layout(assigns), to: Components.TaskLayout
+  defdelegate testing_badge(assigns), to: Components.TestingBadge
+  defdelegate testing_queue(assigns), to: Components.TestingQueue
   defdelegate throughput_chart(assigns), to: Components.ThroughputChart
   defdelegate top_app_bar(assigns), to: Components.Nav
   defdelegate triage_image(assigns), to: Components.TriageImage
