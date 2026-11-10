@@ -42,7 +42,9 @@ defmodule Rail.Git.Actions.SetCommitIdentity do
   defp args(nil), do: []
 
   # The key sits in the task's scratch folder, which the sandbox sees and the commit never holds. With no
-  # key the commits go unsigned rather than not at all, whatever the machine's own config says.
+  # key the commits go unsigned rather than not at all, whatever the machine's own config says. A key file
+  # is signed with by ssh-keygen, since a machine may sign through an agent's program, such as 1Password's,
+  # that knows only its own keys and turns a file's away.
   defp signing(%Task{scratch_path: scratch_path}, %{signing_key: key, signing_public_key: public})
        when is_binary(key) and is_binary(public) do
     path = Path.join([scratch_path, ".signing", "key"])
@@ -52,7 +54,12 @@ defmodule Rail.Git.Actions.SetCommitIdentity do
     File.chmod!(path, 0o600)
     File.write!(path <> ".pub", public)
 
-    [{:worktree, "gpg.format", "ssh"}, {:worktree, "user.signingkey", path}, {:worktree, "commit.gpgsign", "true"}]
+    [
+      {:worktree, "gpg.format", "ssh"},
+      {:worktree, "gpg.ssh.program", "ssh-keygen"},
+      {:worktree, "user.signingkey", path},
+      {:worktree, "commit.gpgsign", "true"}
+    ]
   end
 
   defp signing(%Task{}, _unsigned), do: [{:worktree, "commit.gpgsign", "false"}]
