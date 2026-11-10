@@ -1,6 +1,7 @@
 defmodule Rail.Projects.Actions.CreateProjectTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Issues
   alias Rail.Projects
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
@@ -38,6 +39,27 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
 
     assert {:ok, %Project{name: "System Project", github_repo: ^repo}} =
              Projects.create_project(scope, attrs)
+  end
+
+  test "a project Rail tracks itself saves without a Linear workspace, and keeps its tracker once it has issues" do
+    key = "Trk#{System.unique_integer([:positive])}"
+
+    # The default Req adapter raises on any request, so Linear is never asked about the key.
+    assert {:ok, %Project{tracker: :local, key: ^key, linear_workspace_id: nil, linear_team_id: nil} = project} =
+             Projects.create_project(Scope.for_system(), %{
+               name: "Rail-tracked",
+               github_repo: "example/#{key}",
+               github_installation_id: 1,
+               tracker: :local,
+               key: key,
+               default_branch: "main",
+               clone_path: "/tmp/#{key}"
+             })
+
+    {:ok, _issue} = Issues.create_issue(Scope.for_system(), project, %{title: "First"})
+
+    assert {:error, changeset} = Projects.update_project(Scope.for_system(), project, %{tracker: :github})
+    assert %{tracker: ["cannot change once the project has issues"]} = errors_on(changeset)
   end
 
   test "returns validation error changeset for missing required fields" do

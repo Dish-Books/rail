@@ -29,4 +29,9 @@ defmodule Rail.Issues.Actions.SyncIssuesTest do
     assert {:ok, started_at, 0} = DateTime.from_iso8601(started_at)
     assert DateTime.compare(started_at, asked_at) != :lt
   end
+
+  test "a Rail-tracked project has nothing to pull, and queues nothing", %{project: project} do
+    assert {:error, :unsupported} = Issues.sync_issues(%{project | tracker: :local})
+    refute_enqueued(worker: LinearSync)
+  end
 end

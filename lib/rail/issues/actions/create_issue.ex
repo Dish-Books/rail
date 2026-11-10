@@ -2,7 +2,7 @@ defmodule Rail.Issues.Actions.CreateIssue do
   @moduledoc """
   Opens a ticket in the project's tracker and records it locally.
 
-  Creating stays synchronous, unlike every later write. The tracker is what names an
+  Creating stays synchronous, unlike every later write. The tracker, or Postgres for Rail's own, names an
   issue (`identifier`, `branch_name`, the URL), and the pipeline uses those the
   moment the row exists: the branch a worktree is cut on and the scratch file a
   product run writes its ticket into are both named after them. An issue that had
@@ -47,6 +47,8 @@ defmodule Rail.Issues.Actions.CreateIssue do
         parent_external_id: tracked[:parent_external_id]
       }
       |> Issue.changeset(local)
+      # Rail's own tracker draws the id its URL names. On the struct it would make the insert read as an update.
+      |> Ecto.Changeset.put_change(:id, tracked[:id])
       |> Repo.insert(
         on_conflict: {:replace_all_except, [:id, :branch_name, :inserted_at, :cycle_external_id, :parent_external_id]},
         conflict_target: :external_id,

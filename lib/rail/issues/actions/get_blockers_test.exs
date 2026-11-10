@@ -96,4 +96,11 @@ defmodule Rail.Issues.Actions.GetBlockersTest do
 
     assert %{} == Issues.get_blockers([issue, elsewhere])
   end
+
+  test "a Rail-tracked issue has no blockers yet, and asks nobody", %{project: project} do
+    local = %{project | tracker: :local}
+
+    assert %{} ==
+             Issues.get_blockers([%Issue{id: "iss_local", project_id: local.id, external_id: "loc_1", project: local}])
+  end
 end

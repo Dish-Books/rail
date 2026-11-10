@@ -16,9 +16,9 @@ defmodule Rail.Projects.Schemas.Project do
     field :name, :string
     field :github_repo, :string
     field :github_installation_id, :integer
-    # Where its issues live, and the key they are named by: a Linear project's team key, or the prefix a
-    # GitHub project's issues are named `<key>#<number>` with. Fixed once there are any.
-    field :tracker, Ecto.Enum, values: [:linear, :github], default: :linear
+    # Where its issues live, Linear, GitHub or Rail itself, and the key they are named by: a Linear team's key, or the
+    # prefix in `<key>#<number>` on GitHub and `<key>-<number>` on Rail. Fixed once there are any.
+    field :tracker, Ecto.Enum, values: [:linear, :github, :local], default: :linear
     field :key, :string
     field :default_branch, :string
     field :linear_team_id, :string

@@ -203,6 +203,42 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     assert has_element?(view, "#project-team-key-#{project.id}", "(GitHub)")
   end
 
+  test "a project Rail tracks itself is made with its key and no Linear fields", %{admin_conn: conn} do
+    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+    view |> element("#new-project-button") |> render_click()
+    refute has_element?(view, "#project-key-hint")
+
+    view |> form("#project-form", %{"project" => %{"tracker" => "local"}}) |> render_change()
+
+    refute has_element?(view, "#project-linear-workspace-input")
+    assert has_element?(view, "#project-key-input[placeholder='e.g. RAIL']")
+    assert has_element?(view, "#project-key-hint", "Names its issues, as in KEY-12. Fixed once the project has issues.")
+
+    key = "Own#{System.unique_integer([:positive])}"
+    repo = "example/#{key}"
+
+    view
+    |> form("#project-form", %{
+      "project" => %{
+        "name" => "Rail Tracked",
+        "github_repo" => repo,
+        "github_installation_id" => "9990",
+        "default_branch" => "main",
+        "tracker" => "local",
+        "key" => key,
+        "clone_path" => "/tmp/own"
+      }
+    })
+    |> render_submit()
+
+    refute has_element?(view, "#project-modal")
+
+    assert %Project{id: project_id, tracker: :local, key: ^key, linear_team_id: nil} =
+             Repo.get_by!(Project, github_repo: repo)
+
+    assert has_element?(view, "#project-team-key-#{project_id}", "(Rail)")
+  end
+
   test "a project with issues keeps its tracker, and says so", %{admin_conn: conn, github_project: project} do
     github_issue(project)
 

@@ -55,4 +55,12 @@ defmodule Rail.Users.Actions.ListAssignableUsersTest do
     assert user_id in Enum.map(Users.list_assignable_users(tracker: :github), & &1.id)
     refute user_id in Enum.map(Users.list_assignable_users(), & &1.id)
   end
+
+  test "for a Rail-tracked issue, lists everyone, whether or not they linked Linear" do
+    {:ok, %User{id: user_id}} =
+      Users.register_oauth_user(%{github_id: "gh_assignable_local", login: "assignable-local", email: "al@example.com"})
+
+    assert user_id in Enum.map(Users.list_assignable_users(tracker: :local), & &1.id)
+    refute user_id in Enum.map(Users.list_assignable_users(tracker: :linear), & &1.id)
+  end
 end

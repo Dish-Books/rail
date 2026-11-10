@@ -5,11 +5,10 @@ defmodule Rail.Issues.Actions.SetIssueStatus do
   """
 
   import Ecto.Query
+  import Rail.Issues.Utils.WriteIssueStatus
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Tracker
-  alias Rail.Learnings
-  alias Rail.Pipeline
   alias Rail.Repo
   alias Rail.Scope
 
@@ -24,43 +23,22 @@ defmodule Rail.Issues.Actions.SetIssueStatus do
     current = Repo.one(from(i in Issue, where: i.id == ^id and i.project_id == ^project_id, preload: :project))
 
     cond do
-      is_nil(current) or not Scope.can_access_project?(scope, project_id) -> {:error, :not_found}
-      Issue.calculate_status_name(current) == name -> {:ok, current}
-      true -> with {:ok, attrs} <- Tracker.tracker(current).set_status(scope, current, status), do: write(current, attrs)
-    end
-  end
+      is_nil(current) or not Scope.can_access_project?(scope, project_id) ->
+        {:error, :not_found}
 
-  defp write(%Issue{id: id, project_id: project_id}, attrs) do
-    written =
-      Repo.transaction(fn ->
-        case Repo.one(from(i in Issue, where: i.id == ^id and i.project_id == ^project_id, lock: "FOR UPDATE")) do
-          %Issue{} = locked -> {locked, write_unless_stale(locked, attrs)}
-          nil -> Repo.rollback(:not_found)
-        end
-      end)
+      Issue.calculate_status_name(current) == name ->
+        {:ok, current}
 
-    with {:ok, {was, issue}} <- written do
-      if not Issue.finished_state?(was.state) and Issue.finished_state?(issue.state) do
-        {:ok, _job} = Learnings.handle_issue_finished(issue)
-        Pipeline.handle_issue_finished(issue)
-      end
-
-      Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, id})
-      {:ok, issue}
+      true ->
+        with {:ok, attrs} <- Tracker.tracker(current).set_status(scope, current, status),
+             do: write_issue_status(current, &calculate_written(&1, attrs))
     end
   end
 
   # A webhook newer than this answer has already said where the ticket went.
-  defp write_unless_stale(
-         %Issue{external_updated_at: %DateTime{} = held} = issue,
-         %{external_updated_at: answered} = attrs
-       ) do
-    if DateTime.before?(answered, held), do: issue, else: write_answer(issue, attrs)
+  defp calculate_written(%Issue{external_updated_at: %DateTime{} = held}, %{external_updated_at: answered} = attrs) do
+    if DateTime.before?(answered, held), do: %{}, else: Map.take(attrs, @written)
   end
 
-  defp write_unless_stale(%Issue{} = issue, attrs), do: write_answer(issue, attrs)
-
-  defp write_answer(%Issue{} = issue, attrs) do
-    issue |> Issue.tracker_changeset(Map.take(attrs, @written)) |> Repo.update!()
-  end
+  defp calculate_written(%Issue{}, attrs), do: Map.take(attrs, @written)
 end

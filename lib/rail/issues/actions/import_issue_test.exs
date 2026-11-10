@@ -6,6 +6,7 @@ defmodule Rail.Issues.Actions.ImportIssueTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.SyncIssue
+  alias Rail.Projects
   alias Rail.Users
 
   test "an issue Rail already has comes back without asking Linear", %{project: project} do
@@ -143,6 +144,41 @@ defmodule Rail.Issues.Actions.ImportIssueTest do
       assert {:error, :not_found} = Issues.import_issue(project, "tgh#66")
       assert {:error, :not_found} = Issues.import_issue(project, "tgh#67")
       assert {:error, :github_issues_disabled} = Issues.import_issue(project, "tgh#68")
+    end
+  end
+
+  describe "a Rail-tracked project" do
+    setup do
+      key = "Imp-#{System.unique_integer([:positive])}"
+
+      {:ok, project} =
+        Projects.create_project(system_scope(), %{
+          name: "Rail-tracked",
+          github_repo: "example/#{key}",
+          github_installation_id: 1,
+          tracker: :local,
+          key: key,
+          default_branch: "main",
+          clone_path: "/tmp/#{key}"
+        })
+
+      %{local_project: project, key: key}
+    end
+
+    test "finds an issue by its identifier in any case, or by its number, and nowhere else", %{
+      local_project: project,
+      key: key
+    } do
+      {:ok, _first} = Issues.create_issue(system_scope(), project, %{title: "First"})
+      {:ok, %Issue{id: issue_id}} = Issues.create_issue(system_scope(), project, %{title: "Second"})
+
+      assert {:ok, %Issue{id: ^issue_id}} = Issues.import_issue(project, String.downcase(key) <> "-2")
+      assert {:ok, %Issue{id: ^issue_id}} = Issues.import_issue(project, String.upcase(key) <> "-02")
+      assert {:ok, %Issue{id: ^issue_id}} = Issues.import_issue(project, "2")
+      assert {:error, :not_found} = Issues.import_issue(project, "OTHER-2")
+      assert {:error, :not_found} = Issues.import_issue(project, key <> "-two")
+      assert {:error, :not_found} = Issues.import_issue(project, key <> "-3")
+      refute_enqueued(worker: SyncIssue)
     end
   end
 end

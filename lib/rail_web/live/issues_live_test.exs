@@ -945,6 +945,58 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "[data-qa='issue-external-link'][title='Open issue in GitHub']")
   end
 
+  test "Sync Issues pulls only the projects kept outside Rail, and is gone when Rail keeps them all", %{conn: conn} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_local_sync",
+        login: "issues_live_local_sync",
+        email: "issues_live_local_sync@example.com"
+      })
+
+    n = System.unique_integer([:positive])
+
+    {:ok, %Project{id: linear_id}} =
+      Projects.create_project(system_scope(), %{
+        name: "Kept in Linear",
+        github_repo: "example/lin-#{n}",
+        github_installation_id: 557,
+        key: "LIN#{n}",
+        default_branch: "main",
+        clone_path: "/tmp/lin"
+      })
+
+    {:ok, %Project{id: local_id}} =
+      Projects.create_project(system_scope(), %{
+        name: "Kept in Rail",
+        github_repo: "example/own-#{n}",
+        github_installation_id: 557,
+        tracker: :local,
+        key: "OWN#{n}",
+        default_branch: "main",
+        clone_path: "/tmp/own"
+      })
+
+    {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [linear_id, local_id]})
+    authed_conn = log_in_user(conn, user)
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
+    view |> element("#sync-issues-button") |> render_click()
+    assert_enqueued(worker: LinearSync, args: %{project_id: linear_id})
+    assert has_element?(view, "#sync-issues-button[disabled]", "Syncing...")
+
+    send(view.pid, {:issues_synced, linear_id})
+    assert has_element?(view, "#sync-issues-button", "Sync Issues")
+
+    assert {:ok, local_view, _html} =
+             live(init_test_session(authed_conn, %{selected_project_id: local_id}), ~p"/issues")
+
+    refute has_element?(local_view, "#sync-issues-button")
+
+    {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [local_id]})
+    assert {:ok, only_local, _html} = live(log_in_user(conn, user), ~p"/issues")
+    refute has_element?(only_local, "#sync-issues-button")
+  end
+
   test "sync_issues button triggers sync on current project or all projects", %{
     conn: conn,
     project: %Project{id: seeded_id},

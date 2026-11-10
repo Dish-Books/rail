@@ -256,6 +256,45 @@ defmodule RailWeb.IssueLiveTest do
     assert %Issue{owner_user_id: nil} = Repo.get!(Issue, issue.id)
   end
 
+  test "a Rail-tracked issue offers no link to itself, and anyone with its project can own it, in every open tab", %{
+    conn: conn,
+    user: %{id: user_id} = user,
+    project: project
+  } do
+    key = "Pag#{System.unique_integer([:positive])}"
+
+    {:ok, local} =
+      Projects.create_project(system_scope(), %{
+        name: "Rail-tracked",
+        github_repo: "example/#{key}",
+        github_installation_id: 1,
+        tracker: :local,
+        key: key,
+        default_branch: "main",
+        clone_path: "/tmp/#{key}"
+      })
+
+    {:ok, _user} = Users.update_user(system_scope(), user, %{project_ids: [project.id, local.id]})
+
+    {:ok, %Issue{id: issue_id, branch_name: branch_name}} =
+      Issues.create_issue(system_scope(), local, %{title: "Kept here"})
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+    assert {:ok, second, _html} = live(conn, ~p"/issues/#{issue_id}")
+
+    refute has_element?(view, "#issue-tracker-link")
+    assert has_element?(view, "#issue-branch[data-copy-text='#{branch_name}']")
+
+    # The signed-in user never linked Linear, and is offered all the same.
+    view |> element("#issue-assign-#{user_id}") |> render_click()
+    assert has_element?(view, "#issue-owner", "Issue Live")
+
+    assert :ok =
+             perform_job(SyncIssue, %{issue_id: issue_id, fields: ["owner_user_id"], previous_owner_user_id: nil})
+
+    assert has_element?(second, "#issue-owner", "Issue Live")
+  end
+
   test "the task link reads the latest run at the task's stage, not one it retried", %{
     conn: conn,
     project: project

@@ -35,8 +35,8 @@ defmodule Rail.Issues.Schemas.Issue do
     # Set while the tracker has it archived. It still counts as shipped, but leaves the Issues list unless a task holds it.
     field :archived_at, :utc_datetime
     # Copied from the project when the issue is made, so it keeps talking to the tracker it came from.
-    field :tracker, Ecto.Enum, values: [:linear, :github], default: :linear
-    # GitHub's issue number, which its REST paths take; nil for Linear.
+    field :tracker, Ecto.Enum, values: [:linear, :github, :local], default: :linear
+    # GitHub's issue number, which its REST paths take, or the one Postgres assigns a Rail-tracked issue; nil for Linear.
     field :number, :integer
     # The tracker's own updated_at: where a poll resumes, and how a stale webhook is told apart.
     field :external_updated_at, :utc_datetime_usec
@@ -149,6 +149,7 @@ defmodule Rail.Issues.Schemas.Issue do
 
   def tracker_label(:github), do: "GitHub"
   def tracker_label(:linear), do: "Linear"
+  def tracker_label(:local), do: "Rail"
 
   def state_label(:backlog), do: "Backlog"
   def state_label(:triage), do: "Triage"
@@ -276,13 +277,23 @@ defmodule Rail.Issues.Schemas.Issue do
   defp base_changeset(issue, attrs) do
     issue
     |> cast(attrs, @cast_fields)
-    |> validate_required(@required_fields)
+    |> validate_required_fields()
     |> unique_constraint(:external_id)
+    |> unique_constraint(:number, name: :issues_project_id_number_index)
     |> foreign_key_constraint(:project_id)
     |> foreign_key_constraint(:owner_user_id)
     |> foreign_key_constraint(:workflow_id)
     |> advance_when_claimed()
   end
+
+  # Postgres names a Rail-tracked issue as it inserts it, from the number it assigns.
+  defp validate_required_fields(%Ecto.Changeset{data: %__MODULE__{id: nil}} = changeset) do
+    if get_field(changeset, :tracker) == :local,
+      do: validate_required(changeset, List.delete(@required_fields, :identifier)),
+      else: validate_required(changeset, @required_fields)
+  end
+
+  defp validate_required_fields(changeset), do: validate_required(changeset, @required_fields)
 
   # Every write goes up to the tracker, so no caller can forget to say so. This runs
   # inside the write's own transaction, which is what makes the job and the row

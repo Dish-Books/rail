@@ -533,4 +533,62 @@ defmodule Rail.Issues.Actions.SetIssueStatusTest do
       assert %Issue{state: :backlog} = Repo.get!(Issue, issue_id)
     end
   end
+
+  describe "on Rail's own tracker" do
+    setup do
+      key = "Sta#{System.unique_integer([:positive])}"
+
+      {:ok, project} =
+        Projects.create_project(system_scope(), %{
+          name: "Rail-tracked",
+          github_repo: "example/#{key}",
+          github_installation_id: 1,
+          tracker: :local,
+          key: key,
+          default_branch: "main",
+          clone_path: "/tmp/#{key}"
+        })
+
+      {:ok, parent} = Issues.create_issue(system_scope(), project, %{title: "Split me"})
+      {:ok, child} = Issues.create_issue(system_scope(), project, %{title: "A part", parent: parent})
+      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
+      %{local_project: project, parent: parent, child: child}
+    end
+
+    test "Done on a split child writes Done at once, moves the split on and queues Learnings", %{
+      local_project: project,
+      parent: parent,
+      child: %{id: child_id} = child
+    } do
+      {:ok, %Task{id: parent_task_id}} = Pipeline.create_task(parent, :split)
+
+      project
+      |> build_task(child, %{stage: :engineer, split_position: 1})
+      |> Ecto.Changeset.put_change(:parent_task_id, parent_task_id)
+      |> Repo.insert!()
+
+      assert {:ok, %Issue{id: ^child_id, state: :done, state_name: "Done", completed_at: %DateTime{}}} =
+               Issues.set_issue_status(system_scope(), child, %{id: "done", name: "Done", state: :done})
+
+      assert %Issue{state: :done, completed_at: %DateTime{}} = Repo.get!(Issue, child_id)
+      assert_receive {:issue_changed, ^child_id}
+      assert_enqueued(worker: AdvanceSplit, args: %{parent_task_id: parent_task_id})
+      assert [_once] = all_enqueued(worker: IssueFinished, args: %{issue_id: child_id})
+      refute_enqueued(worker: SyncIssue)
+    end
+
+    test "a move out of Done clears the completed time and tells nobody again", %{child: %{id: child_id} = child} do
+      {:ok, done} = Issues.set_issue_status(system_scope(), child, %{id: "done", name: "Done", state: :done})
+
+      assert {:ok, %Issue{id: ^child_id, state: :in_progress, state_name: "In Progress", completed_at: nil}} =
+               Issues.set_issue_status(system_scope(), done, %{
+                 id: "in_progress",
+                 name: "In Progress",
+                 state: :in_progress
+               })
+
+      assert [_once] = all_enqueued(worker: IssueFinished, args: %{issue_id: child_id})
+    end
+  end
 end

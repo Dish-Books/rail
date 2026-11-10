@@ -5,6 +5,7 @@ defmodule Rail.Issues.Actions.CommentTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Projects
   alias Rail.Repo
   alias Rail.Scope
   alias Rail.Users
@@ -210,6 +211,56 @@ defmodule Rail.Issues.Actions.CommentTest do
       end)
 
       assert {:error, %Req.TransportError{reason: :econnrefused}} = Issues.comment(system_scope(), issue, %{body: "Down"})
+    end
+  end
+
+  describe "a Rail-tracked issue" do
+    setup do
+      key = "Cmt#{System.unique_integer([:positive])}"
+
+      {:ok, project} =
+        Projects.create_project(system_scope(), %{
+          name: "Rail-tracked",
+          github_repo: "example/#{key}",
+          github_installation_id: 1,
+          tracker: :local,
+          key: key,
+          default_branch: "main",
+          clone_path: "/tmp/#{key}"
+        })
+
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Talk about it"})
+      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
+      %{local_issue: issue}
+    end
+
+    test "a comment and its reply are kept under the commenter's name and shown at once", %{
+      local_issue: %{id: issue_id} = issue
+    } do
+      {:ok, %{id: user_id} = user} =
+        Users.register_oauth_user(%{github_id: "gh_local_commenter", login: "local-commenter", email: "lc@example.com"})
+
+      assert {:ok, %Comment{id: comment_id, issue_id: ^issue_id, author_user_id: ^user_id, body: "Looks right"}} =
+               Issues.comment(Scope.for_user(user), issue, %{body: "Looks right"})
+
+      assert_receive {:issue_comments_changed, ^issue_id}
+
+      assert {:ok, %Comment{issue_id: ^issue_id, parent_id: ^comment_id, author_user_id: ^user_id, body: "Agreed"}} =
+               Issues.comment(Scope.for_user(user), issue, %{body: "Agreed", parent_id: comment_id})
+
+      assert_receive {:issue_comments_changed, ^issue_id}
+    end
+
+    test "a comment from Rail itself has no author, and each comment gets an id of its own", %{
+      local_issue: %{id: issue_id} = issue
+    } do
+      assert {:ok, %Comment{author_user_id: nil, author_name: "Rail", external_id: first}} =
+               Issues.comment(system_scope(), issue, %{body: "Plan approved"})
+
+      assert {:ok, %Comment{external_id: second}} = Issues.comment(system_scope(), issue, %{body: "Merged"})
+      assert first != second
+      assert [%Comment{}, %Comment{}] = Repo.all(from c in Comment, where: c.issue_id == ^issue_id)
     end
   end
 end
