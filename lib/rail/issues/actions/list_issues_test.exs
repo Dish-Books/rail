@@ -326,4 +326,65 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
     assert %{issues: [%Issue{id: ^mine_id}], total: 1} = Issues.list_issues(owner_user_id: owner_id)
     assert %{total: 2} = Issues.list_issues()
   end
+
+  describe "an ended Rail cycle" do
+    setup do
+      key = "LIC#{System.unique_integer([:positive])}"
+
+      {:ok, local} =
+        Projects.create_project(system_scope(), %{
+          name: "Listed cycles",
+          github_repo: "example/#{key}",
+          github_installation_id: 1,
+          tracker: :local,
+          key: key,
+          default_branch: "main",
+          clone_path: "/tmp/#{key}"
+        })
+
+      # Cycle 1 runs Nov 10 to 23 and closes holding `rolled` In Progress and `kept` Done.
+      :ok = Issues.close_cycle_day(~D[2026-11-10])
+      stub(Date, :utc_today, fn -> ~D[2026-11-12] end)
+      {:ok, %{cycles: [first, second | _later]}} = Issues.get_cycles(local)
+      {:ok, rolled} = Issues.create_issue(system_scope(), local, %{title: "Rolls over", estimate: 3})
+      {:ok, kept} = Issues.create_issue(system_scope(), local, %{title: "Stays", estimate: 2})
+      {:ok, rolled} = Issues.set_issue_cycle(system_scope(), rolled, first.id)
+      {:ok, kept} = Issues.set_issue_cycle(system_scope(), kept, first.id)
+      in_progress = %{id: "in_progress", name: "In Progress", state: :in_progress}
+      {:ok, rolled} = Issues.set_issue_status(system_scope(), rolled, in_progress)
+      {:ok, kept} = Issues.set_issue_status(system_scope(), kept, %{id: "done", name: "Done", state: :done})
+      :ok = Issues.close_cycle_day(~D[2026-11-24])
+
+      # In Cycle 2, `rolled` is finished and `kept` reopened.
+      stub(Date, :utc_today, fn -> ~D[2026-11-25] end)
+      {:ok, _done} = Issues.set_issue_status(system_scope(), rolled, %{id: "done", name: "Done", state: :done})
+      {:ok, _reopened} = Issues.set_issue_status(system_scope(), kept, %{id: "todo", name: "Todo", state: :todo})
+
+      %{local: local, first: first, second: second, rolled: rolled, kept: kept}
+    end
+
+    test "filters and counts each issue it held by the state it closed in, and returns it as it is now", %{
+      local: local,
+      first: first,
+      second: second,
+      rolled: %{id: rolled_id},
+      kept: %{id: kept_id}
+    } do
+      assert %{
+               issues: [%Issue{id: ^rolled_id, state: :done, state_name: "Done", cycle_state: :in_progress}],
+               total: 1
+             } = Issues.list_issues(project_id: local.id, cycle_id: first.id)
+
+      assert %{issues: issues, total: 2} =
+               Issues.list_issues(project_id: local.id, cycle_id: first.id, show_finished: true, preload: [:task])
+
+      assert %{
+               ^rolled_id => {:done, :in_progress, nil},
+               ^kept_id => {:todo, :done, nil}
+             } = Map.new(issues, &{&1.id, {&1.state, &1.cycle_state, &1.task}})
+
+      assert %{issues: [%Issue{id: ^rolled_id, state: :done, cycle_state: :done, cycle_state_name: "Done"}]} =
+               Issues.list_issues(project_id: local.id, cycle_id: second.id, show_finished: true)
+    end
+  end
 end

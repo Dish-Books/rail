@@ -6,7 +6,7 @@ defmodule RailWeb.Components.IssueView do
   The issue page and the task page's first tab are the same view of the same
   thing, so both render this; the task page hides the section pointing at the
   task the reader is already on. The events it raises - `assign`,
-  `filter_assignees`, `comment`, `draft_comment`, `start_task`, `adopt_pull_request` - belong
+  `filter_assignees`, `set_cycle`, `comment`, `draft_comment`, `start_task`, `adopt_pull_request` - belong
   to whichever LiveView renders it.
   """
   use RailWeb, :html
@@ -31,6 +31,8 @@ defmodule RailWeb.Components.IssueView do
   attr :link_workflow, :boolean, default: false
   # What blocks the issue and what it blocks, as `Rail.Issues.get_blockers/1` reads them; nil until Linear answers.
   attr :blockers, :any, default: nil
+  # A Rail-tracked issue's project's cycles, as `Rail.Issues.get_cycles/1` reads them; nil shows no Cycle row.
+  attr :cycles, :list, default: nil
 
   def issue_view(assigns) do
     blocked_by = (assigns.blockers && assigns.blockers.blocked_by) || []
@@ -46,6 +48,9 @@ defmodule RailWeb.Components.IssueView do
       |> assign(:sub_issue_count, "#{done}/#{total}")
       # A Rail-tracked issue's link is this page.
       |> assign(:show_tracker_link, assigns.issue.url not in [nil, ""] and assigns.issue.tracker != :local)
+      |> assign(:cycle, Enum.find(assigns.cycles || [], &(&1.id == assigns.issue.cycle_external_id)))
+      # An ended cycle keeps what it held as it closed, so nothing more is put in one.
+      |> assign(:cycle_options, Enum.reject(assigns.cycles || [], &(&1.status == :ended)))
 
     ~H"""
     <div id="issue-page" data-qa="issue-page" class="max-w-5xl mx-auto space-y-6">
@@ -361,6 +366,86 @@ defmodule RailWeb.Components.IssueView do
               <span :if={@issue.estimate}>{@issue.estimate} Points</span>
               <span :if={!@issue.estimate} class="text-slate-400 dark:text-slate-500">No points</span>
             </div>
+
+            <div
+              :if={@cycles}
+              class="relative"
+              phx-click-away={JS.hide(to: "#issue-cycle-menu")}
+              phx-window-keydown={JS.hide(to: "#issue-cycle-menu")}
+              phx-key="Escape"
+            >
+              <button
+                type="button"
+                id="issue-cycle"
+                data-qa="issue-cycle"
+                aria-haspopup="menu"
+                phx-click={JS.toggle(to: "#issue-cycle-menu")}
+                class="-mx-2 flex items-center gap-2.5 max-w-full px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500"
+              >
+                <.icon name="pi-arrows-clockwise" class="h-4 w-4 text-slate-500 dark:text-slate-400" />
+                <span :if={@cycle} class="min-w-0 truncate">{cycle_label(@cycle)}</span>
+                <span :if={@cycle} class="shrink-0 text-xs text-slate-500 dark:text-slate-400">
+                  {cycle_dates(@cycle)}
+                </span>
+                <span :if={!@cycle} class="text-slate-400 dark:text-slate-500">No cycle</span>
+              </button>
+
+              <div
+                id="issue-cycle-menu"
+                role="menu"
+                class="hidden absolute z-20 left-0 top-full mt-1 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg"
+              >
+                <ul class="max-h-72 overflow-y-auto p-1">
+                  <li>
+                    <button
+                      type="button"
+                      id="issue-cycle-none"
+                      role="menuitem"
+                      phx-click={
+                        JS.push("set_cycle", value: %{cycle_id: ""})
+                        |> JS.hide(to: "#issue-cycle-menu")
+                      }
+                      class="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-sm hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500"
+                    >
+                      <.icon
+                        name="pi-minus-circle"
+                        class="h-4 w-4 text-slate-500 dark:text-slate-400"
+                      />
+                      <span class="flex-1 text-left">No cycle</span>
+                      <.icon :if={!@issue.cycle_external_id} name="pi-check" class="h-4 w-4" />
+                    </button>
+                  </li>
+                  <li :for={cycle <- @cycle_options}>
+                    <button
+                      type="button"
+                      id={"issue-cycle-#{cycle.id}"}
+                      role="menuitem"
+                      phx-click={
+                        JS.push("set_cycle", value: %{cycle_id: cycle.id})
+                        |> JS.hide(to: "#issue-cycle-menu")
+                      }
+                      class="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-sm hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500"
+                    >
+                      <.icon
+                        name="pi-arrows-clockwise"
+                        class="h-4 w-4 text-slate-500 dark:text-slate-400"
+                      />
+                      <span class="flex-1 text-left min-w-0">
+                        <span class="block truncate">{cycle_label(cycle)}</span>
+                        <span class="block text-xs text-slate-500 dark:text-slate-400">
+                          {if cycle.status == :running, do: "Current · "}{cycle_dates(cycle)}
+                        </span>
+                      </span>
+                      <.icon
+                        :if={@issue.cycle_external_id == cycle.id}
+                        name="pi-check"
+                        class="h-4 w-4"
+                      />
+                    </button>
+                  </li>
+                </ul>
+              </div>
+            </div>
           </section>
 
           <section class="space-y-3">
@@ -478,6 +563,11 @@ defmodule RailWeb.Components.IssueView do
   end
 
   defp user_name(user), do: user.name || user.login
+
+  defp cycle_label(cycle), do: cycle.name || "Cycle #{cycle.number}"
+
+  defp cycle_dates(cycle),
+    do: "#{Calendar.strftime(cycle.starts_on, "%b %-d")} – #{Calendar.strftime(cycle.ends_on, "%b %-d")}"
 
   # Threads are the comments that answer nothing; their replies hang off them.
   defp threads(comments), do: comments |> Enum.filter(&is_nil(&1.parent_id)) |> by_time()

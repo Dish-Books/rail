@@ -1,14 +1,17 @@
 defmodule Rail.Issues.Tracker.Local do
   @moduledoc """
   Issues kept in Rail alone. The `issues` and `issue_comments` rows are the tickets, Postgres numbers and names each
-  issue as it is inserted, and with no webhook to come back every status move writes the row itself.
+  issue as it is inserted, and with no webhook to come back every status move writes the row itself. Its cycles are
+  the `cycles` rows, which `Rail.Issues.close_cycle_day/1` schedules and records.
   """
   @behaviour Rail.Issues.Tracker
 
+  import Ecto.Query
   import Rail.Issues.Utils.WriteIssueStatus
 
   alias Rail.Issues.Clients.R2
   alias Rail.Issues.Schemas.Comment
+  alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -17,6 +20,17 @@ defmodule Rail.Issues.Tracker.Local do
 
   @ranks %{triage: 0, backlog: 1, todo: 2, in_progress: 3, in_review: 4, done: 5}
   @statuses [:triage, :backlog, :todo, :in_progress, :in_review, :done, :canceled, :duplicate]
+  # Linear's type for each, which `Issue.calculate_status_groups/3` orders the groups by.
+  @status_types %{
+    triage: "triage",
+    backlog: "backlog",
+    todo: "unstarted",
+    in_progress: "started",
+    in_review: "started",
+    done: "completed",
+    canceled: "canceled",
+    duplicate: "canceled"
+  }
   @asset_name ~r/\A[0-9a-f]{8}-[0-9a-f-]{27}-[\w.-]+\z/
 
   # The id is drawn here because the URL names it, and the identifier is unknown until Postgres numbers the row.
@@ -118,8 +132,42 @@ defmodule Rail.Issues.Tracker.Local do
       else: {:error, :not_found}
   end
 
+  # Read as `Tracker.Linear` reads Linear's: the current cycle is the one running, or else the next to start.
   @impl true
-  def get_cycles(%Project{}), do: {:ok, %{cycles: [], statuses: []}}
+  def get_cycles(%Project{id: project_id}) do
+    today = Date.utc_today()
+
+    cycles =
+      Repo.all(
+        from(c in Cycle, where: c.project_id == ^project_id, order_by: [asc: c.starts_on, asc: c.number], preload: :days)
+      )
+
+    entries =
+      Enum.map(cycles, fn cycle ->
+        %{
+          id: cycle.id,
+          number: cycle.number,
+          name: nil,
+          starts_on: cycle.starts_on,
+          ends_on: cycle.ends_on,
+          status: Cycle.calculate_status(cycle, today),
+          current: false,
+          default_estimate: Cycle.default_estimate(),
+          scope_history: Enum.map(cycle.days, & &1.scope),
+          started_history: Enum.map(cycle.days, & &1.started),
+          completed_history: Enum.map(cycle.days, & &1.completed)
+        }
+      end)
+
+    current = Enum.find(entries, &(&1.status == :running)) || Enum.find(entries, &(&1.status == :upcoming))
+
+    # Each carries its Rail state, which is what its group's icon shows.
+    statuses =
+      for {state, position} <- Enum.with_index(@statuses),
+          do: %{name: Issue.state_label(state), type: @status_types[state], position: position, state: state}
+
+    {:ok, %{cycles: Enum.map(entries, &%{&1 | current: &1 == current}), statuses: statuses}}
+  end
 
   @impl true
   def get_issue_relations(%Project{}, _external_ids), do: {:ok, %{}}

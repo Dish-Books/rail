@@ -3,7 +3,8 @@ defmodule RailWeb.IssueLive do
   One issue, laid out the way Linear lays it out: the title and description on
   the left with its comment threads beneath, its properties down the right. The
   status and assignee can be changed and comments posted here, and all three reach
-  the tracker; everything else is edited there and arrives by sync or webhook.
+  the tracker; everything else is edited there and arrives by sync or webhook. A
+  Rail-tracked issue's cycle is set here too.
   """
   use RailWeb, :live_view
 
@@ -17,13 +18,15 @@ defmodule RailWeb.IssueLive do
   alias Rail.Scope
   alias Rail.Users
 
-  @issue_events ["assign", "filter_assignees", "draft_comment", "comment"]
+  @issue_events ["assign", "filter_assignees", "set_cycle", "draft_comment", "comment"]
 
   def mount(_params, _session, socket) do
-    # Workflows too, since the byline names the workflow that opened the issue.
+    # Workflows too, since the byline names the workflow that opened the issue, and Rail's cycles, which the nightly
+    # run moves issues between without a word on "issues".
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
       Phoenix.PubSub.subscribe(Rail.PubSub, "workflows")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "cycles")
     end
 
     socket =
@@ -36,6 +39,7 @@ defmodule RailWeb.IssueLive do
       |> assign(:comment_nonce, 0)
       |> assign(:checking_pull_request, false)
       |> assign(:blockers, nil)
+      |> assign(:cycles, nil)
 
     {:ok, socket}
   end
@@ -49,7 +53,7 @@ defmodule RailWeb.IssueLive do
         do: assign(socket, :assignees, Users.list_assignable_users(project_id: issue.project_id, tracker: issue.tracker)),
         else: socket
 
-    socket = socket |> link_pull_request() |> read_blockers()
+    socket = socket |> link_pull_request() |> read_blockers() |> read_cycles()
     {:noreply, socket}
   end
 
@@ -70,6 +74,7 @@ defmodule RailWeb.IssueLive do
         workflow={@issue.workflow}
         link_workflow={Scope.admin?(@current_scope)}
         blockers={@blockers}
+        cycles={@cycles}
       />
     </Layouts.app>
     """
@@ -113,6 +118,13 @@ defmodule RailWeb.IssueLive do
   end
 
   def handle_info({:workflows_changed, _other_project_id}, socket), do: {:noreply, socket}
+
+  def handle_info({:cycles_changed, project_id}, %{assigns: %{issue: %{project_id: project_id}}} = socket) do
+    socket = socket |> load_issue(socket.assigns.issue.id) |> read_cycles()
+    {:noreply, socket}
+  end
+
+  def handle_info({:cycles_changed, _other_project_id}, socket), do: {:noreply, socket}
 
   # Looking up GitHub is not something the page waits on: it offers Plan once GitHub has nothing, or cannot say.
   def handle_async(:link_pull_request, {:ok, {:ok, _pull_request}}, socket) do
@@ -190,4 +202,12 @@ defmodule RailWeb.IssueLive do
   end
 
   defp read_blockers(socket), do: socket
+
+  # Only Rail schedules cycles an issue can be put in from here.
+  defp read_cycles(%{assigns: %{issue: %Issue{tracker: :local, project: project}}} = socket) do
+    {:ok, %{cycles: cycles}} = Issues.get_cycles(project)
+    assign(socket, :cycles, cycles)
+  end
+
+  defp read_cycles(socket), do: socket
 end
