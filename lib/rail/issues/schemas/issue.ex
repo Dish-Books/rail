@@ -48,7 +48,7 @@ defmodule Rail.Issues.Schemas.Issue do
     field :skipped_steps, {:array, Ecto.Enum}, values: @optional_steps, default: []
     # The stages its workflow's file named, custom ones with their prompts, copied the same way; empty runs the built-ins.
     embeds_many :stages, IssueStage, on_replace: :delete
-    # Linear's ids for its cycle and its parent, which only the tracker sets.
+    # Its cycle's id, Linear's or a Rail cycle's for a Rail-tracked issue, which Rail sets itself.
     field :cycle_external_id, :string
 
     belongs_to :parent, __MODULE__,
@@ -112,7 +112,8 @@ defmodule Rail.Issues.Schemas.Issue do
 
   @doc """
   For what the tracker itself reports: `changeset/2` with nothing queued to push back, plus the cycle and the parent,
-  which Rail never sends. Either one, giving an unowned issue an owner, queues `Workers.AdvanceTrackerState`.
+  which Rail never sends, and Rail sets the cycle of a Rail-tracked issue through it. Either one, giving an unowned
+  issue an owner, queues `Workers.AdvanceTrackerState`.
   """
   def tracker_changeset(issue, attrs) do
     issue
@@ -219,21 +220,22 @@ defmodule Rail.Issues.Schemas.Issue do
   def calculate_issue_tree(issues) when is_list(issues), do: build_tree(issues, nil)
 
   @doc """
-  The cycle's issues in status groups: Linear's statuses, started ones furthest along first and finished ones last,
-  then Rail's label for any status Linear does not list. Each has its rows, its count and its points, an unestimated
+  The cycle's issues in status groups: the tracker's statuses, started ones furthest along first and finished ones last,
+  then Rail's label for any status the tracker does not list. Each has its rows, its count and its points, an unestimated
   issue counting its own project's default estimate from `default_estimates`.
   """
   def calculate_status_groups(issues, statuses, default_estimates) when is_list(issues) do
     names = MapSet.new(statuses, & &1.name)
-    {named, unnamed} = Enum.split_with(issues, &MapSet.member?(names, &1.state_name))
+    # By the shown name, since Discard and a closed cycle leave a Rail-tracked issue with none of its own.
+    {named, unnamed} = Enum.split_with(issues, &MapSet.member?(names, calculate_status_name(&1)))
 
-    linear_groups =
+    tracker_groups =
       for status <- Enum.sort_by(statuses, &status_rank/1),
-          do: {status.name, status_state(status), Enum.filter(named, &(&1.state_name == status.name))}
+          do: {status.name, status_state(status), Enum.filter(named, &(calculate_status_name(&1) == status.name))}
 
     rail_groups = for state <- @states, do: {state_label(state), state, Enum.filter(unnamed, &(&1.state == state))}
 
-    (linear_groups ++ rail_groups)
+    (tracker_groups ++ rail_groups)
     |> Enum.reject(&match?({_label, _state, []}, &1))
     |> Enum.with_index(fn {label, state, members}, index ->
       %{
@@ -380,6 +382,9 @@ defmodule Rail.Issues.Schemas.Issue do
   defp type_rank("triage"), do: 3
   defp type_rank("completed"), do: 4
   defp type_rank(_canceled_or_other), do: 5
+
+  # Rail's own statuses say which state they are, so Todo shows Todo's icon rather than Backlog's.
+  defp status_state(%{state: state}) when is_atom(state), do: state
 
   defp status_state(%{type: "started", name: name}),
     do: if(String.downcase(name) == "in review", do: :in_review, else: :in_progress)

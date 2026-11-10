@@ -419,4 +419,31 @@ defmodule RailWeb.Components.CyclePanelTest do
     refute html =~ "since"
     assert html =~ "0%"
   end
+
+  test "an editable panel offers Edit dates on a running or upcoming cycle, not an ended one", %{
+    cycle: cycle,
+    progress: progress
+  } do
+    for status <- [:running, :upcoming] do
+      html =
+        render_component(&CyclePanel.cycle_panel/1,
+          cycle: %{cycle | status: status},
+          progress: progress,
+          today: ~D[2026-10-20],
+          editable: true
+        )
+
+      assert html =~ ~r/id="cycle-edit-dates"[^>]*phx-click="edit_cycle_dates"[^>]*phx-value-cycle_id="cyc_12"/
+    end
+
+    refute render_component(&CyclePanel.cycle_panel/1,
+             cycle: %{cycle | status: :ended},
+             progress: progress,
+             today: ~D[2026-11-20],
+             editable: true
+           ) =~ "Edit dates"
+
+    refute render_component(&CyclePanel.cycle_panel/1, cycle: cycle, progress: progress, today: ~D[2026-10-29]) =~
+             "Edit dates"
+  end
 end

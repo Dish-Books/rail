@@ -2,7 +2,7 @@ defmodule RailWeb.Components.IssueCard do
   @moduledoc """
   One issue as a single row of the issues list, opening the issue's page. A sub-issue is indented, a dimmed parent is
   context. An `actionable` row opens its task, a flagged one at `waiting_path/1`. With no task it offers Start, or a
-  No task chip once the issue's status says the work has started.
+  No task chip once the issue's status says the work has started. A row given its cycle names it.
   """
   use RailWeb, :html
 
@@ -25,6 +25,8 @@ defmodule RailWeb.Components.IssueCard do
   attr :dimmed, :boolean, default: false
   attr :open_blockers, :list, default: []
   attr :actionable, :boolean, default: false
+  # The cycle the issue is in, as `Rail.Issues.get_cycles/1` reads it, when the row names it.
+  attr :cycle, :map, default: nil
 
   def issue_card(%{issue: issue, task: task, actionable: actionable} = assigns) do
     {done, total} = Issue.calculate_sub_issue_count(issue)
@@ -48,6 +50,7 @@ defmodule RailWeb.Components.IssueCard do
       |> assign(:sub_issues_done, done)
       |> assign(:sub_issues, total)
       |> assign(:blocked_title, "Blocked by #{blocker_names}")
+      |> assign(:cycle_label, cycle_label(assigns.cycle))
 
     ~H"""
     <div
@@ -147,6 +150,19 @@ defmodule RailWeb.Components.IssueCard do
           {length(@open_blockers)}<span class="sr-only">{@blocked_title}</span>
         </span>
 
+        <span
+          :if={@cycle}
+          id={"issue-cycle-#{@key}"}
+          title={"In #{@cycle_label} · #{cycle_dates(@cycle)}"}
+          class="inline-flex items-center gap-1 h-6 px-2 rounded-full border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 whitespace-nowrap min-w-0 max-w-32"
+        >
+          <.icon
+            name="pi-arrows-clockwise"
+            class="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400"
+          />
+          <span class="truncate">{@cycle_label}</span>
+        </span>
+
         <.link
           :if={@style}
           navigate={@path}
@@ -242,6 +258,12 @@ defmodule RailWeb.Components.IssueCard do
       do: "border-l-red-500 bg-red-50 dark:bg-red-950/20",
       else: "border-l-amber-400 bg-amber-50 dark:bg-amber-950/20"
   end
+
+  defp cycle_label(nil), do: nil
+  defp cycle_label(cycle), do: cycle.name || "Cycle #{cycle.number}"
+
+  defp cycle_dates(cycle),
+    do: "#{Calendar.strftime(cycle.starts_on, "%b %-d")} – #{Calendar.strftime(cycle.ends_on, "%b %-d")}"
 
   defp priority_label(priority), do: Issue.priority_label(priority) || "Medium"
 end

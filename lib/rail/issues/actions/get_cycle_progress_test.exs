@@ -73,4 +73,20 @@ defmodule Rail.Issues.Actions.GetCycleProgressTest do
     assert %{scope: 0, started: 0, completed: 0, scope_change: nil, owners: []} =
              Issues.get_cycle_progress(project, %{id: "cyc_empty", default_estimate: 1, scope_history: []})
   end
+
+  describe "an ended Rail cycle" do
+    setup do
+      local = local_project()
+      Map.put(rolled_over_cycle(local), :local, local)
+    end
+
+    test "still counts a rolled-over issue as started and not completed after it is finished in the next", %{
+      local: local,
+      first: first,
+      second: second
+    } do
+      assert %{scope: 5, started: 5, completed: 2} = Issues.get_cycle_progress(local, first)
+      assert %{scope: 3, started: 3, completed: 3} = Issues.get_cycle_progress(local, second)
+    end
+  end
 end

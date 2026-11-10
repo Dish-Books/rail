@@ -1744,6 +1744,7 @@ defmodule RailWeb.IssuesLiveTest do
 
       # Three, two and the team's default of one.
       assert has_element?(view, "#cycle-panel[aria-label='Cycle 12']")
+      refute has_element?(view, "#cycle-edit-dates")
       assert has_element?(view, "#cycle-scope", "6")
       assert has_element?(view, "#cycle-started", "5")
       assert has_element?(view, "#cycle-scope", "+20%")
@@ -3514,6 +3515,173 @@ defmodule RailWeb.IssuesLiveTest do
       refute has_element?(view, "#cycle-toggle")
       assert_received {:read_cycles, "TST"}
       refute_received {:read_cycles, _another}
+    end
+  end
+
+  describe "a Rail-tracked project's cycles" do
+    setup %{conn: conn} do
+      stub(Issues, :get_cycles, fn project -> call_original(Issues, :get_cycles, [project]) end)
+      local = local_project()
+
+      {:ok, viewer} =
+        Users.register_oauth_user(%{
+          github_id: "gh_local_cycles",
+          login: "local_cycles",
+          email: "local_cycles@example.com",
+          admin: true
+        })
+
+      %{conn: conn |> log_in_user(viewer) |> init_test_session(%{selected_project_id: local.id}), local: local}
+    end
+
+    test "a page open when the first nightly run makes Cycle 1 gains Current cycle, opening on it empty", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/issues")
+      render_async(view)
+      refute has_element?(view, "#cycle-toggle")
+
+      :ok = Issues.close_cycle_day(Date.utc_today())
+      render_async(view)
+
+      view |> element("#cycle-toggle", "Current cycle") |> render_click()
+      assert_patched(view, ~p"/issues?cycle=1")
+      assert has_element?(view, "#cycle-toggle[aria-pressed='true']", "Cycle 1")
+      assert has_element?(view, "#issues-empty-state", "No issues in Cycle 1")
+      assert has_element?(view, "#cycle-panel-tag", "Current")
+      assert has_element?(view, "#cycle-previous[disabled]")
+      assert has_element?(view, "#cycle-next:not([disabled])")
+    end
+
+    test "a GitHub project offers no cycles, and pays no heed to another project's", %{
+      conn: conn,
+      github_project: github_project,
+      local: local
+    } do
+      {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: github_project.id}), ~p"/issues")
+      render_async(view)
+
+      :ok = Issues.close_cycle_day(Date.utc_today())
+      render_async(view)
+
+      refute has_element?(view, "#cycle-toggle")
+      assert {:ok, %{cycles: [_first, _second, _third]}} = Issues.get_cycles(local)
+    end
+
+    test "Edit dates locks a running cycle's start, refuses an overlap, and a saved edit moves the panel's dates", %{
+      conn: conn
+    } do
+      today = Date.utc_today()
+      :ok = Issues.close_cycle_day(today)
+      day = &Calendar.strftime(&1, "%b %-d")
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=1")
+      render_async(view)
+
+      view |> element("#cycle-edit-dates") |> render_click()
+      assert has_element?(view, "#cycle-dates-title", "Edit Cycle 1 dates")
+      assert has_element?(view, "#cycle-dates-starts[disabled]")
+      assert has_element?(view, "#cycle-dates-start-locked", "A running cycle keeps its start")
+
+      view |> element("#cycle-dates-form") |> render_change(%{"cycle" => %{"ends_on" => Date.add(today, -1)}})
+      assert has_element?(view, "#cycle-dates-error", "A running cycle cannot end before today.")
+
+      view |> element("#cycle-dates-form") |> render_submit(%{"cycle" => %{"ends_on" => Date.add(today, 16)}})
+      refute has_element?(view, "#cycle-dates-dialog")
+      render_async(view)
+      assert has_element?(view, "#cycle-panel-dates", "#{day.(today)} – #{day.(Date.add(today, 16))}")
+
+      view |> element("#cycle-next") |> render_click()
+      assert_patched(view, ~p"/issues?cycle=2")
+      view |> element("#cycle-edit-dates") |> render_click()
+      refute has_element?(view, "#cycle-dates-starts[disabled]")
+
+      view
+      |> element("#cycle-dates-form")
+      |> render_submit(%{"cycle" => %{"starts_on" => Date.add(today, 16), "ends_on" => Date.add(today, 30)}})
+
+      assert has_element?(view, "#cycle-dates-error", "These dates overlap an earlier cycle.")
+      assert has_element?(view, "#cycle-panel-dates", "#{day.(Date.add(today, 17))} – ")
+
+      render_keydown(view, "close_cycle_dates", %{"key" => "Escape"})
+      refute has_element?(view, "#cycle-dates-dialog")
+    end
+
+    test "Cancel closes the dialog, and a save after it closed or one the project refuses changes nothing", %{
+      conn: conn,
+      local: local
+    } do
+      :ok = Issues.close_cycle_day(Date.utc_today())
+      {:ok, %{cycles: [%{id: first_id, ends_on: ends_on} | _later]}} = Issues.get_cycles(local)
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=1")
+      render_async(view)
+
+      view |> element("#cycle-edit-dates") |> render_click()
+      view |> element("#cycle-dates-cancel") |> render_click()
+      refute has_element?(view, "#cycle-dates-dialog")
+
+      render_hook(view, "save_cycle_dates", %{"cycle" => %{"ends_on" => Date.add(ends_on, 3)}})
+      render_hook(view, "validate_cycle_dates", %{"cycle" => %{"ends_on" => Date.add(ends_on, 3)}})
+      render_hook(view, "edit_cycle_dates", %{"cycle_id" => "cyc_unknown"})
+      refute has_element?(view, "#cycle-dates-dialog")
+
+      stub(Issues, :update_cycle, fn _scope, _project, ^first_id, _attrs -> {:error, :not_found} end)
+      view |> element("#cycle-edit-dates") |> render_click()
+      view |> element("#cycle-dates-form") |> render_submit(%{"cycle" => %{"ends_on" => Date.add(ends_on, 3)}})
+      refute has_element?(view, "#cycle-dates-dialog")
+      assert {:ok, %{cycles: [%{ends_on: ^ends_on} | _later]}} = Issues.get_cycles(local)
+    end
+
+    test "each row in a cycle names it, except in that cycle's own view, where a rolled-over row names where it went",
+         %{conn: conn, local: local} do
+      %{rolled: %{id: rolled_id}, kept: %{id: kept_id}} = rolled_over_cycle(local)
+      {:ok, %{id: loose_id}} = Issues.create_issue(system_scope(), local, %{title: "In no cycle"})
+
+      {:ok, view, _html} = live(conn, ~p"/issues?finished=true")
+      render_async(view)
+
+      assert has_element?(view, "#issue-cycle-#{rolled_id}", "Cycle 2")
+      assert has_element?(view, "#issue-cycle-#{kept_id}", "Cycle 1")
+      assert has_element?(view, "#issue-card-#{loose_id}")
+      refute has_element?(view, "#issue-cycle-#{loose_id}")
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=1&finished=true")
+      render_async(view)
+
+      assert has_element?(view, "#cycle-issues section[aria-label='In Progress'] #issue-card-#{rolled_id}")
+      assert has_element?(view, "#issue-cycle-#{rolled_id}", "Cycle 2")
+      assert has_element?(view, "#cycle-issues section[aria-label='Done'] #issue-card-#{kept_id}")
+      refute has_element?(view, "#issue-cycle-#{kept_id}")
+      refute has_element?(view, "#cycle-edit-dates")
+    end
+
+    test "a page open on the current cycle gains an issue started by status, and the issues the nightly run rolls in",
+         %{conn: conn, local: local} do
+      stub(Date, :utc_today, fn -> ~D[2026-11-10] end)
+      :ok = Issues.close_cycle_day(~D[2026-11-10])
+      {:ok, %{cycles: [first, second | _later]}} = Issues.get_cycles(local)
+      {:ok, %{id: started_id} = started} = Issues.create_issue(system_scope(), local, %{title: "Started now"})
+      {:ok, %{id: planned_id} = planned} = Issues.create_issue(system_scope(), local, %{title: "Planned"})
+      {:ok, _planned} = Issues.set_issue_cycle(system_scope(), planned, first.id)
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=1")
+      render_async(view)
+      refute has_element?(view, "#issue-card-#{started_id}")
+
+      {:ok, _started} =
+        Issues.set_issue_status(system_scope(), started, %{id: "in_progress", name: "In Progress", state: :in_progress})
+
+      assert has_element?(view, "#cycle-issues section[aria-label='In Progress'] #issue-card-#{started_id}")
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=2")
+      render_async(view)
+      refute has_element?(view, "#issue-card-#{planned_id}")
+
+      stub(Date, :utc_today, fn -> second.starts_on end)
+      :ok = Issues.close_cycle_day(second.starts_on)
+      render_async(view)
+
+      assert has_element?(view, "#cycle-panel-tag", "Current")
+      assert has_element?(view, "#issue-card-#{planned_id}")
+      assert has_element?(view, "#issue-card-#{started_id}")
     end
   end
 end

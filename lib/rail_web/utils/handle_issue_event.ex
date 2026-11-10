@@ -1,6 +1,6 @@
 defmodule RailWeb.Utils.HandleIssueEvent do
   @moduledoc """
-  The events `RailWeb.Components.IssueView` raises for its owner menu and comments,
+  The events `RailWeb.Components.IssueView` raises for its owner menu, cycle menu and comments,
   for every LiveView that renders it. Each passes how it reloads the issue afterwards.
   """
   import Phoenix.Component, only: [assign: 3, update: 3]
@@ -34,6 +34,16 @@ defmodule RailWeb.Utils.HandleIssueEvent do
     if Enum.any?(socket.assigns.assignees, &(&1.id == user_id)),
       do: assign_owner(socket, user_id, reload),
       else: socket
+  end
+
+  # The menu's No cycle sends an empty id.
+  def handle_issue_event("set_cycle", %{"cycle_id" => cycle_id}, socket, reload) do
+    %{issue: issue, current_scope: scope} = socket.assigns
+
+    case Issues.set_issue_cycle(scope, issue, if(cycle_id == "", do: nil, else: cycle_id)) do
+      {:ok, _issue} -> reload.(socket)
+      {:error, _reason} -> put_flash(socket, :error, "Could not change the cycle")
+    end
   end
 
   # A draft lives in its textarea until it is sent.

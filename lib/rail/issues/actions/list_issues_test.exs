@@ -326,4 +326,30 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
     assert %{issues: [%Issue{id: ^mine_id}], total: 1} = Issues.list_issues(owner_user_id: owner_id)
     assert %{total: 2} = Issues.list_issues()
   end
+
+  describe "an ended Rail cycle" do
+    setup do
+      local = local_project()
+      Map.put(rolled_over_cycle(local), :local, local)
+    end
+
+    test "lists each issue it held in the state it closed in, whatever happened to it since", %{
+      local: local,
+      first: first,
+      second: second,
+      rolled: %{id: rolled_id},
+      kept: %{id: kept_id}
+    } do
+      assert %{issues: [%Issue{id: ^rolled_id, state: :in_progress, state_name: nil}], total: 1} =
+               Issues.list_issues(project_id: local.id, cycle_id: first.id)
+
+      assert %{issues: issues, total: 2} =
+               Issues.list_issues(project_id: local.id, cycle_id: first.id, show_finished: true)
+
+      assert %{^rolled_id => :in_progress, ^kept_id => :done} = Map.new(issues, &{&1.id, &1.state})
+
+      assert %{issues: [%Issue{id: ^rolled_id, state: :done, state_name: "Done"}]} =
+               Issues.list_issues(project_id: local.id, cycle_id: second.id, show_finished: true)
+    end
+  end
 end

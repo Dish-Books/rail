@@ -15,6 +15,9 @@ defmodule Rail.Issues do
   defdelegate get_statuses(scope, project), to: Actions.GetStatuses
   defdelegate get_blockers(issues), to: Actions.GetBlockers
   defdelegate get_cycle_progress(project, cycle), to: Actions.GetCycleProgress
+  defdelegate update_cycle(scope, project, cycle_id, attrs), to: Actions.UpdateCycle
+  defdelegate set_issue_cycle(scope, issue, cycle_id), to: Actions.SetIssueCycle
+  defdelegate close_cycle_day(today), to: Actions.CloseCycleDay
   defdelegate get_issue(id, opts \\ []), to: Actions.GetIssue
   defdelegate create_issue(scope, project, attrs), to: Actions.CreateIssue
   defdelegate update_issue(issue, attrs), to: Actions.UpdateIssue

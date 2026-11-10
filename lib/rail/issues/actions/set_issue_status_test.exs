@@ -6,6 +6,7 @@ defmodule Rail.Issues.Actions.SetIssueStatusTest do
 
   alias Rail.GitHub.Client
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Issues.Workers.SyncIssue
@@ -98,6 +99,32 @@ defmodule Rail.Issues.Actions.SetIssueStatusTest do
       assert %Issue{state: :in_progress, state_name: "In Review"} = Repo.get!(Issue, issue_id)
       assert_received {:issue_changed, ^issue_id}
       refute_enqueued(worker: SyncIssue)
+    end
+
+    test "a Linear issue that starts keeps the cycle Linear gave it", %{project: project, answer: answer} do
+      %Cycle{project_id: project.id}
+      |> Cycle.changeset(%{starts_on: Date.add(Date.utc_today(), -1), ends_on: Date.add(Date.utc_today(), 5)})
+      |> Repo.insert!()
+
+      issue =
+        %Issue{}
+        |> Issue.tracker_changeset(%{
+          project_id: project.id,
+          external_id: "lin_status_cycle",
+          identifier: "STA-9",
+          title: "Planned in Linear",
+          state: :todo,
+          state_name: "Todo",
+          cycle_external_id: "lin_cycle_9"
+        })
+        |> Repo.insert!()
+
+      Req.Test.expect(Rail.Linear, fn conn ->
+        answer.(conn, %{"name" => "In Progress", "type" => "started"}, "2026-11-01T10:00:00.000Z", nil)
+      end)
+
+      assert {:ok, %Issue{state: :in_progress, cycle_external_id: "lin_cycle_9"}} =
+               Issues.set_issue_status(system_scope(), issue, @in_progress)
     end
 
     test "a custom status lands by name, and only that status's write touches the row", %{
@@ -589,6 +616,54 @@ defmodule Rail.Issues.Actions.SetIssueStatusTest do
                })
 
       assert [_once] = all_enqueued(worker: IssueFinished, args: %{issue_id: child_id})
+    end
+
+    test "an issue moved to In Progress or In Review joins the running cycle from none, an upcoming or an ended one",
+         %{local_project: project} do
+      # Cycle 1 ran Nov 10 to 23 and kept the issue finished in it; Cycle 2 runs now and Cycle 3 is next.
+      :ok = Issues.close_cycle_day(~D[2026-11-10])
+
+      [first, %{id: second_id}, third] =
+        Repo.all(from(c in Cycle, where: c.project_id == ^project.id, order_by: c.number))
+
+      stub(Date, :utc_today, fn -> ~D[2026-11-12] end)
+      {:ok, ended} = Issues.create_issue(system_scope(), project, %{title: "Finished in Cycle 1"})
+      {:ok, ended} = Issues.set_issue_cycle(system_scope(), ended, first.id)
+      {:ok, ended} = Issues.set_issue_status(system_scope(), ended, %{id: "done", name: "Done", state: :done})
+      :ok = Issues.close_cycle_day(~D[2026-11-24])
+      stub(Date, :utc_today, fn -> ~D[2026-11-25] end)
+
+      {:ok, none} = Issues.create_issue(system_scope(), project, %{title: "In no cycle"})
+      {:ok, upcoming} = Issues.create_issue(system_scope(), project, %{title: "Planned for Cycle 3"})
+      {:ok, upcoming} = Issues.set_issue_cycle(system_scope(), upcoming, third.id)
+      in_progress = %{id: "in_progress", name: "In Progress", state: :in_progress}
+
+      for issue <- [none, upcoming, ended] do
+        assert {:ok, %Issue{state: :in_progress, cycle_external_id: ^second_id}} =
+                 Issues.set_issue_status(system_scope(), issue, in_progress)
+      end
+
+      {:ok, reviewed} = Issues.create_issue(system_scope(), project, %{title: "Straight to review"})
+
+      assert {:ok, %Issue{state: :in_review, cycle_external_id: ^second_id}} =
+               Issues.set_issue_status(system_scope(), reviewed, %{id: "in_review", name: "In Review", state: :in_review})
+    end
+
+    test "with no cycle running, an issue that starts keeps its cycle", %{local_project: project, parent: parent} do
+      :ok = Issues.close_cycle_day(~D[2026-11-10])
+
+      [_first, %{id: second_id} | _later] =
+        Repo.all(from(c in Cycle, where: c.project_id == ^project.id, order_by: c.number))
+
+      stub(Date, :utc_today, fn -> ~D[2026-11-09] end)
+      {:ok, parent} = Issues.set_issue_cycle(system_scope(), parent, second_id)
+
+      assert {:ok, %Issue{state: :in_progress, cycle_external_id: ^second_id}} =
+               Issues.set_issue_status(system_scope(), parent, %{
+                 id: "in_progress",
+                 name: "In Progress",
+                 state: :in_progress
+               })
     end
   end
 end

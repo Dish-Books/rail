@@ -95,7 +95,8 @@ defmodule Rail.Issues.Tracker do
 
   @doc """
   The project's cycles oldest first, each with its dates, status, whether it is current, the team's default estimate
-  and its daily scope, started (done work included) and completed history, and the team's statuses in tracker order.
+  and its daily scope, started (done work included) and completed history, and the team's statuses in tracker order,
+  each with its `:name`, Linear's `:type` and its `:position`, and the Rail `:state` its group shows where it has one.
   """
   @callback get_cycles(Project.t()) :: {:ok, %{cycles: [map()], statuses: [map()]}} | {:error, term()}
 

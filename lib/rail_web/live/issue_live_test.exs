@@ -81,6 +81,7 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-project", "Test Project")
     assert has_element?(view, "#issue-tracker-link[href='https://linear.app/issue/IPG-7']")
     assert has_element?(view, "#issue-branch[phx-hook='CopyText'][data-copy-text='ipg-7-ap-aging']")
+    refute has_element?(view, "#issue-cycle")
   end
 
   test "an issue a workflow opened names it under the title, as plain text for someone who is not an admin", %{
@@ -1374,6 +1375,75 @@ defmodule RailWeb.IssueLiveTest do
       send(view.pid, {:issue_changed, unrelated.id})
       render_async(view)
       refute_received :blockers_read
+    end
+  end
+
+  describe "a Rail-tracked issue's cycle" do
+    setup %{conn: conn, user: user, project: project} do
+      local = local_project()
+      {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id, local.id]})
+      {:ok, issue} = Issues.create_issue(system_scope(), local, %{title: "Planned from its page"})
+      %{conn: log_in_user(conn, user), local: local, issue: issue}
+    end
+
+    test "the menu offers no cycle and those not ended, and a pick moves the issue onto an Issues page open on it", %{
+      conn: conn,
+      local: local,
+      issue: %{id: issue_id}
+    } do
+      # Cycle 1 ran Nov 10 to 23, Cycle 2 runs now, and Cycles 3 and 4 are next.
+      :ok = Issues.close_cycle_day(~D[2026-11-10])
+      stub(Date, :utc_today, fn -> ~D[2026-11-24] end)
+      :ok = Issues.close_cycle_day(~D[2026-11-24])
+      {:ok, %{cycles: [first, second, third, fourth]}} = Issues.get_cycles(local)
+
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+      {:ok, list, _html} = live(init_test_session(conn, %{selected_project_id: local.id}), ~p"/issues?cycle=2")
+      render_async(list)
+
+      assert has_element?(view, "#issue-cycle", "No cycle")
+      refute has_element?(view, "#issue-cycle-#{first.id}")
+      assert has_element?(view, "#issue-cycle-#{second.id}", "Current · Nov 24 – Dec 7")
+      assert has_element?(view, "#issue-cycle-#{third.id}", "Dec 8 – Dec 21")
+      assert has_element?(view, "#issue-cycle-#{fourth.id}", "Cycle 4")
+      refute has_element?(list, "#issue-card-#{issue_id}")
+
+      view |> element("#issue-cycle-#{second.id}") |> render_click()
+      assert has_element?(view, "#issue-cycle", "Cycle 2")
+      assert has_element?(list, "#issue-card-#{issue_id}")
+
+      view |> element("#issue-cycle-none") |> render_click()
+      assert has_element?(view, "#issue-cycle", "No cycle")
+      refute has_element?(list, "#issue-card-#{issue_id}")
+
+      render_hook(view, "set_cycle", %{"cycle_id" => first.id})
+      assert render(view) =~ "Could not change the cycle"
+    end
+
+    test "the nightly run's rollover shows on its open page without a reload", %{
+      conn: conn,
+      local: local,
+      issue: %{id: issue_id} = issue
+    } do
+      :ok = Issues.close_cycle_day(~D[2026-11-10])
+      stub(Date, :utc_today, fn -> ~D[2026-11-12] end)
+      {:ok, %{cycles: [first | _later]}} = Issues.get_cycles(local)
+      {:ok, _issue} = Issues.set_issue_cycle(system_scope(), issue, first.id)
+
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+      assert has_element?(view, "#issue-cycle", "Cycle 1")
+
+      stub(Date, :utc_today, fn -> ~D[2026-11-24] end)
+      :ok = Issues.close_cycle_day(~D[2026-11-24])
+
+      assert has_element?(view, "#issue-cycle", "Cycle 2")
+      assert has_element?(view, "#issue-cycle", "Nov 24 – Dec 7")
+    end
+
+    test "another project's cycles leave the page as it is", %{conn: conn, issue: %{id: issue_id}} do
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+      send(view.pid, {:cycles_changed, "prj_elsewhere"})
+      assert has_element?(view, "#issue-cycle", "No cycle")
     end
   end
 end
