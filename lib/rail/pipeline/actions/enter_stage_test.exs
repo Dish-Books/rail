@@ -248,7 +248,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
         name: "Other Project",
         github_repo: "org/other-slot",
         github_installation_id: 44_002,
-        key: "OTH",
+        key: "OTHES",
         default_branch: "main",
         clone_path: "/tmp/repos/other-slot"
       })
@@ -259,7 +259,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
       |> Issue.changeset(%{
         project_id: other_project.id,
         external_id: "lin_other_slot",
-        identifier: "OTH-1",
+        identifier: "OTHES-1",
         title: "Other",
         state: :backlog
       })

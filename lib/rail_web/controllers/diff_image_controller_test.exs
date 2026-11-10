@@ -56,7 +56,7 @@ defmodule RailWeb.DiffImageControllerTest do
         github_repo: "org/other-diff-images",
         github_installation_id: 2,
         default_branch: "main",
-        key: "OTH",
+        key: "OTHDI",
         clone_path: "/tmp/repos/other-diff-images"
       })
 

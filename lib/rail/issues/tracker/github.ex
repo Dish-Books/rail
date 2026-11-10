@@ -129,7 +129,7 @@ defmodule Rail.Issues.Tracker.Github do
 
   # GitHub has no API to attach a file to an issue.
   @impl true
-  def upload_asset(_target, _filename, _content_type, _data_binary), do: {:error, :unsupported}
+  def upload_asset(%Issue{}, _filename, _content_type, _data_binary), do: {:error, :unsupported}
 
   @impl true
   def get_asset(%Issue{}, _path), do: {:error, :unsupported}

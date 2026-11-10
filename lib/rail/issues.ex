@@ -31,7 +31,7 @@ defmodule Rail.Issues do
   defdelegate sync_issues(project), to: Actions.SyncIssues
   defdelegate import_issue(project, identifier), to: Actions.ImportIssue
   defdelegate handle_linear_webhook(workspace, payload), to: Actions.HandleLinearWebhook
-  defdelegate upload_asset(target, filename, content_type, data_binary), to: Actions.UploadAsset
+  defdelegate upload_asset(issue, filename, content_type, data_binary), to: Actions.UploadAsset
   defdelegate get_asset(issue, path), to: Actions.GetAsset
   defdelegate comment(scope, issue, attrs), to: Actions.Comment
   defdelegate set_up_tracker(project), to: Actions.SetUpTracker

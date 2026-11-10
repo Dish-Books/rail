@@ -105,7 +105,12 @@ defmodule Rail.Pipeline.Utils.StartPlannedWork do
   # A tracker that cannot hold the screenshot, such as GitHub Issues, still gets the design's text.
   defp publish_design(%Task{issue: %Issue{} = issue} = task, ticket, {option, screenshot}) do
     uploaded =
-      case Issues.upload_asset(task.project, "#{issue.identifier}-#{option.key}.png", "image/png", screenshot) do
+      case Issues.upload_asset(
+             %{issue | project: task.project},
+             "#{issue.identifier}-#{option.key}.png",
+             "image/png",
+             screenshot
+           ) do
         {:error, :unsupported} -> {:ok, nil}
         result -> result
       end

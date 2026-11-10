@@ -2,9 +2,13 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  import Ecto.Query
+
   alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Comment
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DemoBeat
   alias Rail.Pipeline.Workers.EncodeDemo
@@ -214,6 +218,55 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
 
     assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
     assert [] = Pipeline.list_run_events(run)
+  end
+
+  test "a Rail-tracked task's demo comment and pull request link the video at the issue's address on Rail", %{
+    task: %{issue_id: issue_id} = task,
+    run: run,
+    demo_dir: demo_dir
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{pr_number: 7, pr_is_draft: true})
+    Issue |> Repo.get!(issue_id) |> Ecto.Changeset.change(tracker: :local) |> Repo.update!()
+    File.mkdir_p!(Path.join(demo_dir, "frames"))
+    File.write!(Path.join(demo_dir, "EDM-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
+    File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
+
+    expect(Tools, :encode_recording, fn ^demo_dir, [], :reading -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
+
+    Req.Test.expect(Rail.Issues.Clients.R2, fn conn ->
+      assert %Plug.Conn{method: "PUT", request_path: "/r2_bucket/" <> key} = conn
+      assert ["video/webm"] = Plug.Conn.get_req_header(conn, "content-type")
+      assert {:ok, "webm bytes", conn} = Plug.Conn.read_body(conn)
+      send(self(), {:stored, key})
+      Plug.Conn.send_resp(conn, 200, "")
+    end)
+
+    Req.Test.expect(Client, 3, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/" <> _id} ->
+          Req.Test.json(conn, %{"token" => "ghs_token"})
+
+        {"GET", "/repos/example/test-seed/pulls/7"} ->
+          Req.Test.json(conn, %{"number" => 7, "body" => "Opened by Rail."})
+
+        {"PATCH", "/repos/example/test-seed/pulls/7"} ->
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+          send(self(), {:pull_request, Jason.decode!(body)["body"]})
+          Req.Test.json(conn, %{"number" => 7})
+      end
+    end)
+
+    assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
+    assert [] = Pipeline.list_run_events(run)
+    assert_received {:stored, key}
+    assert [^issue_id, name] = String.split(key, "/")
+    assert name =~ ~r/\A[0-9a-f-]{36}-EDM-1-demo\.webm\z/
+    url = "#{RailWeb.Endpoint.url()}/issues/#{issue_id}/assets/#{name}"
+
+    comment = "## Demo: Filters\n\nIt filters.\n\n[Watch the demo](#{url})"
+    assert [%Comment{body: ^comment}] = Repo.all(from c in Comment, where: c.issue_id == ^issue_id)
+    assert_received {:pull_request, pull_request}
+    assert pull_request == "Opened by Rail.\n\n## Demo\n\n[Watch the demo](#{url})"
   end
 
   test "a recorded demo on a task with no pull request goes on the ticket alone", %{

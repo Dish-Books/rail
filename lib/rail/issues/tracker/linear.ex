@@ -155,8 +155,8 @@ defmodule Rail.Issues.Tracker.Linear do
   def set_up_project(%Project{}), do: :ok
 
   @impl true
-  def upload_asset(target, filename, content_type, data_binary) do
-    case Linear.file_upload(target, filename, content_type, data_binary) do
+  def upload_asset(%Issue{project: %Project{} = project}, filename, content_type, data_binary) do
+    case Linear.file_upload(project, filename, content_type, data_binary) do
       {:ok, %{"fileUpload" => %{"uploadFile" => %{"assetUrl" => asset_url}}}} -> {:ok, asset_url}
       {:ok, _not_uploaded} -> {:error, {:linear_mutation_failed, "fileUpload"}}
       {:error, reason} -> {:error, reason}

@@ -58,6 +58,7 @@ Dev loads `.env` from the checkout root (and mise loads it into the shell). None
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | an OAuth App's credentials | signing in with GitHub (not needed with `/dev/login`) |
 | `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET` | Linear OAuth | Linear-tracked projects only |
 | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | Slack OAuth | triage from Slack only |
+| `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | the Cloudflare account id, a private R2 bucket and an R2 API token's keys | screenshots and demo videos on Rail-tracked projects |
 | `ENABLE_GOTH=true` plus Google credentials | Vertex embeddings | learnings search |
 
 `docs/org-setup.md` says how to get the GitHub values.
