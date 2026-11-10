@@ -16,9 +16,6 @@ defmodule RailTest.Helpers do
   defdelegate github_comment_json(overrides \\ %{}), to: RailTest.GithubHelpers
   defdelegate github_issue(project, attrs \\ %{}), to: RailTest.GithubHelpers
 
-  defdelegate local_project(attrs \\ %{}), to: RailTest.CycleHelpers
-  defdelegate rolled_over_cycle(project), to: RailTest.CycleHelpers
-
   defdelegate stub_vertex(vectors \\ %{}), to: RailTest.LearningsHelpers
   defdelegate stub_vertex_down(), to: RailTest.LearningsHelpers
   defdelegate vector(components), to: RailTest.LearningsHelpers

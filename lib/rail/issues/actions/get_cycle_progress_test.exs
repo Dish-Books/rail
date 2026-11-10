@@ -3,6 +3,7 @@ defmodule Rail.Issues.Actions.GetCycleProgressTest do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Projects
   alias Rail.Repo
   alias Rail.Users
 
@@ -76,8 +77,38 @@ defmodule Rail.Issues.Actions.GetCycleProgressTest do
 
   describe "an ended Rail cycle" do
     setup do
-      local = local_project()
-      Map.put(rolled_over_cycle(local), :local, local)
+      key = "GCP#{System.unique_integer([:positive])}"
+
+      {:ok, local} =
+        Projects.create_project(system_scope(), %{
+          name: "Cycle progress",
+          github_repo: "example/#{key}",
+          github_installation_id: 1,
+          tracker: :local,
+          key: key,
+          default_branch: "main",
+          clone_path: "/tmp/#{key}"
+        })
+
+      # Cycle 1 runs Nov 10 to 23 and closes with 3 points In Progress, which roll over, and 2 Done.
+      :ok = Issues.close_cycle_day(~D[2026-11-10])
+      stub(Date, :utc_today, fn -> ~D[2026-11-12] end)
+      {:ok, %{cycles: [first, second | _later]}} = Issues.get_cycles(local)
+
+      [rolled, _kept] =
+        for {title, estimate, state} <- [{"Rolls over", 3, :in_progress}, {"Stays", 2, :done}] do
+          {:ok, issue} = Issues.create_issue(system_scope(), local, %{title: title, estimate: estimate})
+          {:ok, issue} = Issues.set_issue_cycle(system_scope(), issue, first.id)
+          status = %{id: "#{state}", name: Issue.state_label(state), state: state}
+          {:ok, issue} = Issues.set_issue_status(system_scope(), issue, status)
+          issue
+        end
+
+      :ok = Issues.close_cycle_day(~D[2026-11-24])
+      stub(Date, :utc_today, fn -> ~D[2026-11-25] end)
+      {:ok, _done} = Issues.set_issue_status(system_scope(), rolled, %{id: "done", name: "Done", state: :done})
+
+      %{local: local, first: first, second: second}
     end
 
     test "still counts a rolled-over issue as started and not completed after it is finished in the next", %{

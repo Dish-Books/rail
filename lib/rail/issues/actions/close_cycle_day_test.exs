@@ -5,16 +5,41 @@ defmodule Rail.Issues.Actions.CloseCycleDayTest do
   alias Rail.Issues.Schemas.ClosedCycleIssue
   alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Projects
 
   setup do
-    local = local_project()
+    key = "CCD#{System.unique_integer([:positive])}"
+
+    {:ok, local} =
+      Projects.create_project(system_scope(), %{
+        name: "Nightly run",
+        github_repo: "example/#{key}",
+        github_installation_id: 1,
+        tracker: :local,
+        key: key,
+        default_branch: "main",
+        clone_path: "/tmp/#{key}"
+      })
+
     Phoenix.PubSub.subscribe(Rail.PubSub, "cycles")
     %{local: local}
   end
 
   test "the first run schedules Cycles 1 to 3 back to back, two weeks each from that day, and a second run adds none",
        %{local: %{id: local_id}, project: linear} do
-    inactive = local_project(%{name: "Resting", active: false})
+    inactive_key = "CCR#{System.unique_integer([:positive])}"
+
+    {:ok, inactive} =
+      Projects.create_project(system_scope(), %{
+        name: "Resting",
+        github_repo: "example/#{inactive_key}",
+        github_installation_id: 2,
+        tracker: :local,
+        active: false,
+        key: inactive_key,
+        default_branch: "main",
+        clone_path: "/tmp/#{inactive_key}"
+      })
 
     assert :ok = Issues.close_cycle_day(~D[2026-11-10])
     assert :ok = Issues.close_cycle_day(~D[2026-11-10])
@@ -33,6 +58,7 @@ defmodule Rail.Issues.Actions.CloseCycleDayTest do
     local: local
   } do
     :ok = Issues.close_cycle_day(~D[2026-11-10])
+    stub(Date, :utc_today, fn -> ~D[2026-11-12] end)
     {:ok, %{cycles: [%{id: cycle_id} | _later]}} = Issues.get_cycles(local)
 
     {:ok, estimated} = Issues.create_issue(system_scope(), local, %{title: "Estimated", estimate: 3})
@@ -67,6 +93,8 @@ defmodule Rail.Issues.Actions.CloseCycleDayTest do
     [%Cycle{id: first_id}, %Cycle{id: second_id} | _later] =
       Repo.all(from(c in Cycle, where: c.project_id == ^local_id, order_by: c.number))
 
+    stub(Date, :utc_today, fn -> ~D[2026-11-12] end)
+
     held =
       for state <- Issue.states(), into: %{} do
         {:ok, issue} = Issues.create_issue(system_scope(), local, %{title: "#{state}"})
@@ -100,6 +128,8 @@ defmodule Rail.Issues.Actions.CloseCycleDayTest do
     [%Cycle{id: first_id}, %Cycle{id: second_id} | _later] =
       Repo.all(from(c in Cycle, where: c.project_id == ^local_id, order_by: c.number))
 
+    stub(Date, :utc_today, fn -> ~D[2026-11-12] end)
+
     {:ok, issue} = Issues.create_issue(system_scope(), local, %{title: "Rolls over"})
     {:ok, %{id: issue_id}} = Issues.set_issue_cycle(system_scope(), issue, first_id)
 
@@ -119,6 +149,7 @@ defmodule Rail.Issues.Actions.CloseCycleDayTest do
   } do
     :ok = Issues.close_cycle_day(~D[2026-11-10])
     [%Cycle{id: first_id} | _later] = Repo.all(from(c in Cycle, where: c.project_id == ^local_id, order_by: c.number))
+    stub(Date, :utc_today, fn -> ~D[2026-11-12] end)
     {:ok, issue} = Issues.create_issue(system_scope(), local, %{title: "Waits"})
     {:ok, %{id: issue_id}} = Issues.set_issue_cycle(system_scope(), issue, first_id)
 

@@ -50,6 +50,9 @@ defmodule Rail.Issues.Schemas.Issue do
     embeds_many :stages, IssueStage, on_replace: :delete
     # Its cycle's id, Linear's or a Rail cycle's for a Rail-tracked issue, which Rail sets itself.
     field :cycle_external_id, :string
+    # The state and status name a cycle's listing reads the issue in; set only by `list_issues/1` with `:cycle_id`.
+    field :cycle_state, Ecto.Enum, values: @states, virtual: true
+    field :cycle_state_name, :string, virtual: true
 
     belongs_to :parent, __MODULE__,
       foreign_key: :parent_external_id,
@@ -221,19 +224,25 @@ defmodule Rail.Issues.Schemas.Issue do
 
   @doc """
   The cycle's issues in status groups: the tracker's statuses, started ones furthest along first and finished ones last,
-  then Rail's label for any status the tracker does not list. Each has its rows, its count and its points, an unestimated
-  issue counting its own project's default estimate from `default_estimates`.
+  then Rail's label for any status the tracker does not list. Each issue is grouped as its cycle holds it, with the live
+  issue in the group's rows, its count and its points, an unestimated one counting `default_estimates` for its project.
   """
   def calculate_status_groups(issues, statuses, default_estimates) when is_list(issues) do
     names = MapSet.new(statuses, & &1.name)
+    held = Enum.map(issues, &{as_cycle_holds(&1), &1})
     # By the shown name, since Discard and a closed cycle leave a Rail-tracked issue with none of its own.
-    {named, unnamed} = Enum.split_with(issues, &MapSet.member?(names, calculate_status_name(&1)))
+    {named, unnamed} =
+      Enum.split_with(held, fn {as_held, _live} -> MapSet.member?(names, calculate_status_name(as_held)) end)
 
     tracker_groups =
       for status <- Enum.sort_by(statuses, &status_rank/1),
-          do: {status.name, status_state(status), Enum.filter(named, &(calculate_status_name(&1) == status.name))}
+          do:
+            {status.name, status_state(status),
+             for({as_held, live} <- named, calculate_status_name(as_held) == status.name, do: live)}
 
-    rail_groups = for state <- @states, do: {state_label(state), state, Enum.filter(unnamed, &(&1.state == state))}
+    rail_groups =
+      for state <- @states,
+          do: {state_label(state), state, for({as_held, live} <- unnamed, as_held.state == state, do: live)}
 
     (tracker_groups ++ rail_groups)
     |> Enum.reject(&match?({_label, _state, []}, &1))
@@ -373,6 +382,11 @@ defmodule Rail.Issues.Schemas.Issue do
     key = Enum.join(Enum.reject([prefix, head.id, "above", first.id], &is_nil/1), "-")
     %{issue: head, key: key, dimmed: true, sub_issues: Enum.map(members, &%{issue: &1, key: &1.id})}
   end
+
+  defp as_cycle_holds(%__MODULE__{cycle_state: nil} = issue), do: issue
+
+  defp as_cycle_holds(%__MODULE__{cycle_state: state, cycle_state_name: name} = issue),
+    do: %{issue | state: state, state_name: name}
 
   defp status_rank(%{type: "started", position: position}), do: {0, -position}
   defp status_rank(%{type: type, position: position}), do: {type_rank(type), position}

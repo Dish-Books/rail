@@ -16,8 +16,9 @@ defmodule Rail.Issues.Actions.ListIssues do
   Rail's own for a Rail-tracked one, or a list), `:state`, `:show_finished`, `:search`, `:completed_after`, `:archived`,
   `:priority`, `:limit`, `:offset` and `:preload`.
 
-  With `:cycle_id`, each issue reads as its cycle holds it, so one a cycle held when it closed is filtered, counted and
-  returned in the state it closed in.
+  With `:cycle_id`, each issue is filtered and counted as its cycle holds it, so one a cycle held when it closed counts in
+  the state it closed in. Each comes back live, with the cycle's state and status name in `cycle_state` and
+  `cycle_state_name`.
 
   An issue archived in its tracker is left out unless a task holds it, or
   `archived: true` asks for every one.
@@ -51,8 +52,10 @@ defmodule Rail.Issues.Actions.ListIssues do
       |> order_by([i], desc: i.updated_at, desc: i.id)
       |> limit_to(opts[:limit])
       |> offset_by(opts[:offset])
-      |> preload(^Keyword.get(opts, :preload, []))
+      |> select_live(opts[:cycle_id])
       |> Repo.all()
+      # Not a query preload, which would apply to the cycle's reading that `select_live/2` no longer selects.
+      |> Repo.preload(Keyword.get(opts, :preload, []))
 
     %{issues: issues, total: total(priority_counts, opts[:priority]), priority_counts: priority_counts}
   end
@@ -105,6 +108,16 @@ defmodule Rail.Issues.Actions.ListIssues do
 
   defp offset_by(query, nil), do: query
   defp offset_by(query, offset), do: offset(query, ^offset)
+
+  defp select_live(query, nil), do: query
+
+  defp select_live(query, _cycle_id) do
+    from([i] in query,
+      join: live in Issue,
+      on: live.id == i.id,
+      select: merge(live, %{cycle_state: i.state, cycle_state_name: i.state_name})
+    )
+  end
 
   defp total(priority_counts, nil), do: priority_counts |> Map.values() |> Enum.sum()
   defp total(priority_counts, priority), do: Map.get(priority_counts, priority, 0)

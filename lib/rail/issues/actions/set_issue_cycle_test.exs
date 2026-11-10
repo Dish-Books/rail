@@ -4,9 +4,34 @@ defmodule Rail.Issues.Actions.SetIssueCycleTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Projects
 
   setup do
-    [local, other] = [local_project(), local_project(%{name: "Elsewhere"})]
+    local_key = "SIC#{System.unique_integer([:positive])}"
+
+    {:ok, local} =
+      Projects.create_project(system_scope(), %{
+        name: "Planned",
+        github_repo: "example/#{local_key}",
+        github_installation_id: 1,
+        tracker: :local,
+        key: local_key,
+        default_branch: "main",
+        clone_path: "/tmp/#{local_key}"
+      })
+
+    other_key = "SIE#{System.unique_integer([:positive])}"
+
+    {:ok, other} =
+      Projects.create_project(system_scope(), %{
+        name: "Elsewhere",
+        github_repo: "example/#{other_key}",
+        github_installation_id: 2,
+        tracker: :local,
+        key: other_key,
+        default_branch: "main",
+        clone_path: "/tmp/#{other_key}"
+      })
 
     # Each project's Cycle 1 runs Nov 10 to 23, then Cycle 2 from Nov 24.
     :ok = Issues.close_cycle_day(~D[2026-11-10])

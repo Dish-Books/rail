@@ -351,6 +351,35 @@ defmodule Rail.Issues.Schemas.IssueTest do
              ] = Issue.calculate_status_groups(issues, statuses, %{"prj_a" => 1})
     end
 
+    test "an issue its cycle closed In Progress and since finished groups as In Progress, its row live", %{
+      project: project
+    } do
+      {:ok, %{statuses: statuses}} = Issues.get_cycles(%{project | tracker: :local})
+
+      issue = %Issue{
+        id: "iss_rolled",
+        project_id: "prj_a",
+        state: :done,
+        state_name: "Done",
+        estimate: 3,
+        cycle_state: :in_progress,
+        cycle_state_name: nil,
+        parent: nil
+      }
+
+      for statuses <- [statuses, []] do
+        assert [
+                 %{
+                   label: "In Progress",
+                   state: :in_progress,
+                   count: 1,
+                   points: 3,
+                   rows: [%{issue: %Issue{id: "iss_rolled", state: :done}}]
+                 }
+               ] = Issue.calculate_status_groups([issue], statuses, %{"prj_a" => 1})
+      end
+    end
+
     test "an unestimated issue in a group counts its own project's default estimate" do
       statuses = [%{name: "In Progress", type: "started", position: 1}]
 

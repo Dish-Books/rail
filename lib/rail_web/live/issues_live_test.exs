@@ -3519,17 +3519,29 @@ defmodule RailWeb.IssuesLiveTest do
   end
 
   describe "a Rail-tracked project's cycles" do
-    setup %{conn: conn} do
+    setup %{conn: conn, github_project: github_project} do
       stub(Issues, :get_cycles, fn project -> call_original(Issues, :get_cycles, [project]) end)
-      local = local_project()
+      key = "ILC#{System.unique_integer([:positive])}"
+
+      {:ok, local} =
+        Projects.create_project(system_scope(), %{
+          name: "Cycles page",
+          github_repo: "example/#{key}",
+          github_installation_id: 1,
+          tracker: :local,
+          key: key,
+          default_branch: "main",
+          clone_path: "/tmp/#{key}"
+        })
 
       {:ok, viewer} =
         Users.register_oauth_user(%{
           github_id: "gh_local_cycles",
           login: "local_cycles",
-          email: "local_cycles@example.com",
-          admin: true
+          email: "local_cycles@example.com"
         })
+
+      {:ok, viewer} = Users.update_user(system_scope(), viewer, %{project_ids: [local.id, github_project.id]})
 
       %{conn: conn |> log_in_user(viewer) |> init_test_session(%{selected_project_id: local.id}), local: local}
     end
@@ -3630,9 +3642,34 @@ defmodule RailWeb.IssuesLiveTest do
       assert {:ok, %{cycles: [%{ends_on: ^ends_on} | _later]}} = Issues.get_cycles(local)
     end
 
-    test "each row in a cycle names it, except in that cycle's own view, where a rolled-over row names where it went",
+    test "each row in a cycle names it, and an ended cycle's rows keep the state it closed in but act on the issue now",
          %{conn: conn, local: local} do
-      %{rolled: %{id: rolled_id}, kept: %{id: kept_id}} = rolled_over_cycle(local)
+      # Cycle 1 runs Nov 10 to 23 and closes holding `rolled` and `merged` In Progress, and `kept` Done.
+      :ok = Issues.close_cycle_day(~D[2026-11-10])
+      stub(Date, :utc_today, fn -> ~D[2026-11-12] end)
+      {:ok, %{cycles: [first | _later]}} = Issues.get_cycles(local)
+      {:ok, %{id: rolled_id} = rolled} = Issues.create_issue(system_scope(), local, %{title: "Rolls over"})
+      {:ok, %{id: merged_id} = merged} = Issues.create_issue(system_scope(), local, %{title: "Merges"})
+      {:ok, %{id: kept_id} = kept} = Issues.create_issue(system_scope(), local, %{title: "Stays"})
+      {:ok, task} = merged |> Repo.preload(:project) |> Pipeline.create_task(:engineer)
+      in_progress = %{id: "in_progress", name: "In Progress", state: :in_progress}
+      done = %{id: "done", name: "Done", state: :done}
+
+      for issue <- [rolled, merged, kept] do
+        {:ok, _issue} = Issues.set_issue_cycle(system_scope(), issue, first.id)
+      end
+
+      {:ok, rolled} = Issues.set_issue_status(system_scope(), rolled, in_progress)
+      {:ok, merged} = Issues.set_issue_status(system_scope(), merged, in_progress)
+      {:ok, kept} = Issues.set_issue_status(system_scope(), kept, done)
+      :ok = Issues.close_cycle_day(~D[2026-11-24])
+
+      # In Cycle 2, `rolled` is finished by hand, `merged` by its task merging, and `kept` is reopened.
+      stub(Date, :utc_today, fn -> ~D[2026-11-25] end)
+      {:ok, _done} = Issues.set_issue_status(system_scope(), rolled, done)
+      {:ok, _merged} = Pipeline.update_task(task, %{stage: :merged, cleaned_up_at: DateTime.utc_now()})
+      {:ok, _done} = Issues.set_issue_status(system_scope(), merged, done)
+      {:ok, _reopened} = Issues.set_issue_status(system_scope(), kept, %{id: "todo", name: "Todo", state: :todo})
       {:ok, %{id: loose_id}} = Issues.create_issue(system_scope(), local, %{title: "In no cycle"})
 
       {:ok, view, _html} = live(conn, ~p"/issues?finished=true")
@@ -3648,7 +3685,17 @@ defmodule RailWeb.IssuesLiveTest do
 
       assert has_element?(view, "#cycle-issues section[aria-label='In Progress'] #issue-card-#{rolled_id}")
       assert has_element?(view, "#issue-cycle-#{rolled_id}", "Cycle 2")
+      assert has_element?(view, "#status-picker-#{rolled_id}-trigger[title='Done']")
+      refute has_element?(view, "#issue-no-task-#{rolled_id}")
+      refute has_element?(view, "#issue-start-#{rolled_id}")
+
+      assert has_element?(view, "#cycle-issues section[aria-label='In Progress'] #issue-card-#{merged_id}")
+      assert has_element?(view, "#task-link-#{merged_id}", "Merged")
+      refute has_element?(view, "#issue-no-task-#{merged_id}")
+
       assert has_element?(view, "#cycle-issues section[aria-label='Done'] #issue-card-#{kept_id}")
+      assert has_element?(view, "#status-picker-#{kept_id}-trigger[title='Todo']")
+      assert has_element?(view, "#issue-start-#{kept_id}")
       refute has_element?(view, "#issue-cycle-#{kept_id}")
       refute has_element?(view, "#cycle-edit-dates")
     end

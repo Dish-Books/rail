@@ -2,6 +2,7 @@ defmodule Rail.Issues.Actions.GetCyclesTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
+  alias Rail.Projects
 
   setup do
     stub(Date, :utc_today, fn -> ~D[2026-10-29] end)
@@ -132,7 +133,20 @@ defmodule Rail.Issues.Actions.GetCyclesTest do
 
   describe "a Rail-tracked project" do
     setup do
-      %{local: local_project()}
+      local_key = "GCY#{System.unique_integer([:positive])}"
+
+      {:ok, local} =
+        Projects.create_project(system_scope(), %{
+          name: "Cycles read",
+          github_repo: "example/#{local_key}",
+          github_installation_id: 1,
+          tracker: :local,
+          key: local_key,
+          default_branch: "main",
+          clone_path: "/tmp/#{local_key}"
+        })
+
+      %{local: local}
     end
 
     test "with no cycles yet has none, and Rail's eight statuses, each with its state", %{local: local} do

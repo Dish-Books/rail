@@ -1380,7 +1380,19 @@ defmodule RailWeb.IssueLiveTest do
 
   describe "a Rail-tracked issue's cycle" do
     setup %{conn: conn, user: user, project: project} do
-      local = local_project()
+      key = "IPC#{System.unique_integer([:positive])}"
+
+      {:ok, local} =
+        Projects.create_project(system_scope(), %{
+          name: "Issue page cycles",
+          github_repo: "example/#{key}",
+          github_installation_id: 1,
+          tracker: :local,
+          key: key,
+          default_branch: "main",
+          clone_path: "/tmp/#{key}"
+        })
+
       {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id, local.id]})
       {:ok, issue} = Issues.create_issue(system_scope(), local, %{title: "Planned from its page"})
       %{conn: log_in_user(conn, user), local: local, issue: issue}

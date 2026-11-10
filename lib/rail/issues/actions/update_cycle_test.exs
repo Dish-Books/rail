@@ -3,9 +3,21 @@ defmodule Rail.Issues.Actions.UpdateCycleTest do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Cycle
+  alias Rail.Projects
 
   setup do
-    local = local_project()
+    local_key = "UCY#{System.unique_integer([:positive])}"
+
+    {:ok, local} =
+      Projects.create_project(system_scope(), %{
+        name: "Dated",
+        github_repo: "example/#{local_key}",
+        github_installation_id: 1,
+        tracker: :local,
+        key: local_key,
+        default_branch: "main",
+        clone_path: "/tmp/#{local_key}"
+      })
 
     # Cycles 1 to 3 run Nov 10 to 23, Nov 24 to Dec 7 and Dec 8 to 21, with Cycle 1 running.
     :ok = Issues.close_cycle_day(~D[2026-11-10])
