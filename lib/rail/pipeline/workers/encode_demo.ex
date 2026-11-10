@@ -138,7 +138,8 @@ defmodule Rail.Pipeline.Workers.EncodeDemo do
     %Project{} = project = Repo.get!(Project, task.project_id)
 
     with {:ok, video} <- File.read(Path.join([task.scratch_path, "demo", "demo.webm"])),
-         {:ok, asset_url} <- Issues.upload_asset(project, "#{issue.identifier}-demo.webm", "video/webm", video),
+         {:ok, asset_url} <-
+           Issues.upload_asset(%{issue | project: project}, "#{issue.identifier}-demo.webm", "video/webm", video),
          {:ok, _comment} <- Issues.comment(Scope.for_system(), issue, %{body: comment(demo, asset_url)}),
          :ok <- link_from_pull_request(project, task, asset_url) do
       :ok

@@ -34,6 +34,7 @@ config :rail, :github, req_options: [plug: {Req.Test, Rail.GitHub.Client}]
 config :rail, :linear, req_options: [plug: {Req.Test, Rail.Linear}]
 config :rail, :linear_oauth, req_options: [plug: {Req.Test, Rail.Linear}]
 config :rail, :mcp, req_options: [plug: {Req.Test, Rail.Mcp}, retry: false]
+config :rail, :r2, req_options: [plug: {Req.Test, Rail.Issues.Clients.R2}, retry: false]
 
 # A fixed machine, so what fits and what waits does not depend on where the suite runs.
 config :rail, :sandbox, runtime: :local, local_cpus: 4, local_memory_gb: 8, headroom_cpus: 0

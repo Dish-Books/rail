@@ -7,6 +7,7 @@ defmodule Rail.Issues.Tracker.Local do
 
   import Rail.Issues.Utils.WriteIssueStatus
 
+  alias Rail.Issues.Clients.R2
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects.Schemas.Project
@@ -16,6 +17,7 @@ defmodule Rail.Issues.Tracker.Local do
 
   @ranks %{triage: 0, backlog: 1, todo: 2, in_progress: 3, in_review: 4, done: 5}
   @statuses [:triage, :backlog, :todo, :in_progress, :in_review, :done, :canceled, :duplicate]
+  @asset_name ~r/\A[0-9a-f]{8}-[0-9a-f-]{27}-[\w.-]+\z/
 
   # The id is drawn here because the URL names it, and the identifier is unknown until Postgres numbers the row.
   @impl true
@@ -99,11 +101,22 @@ defmodule Rail.Issues.Tracker.Local do
   @impl true
   def set_up_project(%Project{}), do: :ok
 
+  # A fresh id per upload, so a re-recorded demo gets a new address and no browser shows its cached copy of the old.
   @impl true
-  def upload_asset(_target, _filename, _content_type, _data_binary), do: {:error, :unsupported}
+  def upload_asset(%Issue{id: issue_id}, filename, content_type, data_binary) do
+    name = "#{Ecto.UUID.generate()}-#{filename}"
 
+    with :ok <- R2.put_object("#{issue_id}/#{name}", content_type, data_binary),
+         do: {:ok, RailWeb.Endpoint.url() <> "/issues/#{issue_id}/assets/#{name}"}
+  end
+
+  # Only a name in the shape uploads write, so no path reaches another issue's file or a listing of the bucket.
   @impl true
-  def get_asset(%Issue{}, _path), do: {:error, :unsupported}
+  def get_asset(%Issue{id: issue_id}, name) do
+    if Regex.match?(@asset_name, name),
+      do: R2.get_object("#{issue_id}/#{name}"),
+      else: {:error, :not_found}
+  end
 
   @impl true
   def get_cycles(%Project{}), do: {:ok, %{cycles: [], statuses: []}}

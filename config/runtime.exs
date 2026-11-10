@@ -42,6 +42,13 @@ config :rail, :linear_oauth,
 # environment directly.
 config :rail, :no_dispatch, get_env.("RAIL_NO_DISPATCH", nil) == "1"
 
+# The private bucket a Rail-tracked issue's screenshots and demo videos are kept in.
+config :rail, :r2,
+  account_id: get_env.("R2_ACCOUNT_ID", "r2_account_id"),
+  bucket: get_env.("R2_BUCKET", "r2_bucket"),
+  access_key_id: get_env.("R2_ACCESS_KEY_ID", "r2_access_key_id"),
+  secret_access_key: get_env.("R2_SECRET_ACCESS_KEY", "r2_secret_access_key")
+
 config :rail, :slack_oauth,
   client_id: get_env.("SLACK_CLIENT_ID", "slack_client_id"),
   client_secret: get_env.("SLACK_CLIENT_SECRET", "slack_client_secret")
