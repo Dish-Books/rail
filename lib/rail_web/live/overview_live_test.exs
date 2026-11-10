@@ -239,7 +239,7 @@ defmodule RailWeb.OverviewLiveTest do
                name: "Project One",
                github_repo: "example/p1",
                github_installation_id: 111,
-               key: "P1",
+               key: "P1OVW",
                default_branch: "main",
                clone_path: "/tmp/p1",
                active: true,
@@ -251,7 +251,7 @@ defmodule RailWeb.OverviewLiveTest do
                name: "Project Two",
                github_repo: "example/p2",
                github_installation_id: 222,
-               key: "P2",
+               key: "P2OVW",
                default_branch: "main",
                clone_path: "/tmp/p2",
                active: true,
@@ -2065,9 +2065,9 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, other_project} =
         Projects.create_project(system_scope(), %{
           name: "Other Project",
-          github_repo: "example/other",
+          github_repo: "example/other-ovw",
           github_installation_id: 444,
-          key: "OTH",
+          key: "OTHOVW",
           default_branch: "main",
           clone_path: "/tmp/other",
           linear_workspace_id: project.linear_workspace_id
@@ -2113,9 +2113,9 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, other_project} =
         Projects.create_project(system_scope(), %{
           name: "Other Project",
-          github_repo: "example/other",
+          github_repo: "example/other-ovw",
           github_installation_id: 444,
-          key: "OTH",
+          key: "OTHOVW",
           default_branch: "main",
           clone_path: "/tmp/other",
           linear_workspace_id: project.linear_workspace_id
@@ -2411,9 +2411,9 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, other_project} =
         Projects.create_project(system_scope(), %{
           name: "Other Project",
-          github_repo: "example/other",
+          github_repo: "example/other-ovw",
           github_installation_id: 444,
-          key: "OTH",
+          key: "OTHOVW",
           default_branch: "main",
           clone_path: "/tmp/other",
           linear_workspace_id: project.linear_workspace_id

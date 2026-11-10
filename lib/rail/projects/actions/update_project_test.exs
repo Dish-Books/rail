@@ -346,7 +346,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
           name: "Other",
           github_repo: "example/other-#{System.unique_integer([:positive])}",
           github_installation_id: 2,
-          key: "OTH",
+          key: "OTHUP",
           default_branch: "main",
           clone_path: "/tmp/other"
         })
@@ -431,7 +431,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
           name: "Other",
           github_repo: "example/other-#{System.unique_integer([:positive])}",
           github_installation_id: 2,
-          key: "OTH",
+          key: "OTHUP",
           default_branch: "main",
           clone_path: "/tmp/other"
         })

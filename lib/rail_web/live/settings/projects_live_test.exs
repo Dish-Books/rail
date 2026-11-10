@@ -77,7 +77,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "Active App",
                github_repo: "example/active-#{id}",
                github_installation_id: 111,
-               key: "ACT",
+               key: "ACTPRJ",
                default_branch: "main",
                clone_path: "/tmp/active",
                active: true
@@ -103,7 +103,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     assert html =~ "Active App"
     assert html =~ "Inactive App"
     assert html =~ "example/active-#{id}"
-    assert html =~ "ACT"
+    assert html =~ "ACTPRJ"
     assert html =~ "INACT"
     assert has_element?(view, "#project-status-#{p1_id}", "Active")
     assert has_element?(view, "#project-status-#{p2_id}", "Inactive")
@@ -301,7 +301,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "Setup App",
                github_repo: "example/setup-#{System.unique_integer([:positive])}",
                github_installation_id: 334,
-               key: "SUP",
+               key: "SUPPRJ",
                default_branch: "main",
                clone_path: "/tmp/setup"
              })
@@ -425,7 +425,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
         name: "One",
         github_repo: "example/one-#{id}",
         github_installation_id: 338,
-        key: "ONE",
+        key: "ONEPRJ",
         default_branch: "main",
         clone_path: "/tmp/one",
         ci_command: "mix test"
@@ -661,7 +661,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "First Project",
                github_repo: "example/p1-#{id}",
                github_installation_id: 111,
-               key: "P1",
+               key: "P1PRJ",
                default_branch: "main",
                clone_path: "/tmp/p1"
              })
@@ -671,7 +671,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "Second Project",
                github_repo: "example/p2-#{id}",
                github_installation_id: 222,
-               key: "P2",
+               key: "P2PRJ",
                default_branch: "main",
                clone_path: "/tmp/p2"
              })
@@ -687,7 +687,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
         "github_repo" => "example/p1-#{id}",
         "github_installation_id" => "111",
         "default_branch" => "main",
-        "key" => "P1",
+        "key" => "P1PRJ",
         "clone_path" => "/tmp/p1",
         "active" => "true"
       }
@@ -870,7 +870,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
           name: "Other",
           github_repo: "example/other-#{System.unique_integer([:positive])}",
           github_installation_id: 9,
-          key: "OTH",
+          key: "OTHPRJ",
           default_branch: "main",
           clone_path: "/tmp/other"
         })

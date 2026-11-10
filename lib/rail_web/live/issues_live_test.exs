@@ -95,7 +95,7 @@ defmodule RailWeb.IssuesLiveTest do
                name: "Issues Project",
                github_repo: "example/issues-project",
                github_installation_id: 601,
-               key: "ISS",
+               key: "ISSILS",
                default_branch: "main",
                clone_path: "/tmp/issues-project",
                active: true,
@@ -106,7 +106,7 @@ defmodule RailWeb.IssuesLiveTest do
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
     assert has_element?(view, "#selected-project-name", project_name)
-    assert has_element?(view, "#issues-subtitle", "Linear issues in ISS (#{project_name})")
+    assert has_element?(view, "#issues-subtitle", "Linear issues in ISSILS (#{project_name})")
 
     view |> element("#project-switcher-button") |> render_click()
     view |> element("#project-option-all") |> render_click()
@@ -408,7 +408,7 @@ defmodule RailWeb.IssuesLiveTest do
         name: "Hidden Project",
         github_repo: "example/hidden",
         github_installation_id: 556,
-        key: "HID",
+        key: "HIDILS",
         default_branch: "main",
         clone_path: "/tmp/hidden"
       })
@@ -1019,7 +1019,7 @@ defmodule RailWeb.IssuesLiveTest do
         name: "Sync Project",
         github_repo: "example/sync",
         github_installation_id: 555,
-        key: "SYN",
+        key: "SYNILS",
         default_branch: "main",
         clone_path: "/tmp/sync"
       })
@@ -3428,14 +3428,14 @@ defmodule RailWeb.IssuesLiveTest do
           name: "Other Linear project",
           github_repo: "example/other-linear",
           github_installation_id: 557,
-          key: "OTH",
+          key: "OTHILS",
           default_branch: "main",
           clone_path: "/tmp/other-linear",
           linear_workspace_id: project.linear_workspace_id
         })
 
       blocked = insert.("NST-7", %{})
-      blocker = insert.("OTH-1", %{project_id: other_project.id})
+      blocker = insert.("OTHILS-1", %{project_id: other_project.id})
 
       stub(Issues, :get_blockers, fn issues -> call_original(Issues, :get_blockers, [issues]) end)
 
@@ -3455,9 +3455,9 @@ defmodule RailWeb.IssuesLiveTest do
                         "type" => "blocks",
                         "issue" => %{
                           "id" => blocker.external_id,
-                          "identifier" => "OTH-1",
+                          "identifier" => "OTHILS-1",
                           "title" => "Secret title",
-                          "url" => "https://linear.app/issue/OTH-1",
+                          "url" => "https://linear.app/issue/OTHILS-1",
                           "state" => %{"name" => state_type, "type" => state_type}
                         }
                       }
@@ -3473,7 +3473,7 @@ defmodule RailWeb.IssuesLiveTest do
       conn = init_test_session(conn, %{selected_project_id: project.id})
       {:ok, view, _html} = live(conn, ~p"/issues")
       render_async(view)
-      assert has_element?(view, "#issue-card-#{blocked.id} [data-qa='issue-blocked'][title='Blocked by OTH-1']", "1")
+      assert has_element?(view, "#issue-card-#{blocked.id} [data-qa='issue-blocked'][title='Blocked by OTHILS-1']", "1")
 
       blocker |> Issue.tracker_changeset(%{state: :done}) |> Repo.update!()
       Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, blocker.id})
