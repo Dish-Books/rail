@@ -1,7 +1,8 @@
 defmodule Rail.Issues.Actions.HandleGithubWebhook do
   @moduledoc """
   Mirrors an `issues` or `issue_comment` event the GitHub App sent for a project's repository
-  into Rail, as `Rail.Issues.Actions.HandleLinearWebhook` does for Linear.
+  into Rail, as `Rail.Issues.Actions.HandleLinearWebhook` does for Linear. For a Rail-tracked project, a pull request
+  merged into the default branch moves the issues it belongs to toward Done.
 
   The row is written with `Issue.tracker_changeset/2`: the change came from GitHub, so nothing
   is pushed back to it. An update that finishes an open issue is handed to Learnings and the
@@ -15,8 +16,10 @@ defmodule Rail.Issues.Actions.HandleGithubWebhook do
 
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Tracker
   alias Rail.Learnings
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Users.Schemas.User
@@ -25,7 +28,8 @@ defmodule Rail.Issues.Actions.HandleGithubWebhook do
   Applies `payload` of GitHub `event` to `project`. An issue opened or changed is upserted and
   broadcast as `{:issue_changed, issue_id}` on `"issues"`, one deleted or moved to another
   repository is deleted, comments follow the same way, and anything else is ignored. Deliveries
-  arrive in any order, so one older than what Rail holds changes nothing.
+  arrive in any order, so one older than what Rail holds changes nothing. A merged pull request moves each
+  Rail-tracked issue whose or whose task's pull request number or branch it carries forward to Done, at most once.
   """
   def handle_github_webhook(%Project{} = project, "issues", %{"action" => action, "issue" => %{"node_id" => external_id}})
       when action in ["deleted", "transferred"] do
@@ -85,6 +89,23 @@ defmodule Rail.Issues.Actions.HandleGithubWebhook do
       %Issue{} = issue -> upsert_github_comment(issue, comment)
       nil -> :ok
     end
+  end
+
+  # Cleaned-up tasks count, since Rail's Merge cleans its task up before GitHub's delivery may arrive.
+  def handle_github_webhook(%Project{tracker: :local, default_branch: base} = project, "pull_request", %{
+        "action" => "closed",
+        "pull_request" => %{"merged" => true, "number" => number, "head" => %{"ref" => head}, "base" => %{"ref" => base}}
+      }) do
+    from(i in Issue,
+      left_join: t in Task,
+      on: t.issue_id == i.id and t.project_id == ^project.id,
+      where: i.project_id == ^project.id and i.tracker == :local,
+      where: i.pr_number == ^number or t.pr_number == ^number or i.branch_name == ^head or t.worktree_name == ^head,
+      distinct: true,
+      order_by: [asc: i.id]
+    )
+    |> Repo.all()
+    |> Enum.each(&Tracker.tracker(&1).advance_issue(&1, :done))
   end
 
   def handle_github_webhook(%Project{}, _event, _payload), do: :ok

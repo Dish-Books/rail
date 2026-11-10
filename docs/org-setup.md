@@ -21,7 +21,7 @@ Create it in the org: Settings > Developer settings > GitHub Apps > New GitHub A
   | Workflows | Read and write | only if agents may edit `.github/workflows`; GitHub refuses those pushes without it |
   | Metadata | Read | set by GitHub |
 
-- Subscribe to events: **Issues** and **Issue comment**.
+- Subscribe to events: **Issues**, **Issue comment** and **Pull request**, the last so a merge on GitHub finishes a Rail-tracked ticket.
 - Where can it be installed: only this account.
 
 Then on the App's page:
@@ -44,7 +44,7 @@ Each project picks one, and keeps it once it has issues.
 
 - **GitHub Issues.** Nothing to set up beyond the App's Issues permission and webhook. Saving the project creates nine `rail:` labels in the repository (states and priorities). The Issues page's Sync button pulls every open issue and those closed in the last 30 days; after that, the App's webhook brings each change as it happens. An open issue with no `rail:` label counts as Backlog. Issues are named `<key>#<number>`, such as `foo#267`, and a pull request Rail opens closes its issue on merge (`Closes #N`; on Linear, `Closes ENG-123` does it when the workspace has Linear's GitHub integration).
 - **Linear.** Add the workspace in Settings > Linear Workspaces, then give the project its team key.
-- **Rail.** Rail keeps the issues itself and names them `<key>-<number>`, such as `RAIL-12`, numbering each project from 1. There is no Sync button, since nothing lives elsewhere to pull. Design screenshots and demo videos go in a Cloudflare R2 bucket, served only through Rail to people who can open the project. In Cloudflare, create a private R2 bucket and an R2 API token with Object Read & Write on that bucket, then set `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` in Rail's environment (`docs/machine-setup.md`, step 6). Check: approve the plan of a task with a picked design, and its screenshot shows in the design section on the issue page.
+- **Rail.** Rail keeps the issues itself and names them `<key>-<number>`, such as `RAIL-12`, numbering each project from 1. There is no Sync button, since nothing lives elsewhere to pull. A pull request merged on GitHub into the default branch moves its issue to Done. Design screenshots and demo videos go in a Cloudflare R2 bucket, served only through Rail to people who can open the project. In Cloudflare, create a private R2 bucket and an R2 API token with Object Read & Write on that bucket, then set `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` in Rail's environment (`docs/machine-setup.md`, step 6). Check: approve the plan of a task with a picked design, and its screenshot shows in the design section on the issue page.
 
 ## 4. Preparing each repository
 
