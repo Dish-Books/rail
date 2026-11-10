@@ -299,7 +299,9 @@ defmodule RailWeb.Settings.ProjectsLive do
                 </legend>
                 <div class="mt-1 flex items-center gap-6">
                   <label
-                    :for={{value, label} <- [linear: "Linear", github: "GitHub Issues"]}
+                    :for={
+                      {value, label} <- [linear: "Linear", github: "GitHub Issues", local: "Rail"]
+                    }
                     class="flex items-center gap-2 text-sm text-slate-900 dark:text-slate-100"
                   >
                     <input
@@ -330,11 +332,18 @@ defmodule RailWeb.Settings.ProjectsLive do
                   name="project[key]"
                   id="project-key-input"
                   value={Ecto.Changeset.get_field(@changeset, :key)}
-                  placeholder={if @show_linear_fields, do: "e.g. DIS", else: "the repository's name"}
+                  placeholder={@key_placeholder}
                   class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 />
                 <p :if={@show_github_fields} class="mt-1 text-xs text-slate-500 dark:text-slate-400">
                   Names its issues, as in key#123. Fixed once the project has issues. The GitHub App needs Issues: read and write.
+                </p>
+                <p
+                  :if={@show_local_fields}
+                  id="project-key-hint"
+                  class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                >
+                  Names its issues, as in KEY-12. Fixed once the project has issues.
                 </p>
                 <span
                   :if={@changeset.errors[:key]}
@@ -1342,6 +1351,8 @@ defmodule RailWeb.Settings.ProjectsLive do
     |> assign(:changeset, changeset)
     |> assign(:show_linear_fields, tracker == :linear)
     |> assign(:show_github_fields, tracker == :github)
+    |> assign(:show_local_fields, tracker == :local)
+    |> assign(:key_placeholder, key_placeholder(tracker))
   end
 
   defp ci_reservation(%Project{ci_command: command}) when command in [nil, ""], do: "No CI"
@@ -1349,6 +1360,11 @@ defmodule RailWeb.Settings.ProjectsLive do
 
   defp tracker_label(:github), do: "GitHub"
   defp tracker_label(:linear), do: "Linear"
+  defp tracker_label(:local), do: "Rail"
+
+  defp key_placeholder(:linear), do: "e.g. DIS"
+  defp key_placeholder(:local), do: "e.g. RAIL"
+  defp key_placeholder(_github_or_none), do: "the repository's name"
 
   defp refresh_project(socket, project_id) do
     {:ok, project} = Projects.get_project(project_id)

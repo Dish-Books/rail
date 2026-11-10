@@ -129,4 +129,8 @@ defmodule Rail.Issues.Actions.GetCyclesTest do
     Req.Test.expect(Rail.Linear, fn conn -> conn |> Plug.Conn.put_status(500) |> Req.Test.json(%{}) end)
     assert {:error, {:linear_api_error, 500, _body}} = Issues.get_cycles(project)
   end
+
+  test "a Rail-tracked project has no cycles yet, and asks nobody", %{project: project} do
+    assert {:ok, %{cycles: [], statuses: []}} = Issues.get_cycles(%{project | tracker: :local})
+  end
 end

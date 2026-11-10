@@ -1,9 +1,9 @@
 defmodule Rail.Issues.Tracker do
   @moduledoc """
-  Where a project's issues live: Linear or GitHub Issues. Every tracker implements the same
+  Where a project's issues live: Linear, GitHub Issues or Rail itself. Every tracker implements the same
   callbacks, so the actions work an issue without asking which one holds it.
 
-  The implementations are `Rail.Issues.Tracker.Linear` and `Rail.Issues.Tracker.Github`.
+  The implementations are `Rail.Issues.Tracker.Linear`, `Rail.Issues.Tracker.Github` and `Rail.Issues.Tracker.Local`.
   """
 
   alias Rail.Issues.Schemas.Comment
@@ -13,7 +13,7 @@ defmodule Rail.Issues.Tracker do
   alias Rail.Scope
   alias Rail.Users.Schemas.User
 
-  @trackers %{linear: __MODULE__.Linear, github: __MODULE__.Github}
+  @trackers %{linear: __MODULE__.Linear, github: __MODULE__.Github, local: __MODULE__.Local}
 
   @doc """
   Opens a ticket for `attrs` (`:title`, `:description`, `:state`, and optionally `:priority`,

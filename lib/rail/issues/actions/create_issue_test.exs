@@ -1,9 +1,12 @@
 defmodule Rail.Issues.Actions.CreateIssueTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Workers.AdvanceTrackerState
+  alias Rail.Issues.Workers.SyncIssue
   alias Rail.Projects
   alias Rail.Users
   alias Rail.Workflows.Schemas.Workflow
@@ -58,7 +61,8 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
               state: :triage,
               state_name: "Triage",
               branch_name: "eng-301-branch",
-              url: "https://linear.app/issue/ENG-301"
+              url: "https://linear.app/issue/ENG-301",
+              number: nil
             }} =
              Issues.create_issue(system_scope(), project, %{
                title: "Short title",
@@ -379,6 +383,156 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
       end)
 
       assert {:error, :github_issues_permission_missing} = Issues.create_issue(system_scope(), project, %{title: "Nope"})
+    end
+  end
+
+  describe "a Rail-tracked project" do
+    # Each test makes its own project, since a shared one would hold the numbering lock across tests.
+    setup do
+      key = "Loc#{System.unique_integer([:positive])}"
+
+      {:ok, project} =
+        Projects.create_project(system_scope(), %{
+          name: "Rail-tracked",
+          github_repo: "example/#{key}",
+          github_installation_id: 1,
+          tracker: :local,
+          key: key,
+          default_branch: "main",
+          clone_path: "/tmp/#{key}"
+        })
+
+      %{local_project: project, key: key}
+    end
+
+    test "numbers each issue one past the last, and names and branches it from that number", %{
+      local_project: %{id: project_id} = project,
+      key: key
+    } do
+      branch_prefix = String.downcase(key)
+      identifier_1 = "#{key}-1"
+      identifier_2 = "#{key}-2"
+      identifier_3 = "#{key}-3"
+      branch_1 = "#{branch_prefix}-1-comments-left-on-diff-lines"
+      branch_2 = "#{branch_prefix}-2-the-diff-pane-scrolls-past-its-end"
+      branch_3 = "#{branch_prefix}-3"
+
+      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
+      assert {:ok,
+              %Issue{
+                id: issue_id,
+                tracker: :local,
+                project_id: ^project_id,
+                number: 1,
+                identifier: ^identifier_1,
+                branch_name: ^branch_1,
+                state: :triage,
+                state_name: "Triage",
+                title: "Comments left on diff lines",
+                description: "They vanish on reload"
+              }} =
+               Issues.create_issue(system_scope(), project, %{
+                 title: "Comments left on diff lines",
+                 description: "They vanish on reload"
+               })
+
+      assert_receive {:issue_created, ^issue_id}
+
+      assert {:ok, %Issue{number: 2, identifier: ^identifier_2, branch_name: ^branch_2}} =
+               Issues.create_issue(system_scope(), project, %{title: "  The diff pane: scrolls past its end!  "})
+
+      assert {:ok, %Issue{number: 3, identifier: ^identifier_3, branch_name: ^branch_3}} =
+               Issues.create_issue(system_scope(), project, %{title: "!!!"})
+    end
+
+    test "numbers each project on its own", %{local_project: project, key: key} do
+      other_key = "Oth#{System.unique_integer([:positive])}"
+      other_identifier = "#{other_key}-1"
+
+      {:ok, other} =
+        Projects.create_project(system_scope(), %{
+          name: "Another Rail-tracked",
+          github_repo: "example/#{other_key}",
+          github_installation_id: 1,
+          tracker: :local,
+          key: other_key,
+          default_branch: "main",
+          clone_path: "/tmp/#{other_key}"
+        })
+
+      identifier = "#{key}-2"
+      {:ok, _first} = Issues.create_issue(system_scope(), project, %{title: "First"})
+
+      assert {:ok, %Issue{number: 2, identifier: ^identifier}} =
+               Issues.create_issue(system_scope(), project, %{title: "Second"})
+
+      assert {:ok, %Issue{number: 1, identifier: ^other_identifier}} =
+               Issues.create_issue(system_scope(), other, %{title: "Elsewhere"})
+    end
+
+    test "links an issue and its sub-issue to their own pages, with nothing sent anywhere and no job queued", %{
+      local_project: project,
+      key: key
+    } do
+      identifier = "#{key}-2"
+
+      {:ok, %Issue{id: parent_id, external_id: parent_external_id, url: parent_url} = parent} =
+        Issues.create_issue(system_scope(), project, %{title: "Split me", priority: :high})
+
+      assert parent_url == RailWeb.Endpoint.url() <> "/issues/" <> parent_id
+      assert {:ok, _uuid} = Ecto.UUID.cast(parent_external_id)
+
+      assert {:ok,
+              %Issue{
+                id: child_id,
+                identifier: ^identifier,
+                parent_external_id: ^parent_external_id,
+                state: :todo,
+                state_name: "Todo",
+                estimate: 3
+              }} =
+               Issues.create_issue(system_scope(), project, %{title: "A part", estimate: 3, parent: parent})
+
+      child_url = RailWeb.Endpoint.url() <> "/issues/" <> child_id
+      assert %Issue{url: ^child_url} = Repo.get!(Issue, child_id)
+      refute_enqueued(worker: SyncIssue)
+      refute_enqueued(worker: AdvanceTrackerState)
+    end
+
+    test "two issues can never share a number", %{local_project: project} do
+      {:ok, %Issue{number: 1}} = Issues.create_issue(system_scope(), project, %{title: "First"})
+
+      assert {:error, changeset} =
+               %Issue{}
+               |> Issue.tracker_changeset(%{
+                 project_id: project.id,
+                 tracker: :local,
+                 external_id: Ecto.UUID.generate(),
+                 identifier: "taken",
+                 number: 1,
+                 title: "Same number",
+                 state: :triage
+               })
+               |> Repo.insert()
+
+      assert %{number: ["has already been taken"]} = errors_on(changeset)
+    end
+
+    test "only an insert of a Rail-tracked issue goes without an identifier", %{local_project: project} do
+      assert %{identifier: ["can't be blank"]} =
+               %Issue{}
+               |> Issue.changeset(%{
+                 project_id: project.id,
+                 tracker: :linear,
+                 external_id: "x",
+                 title: "t",
+                 state: :triage
+               })
+               |> errors_on()
+
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Named"})
+      assert %{identifier: ["can't be blank"]} = issue |> Issue.changeset(%{identifier: nil}) |> errors_on()
     end
   end
 

@@ -80,6 +80,20 @@ defmodule Rail.Issues.Actions.GetStatusesTest do
             ]} = Issues.get_statuses(system_scope(), project)
   end
 
+  test "a Rail-tracked project offers Rail's statuses from Triage to Duplicate, asking nobody", %{project: project} do
+    assert {:ok,
+            [
+              %{id: "triage", name: "Triage", state: :triage},
+              %{id: "backlog", name: "Backlog", state: :backlog},
+              %{id: "todo", name: "Todo", state: :todo},
+              %{id: "in_progress", name: "In Progress", state: :in_progress},
+              %{id: "in_review", name: "In Review", state: :in_review},
+              %{id: "done", name: "Done", state: :done},
+              %{id: "canceled", name: "Canceled", state: :canceled},
+              %{id: "duplicate", name: "Duplicate", state: :duplicate}
+            ]} = Issues.get_statuses(system_scope(), %{project | tracker: :local})
+  end
+
   test "a scope without the project is refused before any request", %{project: project} do
     assert {:error, :not_found} = Issues.get_statuses(temp_user_scope(), project)
   end

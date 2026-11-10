@@ -44,6 +44,8 @@ defmodule RailWeb.Components.IssueView do
       |> assign(:blocks, (assigns.blockers && assigns.blockers.blocks) || [])
       |> assign(:sub_issues, Enum.map(Issue.calculate_children(assigns.issue), &%{issue: &1, in_project: true}))
       |> assign(:sub_issue_count, "#{done}/#{total}")
+      # A Rail-tracked issue's link is this page.
+      |> assign(:show_tracker_link, assigns.issue.url not in [nil, ""] and assigns.issue.tracker != :local)
 
     ~H"""
     <div id="issue-page" data-qa="issue-page" class="max-w-5xl mx-auto space-y-6">
@@ -366,11 +368,11 @@ defmodule RailWeb.Components.IssueView do
             <p id="issue-project">{@issue.project.name}</p>
           </section>
 
-          <section :if={@issue.url not in [nil, ""] or @issue.branch_name} class="space-y-3">
+          <section :if={@show_tracker_link or @issue.branch_name} class="space-y-3">
             <h2 class="text-xs font-medium text-slate-500 dark:text-slate-400">Links</h2>
 
             <a
-              :if={@issue.url not in [nil, ""]}
+              :if={@show_tracker_link}
               href={@issue.url}
               target="_blank"
               rel="noopener noreferrer"

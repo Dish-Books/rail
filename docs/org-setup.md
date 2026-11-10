@@ -44,6 +44,7 @@ Each project picks one, and keeps it once it has issues.
 
 - **GitHub Issues.** Nothing to set up beyond the App's Issues permission and webhook. Saving the project creates nine `rail:` labels in the repository (states and priorities). The Issues page's Sync button pulls every open issue and those closed in the last 30 days; after that, the App's webhook brings each change as it happens. An open issue with no `rail:` label counts as Backlog. Issues are named `<key>#<number>`, such as `foo#267`, and a pull request Rail opens closes its issue on merge (`Closes #N`; on Linear, `Closes ENG-123` does it when the workspace has Linear's GitHub integration).
 - **Linear.** Add the workspace in Settings > Linear Workspaces, then give the project its team key.
+- **Rail.** Nothing to set up. Rail keeps the issues itself and names them `<key>-<number>`, such as `RAIL-12`, numbering each project from 1. There is no Sync button, since nothing lives elsewhere to pull.
 
 ## 4. Preparing each repository
 
@@ -93,8 +94,8 @@ Settings > Projects > New Project:
 | GitHub Repository | `<org>/<repo>` |
 | Installation ID | from step 1 |
 | Default Branch | usually `main` |
-| Issue Tracker | GitHub Issues or Linear |
-| Key | Linear: the team's key. GitHub Issues: names its issues (`key#123`), defaults to the repo's name. Fixed once there are issues |
+| Issue Tracker | GitHub Issues, Linear or Rail |
+| Key | Linear: the team's key. GitHub Issues: names its issues (`key#123`), defaults to the repo's name. Rail: names its issues (`KEY-12`). Fixed once there are issues |
 | Linear Workspace | Linear only |
 | Clone Path | the clone from step 5 |
 | Worktree Setup Script | the script from step 4, relative to the repo root |
@@ -112,4 +113,4 @@ Check: Settings > Roles lists a role for each of plan, engineer, review, QA and 
 
 ## 8. First task
 
-Pick a small issue and start Plan. Starting makes you the issue's owner, which Rail needs before it moves a tracker's status forward. On a Linear project that takes a linked Linear account. Without one the issue stays unassigned until you link it and press Claim on the task page. A run tab appears on the task within seconds. On a GitHub-tracked project the issue's label moves to `rail:in-progress`, then `rail:in-review` once review starts.
+Pick a small issue and start Plan. Starting makes you the issue's owner, which Rail needs before it moves a tracker's status forward. On a Linear project that takes a linked Linear account. Without one the issue stays unassigned until you link it and press Claim on the task page. A run tab appears on the task within seconds. On a GitHub-tracked project the issue's label moves to `rail:in-progress`, then `rail:in-review` once review starts. On a project Rail tracks itself, the issue moves to In Progress, In Review and Done with its task whether or not anyone owns it.

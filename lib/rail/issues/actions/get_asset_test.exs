@@ -72,4 +72,9 @@ defmodule Rail.Issues.Actions.GetAssetTest do
   test "get_asset/2 has nothing to fetch for a GitHub issue", %{github_project: project} do
     assert {:error, :unsupported} = Issues.get_asset(github_issue(project), "any/path.png")
   end
+
+  test "get_asset/2 has nothing to fetch for a Rail-tracked issue", %{project: project} do
+    issue = %Issue{tracker: :local, project: %{project | tracker: :local}}
+    assert {:error, :unsupported} = Issues.get_asset(issue, "any/path.png")
+  end
 end

@@ -37,6 +37,8 @@ defmodule RailWeb.IssuesLive do
     # The navigation only selects a project it lists, so the selection is always one of these.
     project = Enum.find(socket.assigns.projects, &(&1.id == socket.assigns.current_project_id))
     cycle_projects = if project, do: [project], else: Enum.filter(socket.assigns.projects, & &1.active)
+    # Rail's own tracker has nothing to pull, and would never say it finished.
+    sync_projects = Enum.reject(if(project, do: [project], else: socket.assigns.projects), &(&1.tracker == :local))
     %User{issues_filters: saved_filters} = socket.assigns.current_scope.user
 
     socket =
@@ -44,6 +46,8 @@ defmodule RailWeb.IssuesLive do
       |> assign(:page_title, "Issues")
       |> assign(:current_section, :issues)
       |> assign(:current_project, project)
+      |> assign(:sync_projects, sync_projects)
+      |> assign(:show_sync_button, sync_projects != [])
       |> assign(:syncing_project_ids, MapSet.new())
       |> assign(:is_syncing, false)
       |> assign(:saved_filters, saved_filters)
@@ -125,6 +129,7 @@ defmodule RailWeb.IssuesLive do
           <div class="flex items-center gap-3">
             <!-- Sync Issues button -->
             <button
+              :if={@show_sync_button}
               type="button"
               id="sync-issues-button"
               data-qa="sync-issues-button"
@@ -502,11 +507,7 @@ defmodule RailWeb.IssuesLive do
   # The pull runs in the background a page at a time; the button stays busy
   # until every project it started has said it is done.
   def handle_event("sync_issues", _params, socket) do
-    projects =
-      if project = socket.assigns.current_project,
-        do: [project],
-        else: socket.assigns.projects
-
+    projects = socket.assigns.sync_projects
     Enum.each(projects, &Issues.sync_issues/1)
 
     ids = MapSet.union(socket.assigns.syncing_project_ids, MapSet.new(projects, & &1.id))

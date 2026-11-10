@@ -6,6 +6,7 @@ defmodule Rail.Issues.Actions.ClaimIssueTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Issues.Workers.SyncIssue
+  alias Rail.Projects
   alias Rail.Scope
   alias Rail.Users
 
@@ -83,5 +84,28 @@ defmodule Rail.Issues.Actions.ClaimIssueTest do
 
     assert {:error, :not_on_github} = Issues.claim_issue(Scope.for_user(user), issue)
     assert %Issue{owner_user_id: nil} = Repo.reload!(issue)
+  end
+
+  test "anyone can claim a Rail-tracked issue, Linear or not, and the change is queued for open pages" do
+    key = "Clm#{System.unique_integer([:positive])}"
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Rail-tracked",
+        github_repo: "example/#{key}",
+        github_installation_id: 1,
+        tracker: :local,
+        key: key,
+        default_branch: "main",
+        clone_path: "/tmp/#{key}"
+      })
+
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Up for grabs"})
+
+    {:ok, %{id: user_id} = user} =
+      Users.register_oauth_user(%{github_id: "gh_local_claimer", login: "local-claimer", email: "lcl@example.com"})
+
+    assert {:ok, %Issue{owner_user_id: ^user_id}} = Issues.claim_issue(Scope.for_user(user), issue)
+    assert_enqueued(worker: SyncIssue, args: %{issue_id: issue.id, fields: ["owner_user_id"]})
   end
 end

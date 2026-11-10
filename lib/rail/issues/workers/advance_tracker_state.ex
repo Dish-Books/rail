@@ -7,7 +7,7 @@ defmodule Rail.Issues.Workers.AdvanceTrackerState do
 
   Only once the issue has an owner: an unowned ticket stays where it is, and the write
   that gives it one, `Rail.Issues.Schemas.Issue`'s changeset or the full sync, queues
-  this job to catch it up with its task.
+  this job to catch it up with its task. A Rail-tracked issue has nobody else to move it, so it moves owned or not.
 
   One job per issue at a time, so two can never race their writes. That job covers
   any later stage: it reads the stage when it runs, and runs again if it moved meanwhile.
@@ -34,8 +34,9 @@ defmodule Rail.Issues.Workers.AdvanceTrackerState do
 
   # The target comes from where the task is now, not from when the job was queued,
   # so jobs for one issue that run together all aim at the same status.
-  defp advance(%Issue{owner_user_id: owner_user_id, task: %Task{stage: stage} = task} = issue)
-       when is_binary(owner_user_id) and stage in [:plan, :custom, :engineer, :review, :finalize, :merged] do
+  defp advance(%Issue{owner_user_id: owner_user_id, tracker: tracker, task: %Task{stage: stage} = task} = issue)
+       when (is_binary(owner_user_id) or tracker == :local) and
+              stage in [:plan, :custom, :engineer, :review, :finalize, :merged] do
     target =
       case stage do
         :merged -> :done

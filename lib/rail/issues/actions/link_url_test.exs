@@ -4,6 +4,7 @@ defmodule Rail.Issues.Actions.LinkUrlTest do
 
   alias Rail.Issues
   alias Rail.Issues.Workers.LinkTrackerUrl
+  alias Rail.Projects
 
   # DataCase verifies Mimic, not Req.Test: without this a link that never went out would pass.
   setup {Req.Test, :verify_on_exit!}
@@ -90,5 +91,29 @@ defmodule Rail.Issues.Actions.LinkUrlTest do
 
     assert {:ok, %Oban.Job{id: ^job_id, conflict?: true}} =
              Issues.link_url(issue, "https://slack.example/archives/C1/p1", "Slack thread")
+  end
+
+  test "the job has nothing to link for a Rail-tracked issue, and asks nobody" do
+    key = "Lnk#{System.unique_integer([:positive])}"
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Rail-tracked",
+        github_repo: "example/#{key}",
+        github_installation_id: 1,
+        tracker: :local,
+        key: key,
+        default_branch: "main",
+        clone_path: "/tmp/#{key}"
+      })
+
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Reported in Slack"})
+
+    assert :ok =
+             perform_job(LinkTrackerUrl, %{
+               issue_id: issue.id,
+               url: "https://slack.example/archives/C1/p1",
+               title: "Slack thread"
+             })
   end
 end

@@ -58,4 +58,8 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
   test "upload_asset/4 has nowhere to put a file for a GitHub project", %{github_project: project} do
     assert {:error, :unsupported} = Issues.upload_asset(project, "shot.png", "image/png", <<1>>)
   end
+
+  test "upload_asset/4 has nowhere to put a file for a Rail-tracked project", %{project: project} do
+    assert {:error, :unsupported} = Issues.upload_asset(%{project | tracker: :local}, "shot.png", "image/png", <<1>>)
+  end
 end
