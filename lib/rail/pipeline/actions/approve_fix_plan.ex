@@ -145,7 +145,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlan do
         screenshot = File.read!(Path.join([task.scratch_path, "design", "#{key}.png"]))
 
         image =
-          case Issues.upload_asset(project, "#{issue.identifier}-#{key}.png", "image/png", screenshot) do
+          case Issues.upload_asset(%{issue | project: project}, "#{issue.identifier}-#{key}.png", "image/png", screenshot) do
             {:ok, url} -> "\n\n![#{option.title}](#{url})"
             {:error, _unsupported} -> ""
           end

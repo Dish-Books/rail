@@ -206,6 +206,33 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
     assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 
+  test "a Rail-tracked issue gets the picked design's screenshot at its own address on Rail", %{
+    task: %{issue_id: issue_id} = task,
+    run: run,
+    picked: picked
+  } do
+    picked.()
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "table"})
+    Issue |> Repo.get!(issue_id) |> Ecto.Changeset.change(tracker: :local) |> Repo.update!()
+
+    Req.Test.expect(Rail.Issues.Clients.R2, fn conn ->
+      assert %Plug.Conn{method: "PUT", request_path: "/r2_bucket/" <> key} = conn
+      assert {:ok, "png bytes", conn} = Plug.Conn.read_body(conn)
+      send(self(), {:stored, key})
+      Plug.Conn.send_resp(conn, 200, "")
+    end)
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
+    assert_received {:stored, key}
+    assert [^issue_id, name] = String.split(key, "/")
+    assert name =~ ~r/\A[0-9a-f-]{36}-APP-1-table\.png\z/
+
+    description =
+      "The approved ticket body.\n\n## Design: Table\n\nDense rows.\n\n![Table](#{RailWeb.Endpoint.url()}/issues/#{issue_id}/assets/#{name})"
+
+    assert %Issue{description: ^description} = Repo.get!(Issue, issue_id)
+  end
+
   test "a tracker that cannot hold the screenshot still gets the design's section", %{
     task: task,
     run: run,
@@ -213,7 +240,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   } do
     picked.()
     {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "table"})
-    expect(Issues, :upload_asset, fn _project, _filename, "image/png", _bytes -> {:error, :unsupported} end)
+    expect(Issues, :upload_asset, fn %Issue{}, _filename, "image/png", _bytes -> {:error, :unsupported} end)
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
 

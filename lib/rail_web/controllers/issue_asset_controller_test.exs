@@ -2,6 +2,9 @@ defmodule RailWeb.IssueAssetControllerTest do
   use RailWeb.ConnCase, async: true
 
   alias Rail.Issues
+  alias Rail.Issues.Clients.R2
+  alias Rail.Issues.Schemas.Issue
+  alias Rail.Projects
   alias Rail.Users
 
   setup %{conn: conn, project: project} do
@@ -88,5 +91,61 @@ defmodule RailWeb.IssueAssetControllerTest do
 
     assert conn |> log_in_user(admin) |> get(~p"/issues/#{issue.id}/assets/ws_id/screenshot.png") |> response(200) ==
              "PNG_BYTES"
+  end
+
+  test "serves a Rail-tracked issue's file from R2, and none through another issue's address", %{conn: conn} do
+    n = System.unique_integer([:positive])
+
+    {:ok, local} =
+      Projects.create_project(system_scope(), %{
+        name: "Kept in Rail",
+        github_repo: "example/asset-#{n}",
+        github_installation_id: 1,
+        tracker: :local,
+        key: "AST#{n}",
+        default_branch: "main",
+        clone_path: "/tmp/asset-#{n}"
+      })
+
+    {:ok, user} =
+      Users.register_oauth_user(%{github_id: "gh_local_asset", login: "local_asset", email: "local_asset@example.com"})
+
+    {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [local.id]})
+    {:ok, %Issue{id: issue_id}} = Issues.create_issue(system_scope(), local, %{title: "Has a screenshot"})
+    {:ok, %Issue{id: other_id}} = Issues.create_issue(system_scope(), local, %{title: "Has none"})
+    name = "#{Ecto.UUID.generate()}-AST-1-chips.png"
+    conn = log_in_user(conn, user)
+
+    path = "/r2_bucket/#{issue_id}/#{name}"
+
+    Req.Test.expect(R2, fn r2 ->
+      assert %Plug.Conn{method: "GET", request_path: ^path} = r2
+
+      r2
+      |> Plug.Conn.put_resp_content_type("image/png", nil)
+      |> Plug.Conn.send_resp(200, "PNG_BYTES")
+    end)
+
+    served = get(conn, "/issues/#{issue_id}/assets/#{name}")
+    assert response(served, 200) == "PNG_BYTES"
+    assert response_content_type(served, :png) =~ "image/png"
+
+    other_path = "/r2_bucket/#{other_id}/#{name}"
+
+    Req.Test.expect(R2, fn r2 ->
+      assert %Plug.Conn{request_path: ^other_path} = r2
+      Plug.Conn.send_resp(r2, 404, "NoSuchKey")
+    end)
+
+    assert conn |> get("/issues/#{other_id}/assets/#{name}") |> response(404) == "Not found"
+    assert conn |> get("/issues/#{other_id}/assets/#{issue_id}/#{name}") |> response(404) == "Not found"
+    assert conn |> get("/issues/#{other_id}/assets/../#{issue_id}/#{name}") |> response(404) == "Not found"
+    assert conn |> get("/issues/#{issue_id}/assets/#{name}?list-type=2") |> response(404) == "Not found"
+    assert conn |> get("/issues/#{issue_id}/assets/") |> response(404) == "Not found"
+
+    {:ok, outsider} =
+      Users.register_oauth_user(%{github_id: "gh_local_out", login: "local_out", email: "local_out@example.com"})
+
+    assert conn |> log_in_user(outsider) |> get("/issues/#{issue_id}/assets/#{name}") |> response(404) == "Not found"
   end
 end

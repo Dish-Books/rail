@@ -8,7 +8,6 @@ defmodule Rail.Issues.Tracker do
 
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Scope
   alias Rail.Users.Schemas.User
@@ -66,9 +65,9 @@ defmodule Rail.Issues.Tracker do
   @callback set_up_project(Project.t()) :: :ok | {:error, term()}
 
   @doc """
-  Stores a file where `target`'s tickets can link to it, returning its URL.
+  Stores a file `issue` (its project preloaded) can link to, returning its URL.
   """
-  @callback upload_asset(Project.t() | LinearWorkspace.t(), String.t(), String.t(), binary()) ::
+  @callback upload_asset(Issue.t(), String.t(), String.t(), binary()) ::
               {:ok, String.t()} | {:error, term()}
 
   @doc """
@@ -107,9 +106,8 @@ defmodule Rail.Issues.Tracker do
               {:ok, %{String.t() => %{blocked_by: [Issue.t()], blocks: [Issue.t()]}}} | {:error, term()}
 
   @doc """
-  The tracker module for a project, an issue, or a Linear workspace.
+  The tracker module for a project or an issue.
   """
   def tracker(%Project{tracker: tracker}), do: Map.fetch!(@trackers, tracker)
   def tracker(%Issue{tracker: tracker}), do: Map.fetch!(@trackers, tracker)
-  def tracker(%LinearWorkspace{}), do: @trackers.linear
 end
