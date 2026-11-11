@@ -6,6 +6,7 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
 
   alias Rail.GitHub.Client
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Learnings.Workers.IssueFinished
@@ -789,6 +790,19 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
       assert %Issue{state: :done, state_name: "Done", completed_at: %DateTime{}} = Repo.get!(Issue, issue_id)
       assert_receive {:issue_changed, ^issue_id}
       assert [_once] = all_enqueued(worker: IssueFinished, args: %{issue_id: issue_id})
+    end
+
+    test "Start puts an issue in no cycle in the running one as it moves it to In Progress", %{
+      project: project,
+      issue: %{id: issue_id}
+    } do
+      :ok = Issues.close_cycle_day(Date.utc_today())
+
+      [%Cycle{id: running_id} | _later] =
+        Repo.all(from(c in Cycle, where: c.project_id == ^project.id, order_by: c.number))
+
+      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+      assert %Issue{state: :in_progress, cycle_external_id: ^running_id} = Repo.get!(Issue, issue_id)
     end
 
     test "never moves back, so the engineer leaves In Review where it is", %{issue: %{id: issue_id} = issue, task: task} do

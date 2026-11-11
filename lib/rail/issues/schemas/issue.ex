@@ -53,8 +53,11 @@ defmodule Rail.Issues.Schemas.Issue do
     # Where its testing stands since it last reached Done, and what the testers wrote. A trigger sets both on that move.
     field :testing_state, Ecto.Enum, values: @testing_states, read_after_writes: true
     field :testing_notes, :string, read_after_writes: true
-    # Linear's ids for its cycle and its parent, which only the tracker sets.
+    # Its cycle's id, Linear's or a Rail cycle's for a Rail-tracked issue, which Rail sets itself.
     field :cycle_external_id, :string
+    # The state and status name a cycle's listing reads the issue in; set only by `list_issues/1` with `:cycle_id`.
+    field :cycle_state, Ecto.Enum, values: @states, virtual: true
+    field :cycle_state_name, :string, virtual: true
 
     belongs_to :parent, __MODULE__,
       foreign_key: :parent_external_id,
@@ -117,7 +120,8 @@ defmodule Rail.Issues.Schemas.Issue do
 
   @doc """
   For what the tracker itself reports: `changeset/2` with nothing queued to push back, plus the cycle and the parent,
-  which Rail never sends. Either one, giving an unowned issue an owner, queues `Workers.AdvanceTrackerState`.
+  which Rail never sends, and Rail sets the cycle of a Rail-tracked issue through it. Either one, giving an unowned
+  issue an owner, queues `Workers.AdvanceTrackerState`.
   """
   def tracker_changeset(issue, attrs) do
     issue
@@ -245,21 +249,28 @@ defmodule Rail.Issues.Schemas.Issue do
   def calculate_issue_tree(issues) when is_list(issues), do: build_tree(issues, nil)
 
   @doc """
-  The cycle's issues in status groups: Linear's statuses, started ones furthest along first and finished ones last,
-  then Rail's label for any status Linear does not list. Each has its rows, its count and its points, an unestimated
-  issue counting its own project's default estimate from `default_estimates`.
+  The cycle's issues in status groups: the tracker's statuses, started ones furthest along first and finished ones last,
+  then Rail's label for any status the tracker does not list. Each issue is grouped as its cycle holds it, with the live
+  issue in the group's rows, its count and its points, an unestimated one counting `default_estimates` for its project.
   """
   def calculate_status_groups(issues, statuses, default_estimates) when is_list(issues) do
     names = MapSet.new(statuses, & &1.name)
-    {named, unnamed} = Enum.split_with(issues, &MapSet.member?(names, &1.state_name))
+    held = Enum.map(issues, &{as_cycle_holds(&1), &1})
+    # By the shown name, since Discard and a closed cycle leave a Rail-tracked issue with none of its own.
+    {named, unnamed} =
+      Enum.split_with(held, fn {as_held, _live} -> MapSet.member?(names, calculate_status_name(as_held)) end)
 
-    linear_groups =
+    tracker_groups =
       for status <- Enum.sort_by(statuses, &status_rank/1),
-          do: {status.name, status_state(status), Enum.filter(named, &(&1.state_name == status.name))}
+          do:
+            {status.name, status_state(status),
+             for({as_held, live} <- named, calculate_status_name(as_held) == status.name, do: live)}
 
-    rail_groups = for state <- @states, do: {state_label(state), state, Enum.filter(unnamed, &(&1.state == state))}
+    rail_groups =
+      for state <- @states,
+          do: {state_label(state), state, for({as_held, live} <- unnamed, as_held.state == state, do: live)}
 
-    (linear_groups ++ rail_groups)
+    (tracker_groups ++ rail_groups)
     |> Enum.reject(&match?({_label, _state, []}, &1))
     |> Enum.with_index(fn {label, state, members}, index ->
       %{
@@ -398,6 +409,11 @@ defmodule Rail.Issues.Schemas.Issue do
     %{issue: head, key: key, dimmed: true, sub_issues: Enum.map(members, &%{issue: &1, key: &1.id})}
   end
 
+  defp as_cycle_holds(%__MODULE__{cycle_state: nil} = issue), do: issue
+
+  defp as_cycle_holds(%__MODULE__{cycle_state: state, cycle_state_name: name} = issue),
+    do: %{issue | state: state, state_name: name}
+
   defp status_rank(%{type: "started", position: position}), do: {0, -position}
   defp status_rank(%{type: type, position: position}), do: {type_rank(type), position}
 
@@ -406,6 +422,9 @@ defmodule Rail.Issues.Schemas.Issue do
   defp type_rank("triage"), do: 3
   defp type_rank("completed"), do: 4
   defp type_rank(_canceled_or_other), do: 5
+
+  # Rail's own statuses say which state they are, so Todo shows Todo's icon rather than Backlog's.
+  defp status_state(%{state: state}) when is_atom(state), do: state
 
   defp status_state(%{type: "started", name: name}),
     do: if(String.downcase(name) == "in review", do: :in_review, else: :in_progress)

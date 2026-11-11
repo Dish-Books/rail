@@ -5,6 +5,7 @@ defmodule RailWeb.IssuesLive do
   import RailWeb.Utils.StartIssue
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -27,11 +28,13 @@ defmodule RailWeb.IssuesLive do
   ]
 
   def mount(_params, _session, socket) do
-    # Workflows too, since a row names the workflow that opened it, and runs, since a cycle's rows show theirs.
+    # Workflows too, since a row names the workflow that opened it, runs, since a cycle's rows show theirs, and Rail's
+    # own cycles, which move without an issue changing.
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
       Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
       Phoenix.PubSub.subscribe(Rail.PubSub, "workflows")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "cycles")
     end
 
     # The navigation only selects a project it lists, so the selection is always one of these.
@@ -54,6 +57,7 @@ defmodule RailWeb.IssuesLive do
       |> assign(:restore_filters, true)
       |> assign(:blockers, %{})
       |> assign(:blockers_for, [])
+      |> assign(:cycle_dates, nil)
       |> load_cycles(cycle_projects)
 
     {:ok, socket}
@@ -368,6 +372,8 @@ defmodule RailWeb.IssuesLive do
                       rows={group.rows}
                       blockers={@blockers}
                       current_scope={@current_scope}
+                      cycles={@cycles_by_id}
+                      cycles_on_view={@cycles_on_view}
                       actionable
                     />
                   </div>
@@ -379,6 +385,7 @@ defmodule RailWeb.IssuesLive do
               cycle={hd(@sections).cycle}
               progress={hd(@sections).progress}
               owner={@owner}
+              editable={@current_project.tracker == :local}
             />
             <.cycle_panels
               :if={is_nil(@current_project)}
@@ -397,7 +404,12 @@ defmodule RailWeb.IssuesLive do
             data-qa="issues-table issues-list"
             class="rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-200 dark:divide-slate-800 overflow-hidden"
           >
-            <.issue_rows rows={@rows} blockers={@blockers} current_scope={@current_scope} />
+            <.issue_rows
+              rows={@rows}
+              blockers={@blockers}
+              current_scope={@current_scope}
+              cycles={@cycles_by_id}
+            />
           </div>
 
           <div
@@ -443,6 +455,12 @@ defmodule RailWeb.IssuesLive do
         </div>
       </div>
     </Layouts.app>
+
+    <.cycle_dates_modal
+      :if={@cycle_dates}
+      cycle={@cycle_dates.cycle}
+      changeset={@cycle_dates.changeset}
+    />
     """
   end
 
@@ -504,6 +522,46 @@ defmodule RailWeb.IssuesLive do
     {:noreply, start_issue(socket, issue_id, &reload_data/1)}
   end
 
+  # Only a cycle of the project on show that has not ended, as the panel offers.
+  def handle_event("edit_cycle_dates", %{"cycle_id" => cycle_id}, socket) do
+    entry = socket.assigns.current_project && Enum.find(socket.assigns.cycles || [], &(&1.project.tracker == :local))
+
+    case entry && Enum.find(entry.cycles, &(&1.id == cycle_id and &1.status != :ended)) do
+      %{} = cycle ->
+        changeset = Ecto.Changeset.change(dates_cycle(cycle))
+        {:noreply, assign(socket, :cycle_dates, %{cycle: cycle, changeset: changeset})}
+
+      nil ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("validate_cycle_dates", %{"cycle" => params}, %{assigns: %{cycle_dates: %{} = dialog}} = socket) do
+    changeset = dialog.cycle |> dates_cycle() |> Cycle.dates_changeset(params, Date.utc_today())
+    {:noreply, assign(socket, :cycle_dates, %{dialog | changeset: %{changeset | action: :validate}})}
+  end
+
+  # A save that lands after the dialog closed, such as a second click, has nothing to save.
+  def handle_event("save_cycle_dates", %{"cycle" => params}, %{assigns: %{cycle_dates: %{} = dialog}} = socket) do
+    %{current_scope: scope, current_project: project} = socket.assigns
+
+    case Issues.update_cycle(scope, project, dialog.cycle.id, params) do
+      {:ok, _cycle} ->
+        {:noreply, assign(socket, :cycle_dates, nil)}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign(socket, :cycle_dates, %{dialog | changeset: changeset})}
+
+      {:error, _reason} ->
+        {:noreply, assign(socket, :cycle_dates, nil)}
+    end
+  end
+
+  def handle_event(event, _params, socket) when event in ["validate_cycle_dates", "save_cycle_dates"],
+    do: {:noreply, socket}
+
+  def handle_event("close_cycle_dates", _params, socket), do: {:noreply, assign(socket, :cycle_dates, nil)}
+
   # The pull runs in the background a page at a time; the button stays busy
   # until every project it started has said it is done.
   def handle_event("sync_issues", _params, socket) do
@@ -544,6 +602,14 @@ defmodule RailWeb.IssuesLive do
   def handle_info({:issue_comments_changed, _issue_id}, socket), do: {:noreply, socket}
 
   def handle_info({:workflows_changed, _project_id}, socket), do: {:noreply, reload_data(socket)}
+
+  # Rail moved a project's cycles, or the issues in them, so they are read again, which reloads the list.
+  def handle_info({:cycles_changed, project_id}, socket) do
+    case Enum.find(socket.assigns.cycle_projects, &(&1.id == project_id)) do
+      %Project{} = project -> {:noreply, read_cycles(project, socket)}
+      nil -> {:noreply, socket}
+    end
+  end
 
   # Whatever the task: a new one belongs to no row yet.
   def handle_info({:pipeline_changed, _task_id}, %{assigns: %{view: :cycle}} = socket) do
@@ -623,6 +689,9 @@ defmodule RailWeb.IssuesLive do
   attr :blockers, :map, required: true
   attr :current_scope, :any, required: true
   attr :actionable, :boolean, default: false
+  # Every cycle the page read, by id, and those on view, whose rows need not name them.
+  attr :cycles, :map, required: true
+  attr :cycles_on_view, :list, default: []
 
   # A dimmed copy is context for its children, so it carries no stage chip, though an actionable one opens its task.
   defp issue_rows(assigns) do
@@ -637,6 +706,7 @@ defmodule RailWeb.IssuesLive do
         task={if(row.dimmed, do: nil, else: row_task(row.issue, @actionable))}
         run={if(row.dimmed, do: nil, else: stage_run(row.issue.task))}
         open_blockers={open_blockers(@blockers, row.issue)}
+        cycle={row_cycle(@cycles, @cycles_on_view, row.issue)}
       />
       <.issue_card
         :for={sub <- row.sub_issues}
@@ -648,6 +718,7 @@ defmodule RailWeb.IssuesLive do
         task={row_task(sub.issue, @actionable)}
         run={stage_run(sub.issue.task)}
         open_blockers={open_blockers(@blockers, sub.issue)}
+        cycle={row_cycle(@cycles, @cycles_on_view, sub.issue)}
       />
     <% end %>
     """
@@ -702,6 +773,10 @@ defmodule RailWeb.IssuesLive do
   defp stage_run(%Task{} = task), do: Task.stage_run(task)
   defp stage_run(nil), do: nil
 
+  # A cycle the page has not read, such as an old Linear one, goes unnamed.
+  defp row_cycle(cycles, on_view, %Issue{cycle_external_id: cycle_id}),
+    do: if(cycle_id in on_view, do: nil, else: cycles[cycle_id])
+
   defp open_blockers(blockers, %Issue{external_id: external_id}),
     do: Issue.calculate_open_blockers(get_in(blockers, [external_id, :blocked_by]) || [])
 
@@ -712,23 +787,24 @@ defmodule RailWeb.IssuesLive do
 
   # --- Private Helpers ---
 
-  # Only a Linear project has cycles to ask for, each in a read of its own so one failing loses no other's answer.
+  # Linear and Rail's own tracker keep cycles, each project's asked for in a read of its own so one failing loses no
+  # other's answer. GitHub keeps none.
   defp load_cycles(socket, projects) do
-    linear = for %Project{tracker: :linear} = project <- projects, do: project
+    with_cycles = for %Project{tracker: tracker} = project <- projects, tracker in [:linear, :local], do: project
 
     socket =
       socket
-      |> assign(:cycle_projects, linear)
+      |> assign(:cycle_projects, with_cycles)
       |> assign(:cycle_answers, %{})
       |> assign(:closed_panels, MapSet.new())
-      |> assign(:cycles, if(linear == [], do: []))
+      |> assign(:cycles, if(with_cycles == [], do: []))
 
-    if connected?(socket), do: Enum.reduce(linear, socket, &read_cycles/2), else: socket
+    if connected?(socket), do: Enum.reduce(with_cycles, socket, &read_cycles/2), else: socket
   end
 
   defp read_cycles(project, socket), do: start_async(socket, {:cycles, project.id}, fn -> Issues.get_cycles(project) end)
 
-  # A section is one project's cycle on show, if any, beside what Linear answered for it.
+  # A section is one project's cycle on show, if any, beside what its tracker answered for it.
   defp reload_data(socket) do
     assigns = socket.assigns
     entries = assigns.cycles || []
@@ -756,6 +832,7 @@ defmodule RailWeb.IssuesLive do
     socket =
       socket
       |> assign(:sections, sections)
+      |> assign_row_cycles(entries, sections)
       |> assign(:cycle_on, open != nil)
       |> assign(:current_cycle, current)
       |> assign(:show_cycle_chip, current != nil or open != nil)
@@ -764,7 +841,7 @@ defmodule RailWeb.IssuesLive do
       |> assign(:next_cycle, next)
 
     cond do
-      # Linear has not answered yet, so the whole list never flashes up before the cycle's.
+      # The trackers have not answered yet, so the whole list never flashes up before the cycle's.
       is_binary(assigns.cycle_param) and is_nil(assigns.cycles) ->
         socket
         |> assign(:view, :loading)
@@ -777,6 +854,13 @@ defmodule RailWeb.IssuesLive do
       true ->
         socket |> assign_no_owner() |> load_page()
     end
+  end
+
+  # Every cycle read, by id, so a row names its issue's cycle with no query of its own.
+  defp assign_row_cycles(socket, entries, sections) do
+    socket
+    |> assign(:cycles_by_id, Map.new(for entry <- entries, cycle <- entry.cycles, do: {cycle.id, cycle}))
+    |> assign(:cycles_on_view, for(%{cycle: %{id: id}} <- sections, do: id))
   end
 
   defp load_cycle(socket, sections) do
@@ -943,6 +1027,10 @@ defmodule RailWeb.IssuesLive do
 
   defp cycle_label(cycle), do: cycle.name || "Cycle #{cycle.number}"
 
+  # What the dialog's changeset is built on; the save reads the cycle again under its lock.
+  defp dates_cycle(cycle),
+    do: %Cycle{id: cycle.id, number: cycle.number, starts_on: cycle.starts_on, ends_on: cycle.ends_on}
+
   defp offset_label(0), do: "Current cycles"
   defp offset_label(-1), do: "Previous cycles"
   defp offset_label(1), do: "Next cycles"
@@ -977,7 +1065,7 @@ defmodule RailWeb.IssuesLive do
   defp issues_path(assigns, changes), do: assigns |> issue_params(changes) |> params_path()
 
   # Defaults stay out of the URL, so the plain list is still just /issues. One project's cycle is its number once
-  # Linear has answered, every project's is current and an offset, and either is dropped when nothing shows.
+  # its tracker has answered, every project's is current and an offset, and either is dropped when nothing shows.
   defp issue_params(assigns, changes) do
     {cycle, offset, owner} =
       cond do

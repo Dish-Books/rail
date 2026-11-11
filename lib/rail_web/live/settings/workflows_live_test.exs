@@ -297,10 +297,10 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
     {:ok, inactive} =
       Projects.create_project(system_scope(), %{
         name: "Ledger",
-        github_repo: "example/ledger",
+        github_repo: "example/ledger-wfl",
         github_installation_id: 1,
         default_branch: "main",
-        key: "LED",
+        key: "LEDWFL",
         clone_path: "/tmp/repos/ledger",
         active: false
       })
@@ -320,7 +320,7 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
     {:ok, view, _html} = live(conn, ~p"/settings/workflows")
 
     assert has_element?(view, "#workflow-next-#{id}", "None while the project is inactive")
-    assert view |> element("#run-now-#{id}") |> render_click() =~ "Changelog draft opened nothing: LED is inactive."
+    assert view |> element("#run-now-#{id}") |> render_click() =~ "Changelog draft opened nothing: LEDWFL is inactive."
 
     {:ok, _active} = Projects.update_project(system_scope(), inactive, %{active: true})
     assert has_element?(view, "#workflow-next-#{id}", "Next Mon Oct 12, 09:00")

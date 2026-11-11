@@ -24,6 +24,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate commentable_line(assigns), to: Components.CommentableLine
   defdelegate commit_picker(assigns), to: Components.CommitPicker
   defdelegate cycle_chart(assigns), to: Components.CycleChart
+  defdelegate cycle_dates_modal(assigns), to: Components.CycleDatesModal
   defdelegate cycle_panel(assigns), to: Components.CyclePanel
   defdelegate design_comment_control(assigns), to: Components.DesignCommentControl
   defdelegate diff_comment(assigns), to: Components.DiffComment

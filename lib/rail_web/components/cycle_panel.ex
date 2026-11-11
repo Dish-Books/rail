@@ -2,6 +2,7 @@ defmodule RailWeb.Components.CyclePanel do
   @moduledoc """
   The cycle beside its issues: its dates and status, its progress in points with the burnup chart, and each assignee's
   share done. An assignee row raises `pick_owner`, and hovering a day of the chart swaps the figures for that day's.
+  An `editable` panel offers Edit dates on a cycle that has not ended, which raises `edit_cycle_dates`.
   """
   use RailWeb, :html
 
@@ -14,6 +15,8 @@ defmodule RailWeb.Components.CyclePanel do
   attr :project, :map, default: nil
   attr :open, :boolean, default: true
   attr :id_prefix, :string, default: "cycle"
+  # Only Rail schedules a cycle whose dates Rail can move.
+  attr :editable, :boolean, default: false
 
   def cycle_panel(%{open: false} = assigns) do
     assigns = assign_header(assigns)
@@ -73,9 +76,21 @@ defmodule RailWeb.Components.CyclePanel do
             {@dates}
           </span>
         </div>
-        <h2 class="mt-2 text-lg font-bold text-slate-900 dark:text-slate-100 break-words">
-          {@label}
-        </h2>
+        <div class="mt-2 flex items-start gap-2">
+          <h2 class="flex-1 min-w-0 text-lg font-bold text-slate-900 dark:text-slate-100 break-words">
+            {@label}
+          </h2>
+          <button
+            :if={@editable and @cycle.status != :ended}
+            type="button"
+            id={"#{@id_prefix}-edit-dates"}
+            phx-click="edit_cycle_dates"
+            phx-value-cycle_id={@cycle.id}
+            class="shrink-0 inline-flex items-center gap-1.5 h-7 px-2 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500"
+          >
+            <.icon name="pi-pencil-simple" class="h-3.5 w-3.5" /> Edit dates
+          </button>
+        </div>
       </div>
       <.details
         id_prefix={@id_prefix}

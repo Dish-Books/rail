@@ -499,10 +499,10 @@ defmodule RailWeb.LearningsLiveTest do
     {:ok, hidden} =
       Rail.Projects.create_project(system_scope(), %{
         name: "Hidden",
-        github_repo: "example/hidden",
+        github_repo: "example/hidden-lrn",
         github_installation_id: 1,
         default_branch: "main",
-        key: "HID",
+        key: "HIDLRN",
         clone_path: "/tmp/repos/hidden"
       })
 

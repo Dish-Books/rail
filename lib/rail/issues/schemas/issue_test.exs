@@ -1,6 +1,7 @@
 defmodule Rail.Issues.Schemas.IssueTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueStage
   alias Rail.Projects
@@ -350,6 +351,63 @@ defmodule Rail.Issues.Schemas.IssueTest do
                  [%{name: "Paused", type: "paused", position: 9}, %{name: "Canceled", type: "canceled", position: 5}],
                  %{"prj_a" => 0}
                )
+    end
+
+    test "Rail's own statuses group In Review first and Canceled last, a name Discard cleared joining its state's group",
+         %{project: project} do
+      {:ok, %{statuses: statuses}} = Issues.get_cycles(%{project | tracker: :local})
+
+      issues =
+        for {state, name} <- [
+              done: "Done",
+              canceled: "Canceled",
+              triage: "Triage",
+              backlog: "Backlog",
+              todo: "Todo",
+              todo: nil,
+              in_progress: nil,
+              in_review: "In Review"
+            ],
+            do: %Issue{id: "iss_#{state}_#{name}", project_id: "prj_a", state: state, state_name: name, parent: nil}
+
+      assert [
+               %{label: "In Review", state: :in_review, count: 1},
+               %{label: "In Progress", state: :in_progress, count: 1},
+               %{label: "Todo", state: :todo, count: 2, points: 2},
+               %{label: "Backlog", state: :backlog},
+               %{label: "Triage", state: :triage},
+               %{label: "Done", state: :done},
+               %{label: "Canceled", state: :canceled}
+             ] = Issue.calculate_status_groups(issues, statuses, %{"prj_a" => 1})
+    end
+
+    test "an issue its cycle closed In Progress and since finished groups as In Progress, its row live", %{
+      project: project
+    } do
+      {:ok, %{statuses: statuses}} = Issues.get_cycles(%{project | tracker: :local})
+
+      issue = %Issue{
+        id: "iss_rolled",
+        project_id: "prj_a",
+        state: :done,
+        state_name: "Done",
+        estimate: 3,
+        cycle_state: :in_progress,
+        cycle_state_name: nil,
+        parent: nil
+      }
+
+      for statuses <- [statuses, []] do
+        assert [
+                 %{
+                   label: "In Progress",
+                   state: :in_progress,
+                   count: 1,
+                   points: 3,
+                   rows: [%{issue: %Issue{id: "iss_rolled", state: :done}}]
+                 }
+               ] = Issue.calculate_status_groups([issue], statuses, %{"prj_a" => 1})
+      end
     end
 
     test "an unestimated issue in a group counts its own project's default estimate" do
