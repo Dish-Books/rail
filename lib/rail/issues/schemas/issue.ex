@@ -54,6 +54,10 @@ defmodule Rail.Issues.Schemas.Issue do
     # The state and status name a cycle's listing reads the issue in; set only by `list_issues/1` with `:cycle_id`.
     field :cycle_state, Ecto.Enum, values: @states, virtual: true
     field :cycle_state_name, :string, virtual: true
+    # Written only by `Workers.EmbedIssues`, and left out of every query, so lists and broadcasts carry no vector.
+    field :embedding, Pgvector.Ecto.Vector, load_in_query: false
+    # The md5 of the title and description the embedding was made from, so an edit since shows as stale.
+    field :embedding_digest, :string
 
     belongs_to :parent, __MODULE__,
       foreign_key: :parent_external_id,

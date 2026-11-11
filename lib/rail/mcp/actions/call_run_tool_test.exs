@@ -2,12 +2,14 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Mcp
   alias Rail.Mcp.RunContext
   alias Rail.Mcp.Schemas.McpConnection
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools.Schemas.OsProcess
@@ -519,6 +521,164 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
 
       assert {:ok, %{"content" => [%{"text" => "No rule this project has learned matches that."}]}} =
                Mcp.call_run_tool(context, "knowledge_search", %{"query" => "filters"})
+    end
+  end
+
+  describe "search_issues and get_issue" do
+    setup do
+      [local, other] =
+        for name <- ["Searched", "Elsewhere"] do
+          key = "CRS#{System.unique_integer([:positive])}"
+
+          {:ok, project} =
+            Projects.create_project(system_scope(), %{
+              name: name,
+              github_repo: "example/#{key}",
+              github_installation_id: 1,
+              tracker: :local,
+              key: key,
+              default_branch: "main",
+              clone_path: "/tmp/#{key}"
+            })
+
+          project
+        end
+
+      triage = %RunContext{os_process: nil, role: %Role{stage: :triage, project_id: local.id, mcp_tools: []}}
+      %{local: local, other: other, triage: triage}
+    end
+
+    test "a triage pass, which has no task, gets its project's nearest tickets with their identifier, title and status",
+         %{local: local, other: other, triage: triage} do
+      {:ok, %Issue{id: near_id, identifier: near}} =
+        Issues.create_issue(system_scope(), local, %{title: "Rows show no wait time"})
+
+      {:ok, %Issue{id: done_id, identifier: done}} =
+        Issues.create_issue(system_scope(), local, %{title: "Queue order by age"})
+
+      {:ok, %Issue{id: elsewhere_id}} = Issues.create_issue(system_scope(), other, %{title: "Rows show no wait time"})
+
+      for {id, components} <- [{near_id, [1.0]}, {done_id, [1.0, 1.0]}, {elsewhere_id, [1.0]}] do
+        Repo.update_all(from(i in Issue, where: i.id == ^id), set: [embedding: Pgvector.new(vector(components))])
+      end
+
+      Repo.update_all(from(i in Issue, where: i.id == ^done_id), set: [state: :done, state_name: "Done"])
+      stub_vertex(%{"waiting" => vector([1.0])})
+      expected = "- `#{near}` Rows show no wait time · Triage\n- `#{done}` Queue order by age · Done"
+
+      assert {:ok, %{"content" => [%{"type" => "text", "text" => ^expected}]}} =
+               Mcp.call_run_tool(triage, "search_issues", %{"query" => "how long each item has been waiting"})
+    end
+
+    test "a missing query, no embedded ticket, or Vertex being down each answer in a sentence", %{triage: triage} do
+      assert {:ok, %{"content" => [%{"text" => "search_issues needs a `query`" <> _rest}]}} =
+               Mcp.call_run_tool(triage, "search_issues", nil)
+
+      assert {:ok, %{"content" => [%{"text" => "search_issues needs a `query`" <> _rest}]}} =
+               Mcp.call_run_tool(triage, "search_issues", %{"query" => " "})
+
+      stub_vertex_down()
+
+      assert {:ok, %{"content" => [%{"text" => "Ticket search is unavailable right now. Nothing was searched."}]}} =
+               Mcp.call_run_tool(triage, "search_issues", %{"query" => "wait times"})
+
+      stub_vertex()
+
+      assert {:ok, %{"content" => [%{"text" => "No ticket in this project can be searched by meaning yet."}]}} =
+               Mcp.call_run_tool(triage, "search_issues", %{"query" => "wait times"})
+    end
+
+    test "get_issue opens a ticket by its number with its comments oldest first", %{local: local, triage: triage} do
+      {:ok, %Issue{identifier: identifier, number: number, url: url} = issue} =
+        Issues.create_issue(system_scope(), local, %{title: "Rows show no wait time", description: "Up next lists none."})
+
+      scope = user_scope(project_ids: [local.id])
+      {:ok, issue} = Issues.edit_issue(scope, issue, %{"priority" => "high", "estimate" => 3})
+      {:ok, _first} = Issues.comment(scope, issue, %{body: "First look."})
+      {:ok, _second} = Issues.comment(system_scope(), issue, %{body: "Second look."})
+
+      assert {:ok, %{"content" => [%{"type" => "text", "text" => text}]}} =
+               Mcp.call_run_tool(triage, "get_issue", %{"identifier" => "#{number}"})
+
+      assert String.starts_with?(text, """
+             # `#{identifier}` Rows show no wait time
+
+             - Status: Triage
+             - Priority: High
+             - Estimate: 3
+             - URL: #{url}
+
+             ## Description
+
+             Up next lists none.
+
+             ## Comments
+             """)
+
+      assert text =~ ~r/### \S.* · \d{4}-\d\d-\d\d \d\d:\d\d UTC\n\nFirst look\.\n\n### Rail · .*\n\nSecond look\./
+    end
+
+    test "get_issue on a ticket with no description or comments says so", %{local: local, triage: triage} do
+      {:ok, %Issue{identifier: identifier}} = Issues.create_issue(system_scope(), local, %{title: "Bare"})
+
+      assert {:ok, %{"content" => [%{"text" => text}]}} =
+               Mcp.call_run_tool(triage, "get_issue", %{"identifier" => String.downcase(identifier)})
+
+      assert text =~ "- Estimate: None\n"
+      assert text =~ "## Description\n\nNo description.\n\n## Comments\n\nNo comments.\n"
+    end
+
+    test "get_issue finds nothing of another project's, and says what it needs without an identifier", %{
+      other: other,
+      triage: triage
+    } do
+      {:ok, %Issue{identifier: identifier}} = Issues.create_issue(system_scope(), other, %{title: "Elsewhere"})
+      expected = "No ticket #{identifier} in this project."
+
+      assert {:ok, %{"content" => [%{"text" => ^expected}]}} =
+               Mcp.call_run_tool(triage, "get_issue", %{"identifier" => identifier})
+
+      assert {:ok, %{"content" => [%{"text" => "get_issue needs an `identifier`" <> _rest}]}} =
+               Mcp.call_run_tool(triage, "get_issue", %{"identifier" => ""})
+
+      assert {:ok, %{"content" => [%{"text" => "get_issue needs an `identifier`" <> _rest}]}} =
+               Mcp.call_run_tool(triage, "get_issue", nil)
+    end
+
+    test "get_issue on a Linear project says so when Linear fails to answer", %{project: project} do
+      Req.Test.expect(Rail.Linear, &(&1 |> Plug.Conn.put_status(500) |> Req.Test.json(%{})))
+      linear = %RunContext{os_process: nil, role: %Role{stage: :triage, project_id: project.id, mcp_tools: []}}
+
+      assert {:ok,
+              %{"content" => [%{"text" => "Rail could not fetch TST-404 from the project's tracker. Try again later."}]}} =
+               Mcp.call_run_tool(linear, "get_issue", %{"identifier" => "TST-404"})
+    end
+
+    test "each call is logged under issues", %{project: project, local: local} do
+      task = learnings_task(project, "CRS-1")
+      {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
+
+      {:ok, run} =
+        Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
+
+      context = %RunContext{
+        os_process: %OsProcess{run_id: run.id, task_id: task.id},
+        role: %{role | project_id: local.id}
+      }
+
+      stub_vertex()
+
+      {:ok, _searched} = Mcp.call_run_tool(context, "search_issues", %{"query" => "wait times"})
+      {:ok, _unsearched} = Mcp.call_run_tool(context, "search_issues", %{})
+      {:ok, _opened} = Mcp.call_run_tool(context, "get_issue", %{"identifier" => "12"})
+      {:ok, _unopened} = Mcp.call_run_tool(context, "get_issue", %{})
+
+      assert [
+               ~s([issues] search "wait times"),
+               "[issues] search",
+               ~s([issues] open "12"),
+               "[issues] open"
+             ] = run |> Pipeline.list_run_events() |> Enum.map(& &1.line) |> Enum.filter(&(&1 =~ "[issues]"))
     end
   end
 end

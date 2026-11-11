@@ -3,6 +3,7 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
   use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Git
+  alias Rail.Issues.Schemas.IssueLink
   alias Rail.Issues.Workers.LinkTrackerUrl
   alias Rail.Projects
   alias Rail.Scope
@@ -19,7 +20,7 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
     stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
     stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
 
-    %{project: project} = triage_project()
+    %{project: project} = triage_project(tracker: Map.get(context, :tracker, :linear))
     %{workspace: workspace, channel: channel} = connect_slack_channel(project, external: context[:external] == true)
     {:ok, thread} = Triage.handle_slack_event(workspace, slack_message_event(channel, %{}))
     user = slack_user(workspace.external_id)
@@ -231,6 +232,31 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
     # Posting the reply accepts the pass's match, so the issue now links back to the thread.
     %Thread{permalink: "https://slack.example/archives/" <> _ts = permalink} = Repo.get!(Thread, thread.id)
     assert_enqueued(worker: LinkTrackerUrl, args: %{issue_id: issue.id, url: permalink, title: "Slack thread"})
+  end
+
+  @tag tracker: :local
+  test "a reply on an item a Rail-tracked ticket covers links the ticket's page in Rail, and the ticket links the thread",
+       %{project: project, thread: thread, scope: scope} do
+    {:ok, %{id: issue_id, identifier: identifier, url: url}} =
+      Rail.Issues.create_issue(system_scope(), project, %{title: "Sidebar"})
+
+    tracked = triage_bug(%{"existing_issue" => identifier, "reply" => "Already tracked in {issue link}."})
+    %Thread{items: [item]} = triage_with(thread, %{"items" => [tracked]})
+    expected = "Already tracked in <#{url}|#{identifier}>."
+
+    Req.Test.expect(Rail.Slack, fn conn ->
+      assert %{"text" => ^expected} = conn |> Req.Test.raw_body() |> Jason.decode!()
+      Req.Test.json(conn, %{"ok" => true, "ts" => "1790002000.000100"})
+    end)
+
+    assert {:ok, %Item{reply_posted_at: %DateTime{}}} = Triage.post_triage_reply(scope, item, %{})
+
+    %Thread{permalink: "https://slack.example/archives/" <> _ts = permalink} = Repo.get!(Thread, thread.id)
+    assert_enqueued(worker: LinkTrackerUrl, args: %{issue_id: issue_id, url: permalink, title: "Slack thread"})
+    assert :ok = perform_job(LinkTrackerUrl, %{issue_id: issue_id, url: permalink, title: "Slack thread"})
+
+    assert [%IssueLink{url: ^permalink, title: "Slack thread"}] =
+             Repo.all(from l in IssueLink, where: l.issue_id == ^issue_id)
   end
 
   describe "in an external channel" do

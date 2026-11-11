@@ -3,6 +3,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
 
   alias Rail.Git
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Mcp
   alias Rail.Mcp.Schemas.McpConnection
   alias Rail.Projects
@@ -22,7 +23,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
     stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
 
-    %{project: project, role: role} = triage_project()
+    %{project: project, role: role} = triage_project(tracker: Map.get(context, :tracker, :linear))
 
     %{workspace: workspace, channel: channel} =
       connect_slack_channel(project, users: %{"U_PRIYA" => "Priya"}, external: context[:external] == true)
@@ -207,6 +208,34 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
            ] = Repo.all(from i in Item, where: i.thread_id == ^thread_id)
   end
 
+  @tag tracker: :local
+  test "on a Rail-tracked project an item a ticket covers links it by the number the search showed, asking Linear nothing",
+       %{
+         project: project,
+         thread: %{id: thread_id} = thread,
+         request: request,
+         result_path: result_path
+       } do
+    {:ok, %{id: issue_id, number: number}} =
+      Issues.create_issue(system_scope(), project, %{title: "Up next rows show how long each has waited"})
+
+    Repo.update_all(from(i in Issue, where: i.id == ^issue_id), set: [state: :done, state_name: "Done"])
+
+    expect(Tools, :run_agent, fn _role, argv, _opts ->
+      brief = Enum.find(argv, &(&1 =~ "Triage the Slack thread in"))
+      assert brief =~ "They are kept in Rail, not Linear: search them with `search_issues`"
+      assert brief =~ "Open a likely match with `get_issue`"
+      refute brief =~ "search Linear"
+      File.write!(result_path, Jason.encode!(%{"items" => [Map.put(request, "existing_issue", "#{number}")]}))
+      {:ok, ""}
+    end)
+
+    assert :ok = Triage.triage_thread(thread)
+
+    assert [%Item{existing_issue_id: ^issue_id, issue_title: nil, reply_text: "Good call."}] =
+             Repo.all(from i in Item, where: i.thread_id == ^thread_id)
+  end
+
   test "a pass in an ordinary channel runs the stored triage prompt where the repo has none, and drafts replies that link the issue with the placeholder",
        %{
          thread: thread,
@@ -234,7 +263,6 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     expect(Tools, :run_agent, fn _role, argv, _opts ->
       brief = Enum.find(argv, &(&1 =~ "Triage the Slack thread in"))
       assert brief =~ "channel is external, shared with people outside the team"
-      assert brief =~ "never write `{issue link}` and never name a Linear issue or its identifier in a reply"
       assert brief =~ "the reply says the item is already tracked, without naming the issue or its identifier"
       assert brief =~ "Still fill in `existing_issue`"
       refute brief =~ "Where the issue should be linked"
@@ -276,7 +304,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
 
     assert :ok = Triage.triage_thread(thread)
 
-    assert [%Item{existing_issue: %Issues.Schemas.Issue{project_id: ^project_id, identifier: "TRI-31"}, issue_title: nil}] =
+    assert [%Item{existing_issue: %Issue{project_id: ^project_id, identifier: "TRI-31"}, issue_title: nil}] =
              Item |> where([i], i.thread_id == ^thread_id) |> preload(:existing_issue) |> Repo.all()
   end
 

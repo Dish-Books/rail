@@ -15,6 +15,7 @@ defmodule Rail.Learnings do
   defdelegate retire_learning(scope, learning), to: Actions.RetireLearning
   defdelegate embed_learning(learning), to: Actions.EmbedLearning
   defdelegate embed_query(query), to: Actions.EmbedQuery
+  defdelegate embed_document(text), to: Actions.EmbedDocument
   defdelegate list_learning_proposals(opts \\ []), to: Actions.ListLearningProposals
   defdelegate get_learning_proposal(id), to: Actions.GetLearningProposal
   defdelegate approve_learning_proposal(scope, proposal), to: Actions.ApproveLearningProposal

@@ -12,13 +12,29 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
 
   # The engineer commits with git itself, and its turn ending is what hands the commits over.
   test "each stage that writes something is offered exactly its own save tool", %{names: names} do
-    assert names[:plan] == ["save_design_option", "save_plan", "ask_questions", "knowledge_search"]
+    assert names[:plan] == [
+             "save_design_option",
+             "save_plan",
+             "ask_questions",
+             "knowledge_search",
+             "search_issues",
+             "get_issue"
+           ]
 
     assert names[:engineer] ==
-             ["browser_connect", "browser_problems", "browser_close", "save_report", "ask_questions", "knowledge_search"]
+             [
+               "browser_connect",
+               "browser_problems",
+               "browser_close",
+               "save_report",
+               "ask_questions",
+               "knowledge_search",
+               "search_issues",
+               "get_issue"
+             ]
 
     assert %Role{custom_stage: "License check"} |> mcp_tools() |> Enum.map(& &1["name"]) ==
-             ["save_stage_output", "ask_questions", "knowledge_search"]
+             ["save_stage_output", "ask_questions", "knowledge_search", "search_issues", "get_issue"]
   end
 
   test "only the Plan, Engineer and Review leads are offered ask_questions, a list of prompts with options", %{
@@ -57,16 +73,41 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
     browser = ["browser_connect", "browser_problems", "browser_close"]
 
     assert Enum.sort(for({stage, tools} <- names, "browser_connect" in tools, do: stage)) == [:demo, :engineer, :qa]
-    assert names[:qa] == browser ++ ["qa_plan", "qa_check", "qa_shot", "save_screen", "save_report", "knowledge_search"]
-    assert names[:review] == ["save_report", "knowledge_search"]
-    assert names[:demo] == browser ++ ["demo_start", "demo_say", "demo_cut", "save_demo", "knowledge_search"]
+
+    assert names[:qa] ==
+             browser ++
+               [
+                 "qa_plan",
+                 "qa_check",
+                 "qa_shot",
+                 "save_screen",
+                 "save_report",
+                 "knowledge_search",
+                 "search_issues",
+                 "get_issue"
+               ]
+
+    assert names[:review] == ["save_report", "knowledge_search", "search_issues", "get_issue"]
+
+    assert names[:demo] ==
+             browser ++
+               ["demo_start", "demo_say", "demo_cut", "save_demo", "knowledge_search", "search_issues", "get_issue"]
   end
 
   # A person can ask for the picked design to change, which the review agent saves as Plan did.
   test "the review agent is offered the tools it saves findings, the review, the next plan and the design with",
        %{names: names} do
     assert names[:review_lead] ==
-             ["save_finding", "save_fix_plan", "save_review", "save_design_option", "ask_questions", "knowledge_search"]
+             [
+               "save_finding",
+               "save_fix_plan",
+               "save_review",
+               "save_design_option",
+               "ask_questions",
+               "knowledge_search",
+               "search_issues",
+               "get_issue"
+             ]
   end
 
   test "save_report takes the whole report, for the agents nobody relays for", %{names: names} do
@@ -132,8 +173,8 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
     assert Map.keys(properties) == ["browser", "key", "label", "width"]
   end
 
-  test "a stage with no output of its own is offered only the knowledge base", %{names: names} do
-    assert names[:triage] == ["knowledge_search"]
+  test "a stage with no output of its own is offered only the knowledge base and the project's tickets", %{names: names} do
+    assert names[:triage] == ["knowledge_search", "search_issues", "get_issue"]
 
     # Product, design and architect run inside Plan, on its tools; no run holds those roles now.
   end
@@ -153,9 +194,19 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
     refute Map.has_key?(schema, "required")
   end
 
-  test "every role stage is offered knowledge_search" do
-    for stage <- Role.canonical_stages() do
-      assert Enum.any?(mcp_tools(%Role{stage: stage}), &(&1["name"] == "knowledge_search"))
+  test "every role stage is offered knowledge_search, search_issues and get_issue" do
+    for stage <- Role.canonical_stages(), name <- ["knowledge_search", "search_issues", "get_issue"] do
+      assert Enum.any?(mcp_tools(%Role{stage: stage}), &(&1["name"] == name))
     end
+  end
+
+  test "search_issues takes the problem as its query, and get_issue the ticket's identifier" do
+    tools = mcp_tools(%Role{stage: :triage})
+
+    assert %{"inputSchema" => %{"properties" => %{"query" => %{"type" => "string"}}, "required" => ["query"]}} =
+             Enum.find(tools, &(&1["name"] == "search_issues"))
+
+    assert %{"inputSchema" => %{"properties" => %{"identifier" => %{"type" => "string"}}, "required" => ["identifier"]}} =
+             Enum.find(tools, &(&1["name"] == "get_issue"))
   end
 end

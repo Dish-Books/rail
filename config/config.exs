@@ -53,6 +53,7 @@ config :rail, Oban,
        {"5-59/15 * * * *", Rail.Pipeline.Workers.CheckBases},
        {"0 6 * * *", Rail.Learnings.Workers.ScheduleCurators},
        {"5 0 * * *", Rail.Issues.Workers.CloseCycleDay},
+       {"*/5 * * * *", Rail.Issues.Workers.EmbedIssues},
        {"15 * * * *", Rail.Learnings.Workers.EmbedPending}
      ]}
   ]

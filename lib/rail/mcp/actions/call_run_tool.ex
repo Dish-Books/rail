@@ -37,6 +37,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   import Rail.Mcp.Utils.RunToolDemoCut
   import Rail.Mcp.Utils.RunToolDemoSay
   import Rail.Mcp.Utils.RunToolDemoStart
+  import Rail.Mcp.Utils.RunToolGetIssue
   import Rail.Mcp.Utils.RunToolKnowledgeSearch
   import Rail.Mcp.Utils.RunToolQaCheck
   import Rail.Mcp.Utils.RunToolQaPlan
@@ -50,6 +51,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   import Rail.Mcp.Utils.RunToolSaveReview
   import Rail.Mcp.Utils.RunToolSaveScreen
   import Rail.Mcp.Utils.RunToolSaveStageOutput
+  import Rail.Mcp.Utils.RunToolSearchIssues
   import Rail.Mcp.Utils.ToolAllowed
   import Rail.Mcp.Utils.WithUpstreamToken
 
@@ -94,6 +96,19 @@ defmodule Rail.Mcp.Actions.CallRunTool do
     log(context, name, asked(name, arguments))
 
     {:ok, text} = run_tool_knowledge_search(role, arguments, [])
+    {:ok, %{"content" => [%{"type" => "text", "text" => text}]}}
+  end
+
+  # Like the knowledge base, tickets need no task, and a role reads only its own project's.
+  defp own(%RunContext{role: role} = context, name, arguments) when name in ["search_issues", "get_issue"] do
+    arguments = arguments || %{}
+    log(context, name, asked(name, arguments))
+
+    {:ok, text} =
+      if name == "search_issues",
+        do: run_tool_search_issues(role, arguments, []),
+        else: run_tool_get_issue(role, arguments, [])
+
     {:ok, %{"content" => [%{"type" => "text", "text" => text}]}}
   end
 
@@ -212,6 +227,10 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp asked("demo_say", _arguments), do: "say"
   defp asked("demo_cut", _arguments), do: "cut"
   defp asked("knowledge_search", %{"query" => query}), do: "search #{inspect(query)}"
+  defp asked("search_issues", %{"query" => query}), do: "search #{inspect(query)}"
+  defp asked("search_issues", _arguments), do: "search"
+  defp asked("get_issue", %{"identifier" => identifier}), do: "open #{inspect(identifier)}"
+  defp asked("get_issue", _arguments), do: "open"
   defp asked(name, _arguments), do: name |> String.split("_", parts: 2) |> List.last()
 
   # A run that has not started has nowhere to write, which is every call made
@@ -226,8 +245,9 @@ defmodule Rail.Mcp.Actions.CallRunTool do
 
   defp log(%RunContext{}, _name, _line), do: :ok
 
-  # Every tool Rail serves is named `<namespace>_<verb>`, and the namespace is
-  # what the log is filed under.
+  # A tool Rail serves is named `<namespace>_<verb>`, and the namespace is what the log is filed under;
+  # the ticket tools are named as agents know them from trackers, so they are filed by hand.
+  defp namespace(name) when name in ["search_issues", "get_issue"], do: "issues"
   defp namespace(name), do: name |> String.split("_", parts: 2) |> hd()
 
   # Each of these owns whatever it needs, the browser included: the ones that are
