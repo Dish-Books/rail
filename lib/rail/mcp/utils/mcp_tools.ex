@@ -46,6 +46,9 @@ defmodule Rail.Mcp.Utils.McpTools do
   `@knowledge_tools` are offered to every role: `knowledge_search` reads the
   rules the project has learned, which no stage should have to guess at.
 
+  `@issue_tools` are offered to every role too: `search_issues` finds the project's
+  tickets by meaning, and `get_issue` opens one, so no agent drafts what is already tracked.
+
   `@demo_tools` are about a recording. `demo_start` is the camera, and it is the
   agent's to switch on: a run filmed from its first call to its last is a film of
   an agent working out how the application behaves, which is not the demo. So the
@@ -659,23 +662,58 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   ]
 
+  @issue_tools [
+    %{
+      "name" => "search_issues",
+      "description" =>
+        "Search this project's tickets by meaning, nearest first, finished and archived ones included. Each comes " <>
+          "back with its identifier, title and status. Search before you draft or cite a ticket, and try more than " <>
+          "one phrasing: the reporter's words, then the names you found in the code.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "query" => %{"type" => "string", "description" => "The problem or request, described in a sentence."}
+        },
+        "required" => ["query"]
+      }
+    },
+    %{
+      "name" => "get_issue",
+      "description" =>
+        "Open one of this project's tickets by its identifier, such as one `search_issues` listed, and read its " <>
+          "title, status, priority, estimate, URL, description and comments.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "identifier" => %{"type" => "string", "description" => "The ticket's identifier, such as `RAIL-12`."}
+        },
+        "required" => ["identifier"]
+      }
+    }
+  ]
+
   @doc """
   The tools Rail serves this run itself: the save tools each agent hands its output over with, the browser for
-  the three that drive the app, `ask_questions` for the agents a person talks to, and the knowledge base for all. A
-  custom stage's role saves its file with `save_stage_output`.
+  the three that drive the app, `ask_questions` for the agents a person talks to, and the knowledge base and the
+  project's tickets for all. A custom stage's role saves its file with `save_stage_output`.
   """
-  def mcp_tools(%Role{stage: :plan}), do: @design_tools ++ @plan_tools ++ @question_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :engineer}), do: @browser_tools ++ @report_tools ++ @question_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @qa_tools ++ @report_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :review}), do: @report_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :plan}),
+    do: @design_tools ++ @plan_tools ++ @question_tools ++ @knowledge_tools ++ @issue_tools
 
-  def mcp_tools(%Role{stage: :demo}), do: @browser_tools ++ @demo_tools ++ @demo_report_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :engineer}),
+    do: @browser_tools ++ @report_tools ++ @question_tools ++ @knowledge_tools ++ @issue_tools
+
+  def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @qa_tools ++ @report_tools ++ @knowledge_tools ++ @issue_tools
+  def mcp_tools(%Role{stage: :review}), do: @report_tools ++ @knowledge_tools ++ @issue_tools
+
+  def mcp_tools(%Role{stage: :demo}),
+    do: @browser_tools ++ @demo_tools ++ @demo_report_tools ++ @knowledge_tools ++ @issue_tools
 
   def mcp_tools(%Role{stage: :review_lead}),
-    do: @review_lead_tools ++ @design_tools ++ @question_tools ++ @knowledge_tools
+    do: @review_lead_tools ++ @design_tools ++ @question_tools ++ @knowledge_tools ++ @issue_tools
 
   def mcp_tools(%Role{custom_stage: name}) when is_binary(name),
-    do: @stage_output_tools ++ @question_tools ++ @knowledge_tools
+    do: @stage_output_tools ++ @question_tools ++ @knowledge_tools ++ @issue_tools
 
-  def mcp_tools(%Role{}), do: @knowledge_tools
+  def mcp_tools(%Role{}), do: @knowledge_tools ++ @issue_tools
 end

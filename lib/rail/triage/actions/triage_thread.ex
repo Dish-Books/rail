@@ -7,7 +7,7 @@ defmodule Rail.Triage.Actions.TriageThread do
   runs the agent to completion in a detached checkout of the default branch,
   under a lock on the thread that also makes the pass's MCP token valid.
 
-  Nothing here reaches Slack beyond reading the thread, and Linear only through
+  Nothing here reaches Slack beyond reading the thread, and a tracker only through
   the searches the agent runs for existing issues: only a person accepting a
   proposal posts or creates anything.
   """
@@ -23,6 +23,7 @@ defmodule Rail.Triage.Actions.TriageThread do
   alias Rail.Mcp
   alias Rail.Mcp.RunContext
   alias Rail.Pipeline
+  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Slack
@@ -150,7 +151,7 @@ defmodule Rail.Triage.Actions.TriageThread do
     end
   end
 
-  # The agent finds existing issues through the role's MCP servers, so a pass
+  # Outside a Rail-tracked project the agent finds existing issues through the role's MCP servers, so a pass
   # without them would draft duplicates rather than fail: it is stopped here,
   # saying what to fix before a retry. A server that did not answer is no
   # failure: the pass is tried again until it does.
@@ -311,7 +312,7 @@ defmodule Rail.Triage.Actions.TriageThread do
 
     You have the code and nothing else: no production data, logs or application state. Where a bug turns on something you cannot see, reason from the code and state what you could not check as an assumption.
 
-    Before you draft any issue, search Linear for one that already covers the item, with the Linear tools you were offered, on the #{thread.project.key} team. Include finished issues, and try at least two phrasings, the thread's own words and the names you found in the code, before you decide none does. Open a likely match and read it before you cite it.
+    #{search(thread)}
     #{rules(thread, role)}#{forced(thread)}
     #{items(thread)}
     #{notes(thread)}
@@ -357,24 +358,37 @@ defmodule Rail.Triage.Actions.TriageThread do
     - `kind` is `bug` or `feature_request`. A bug's `verdict` is `confirmed`, `not_reproduced` or `already_fixed`; a request's is `built`, `partly_built` or `not_built`.
     - Never propose a fix, a design or a plan, anywhere. There is no field for one.
     - An issue's `title` states the behavior the product should have, as a sentence that is true once the issue is done, never what goes wrong today: "Saving a draft keeps its attachments", not "Attachments are lost when saving a draft". A title naming the fault reads as the behavior wanted, so whoever picks it up builds the bug. It says what should happen, not how to make it happen. The `description` is where the problem, its cause and its evidence go.
-    - `existing_issue` is the identifier of the Linear issue that already covers the item, such as `TRI-23`, or null. When one does, leave `issue` null, and #{tracked(thread)}
+    - `existing_issue` is the identifier of the issue that already covers the item, such as `#{thread.project.key}-23`, or null. When one does, leave `issue` null, and #{tracked(thread)}
     - `priority` is `urgent`, `high`, `medium` or `low`.
     - `estimate` is the issue's points on Product's scale: 1, 2, 3 or 5, and 8 for work too big for one ticket. Judge it from how much of the behavior exists and what the code shows, or leave it null where you cannot. It is a number only, never a description of the work.
     - A reply is posted by the teammate who accepts it, under their name. Write it in their voice. #{issue_link(thread)} Leave `reply` null where only a bot would read it.
     """)
   end
 
-  # People outside the team read an external channel's replies, so they never point into Linear.
+  defp search(%Thread{project: %Project{tracker: :local}}),
+    do:
+      "Before you draft any issue, search this project's tickets for one that already covers the item. They are kept in Rail, not Linear: " <>
+        "search them with `search_issues`, which matches by meaning and includes finished and archived tickets. Search at least twice, " <>
+        "first describing the problem in the thread's own words and then in the names you found in the code, before you decide none does. " <>
+        "Open a likely match with `get_issue` and read it before you cite it, and give `existing_issue` exactly as the search showed it."
+
+  defp search(%Thread{project: project}),
+    do:
+      "Before you draft any issue, search Linear for one that already covers the item, with the Linear tools you were offered, on the #{project.key} team. " <>
+        "Include finished issues, and try at least two phrasings, the thread's own words and the names you found in the code, before you decide none does. " <>
+        "Open a likely match and read it before you cite it."
+
+  # People outside the team read an external channel's replies, so they never point into the tracker.
   defp tracked(%Thread{slack_channel: %{external: true}}),
     do:
       "the reply says the item is already tracked, without naming the issue or its identifier. Still fill in `existing_issue`: only teammates see it."
 
   defp tracked(%Thread{}),
-    do: "the reply says the item is already tracked in that issue, giving its identifier and its state in Linear."
+    do: "the reply says the item is already tracked in that issue, giving its identifier and its current state."
 
   defp issue_link(%Thread{slack_channel: %{external: true}}),
     do:
-      "This thread's channel is external, shared with people outside the team: never write `{issue link}` and never name a Linear issue or its identifier in a reply. Rail refuses a reply that links the issue here."
+      "This thread's channel is external, shared with people outside the team: never write `{issue link}` and never name an issue or its identifier in a reply. Rail refuses a reply that links the issue here."
 
   defp issue_link(%Thread{}),
     do:

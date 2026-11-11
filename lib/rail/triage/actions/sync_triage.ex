@@ -70,8 +70,8 @@ defmodule Rail.Triage.Actions.SyncTriage do
   defp next_position(existing),
     do: existing |> Map.values() |> Enum.map(& &1.position) |> Enum.max(fn -> 0 end) |> Kernel.+(1)
 
-  # The agent found these in Linear, so one Rail has not mirrored yet is brought
-  # in rather than lost. One Linear will not hand over is left unlinked.
+  # A match Rail has not mirrored yet is brought in from its tracker rather than lost, and one
+  # the tracker will not hand over is left unlinked. A Rail-tracked project's are all here already.
   defp existing_issues(%Thread{project: project}, items) do
     for identifier <- items |> Enum.map(& &1.existing_issue) |> Enum.filter(&is_binary/1) |> Enum.uniq(),
         {:ok, %Issue{id: id}} <- [Issues.import_issue(project, identifier)],

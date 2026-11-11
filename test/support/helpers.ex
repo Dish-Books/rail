@@ -7,7 +7,7 @@ defmodule RailTest.Helpers do
   defdelegate stub_slack(opts \\ []), to: RailTest.TriageHelpers
   defdelegate connect_slack_channel(project, opts \\ []), to: RailTest.TriageHelpers
   defdelegate slack_message_event(channel, fields), to: RailTest.TriageHelpers
-  defdelegate triage_project(), to: RailTest.TriageHelpers
+  defdelegate triage_project(opts \\ []), to: RailTest.TriageHelpers
   defdelegate triage_with(thread, result), to: RailTest.TriageHelpers
   defdelegate triage_bug(overrides \\ %{}), to: RailTest.TriageHelpers
   defdelegate slack_user(team_id, name \\ "Michael"), to: RailTest.TriageHelpers

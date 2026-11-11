@@ -126,9 +126,10 @@ defmodule RailTest.TriageHelpers do
   @doc """
   A project with a Triage role. Its `clone_path` is a plain directory, not a
   git clone: a test that reaches git stubs the `Rail.Git` calls it makes.
-  Returns `%{project: project, role: role}`.
+  Takes `:tracker`, `:linear` unless `:local` asks for a Rail-tracked one. Returns `%{project: project, role: role}`.
   """
-  def triage_project do
+  def triage_project(opts \\ []) do
+    tracker = Keyword.get(opts, :tracker, :linear)
     Req.Test.stub(Rail.GitHub.Client, &Req.Test.json(&1, %{"token" => "ghs_token"}))
     unique = System.unique_integer([:positive])
     # unique_integer restarts per VM, so the random suffix keeps concurrent runs apart.
@@ -137,15 +138,18 @@ defmodule RailTest.TriageHelpers do
     File.mkdir_p!(clone)
     ExUnit.Callbacks.on_exit(fn -> File.rm_rf(clone) end)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "teams" => %{
-            "nodes" => [%{"id" => "lin_team_tri", "states" => %{"nodes" => [%{"id" => "st_tri", "type" => "triage"}]}}]
+    # Only a Linear project asks Linear for its team as it is made.
+    if tracker == :linear do
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "teams" => %{
+              "nodes" => [%{"id" => "lin_team_tri", "states" => %{"nodes" => [%{"id" => "st_tri", "type" => "triage"}]}}]
+            }
           }
-        }
-      })
-    end)
+        })
+      end)
+    end
 
     {:ok, project} =
       Projects.create_project(Scope.for_system(), %{
@@ -154,7 +158,8 @@ defmodule RailTest.TriageHelpers do
         github_installation_id: 1,
         default_branch: "main",
         key: "TRI#{unique}",
-        linear_workspace_id: "lw_test_seed",
+        tracker: tracker,
+        linear_workspace_id: if(tracker == :linear, do: "lw_test_seed"),
         clone_path: clone
       })
 
