@@ -614,25 +614,6 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-comment-form")
   end
 
-  test "an issue Done before testing shipped shows no testing line", %{conn: conn, project: project} do
-    issue =
-      %Issue{}
-      |> Issue.tracker_changeset(%{
-        project_id: project.id,
-        external_id: "lin_page_untested",
-        identifier: "IPG-41",
-        title: "Done before",
-        state: :done
-      })
-      |> Repo.insert!()
-      |> Ecto.Changeset.change(testing_state: nil)
-      |> Repo.update!()
-
-    {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
-    assert has_element?(view, "#issue-title", "Done before")
-    refute has_element?(view, "#issue-testing")
-  end
-
   test "a ticket not in Done shows no testing line, though it starts Waiting", %{conn: conn, project: project} do
     issue =
       %Issue{}

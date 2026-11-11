@@ -406,20 +406,6 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
 
     done.("lin_q8", other_id, ~U[2026-11-07 10:00:00Z])
 
-    # Done before testing shipped: the migration left it with no testing state.
-    %Issue{}
-    |> Issue.tracker_changeset(%{
-      project_id: project_id,
-      external_id: "lin_q9",
-      identifier: "lin_q9",
-      title: "lin_q9",
-      state: :done,
-      completed_at: ~U[2026-11-01 10:00:00Z]
-    })
-    |> Repo.insert!()
-    |> Ecto.Changeset.change(testing_state: nil)
-    |> Repo.update!()
-
     assert %{
              issues: [
                %Issue{id: ^older_id, testing_state: :waiting},

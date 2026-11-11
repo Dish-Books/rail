@@ -688,7 +688,7 @@ defmodule RailWeb.Components.IssueView do
   defp testing_property(%{issue: issue} = assigns) do
     assigns =
       assigns
-      |> assign(:show_testing, issue.state == :done and issue.testing_state != nil)
+      |> assign(:show_testing, issue.state == :done)
       |> assign(:show_testing_link, Issue.in_testing_queue?(issue))
 
     ~H"""

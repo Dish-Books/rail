@@ -193,13 +193,27 @@ defmodule Rail.Issues.Schemas.IssueTest do
       assert Issue.in_testing_queue?(%Issue{state: :done, testing_state: :waiting})
       assert Issue.in_testing_queue?(%Issue{state: :done, testing_state: :testing})
       refute Issue.in_testing_queue?(%Issue{state: :done, testing_state: :tested})
-      refute Issue.in_testing_queue?(%Issue{state: :done, testing_state: nil})
       refute Issue.in_testing_queue?(%Issue{state: :canceled, testing_state: :waiting})
 
       assert ["Waiting", "In testing", "Tested", "Sent to triage"] =
                Enum.map(Issue.testing_states(), &Issue.testing_label/1)
+    end
 
-      assert Issue.testing_label(nil) == nil
+    test "a ticket cannot be left with no testing state", %{project: project} do
+      issue =
+        %Issue{}
+        |> Issue.tracker_changeset(%{
+          project_id: project.id,
+          external_id: "lin_no_testing",
+          identifier: "NT-1",
+          title: "Done",
+          state: :done
+        })
+        |> Repo.insert!()
+
+      assert_raise Postgrex.Error, ~r/not_null_violation/, fn ->
+        issue |> Ecto.Changeset.change(testing_state: nil) |> Repo.update!()
+      end
     end
   end
 

@@ -387,10 +387,8 @@ defmodule RailWeb.TestingLive do
   defp finished_label(%Issue{state: :done, testing_state: :sent_to_triage}), do: "was already sent to triage"
   defp finished_label(_moved_or_gone), do: "is no longer in Done"
 
-  defp lock_label(%Issue{state: :done, testing_state: state}) when state in [:tested, :sent_to_triage],
-    do: "Testing finished"
-
-  defp lock_label(%Issue{state: :done}), do: "Not in the testing queue"
+  # Shown only out of the queue, where a Done ticket is Tested or Sent to triage.
+  defp lock_label(%Issue{state: :done}), do: "Testing finished"
   defp lock_label(_not_done), do: "Not in Done"
 
   # The ticket the URL names, else the one already open, else the first in the queue. It stays open once it leaves the
@@ -429,7 +427,7 @@ defmodule RailWeb.TestingLive do
   defp assign_issue_flags(%{assigns: %{issue: issue}} = socket) do
     socket
     |> assign(:in_queue, issue != nil and Issue.in_testing_queue?(issue))
-    |> assign(:show_testing_state, issue != nil and issue.state == :done and issue.testing_state != nil)
+    |> assign(:show_testing_state, issue != nil and issue.state == :done)
     |> assign(:notes_blank, issue == nil or String.trim(issue.testing_notes || "") == "")
     |> assign(:lock_label, issue && lock_label(issue))
   end

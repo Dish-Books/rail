@@ -507,16 +507,6 @@ defmodule RailWeb.TestingLiveTest do
     assert has_element?(view, "#testing-notice", "#{reopened.identifier} is no longer in Done.")
   end
 
-  test "a ticket Done before testing shipped reads not in the testing queue", %{conn: conn, done: done, here: here} do
-    issue = done.(here, "Done long ago")
-    issue |> Ecto.Changeset.change(testing_state: nil) |> Repo.update!()
-
-    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
-
-    assert has_element?(view, "#testing-notes-status", "Not in the testing queue")
-    assert has_element?(view, "#testing-notes-#{issue.id}[readonly]")
-  end
-
   test "Send to triage with blank notes asks for them", %{conn: conn, done: done, here: here} do
     issue = done.(here, "Blank")
     {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
