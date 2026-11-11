@@ -103,7 +103,7 @@ defmodule RailWeb.Components.DescriptionEditorTest do
     end)
 
     image =
-      file_input(view, "#issue-description-editor-#{issue_id}-upload", :image, [
+      file_input(view, "#issue-description-editor-#{issue_id}-upload", :file, [
         %{name: "Screenshot 2026-11-10 at 14.02.11.png", content: :binary.copy("P", 1000), type: "image/png"}
       ])
 
@@ -112,7 +112,7 @@ defmodule RailWeb.Components.DescriptionEditorTest do
     render_async(view)
 
     assert_push_event(view, "upload_started", %{ref: ref, name: "Screenshot 2026-11-10 at 14.02.11.png"})
-    assert_push_event(view, "insert_image", %{ref: ^ref, url: url})
+    assert_push_event(view, "insert_file", %{ref: ^ref, url: url, image: true})
     refute has_element?(view, "#issue-description-editor-#{issue_id}-upload-error")
 
     %URI{path: path} = URI.parse(url)
@@ -131,7 +131,7 @@ defmodule RailWeb.Components.DescriptionEditorTest do
     {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
 
     image =
-      file_input(view, "#issue-description-editor-#{issue_id}-upload", :image, [
+      file_input(view, "#issue-description-editor-#{issue_id}-upload", :file, [
         %{name: "huge.png", content: :binary.copy("x", 10_000_001), type: "image/png"}
       ])
 
@@ -143,33 +143,72 @@ defmodule RailWeb.Components.DescriptionEditorTest do
     assert has_element?(view, "#issue-description-editor-#{issue_id}-upload-error", "huge.png is over 10 MB")
   end
 
-  test "a file that is not an image is refused for its ref", %{conn: conn, issue: %Issue{id: issue_id}} do
+  test "a dropped file Rail does not take is refused for its ref, with the reason", %{
+    conn: conn,
+    issue: %Issue{id: issue_id}
+  } do
     {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
 
-    page =
-      file_input(view, "#issue-description-editor-#{issue_id}-upload", :image, [
-        %{name: "page.html", content: "<script></script>", type: "text/html"}
+    notes =
+      file_input(view, "#issue-description-editor-#{issue_id}-upload", :file, [
+        %{
+          name: "notes.docx",
+          content: "PK",
+          type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        }
       ])
 
-    preflight_upload(page)
+    preflight_upload(notes)
     view |> element("#issue-description-editor-#{issue_id}-upload") |> render_change(%{})
 
-    assert_push_event(view, "upload_started", %{ref: ref, name: "page.html"})
+    assert_push_event(view, "upload_started", %{ref: ref, name: "notes.docx"})
     assert_push_event(view, "upload_failed", %{ref: ^ref})
-    assert has_element?(view, "#issue-description-editor-#{issue_id}-upload-error", "page.html is not a PNG")
+
+    assert has_element?(
+             view,
+             "#issue-description-editor-#{issue_id}-upload-error",
+             "notes.docx is not a PNG, JPEG, GIF, WebP or PDF file."
+           )
+  end
+
+  test "a PDF goes up and is inserted as a link the page serves", %{conn: conn, issue: %Issue{id: issue_id}} do
+    {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+
+    Req.Test.expect(R2, fn r2 ->
+      assert ["application/pdf"] = Plug.Conn.get_req_header(r2, "content-type")
+      Plug.Conn.send_resp(r2, 200, "")
+    end)
+
+    spec =
+      file_input(view, "#issue-description-editor-#{issue_id}-upload", :file, [
+        %{name: "SPEC.PDF", content: "%PDF-1.7", type: "application/pdf"}
+      ])
+
+    render_upload(spec, "SPEC.PDF")
+    render_async(view)
+
+    assert_push_event(view, "upload_started", %{ref: ref, name: "SPEC.PDF"})
+    assert_push_event(view, "insert_file", %{ref: ^ref, name: "SPEC.PDF", url: url, image: false})
+    refute has_element?(view, "#issue-description-editor-#{issue_id}-upload-error")
+
+    Req.Test.expect(R2, fn r2 ->
+      r2 |> Plug.Conn.put_resp_content_type("application/pdf", nil) |> Plug.Conn.send_resp(200, "%PDF-1.7")
+    end)
+
+    assert conn |> get(URI.parse(url).path) |> response(200) == "%PDF-1.7"
   end
 
   test "a sixth image at once is refused for its ref", %{conn: conn, issue: %Issue{id: issue_id}} do
     {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
 
     files = for n <- 1..6, do: %{name: "shot-#{n}.png", content: "PNG_BYTES", type: "image/png"}
-    image = file_input(view, "#issue-description-editor-#{issue_id}-upload", :image, files)
+    image = file_input(view, "#issue-description-editor-#{issue_id}-upload", :file, files)
     preflight_upload(image)
     view |> element("#issue-description-editor-#{issue_id}-upload") |> render_change(%{})
 
     assert_push_event(view, "upload_started", %{ref: ref, name: "shot-6.png"})
     assert_push_event(view, "upload_failed", %{ref: ^ref})
-    assert has_element?(view, "#issue-description-editor-#{issue_id}-upload-error", "Up to 5 images")
+    assert has_element?(view, "#issue-description-editor-#{issue_id}-upload-error", "Up to 5 files")
   end
 
   test "an upload R2 refuses, and one whose task crashes, each fail for their ref with the reason", %{
@@ -180,7 +219,7 @@ defmodule RailWeb.Components.DescriptionEditorTest do
     Req.Test.expect(R2, fn r2 -> Plug.Conn.send_resp(r2, 500, "InternalError") end)
 
     refused =
-      file_input(view, "#issue-description-editor-#{issue_id}-upload", :image, [
+      file_input(view, "#issue-description-editor-#{issue_id}-upload", :file, [
         %{name: "refused.png", content: "PNG_BYTES", type: "image/png"}
       ])
 
@@ -190,10 +229,10 @@ defmodule RailWeb.Components.DescriptionEditorTest do
     assert_push_event(view, "upload_failed", %{ref: ^refused_ref})
     assert has_element?(view, "#issue-description-editor-#{issue_id}-upload-error", "Couldn't upload refused.png")
 
-    stub(Issues, :upload_image, fn _scope, _issue, _name, _data -> raise "R2 went away" end)
+    stub(Issues, :upload_file, fn _scope, _issue, _name, _data -> raise "R2 went away" end)
 
     crashed =
-      file_input(view, "#issue-description-editor-#{issue_id}-upload", :image, [
+      file_input(view, "#issue-description-editor-#{issue_id}-upload", :file, [
         %{name: "crashed.png", content: "PNG_BYTES", type: "image/png"}
       ])
 
@@ -211,7 +250,7 @@ defmodule RailWeb.Components.DescriptionEditorTest do
     {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
 
     image =
-      file_input(view, "#issue-description-editor-#{issue_id}-upload", :image, [
+      file_input(view, "#issue-description-editor-#{issue_id}-upload", :file, [
         %{name: "shot", content: "PNG_BYTES", type: "image/png"}
       ])
 
@@ -219,6 +258,11 @@ defmodule RailWeb.Components.DescriptionEditorTest do
     render_async(view)
     assert_push_event(view, "upload_started", %{ref: ref, name: "shot"})
     assert_push_event(view, "upload_failed", %{ref: ^ref})
-    assert has_element?(view, "#issue-description-editor-#{issue_id}-upload-error", "shot is not a PNG")
+
+    assert has_element?(
+             view,
+             "#issue-description-editor-#{issue_id}-upload-error",
+             "shot is not a PNG, JPEG, GIF, WebP or PDF file."
+           )
   end
 end

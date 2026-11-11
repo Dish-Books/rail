@@ -217,7 +217,7 @@ defmodule Rail.Issues.Tracker.Local do
   # Down to the shape `get_asset/2` serves, whatever a person's file was called.
   defp calculate_asset_name(filename) do
     case String.replace(filename, ~r/[^\w.-]+/, "-") do
-      "" -> "image"
+      "" -> "file"
       name -> name
     end
   end

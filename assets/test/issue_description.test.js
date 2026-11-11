@@ -1,11 +1,30 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { getSchema } from "@tiptap/core";
+import { Image } from "@tiptap/extension-image";
+import { TaskItem, TaskList } from "@tiptap/extension-list";
+import { TableKit } from "@tiptap/extension-table";
+import { MarkdownManager } from "@tiptap/markdown";
+import { StarterKit } from "@tiptap/starter-kit";
 import {
+  calculateDropPosition,
   calculateReplace,
   calculateRestore,
   calculateSaveState,
-  imageFiles
+  uploadableFiles,
+  wrapLoneImages
 } from "../js/hooks/issue_description.js";
+
+// The extensions the hook edits the description with, less the ones that only draw in a browser.
+const extensions = [
+  StarterKit.configure({ underline: false }),
+  Image.configure({ inline: true }),
+  TableKit,
+  TaskList,
+  TaskItem.configure({ nested: true })
+];
+const schema = getSchema(extensions);
+const markdown = new MarkdownManager({ extensions });
 
 const settled = { baseline: "Saved", text: "Saved", seq: 0, inFlight: null, failed: false };
 
@@ -199,19 +218,81 @@ describe("calculateReplace", () => {
   });
 });
 
-describe("imageFiles", () => {
-  it("keeps only PNG, JPEG, GIF and WebP files", () => {
-    const files = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml", "text/html", ""].map(
-      (type) => ({ name: `file-${type}`, type })
-    );
+describe("uploadableFiles", () => {
+  it("keeps PNG, JPEG, GIF, WebP and PDF files", () => {
+    const types = ["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"];
+    const others = [
+      "image/svg+xml",
+      "text/html",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ""
+    ];
+    const files = [...types, ...others].map((type) => ({ name: `file-${type}`, type }));
 
     assert.deepEqual(
-      imageFiles(files).map((file) => file.type),
-      ["image/png", "image/jpeg", "image/gif", "image/webp"]
+      uploadableFiles(files).map((file) => file.type),
+      types
     );
   });
 
   it("finds nothing in a missing list", () => {
-    assert.deepEqual(imageFiles(undefined), []);
+    assert.deepEqual(uploadableFiles(undefined), []);
+  });
+});
+
+describe("wrapLoneImages", () => {
+  it("puts an image alone on its line back in a paragraph, so the document is valid and saves as it was", () => {
+    for (const saved of ["Ship it today.\n\n![Shot](https://x/a.png)", "> ![Shot](https://x/a.png)"]) {
+      const parsed = markdown.parse(saved);
+      assert.throws(() => schema.nodeFromJSON(parsed).check());
+
+      const wrapped = wrapLoneImages(parsed);
+      assert.doesNotThrow(() => schema.nodeFromJSON(wrapped).check());
+      assert.equal(markdown.serialize(wrapped), saved);
+    }
+  });
+
+  it("leaves an image in the middle of a sentence inline", () => {
+    const parsed = markdown.parse("Before ![Shot](https://x/a.png) after");
+    assert.deepEqual(wrapLoneImages(parsed), parsed);
+  });
+});
+
+describe("calculateDropPosition", () => {
+  const empty = schema.nodeFromJSON({ type: "doc", content: [{ type: "paragraph" }] });
+  const written = schema.nodeFromJSON({
+    type: "doc",
+    content: [{ type: "paragraph", content: [{ type: "text", text: "Typed" }] }]
+  });
+
+  it("drops into an empty description's paragraph, not after it", () => {
+    assert.equal(calculateDropPosition(empty, 1, false), empty.content.size - 1);
+  });
+
+  it("drops after the last block of a description ending in text", () => {
+    assert.equal(calculateDropPosition(written, 1, false), written.content.size);
+  });
+
+  it("drops at the cursor once the description has had focus", () => {
+    assert.equal(calculateDropPosition(written, 3, true), 3);
+  });
+});
+
+describe("a PDF's link", () => {
+  it("saves as a markdown link named for the file, with the space after it outside the link", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "spec.pdf", marks: [{ type: "link", attrs: { href: "https://x/spec.pdf" } }] },
+            { type: "text", text: " " }
+          ]
+        }
+      ]
+    };
+
+    assert.equal(markdown.serialize(doc), "[spec.pdf](https://x/spec.pdf) ");
   });
 });

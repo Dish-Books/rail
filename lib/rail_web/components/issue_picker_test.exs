@@ -65,6 +65,23 @@ defmodule RailWeb.Components.IssuePickerTest do
     refute has_element?(view, "#{picker}-menu")
   end
 
+  test "offers the issue its identifier names, ahead of newer ones it prefixes", %{
+    conn: conn,
+    local: local,
+    issue: %Issue{id: issue_id},
+    round: %Issue{id: round_id, identifier: round_identifier}
+  } do
+    # The project's 4th to 28th issues, nine of them named with the round's identifier and more.
+    for n <- 4..28, do: {:ok, _issue} = Issues.create_issue(system_scope(), local, %{title: "Later #{n}"})
+
+    {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+    picker = "#issue-blocked-by-picker-#{issue_id}"
+
+    view |> element("#{picker}-trigger") |> render_click()
+    view |> form("#{picker}-search-form", %{q: round_identifier}) |> render_change()
+    assert has_element?(view, "#{picker}-issue-#{round_id}")
+  end
+
   test "Blocks makes the page's issue the blocker, and the menu closes on the pick", %{
     conn: conn,
     issue: %Issue{id: issue_id, external_id: external_id} = issue,

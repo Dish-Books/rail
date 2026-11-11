@@ -7,9 +7,33 @@ export function calculateTitleChange(typed, saved) {
   return title === "" || title === saved ? null : title;
 }
 
+// state: { saved, pending }, the title Rail confirmed and a typed one whose push has not resolved. Returns
+// { state, push, text }: a title to send, and a text for the heading.
+export function calculateTitleState(state, event) {
+  const shown = state.pending ?? state.saved;
+  switch (event.type) {
+    case "commit": {
+      const title = event.typed ? calculateTitleChange(event.text, shown) : null;
+      if (title === null) return { state, text: shown };
+      return { state: { ...state, pending: title }, push: title, text: title };
+    }
+    case "pushed":
+      return { state: state.pending === event.title ? { ...state, pending: null } : state };
+    case "reconnected":
+      return { state, push: state.pending ?? undefined };
+    case "saved": {
+      const pending = state.pending === event.saved ? null : state.pending;
+      const text = pending === null && !event.focused ? event.saved : undefined;
+      return { state: { saved: event.saved, pending }, text };
+    }
+    default:
+      return { state };
+  }
+}
+
 export const IssueTitle = {
   mounted() {
-    this.saved = this.el.dataset.saved;
+    this.state = { saved: this.el.dataset.saved, pending: null };
     this.typed = false;
 
     this.onKeyDown = (event) => {
@@ -45,15 +69,19 @@ export const IssueTitle = {
     this.el.addEventListener("blur", this.onBlur);
   },
 
-  // Only data-saved reaches an ignored heading. Its text waits for the blur while the heading has focus.
+  // Only data-saved reaches an ignored heading.
   updated() {
-    const incoming = this.el.dataset.saved;
-    if (incoming === this.saved) return;
-    this.saved = incoming;
-    if (document.activeElement !== this.el) this.el.textContent = incoming;
+    const saved = this.el.dataset.saved;
+    if (saved === this.state.saved) return;
+    this.apply({ type: "saved", saved, focused: document.activeElement === this.el });
+  },
+
+  reconnected() {
+    this.apply({ type: "reconnected" });
   },
 
   destroyed() {
+    this.gone = true;
     this.el.removeEventListener("keydown", this.onKeyDown);
     this.el.removeEventListener("input", this.onInput);
     this.el.removeEventListener("paste", this.onPaste);
@@ -62,16 +90,24 @@ export const IssueTitle = {
   },
 
   commit() {
-    const title = this.typed ? calculateTitleChange(this.el.textContent, this.saved) : null;
+    this.apply({ type: "commit", typed: this.typed, text: this.el.textContent });
     this.typed = false;
+  },
 
-    if (title === null) {
-      this.el.textContent = this.saved;
-      return;
-    }
+  apply(event) {
+    const { state, push, text } = calculateTitleState(this.state, event);
+    this.state = state;
+    if (text !== undefined) this.el.textContent = text;
+    if (push) this.push(push);
+  },
 
-    this.saved = title;
-    this.el.textContent = title;
-    this.pushEvent("edit_issue", { title });
+  push(title) {
+    this.pushEvent("edit_issue", { title }).then(
+      () => {
+        if (!this.gone) this.apply({ type: "pushed", title });
+      },
+      // Still pending, so reconnected() sends it again.
+      () => {}
+    );
   }
 };

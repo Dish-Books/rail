@@ -2,14 +2,35 @@
 // this browser before it is saved, so a save Rail cannot take is kept and retried until it can.
 import { draftStore } from "./chat_composer.js";
 
-const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+const UPLOADABLE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"];
+const TEXTBLOCKS = ["paragraph", "heading"];
 const SAVE_AFTER_MS = 1000;
 const REPLY_WITHIN_MS = 10000;
 const RETRY_EVERY_MS = 15000;
 
-// The files a drop or a paste carries that the description can show.
-export function imageFiles(fileList) {
-  return Array.from(fileList ?? []).filter((file) => IMAGE_TYPES.includes(file.type));
+// The files a paste carries that the description takes, so a paste with none of them pastes as text.
+export function uploadableFiles(fileList) {
+  return Array.from(fileList ?? []).filter((file) => UPLOADABLE_TYPES.includes(file.type));
+}
+
+// TipTap's paragraph parser lifts an image alone on its line out of its paragraph, where an inline image may not be.
+export function wrapLoneImages(node) {
+  if (!node.content) return node;
+  const inText = TEXTBLOCKS.includes(node.type);
+  return {
+    ...node,
+    content: node.content.map((child) =>
+      child.type === "image" && !inText ? { type: "paragraph", content: [child] } : wrapLoneImages(child)
+    )
+  };
+}
+
+// At the cursor, or while the editor has never had focus at the end: inside a trailing empty paragraph, not after it.
+export function calculateDropPosition(doc, selectionFrom, everFocused) {
+  if (everFocused) return selectionFrom;
+  const last = doc.lastChild;
+  const emptyParagraph = last?.type.name === "paragraph" && last.content.size === 0;
+  return emptyParagraph ? doc.content.size - 1 : doc.content.size;
 }
 
 // What to do with a stored copy on mount: load one that differs from every form of the saved text, clear one that
@@ -147,7 +168,7 @@ export const IssueDescription = {
     const key = new kit.PluginKey("uploadPlaceholders");
     this.placeholderKey = key;
 
-    // Each image waiting on its upload holds its place as a decoration, so a save never writes it.
+    // Each file waiting on its upload holds its place as a decoration, so a save never writes it.
     const placeholders = kit.Extension.create({
       name: "uploadPlaceholders",
       addProseMirrorPlugins: () => [
@@ -184,8 +205,6 @@ export const IssueDescription = {
         kit.Placeholder.configure({ placeholder: "Add description..." }),
         placeholders
       ],
-      content: this.savedRaw,
-      contentType: "markdown",
       editorProps: {
         attributes: {
           role: "textbox",
@@ -195,14 +214,15 @@ export const IssueDescription = {
             "prose prose-slate dark:prose-invert max-w-none text-sm leading-relaxed text-slate-700 dark:text-slate-300 min-h-6 cursor-text focus:outline-none"
         },
         handlePaste: (_view, event) => {
-          const files = imageFiles(event.clipboardData?.files);
+          const files = uploadableFiles(event.clipboardData?.files);
           if (files.length === 0) return false;
-          this.addImages(files);
+          this.addFiles(files);
           return true;
         }
       }
     });
 
+    this.loadMarkdown(this.savedRaw);
     const baseline = this.editor.getMarkdown();
     this.state = { baseline, text: baseline, seq: 0, inFlight: null, failed: false };
 
@@ -210,7 +230,7 @@ export const IssueDescription = {
     const restore = calculateRestore(stored, [this.savedRaw, baseline]);
     if (restore === "clear") draftStore.write(this.key, "");
     if (restore === "load") {
-      this.editor.commands.setContent(stored, { contentType: "markdown", emitUpdate: false });
+      this.loadMarkdown(stored);
       this.dispatch({ type: "edit", text: this.editor.getMarkdown() });
       this.dispatch({ type: "save" });
     }
@@ -272,8 +292,9 @@ export const IssueDescription = {
         event.preventDefault();
         event.stopPropagation();
         showOverlay(false);
-        const files = imageFiles(event.dataTransfer.files);
-        if (files.length > 0) this.addImages(files);
+        // Every dropped file goes up, so one Rail does not take is refused with its reason.
+        const files = Array.from(event.dataTransfer.files);
+        if (files.length > 0) this.addFiles(files);
       },
       { signal, capture: true }
     );
@@ -282,14 +303,30 @@ export const IssueDescription = {
       const held = this.placeholders.find((placeholder) => placeholder.name === name && placeholder.ref === null);
       if (held) held.ref = ref;
     });
-    this.handleEvent("insert_image", ({ ref, url, name }) => this.settleImage(ref, { src: url, alt: name }));
-    this.handleEvent("upload_failed", ({ ref }) => this.settleImage(ref, null));
+    // A link mark takes in what is typed right after it, so a plain space follows a file's link.
+    this.handleEvent("insert_file", ({ ref, url, name, image }) =>
+      this.settleFile(
+        ref,
+        image
+          ? [{ type: "image", attrs: { src: url, alt: name } }]
+          : [
+              { type: "text", text: name, marks: [{ type: "link", attrs: { href: url } }] },
+              { type: "text", text: " " }
+            ]
+      )
+    );
+    this.handleEvent("upload_failed", ({ ref }) => this.settleFile(ref, null));
   },
 
-  // At the last cursor position, or at the end while the editor has never had focus.
-  addImages(files) {
+  // Outside the undo history, so Ctrl+Z never goes back past the text that was loaded.
+  loadMarkdown(markdown) {
+    const json = wrapLoneImages(this.editor.markdown.parse(markdown));
+    this.editor.chain().setMeta("addToHistory", false).setContent(json, { emitUpdate: false }).run();
+  },
+
+  addFiles(files) {
     const { state, view } = this.editor;
-    const pos = this.everFocused ? state.selection.from : state.doc.content.size;
+    const pos = calculateDropPosition(state.doc, state.selection.from, this.everFocused);
     let tr = state.tr;
 
     for (const file of files) {
@@ -300,10 +337,10 @@ export const IssueDescription = {
       tr = view.state.tr;
     }
 
-    this.uploadTo(document.getElementById(this.el.dataset.uploadForm), "image", files);
+    this.uploadTo(document.getElementById(this.el.dataset.uploadForm), "file", files);
   },
 
-  settleImage(ref, image) {
+  settleFile(ref, content) {
     const held = this.placeholders.find((placeholder) => placeholder.ref === ref);
     if (!held) return;
     this.placeholders = this.placeholders.filter((placeholder) => placeholder !== held);
@@ -312,9 +349,9 @@ export const IssueDescription = {
     const [found] = this.placeholderKey.getState(state).find(null, null, (spec) => spec.id === held.id);
     view.dispatch(state.tr.setMeta(this.placeholderKey, { remove: held.id }));
 
-    if (image) {
+    if (content) {
       const pos = found ? found.from : this.editor.state.doc.content.size;
-      this.editor.chain().insertContentAt(pos, { type: "image", attrs: image }).run();
+      this.editor.chain().insertContentAt(pos, content).run();
     }
     this.takeWaiting();
   },
@@ -390,7 +427,7 @@ export const IssueDescription = {
     this.waiting = null;
     if (action === "none") return;
 
-    this.editor.commands.setContent(incoming, { contentType: "markdown", emitUpdate: false });
+    this.loadMarkdown(incoming);
     const baseline = this.editor.getMarkdown();
     this.state = { ...this.state, baseline, text: baseline };
   }

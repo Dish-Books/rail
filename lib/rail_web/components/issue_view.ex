@@ -493,7 +493,9 @@ defmodule RailWeb.Components.IssueView do
                 id="issue-cycle"
                 data-qa="issue-cycle"
                 aria-haspopup="menu"
-                phx-click={JS.toggle(to: "#issue-cycle-menu")}
+                phx-click={
+                  JS.toggle(to: "#issue-cycle-menu") |> JS.focus_first(to: "#issue-cycle-menu")
+                }
                 class="-mx-2 flex items-center gap-2.5 max-w-full px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500"
               >
                 <.icon name="pi-arrows-clockwise" class="h-4 w-4 text-slate-500 dark:text-slate-400" />
@@ -507,6 +509,7 @@ defmodule RailWeb.Components.IssueView do
               <div
                 id="issue-cycle-menu"
                 role="menu"
+                phx-hook="MenuKeys"
                 class="hidden absolute z-20 left-0 top-full mt-1 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg"
               >
                 <ul class="max-h-72 overflow-y-auto p-1">
@@ -515,6 +518,8 @@ defmodule RailWeb.Components.IssueView do
                       type="button"
                       id="issue-cycle-none"
                       role="menuitem"
+                      phx-keydown={JS.hide(to: "#issue-cycle-menu") |> JS.focus(to: "#issue-cycle")}
+                      phx-key="Escape"
                       phx-click={
                         JS.push("set_cycle", value: %{cycle_id: ""})
                         |> JS.hide(to: "#issue-cycle-menu")
@@ -534,6 +539,8 @@ defmodule RailWeb.Components.IssueView do
                       type="button"
                       id={"issue-cycle-#{cycle.id}"}
                       role="menuitem"
+                      phx-keydown={JS.hide(to: "#issue-cycle-menu") |> JS.focus(to: "#issue-cycle")}
+                      phx-key="Escape"
                       phx-click={
                         JS.push("set_cycle", value: %{cycle_id: cycle.id})
                         |> JS.hide(to: "#issue-cycle-menu")
@@ -675,6 +682,7 @@ defmodule RailWeb.Components.IssueView do
       <div
         id={"#{@id}-menu"}
         role="menu"
+        phx-hook="MenuKeys"
         class="hidden absolute z-20 left-0 top-full mt-1 w-48 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg"
       >
         <ul class="max-h-80 overflow-y-auto p-1">
@@ -683,6 +691,8 @@ defmodule RailWeb.Components.IssueView do
               type="button"
               role="menuitem"
               id={"#{@id}-#{value || "none"}"}
+              phx-keydown={JS.hide(to: "##{@id}-menu") |> JS.focus(to: "##{@id}")}
+              phx-key="Escape"
               phx-click={
                 JS.push("edit_issue", value: %{@field => value || ""})
                 |> JS.hide(to: "##{@id}-menu")

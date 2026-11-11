@@ -29,7 +29,7 @@ defmodule Rail.Issues do
   defdelegate reset_issue_state(issue, state), to: Actions.ResetIssueState
   defdelegate set_issue_status(scope, issue, status), to: Actions.SetIssueStatus
   defdelegate edit_issue(scope, issue, attrs), to: Actions.EditIssue
-  defdelegate upload_image(scope, issue, filename, data), to: Actions.UploadImage
+  defdelegate upload_file(scope, issue, filename, data), to: Actions.UploadFile
   defdelegate block_issue(scope, blocker, blocked), to: Actions.BlockIssue
   defdelegate unblock_issue(scope, blocker, blocked), to: Actions.UnblockIssue
 

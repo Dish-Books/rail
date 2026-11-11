@@ -1,4 +1,4 @@
-defmodule Rail.Issues.Actions.UploadImageTest do
+defmodule Rail.Issues.Actions.UploadFileTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
@@ -42,7 +42,7 @@ defmodule Rail.Issues.Actions.UploadImageTest do
       Plug.Conn.send_resp(conn, 200, "")
     end)
 
-    result = Issues.upload_image(scope, issue, "Screenshot 2026-11-10 at 14.02.11.png", "PNG_BYTES")
+    result = Issues.upload_file(scope, issue, "Screenshot 2026-11-10 at 14.02.11.png", "PNG_BYTES")
     assert_received {:put, name}
     url = RailWeb.Endpoint.url() <> "/issues/#{issue_id}/assets/" <> name
     assert {:ok, ^url} = result
@@ -55,14 +55,14 @@ defmodule Rail.Issues.Actions.UploadImageTest do
     assert {:ok, "image/png", "PNG_BYTES"} = Issues.get_asset(issue, name)
   end
 
-  test "a name that cleans to nothing is stored as image", %{issue: issue, scope: scope} do
+  test "a name that cleans to nothing is stored as file", %{issue: issue, scope: scope} do
     Req.Test.expect(R2, fn conn ->
-      assert conn.request_path =~ ~r/-image\z/
+      assert conn.request_path =~ ~r/-file\z/
       Plug.Conn.send_resp(conn, 200, "")
     end)
 
     assert {:ok, _url} = Issues.upload_asset(issue, "", "image/png", "PNG_BYTES")
-    assert {:error, :not_an_image} = Issues.upload_image(scope, issue, "", "PNG_BYTES")
+    assert {:error, :not_accepted} = Issues.upload_file(scope, issue, "", "PNG_BYTES")
   end
 
   test "a JPEG's type comes from its name, in any case", %{issue: issue, scope: scope} do
@@ -71,15 +71,28 @@ defmodule Rail.Issues.Actions.UploadImageTest do
       Plug.Conn.send_resp(conn, 200, "")
     end)
 
-    assert {:ok, _url} = Issues.upload_image(scope, issue, "photo.JPG", "JPEG_BYTES")
+    assert {:ok, _url} = Issues.upload_file(scope, issue, "photo.JPG", "JPEG_BYTES")
   end
 
-  test "a page is not an image, and is never stored", %{issue: issue, scope: scope} do
-    assert {:error, :not_an_image} = Issues.upload_image(scope, issue, "shot.html", "<script>alert(1)</script>")
-    assert {:error, :not_an_image} = Issues.upload_image(scope, issue, "shot.svg", "<svg/>")
+  test "a PDF is stored typed as one, under a name with no spaces", %{issue: %Issue{id: issue_id} = issue, scope: scope} do
+    Req.Test.expect(R2, fn conn ->
+      assert %Plug.Conn{method: "PUT", request_path: "/r2_bucket/" <> path} = conn
+      assert [^issue_id, name] = String.split(path, "/")
+      assert name =~ ~r/\A[0-9a-f-]{36}-Spec-v2\.pdf\z/
+      assert ["application/pdf"] = Plug.Conn.get_req_header(conn, "content-type")
+      Plug.Conn.send_resp(conn, 200, "")
+    end)
+
+    assert {:ok, _url} = Issues.upload_file(scope, issue, "Spec v2.pdf", "%PDF-1.7")
   end
 
-  test "an issue Linear holds takes no images here", %{project: project} do
+  test "a page, an SVG or a Word file is not taken, and is never stored", %{issue: issue, scope: scope} do
+    assert {:error, :not_accepted} = Issues.upload_file(scope, issue, "shot.html", "<script>alert(1)</script>")
+    assert {:error, :not_accepted} = Issues.upload_file(scope, issue, "shot.svg", "<svg/>")
+    assert {:error, :not_accepted} = Issues.upload_file(scope, issue, "notes.docx", "PK")
+  end
+
+  test "an issue Linear holds takes no uploads here", %{project: project} do
     linear =
       %Issue{}
       |> Issue.tracker_changeset(%{
@@ -91,10 +104,10 @@ defmodule Rail.Issues.Actions.UploadImageTest do
       })
       |> Repo.insert!()
 
-    assert {:error, :unsupported} = Issues.upload_image(system_scope(), linear, "shot.png", "PNG_BYTES")
+    assert {:error, :unsupported} = Issues.upload_file(system_scope(), linear, "shot.png", "PNG_BYTES")
   end
 
   test "someone who cannot open the project stores nothing", %{issue: issue} do
-    assert {:error, :not_found} = Issues.upload_image(user_scope(project_ids: []), issue, "shot.png", "PNG_BYTES")
+    assert {:error, :not_found} = Issues.upload_file(user_scope(project_ids: []), issue, "shot.png", "PNG_BYTES")
   end
 end

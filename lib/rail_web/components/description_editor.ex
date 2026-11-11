@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.DescriptionEditor do
   @moduledoc """
   A Rail-tracked issue's description, edited in place by the `IssueDescription` hook and saved as the person goes.
-  Images dropped or pasted into it go up through this component, one async task each, so the page stays live.
+  Images and PDFs dropped or pasted into it go up through this component, one async task each, so the page stays live.
   """
   use RailWeb, :live_component
 
@@ -14,8 +14,8 @@ defmodule RailWeb.Components.DescriptionEditor do
       socket
       |> assign(:upload_error, nil)
       |> assign(:started, %{})
-      |> allow_upload(:image,
-        accept: [".png", ".jpg", ".jpeg", ".gif", ".webp"],
+      |> allow_upload(:file,
+        accept: [".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf"],
         max_entries: @max_entries,
         max_file_size: 10_000_000,
         auto_upload: true,
@@ -102,7 +102,7 @@ defmodule RailWeb.Components.DescriptionEditor do
       </div>
 
       <form id={"#{@id}-upload"} phx-change="upload" phx-target={@myself} class="hidden">
-        <.live_file_input upload={@uploads.image} />
+        <.live_file_input upload={@uploads.file} />
       </form>
     </div>
     """
@@ -110,7 +110,7 @@ defmodule RailWeb.Components.DescriptionEditor do
 
   # The hook ties each ref to its placeholder by name, in order, so two pasted `image.png` files stay apart.
   def handle_event("upload", _params, socket) do
-    %{image: upload} = socket.assigns.uploads
+    %{file: upload} = socket.assigns.uploads
     new = Enum.reject(upload.entries, &Map.has_key?(socket.assigns.started, &1.ref))
     socket = Enum.reduce(new, socket, &announce/2)
 
@@ -135,26 +135,28 @@ defmodule RailWeb.Components.DescriptionEditor do
 
   def handle_event("save_description", _malformed, socket), do: {:reply, %{ok: false}, socket}
 
-  def handle_progress(:image, %{done?: true} = entry, socket) do
+  def handle_progress(:file, %{done?: true} = entry, socket) do
     %{issue: issue, current_scope: scope} = socket.assigns
     socket = announce(entry, socket)
     data = consume_uploaded_entry(socket, entry, fn %{path: path} -> {:ok, File.read!(path)} end)
     name = entry.client_name
 
-    socket = start_async(socket, {:upload, entry.ref}, fn -> Issues.upload_image(scope, issue, name, data) end)
+    socket = start_async(socket, {:upload, entry.ref}, fn -> Issues.upload_file(scope, issue, name, data) end)
     {:noreply, socket}
   end
 
-  def handle_progress(:image, entry, socket), do: {:noreply, announce(entry, socket)}
+  def handle_progress(:file, entry, socket), do: {:noreply, announce(entry, socket)}
 
   def handle_async({:upload, ref}, {:ok, {:ok, url}}, socket) do
     {name, socket} = take_started(socket, ref)
-    {:noreply, push_event(socket, "insert_image", %{ref: ref, name: name, url: url})}
+    # A PDF goes in as a link, by the same lowercased extension the stored type comes from.
+    image = String.downcase(Path.extname(name)) != ".pdf"
+    {:noreply, push_event(socket, "insert_file", %{ref: ref, name: name, url: url, image: image})}
   end
 
-  def handle_async({:upload, ref}, {:ok, {:error, :not_an_image}}, socket) do
+  def handle_async({:upload, ref}, {:ok, {:error, :not_accepted}}, socket) do
     {name, socket} = take_started(socket, ref)
-    {:noreply, fail(socket, ref, "#{name} is not a PNG, JPEG, GIF or WebP image.")}
+    {:noreply, fail(socket, ref, "#{name} is not a PNG, JPEG, GIF, WebP or PDF file.")}
   end
 
   def handle_async({:upload, ref}, _refused_or_crashed, socket) do
@@ -165,13 +167,13 @@ defmodule RailWeb.Components.DescriptionEditor do
   defp refusal(upload, entry, index) do
     cond do
       index >= @max_entries and :too_many_files in upload_errors(upload) ->
-        "Up to #{@max_entries} images go up at a time, so #{entry.client_name} was not added."
+        "Up to #{@max_entries} files go up at a time, so #{entry.client_name} was not added."
 
       :too_large in upload_errors(upload, entry) ->
         "#{entry.client_name} is over 10 MB, so it was not added."
 
       :not_accepted in upload_errors(upload, entry) ->
-        "#{entry.client_name} is not a PNG, JPEG, GIF or WebP image."
+        "#{entry.client_name} is not a PNG, JPEG, GIF, WebP or PDF file."
 
       true ->
         nil
@@ -191,13 +193,13 @@ defmodule RailWeb.Components.DescriptionEditor do
 
   defp refuse({entry, reason}, socket) do
     socket
-    |> cancel_upload(:image, entry.ref)
+    |> cancel_upload(:file, entry.ref)
     |> update(:started, &Map.delete(&1, entry.ref))
     |> fail(entry.ref, reason)
   end
 
   defp take_started(socket, ref) do
-    {name, started} = Map.pop(socket.assigns.started, ref, "the image")
+    {name, started} = Map.pop(socket.assigns.started, ref, "the file")
     {name, assign(socket, :started, started)}
   end
 

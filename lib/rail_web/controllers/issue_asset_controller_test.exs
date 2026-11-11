@@ -132,6 +132,7 @@ defmodule RailWeb.IssueAssetControllerTest do
     # A person uploads these, so none may run script as Rail when opened on its own.
     assert ["nosniff"] = get_resp_header(served, "x-content-type-options")
     assert ["sandbox"] = get_resp_header(served, "content-security-policy")
+    assert [] = get_resp_header(served, "content-disposition")
 
     other_path = "/r2_bucket/#{other_id}/#{name}"
 
@@ -150,5 +151,37 @@ defmodule RailWeb.IssueAssetControllerTest do
       Users.register_oauth_user(%{github_id: "gh_local_out", login: "local_out", email: "local_out@example.com"})
 
     assert conn |> log_in_user(outsider) |> get("/issues/#{issue_id}/assets/#{name}") |> response(404) == "Not found"
+  end
+
+  test "serves a Rail-tracked issue's PDF as a download, still sandboxed", %{conn: conn} do
+    n = System.unique_integer([:positive])
+
+    {:ok, local} =
+      Projects.create_project(system_scope(), %{
+        name: "Kept in Rail",
+        github_repo: "example/pdf-#{n}",
+        github_installation_id: 1,
+        tracker: :local,
+        key: "PDF#{n}",
+        default_branch: "main",
+        clone_path: "/tmp/pdf-#{n}"
+      })
+
+    {:ok, user} =
+      Users.register_oauth_user(%{github_id: "gh_local_pdf", login: "local_pdf", email: "local_pdf@example.com"})
+
+    {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [local.id]})
+    {:ok, %Issue{id: issue_id}} = Issues.create_issue(system_scope(), local, %{title: "Has a spec"})
+    name = "#{Ecto.UUID.generate()}-spec.pdf"
+
+    Req.Test.expect(R2, fn r2 ->
+      r2 |> Plug.Conn.put_resp_content_type("application/pdf", nil) |> Plug.Conn.send_resp(200, "%PDF-1.7")
+    end)
+
+    served = conn |> log_in_user(user) |> get("/issues/#{issue_id}/assets/#{name}")
+    assert response(served, 200) == "%PDF-1.7"
+    assert ["attachment"] = get_resp_header(served, "content-disposition")
+    assert ["nosniff"] = get_resp_header(served, "x-content-type-options")
+    assert ["sandbox"] = get_resp_header(served, "content-security-policy")
   end
 end

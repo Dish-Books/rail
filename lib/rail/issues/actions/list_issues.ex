@@ -10,7 +10,7 @@ defmodule Rail.Issues.Actions.ListIssues do
 
   @doc """
   Lists a page of issues, most recently updated first, along with how many
-  match in all.
+  match in all. A search puts the issue whose identifier it names first.
 
   Options: `:project_id` (one id or a list), `:owner_user_id`, `:cycle_id` (the tracker's id for a cycle of those projects,
   Rail's own for a Rail-tracked one, or a list), `:state`, `:show_finished`, `:search`, `:completed_after`, `:archived`,
@@ -50,6 +50,7 @@ defmodule Rail.Issues.Actions.ListIssues do
     issues =
       matching
       |> filter_priority(opts[:priority])
+      |> exact_identifier_first(opts[:search])
       |> order_by([i], desc: i.updated_at, desc: i.id)
       |> limit_to(opts[:limit])
       |> offset_by(opts[:offset])
@@ -89,6 +90,15 @@ defmodule Rail.Issues.Actions.ListIssues do
   end
 
   defp filter_search(query, _none), do: query
+
+  defp exact_identifier_first(query, search) when is_binary(search) do
+    case String.trim(search) do
+      "" -> query
+      term -> order_by(query, [i], desc: fragment("lower(?) = lower(?)", i.identifier, ^term))
+    end
+  end
+
+  defp exact_identifier_first(query, _none), do: query
 
   defp filter_completed_after(query, nil), do: query
 

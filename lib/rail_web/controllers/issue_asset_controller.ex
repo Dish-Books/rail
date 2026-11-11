@@ -15,11 +15,16 @@ defmodule RailWeb.IssueAssetController do
       # People upload these files, so none may run script as Rail when opened on its own.
       |> put_resp_header("x-content-type-options", "nosniff")
       |> put_resp_header("content-security-policy", "sandbox")
+      |> download_pdf(content_type)
       |> send_resp(200, body)
     else
       _missing -> send_resp(conn, 404, "Not found")
     end
   end
+
+  # The sandbox keeps a browser from showing a PDF in place, so it is downloaded.
+  defp download_pdf(conn, "application/pdf"), do: put_resp_header(conn, "content-disposition", "attachment")
+  defp download_pdf(conn, _shown), do: conn
 
   # Linear signs some of its file URLs, so the query has to travel with the path.
   defp asset_path(segments, ""), do: Enum.join(segments, "/")

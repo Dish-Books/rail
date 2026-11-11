@@ -1424,6 +1424,22 @@ defmodule RailWeb.IssueLiveTest do
       assert has_element?(second, "#issue-estimate", "No points")
     end
 
+    test "the priority and estimate menus move with the arrow keys, and Escape on an item hands focus back", %{
+      conn: conn,
+      issue: %Issue{id: issue_id}
+    } do
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+
+      for {menu, item} <- [{"issue-priority", "urgent"}, {"issue-estimate", "none"}] do
+        assert has_element?(view, "##{menu}-menu[phx-hook='MenuKeys']")
+
+        assert has_element?(
+                 view,
+                 ~s(##{menu}-#{item}[phx-key='Escape'][phx-keydown*='"focus",{"to":"##{menu}"}'])
+               )
+      end
+    end
+
     test "an emptied title saves nothing, and the page keeps the saved one", %{conn: conn, issue: %Issue{id: issue_id}} do
       {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
 
@@ -1660,6 +1676,17 @@ defmodule RailWeb.IssueLiveTest do
 
       assert has_element?(view, "#issue-cycle", "Cycle 2")
       assert has_element?(view, "#issue-cycle", "Nov 24 – Dec 7")
+    end
+
+    test "the menu moves with the arrow keys, opens on an item, and Escape on an item hands focus back", %{
+      conn: conn,
+      issue: %{id: issue_id}
+    } do
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+
+      assert has_element?(view, "#issue-cycle-menu[phx-hook='MenuKeys']")
+      assert has_element?(view, ~s(#issue-cycle[phx-click*='"focus_first",{"to":"#issue-cycle-menu"}']))
+      assert has_element?(view, ~s(#issue-cycle-none[phx-key='Escape'][phx-keydown*='"focus",{"to":"#issue-cycle"}']))
     end
 
     test "another project's cycles leave the page as it is", %{conn: conn, issue: %{id: issue_id}} do
