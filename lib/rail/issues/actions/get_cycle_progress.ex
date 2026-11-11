@@ -2,31 +2,19 @@ defmodule Rail.Issues.Actions.GetCycleProgress do
   @moduledoc false
 
   import Ecto.Query
+  import Rail.Issues.Utils.SumCyclePoints
 
-  alias Rail.Issues.Schemas.Issue
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Users.Schemas.User
 
   @doc """
   A cycle's scope, started (done work included) and completed points, without canceled or duplicate issues and with an
-  unestimated one at the team's default, the scope's change since day one, and each owner's points, most first.
+  unestimated one at the team's default, the scope's change since day one, and each owner's points, most first. An
+  ended Rail cycle counts its issues in the state they closed in.
   """
   def get_cycle_progress(%Project{id: project_id}, %{id: cycle_id, default_estimate: estimate} = cycle) do
-    rows =
-      Repo.all(
-        from(i in Issue,
-          where: i.project_id == ^project_id and i.cycle_external_id == ^cycle_id,
-          where: i.state not in ^[:canceled, :duplicate],
-          group_by: i.owner_user_id,
-          select: {
-            i.owner_user_id,
-            sum(coalesce(i.estimate, ^estimate)),
-            coalesce(filter(sum(coalesce(i.estimate, ^estimate)), i.state in ^[:in_progress, :in_review, :done]), 0),
-            coalesce(filter(sum(coalesce(i.estimate, ^estimate)), i.state == ^:done), 0)
-          }
-        )
-      )
+    rows = sum_cycle_points(project_id, cycle_id, estimate)
 
     scope = rows |> Enum.map(&elem(&1, 1)) |> Enum.sum()
     owner_ids = for {id, _points, _started, _completed} <- rows, is_binary(id), do: id

@@ -2,6 +2,7 @@ defmodule Rail.Issues.Actions.ListIssues do
   @moduledoc false
 
   import Ecto.Query
+  import Rail.Issues.Utils.CycleIssues
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
@@ -11,9 +12,13 @@ defmodule Rail.Issues.Actions.ListIssues do
   Lists a page of issues, most recently updated first, along with how many
   match in all.
 
-  Options: `:project_id` (one id or a list), `:owner_user_id`, `:cycle_id` (Linear's id for the cycle, or a list), `:state`,
-  `:show_finished`, `:search`, `:completed_after`, `:archived`, `:priority`, `:exclude_ids`, `:limit`, `:offset` and
-  `:preload`.
+  Options: `:project_id` (one id or a list), `:owner_user_id`, `:cycle_id` (the tracker's id for a cycle of those projects,
+  Rail's own for a Rail-tracked one, or a list), `:state`, `:show_finished`, `:search`, `:completed_after`, `:archived`,
+  `:priority`, `:exclude_ids`, `:limit`, `:offset` and `:preload`.
+
+  With `:cycle_id`, each issue is filtered and counted as its cycle holds it, so one a cycle held when it closed counts in
+  the state it closed in. Each comes back live, with the cycle's state and status name in `cycle_state` and
+  `cycle_state_name`.
 
   An issue archived in its tracker is left out unless a task holds it, or
   `archived: true` asks for every one.
@@ -24,10 +29,10 @@ defmodule Rail.Issues.Actions.ListIssues do
   """
   def list_issues(opts \\ []) when is_list(opts) do
     matching =
-      Issue
+      opts[:project_id]
+      |> from_cycle(opts[:cycle_id])
       |> filter_project(opts[:project_id])
       |> filter_owner(opts[:owner_user_id])
-      |> filter_cycle(opts[:cycle_id])
       |> filter_state(opts[:state])
       |> filter_finished(Keyword.get(opts, :show_finished, false))
       |> filter_search(opts[:search])
@@ -48,8 +53,10 @@ defmodule Rail.Issues.Actions.ListIssues do
       |> order_by([i], desc: i.updated_at, desc: i.id)
       |> limit_to(opts[:limit])
       |> offset_by(opts[:offset])
-      |> preload(^Keyword.get(opts, :preload, []))
+      |> select_live(opts[:cycle_id])
       |> Repo.all()
+      # Not a query preload, which would apply to the cycle's reading that `select_live/2` no longer selects.
+      |> Repo.preload(Keyword.get(opts, :preload, []))
 
     %{issues: issues, total: total(priority_counts, opts[:priority]), priority_counts: priority_counts}
   end
@@ -61,9 +68,8 @@ defmodule Rail.Issues.Actions.ListIssues do
   defp filter_owner(query, nil), do: query
   defp filter_owner(query, user_id), do: where(query, [i], i.owner_user_id == ^user_id)
 
-  defp filter_cycle(query, nil), do: query
-  defp filter_cycle(query, cycle_ids) when is_list(cycle_ids), do: where(query, [i], i.cycle_external_id in ^cycle_ids)
-  defp filter_cycle(query, cycle_id), do: where(query, [i], i.cycle_external_id == ^cycle_id)
+  defp from_cycle(_project_id, nil), do: from(i in Issue)
+  defp from_cycle(project_id, cycle_id), do: from(i in cycle_issues(List.wrap(project_id), List.wrap(cycle_id)))
 
   defp filter_state(query, nil), do: query
   defp filter_state(query, state), do: where(query, [i], i.state == ^state)
@@ -106,6 +112,16 @@ defmodule Rail.Issues.Actions.ListIssues do
 
   defp offset_by(query, nil), do: query
   defp offset_by(query, offset), do: offset(query, ^offset)
+
+  defp select_live(query, nil), do: query
+
+  defp select_live(query, _cycle_id) do
+    from([i] in query,
+      join: live in Issue,
+      on: live.id == i.id,
+      select: merge(live, %{cycle_state: i.state, cycle_state_name: i.state_name})
+    )
+  end
 
   defp total(priority_counts, nil), do: priority_counts |> Map.values() |> Enum.sum()
   defp total(priority_counts, priority), do: Map.get(priority_counts, priority, 0)
