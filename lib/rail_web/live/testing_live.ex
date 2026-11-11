@@ -14,6 +14,7 @@ defmodule RailWeb.TestingLive do
     :workflow,
     :parent,
     :children,
+    :links,
     task: [:rounds, runs: :role, parent_task: [children: :issue]],
     comments: [:author_user, replies: :author_user]
   ]

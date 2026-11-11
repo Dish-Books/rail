@@ -1,10 +1,12 @@
 defmodule RailWeb.TestingLiveTest do
   use RailWeb.ConnCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   import Phoenix.LiveViewTest
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Workers.LinkTrackerUrl
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Users
@@ -146,9 +148,17 @@ defmodule RailWeb.TestingLiveTest do
       %{external_id => %{blocked_by: [%{issue: blocker, in_project: true}], blocks: []}}
     end)
 
+    assert :ok =
+             perform_job(LinkTrackerUrl, %{
+               issue_id: issue.id,
+               url: "https://slack.example/archives/C1/p1",
+               title: "Slack thread"
+             })
+
     {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
     render_async(view)
 
+    assert has_element?(view, "a[id^='issue-link-'][href='https://slack.example/archives/C1/p1']", "Slack thread")
     assert has_element?(view, "#issue-title", "Read it all")
     assert has_element?(view, "#issue-description", "What it does")
     assert has_element?(view, "#issue-status", "Done")
@@ -172,6 +182,9 @@ defmodule RailWeb.TestingLiveTest do
     refute has_element?(view, "#issue-relation-pickers")
     refute has_element?(view, "[phx-click='remove_relation']")
     assert [_only] = view |> element("#testing-ticket") |> render() |> Floki.parse_fragment!() |> Floki.find("textarea")
+
+    assert :ok = perform_job(LinkTrackerUrl, %{issue_id: issue.id, url: "https://example.com/spec", title: "Spec"})
+    assert has_element?(view, "a[id^='issue-link-'][href='https://example.com/spec']", "Spec")
   end
 
   test "a ticket in a project the user cannot open, or one that does not exist, opens nothing", %{
