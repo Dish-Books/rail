@@ -473,6 +473,7 @@ defmodule RailWeb.TestingLiveTest do
 
     render_hook(view, "send_to_triage", %{"issue_id" => sent.id})
     assert has_element?(view, "#testing-notice", "#{sent.identifier} was already sent to triage.")
+    assert has_element?(view, "#testing-notes-status", "Testing finished")
     assert %{total: 1} = Issues.list_issues(project_id: sent.project_id, state: :triage)
 
     {:ok, view, _html} = live(conn, ~p"/testing/#{reopened.id}")
@@ -481,8 +482,19 @@ defmodule RailWeb.TestingLiveTest do
       Issues.set_issue_status(system_scope(), reopened, %{id: "canceled", name: "Canceled", state: :canceled})
 
     refute has_element?(view, "#testing-bar-state")
+    assert has_element?(view, "#testing-notes-status", "Not in Done")
     render_hook(view, "mark_tested", %{"issue_id" => reopened.id})
     assert has_element?(view, "#testing-notice", "#{reopened.identifier} is no longer in Done.")
+  end
+
+  test "a ticket Done before testing shipped reads not in the testing queue", %{conn: conn, done: done, here: here} do
+    issue = done.(here, "Done long ago")
+    issue |> Ecto.Changeset.change(testing_state: nil) |> Repo.update!()
+
+    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+
+    assert has_element?(view, "#testing-notes-status", "Not in the testing queue")
+    assert has_element?(view, "#testing-notes-#{issue.id}[readonly]")
   end
 
   test "Send to triage with blank notes asks for them", %{conn: conn, done: done, here: here} do

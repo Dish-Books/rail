@@ -153,7 +153,7 @@ defmodule RailWeb.TestingLive do
                       id="testing-notes-status"
                       class="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400"
                     >
-                      <.icon name="pi-lock-simple" class="size-3" />Testing finished
+                      <.icon name="pi-lock-simple" class="size-3" />{@lock_label}
                     </span>
                   </div>
                   <textarea
@@ -381,6 +381,12 @@ defmodule RailWeb.TestingLive do
   defp finished_label(%Issue{state: :done, testing_state: :sent_to_triage}), do: "was already sent to triage"
   defp finished_label(_moved_or_gone), do: "is no longer in Done"
 
+  defp lock_label(%Issue{state: :done, testing_state: state}) when state in [:tested, :sent_to_triage],
+    do: "Testing finished"
+
+  defp lock_label(%Issue{state: :done}), do: "Not in the testing queue"
+  defp lock_label(_not_done), do: "Not in Done"
+
   # The ticket the URL names, else the one already open, else the first in the queue. It stays open once it leaves the
   # queue; only a patch, which selects again, moves on from it.
   defp load(socket, mode \\ :keep) do
@@ -419,6 +425,7 @@ defmodule RailWeb.TestingLive do
     |> assign(:in_queue, issue != nil and Issue.in_testing_queue?(issue))
     |> assign(:show_testing_state, issue != nil and issue.state == :done and issue.testing_state != nil)
     |> assign(:notes_blank, issue == nil or String.trim(issue.testing_notes || "") == "")
+    |> assign(:lock_label, issue && lock_label(issue))
   end
 
   # Read once connected and only when the open ticket or a blocker changes, so saving notes never asks Linear.
