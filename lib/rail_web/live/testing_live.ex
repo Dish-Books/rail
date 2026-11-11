@@ -18,10 +18,14 @@ defmodule RailWeb.TestingLive do
     comments: [:author_user, replies: :author_user]
   ]
 
+  # The usual longest gap between a double click's two clicks, so the second lands on the loading screen.
+  @advance_ms 500
+
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
       Phoenix.PubSub.subscribe(Rail.PubSub, "testing")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "cycles")
     end
 
     socket =
@@ -30,7 +34,10 @@ defmodule RailWeb.TestingLive do
       |> assign(:current_section, :testing)
       |> assign(:issue, nil)
       |> assign(:blockers, nil)
+      |> assign(:cycles, nil)
       |> assign(:notice, nil)
+      |> assign(:advancing, nil)
+      |> assign(:notes_rev, 0)
 
     {:ok, socket}
   end
@@ -43,6 +50,8 @@ defmodule RailWeb.TestingLive do
       socket
       |> assign(:selected_id, params["id"])
       |> assign(:notice, if(notice && notice.for == params["id"], do: notice))
+      |> assign(:advancing, nil)
+      |> assign(:notes_rev, 0)
       |> load(:select)
 
     {:noreply, socket}
@@ -56,7 +65,15 @@ defmodule RailWeb.TestingLive do
 
         <section id="testing-ticket" class="flex-1 min-w-0 flex flex-col min-h-0">
           <div
-            :if={@issue}
+            :if={@advancing}
+            id="testing-advancing"
+            class="flex-1 flex items-center justify-center gap-2 text-sm text-slate-500 dark:text-slate-400"
+          >
+            <.icon name="pi-circle-notch" class="size-4 motion-safe:animate-spin" />{@advancing.label}
+          </div>
+
+          <div
+            :if={@issue && !@advancing}
             id="testing-bar"
             class="flex items-center gap-3 px-6 py-3 border-b border-slate-200 dark:border-slate-700 flex-wrap"
           >
@@ -103,7 +120,7 @@ defmodule RailWeb.TestingLive do
             </div>
           </div>
 
-          <div class="flex-1 overflow-y-auto px-6 py-5">
+          <div :if={!@advancing} class="flex-1 overflow-y-auto px-6 py-5">
             <div class="max-w-5xl mx-auto space-y-6">
               <.notice :if={@notice} notice={@notice} issue={@issue} />
 
@@ -143,6 +160,8 @@ defmodule RailWeb.TestingLive do
                     id={"testing-notes-#{@issue.id}"}
                     name="notes"
                     phx-debounce="500"
+                    phx-blur="notes_blurred"
+                    data-rev={@notes_rev}
                     readonly={!@in_queue}
                     placeholder="What you tried, what worked, what did not..."
                     class={[
@@ -166,6 +185,7 @@ defmodule RailWeb.TestingLive do
                 issue={@issue}
                 current_scope={@current_scope}
                 blockers={@blockers}
+                cycles={@cycles}
                 show_task={false}
                 read_only
               />
@@ -202,7 +222,12 @@ defmodule RailWeb.TestingLive do
   end
 
   # A second click arrives after the first moved the page on, so it names the ticket it was meant for.
-  def handle_event(event, %{"issue_id" => issue_id}, %{assigns: %{issue: %Issue{id: issue_id} = issue}} = socket)
+  # While the loading screen shows, a click sent from the old buttons falls to the clause below.
+  def handle_event(
+        event,
+        %{"issue_id" => issue_id},
+        %{assigns: %{issue: %Issue{id: issue_id} = issue, advancing: nil}} = socket
+      )
       when event in ["mark_tested", "send_to_triage"] do
     %{current_scope: scope, queue: queue} = socket.assigns
 
@@ -218,12 +243,13 @@ defmodule RailWeb.TestingLive do
           next =
             queue |> Enum.drop_while(&(&1.id != issue.id)) |> Enum.at(1) || Enum.find(queue, &(&1.id != issue.id))
 
-          next_id = next && next.id
-          sent = if event == "send_to_triage", do: %{for: next_id, sent: finished, identifier: issue.identifier}
+          sent = if event == "send_to_triage", do: %{for: next && next.id, sent: finished, identifier: issue.identifier}
+          label = if next, do: "Opening #{next.identifier}...", else: "Updating the queue..."
+          # A double click's second click lands on this screen, not on the next ticket's buttons.
+          advancing = %{from: issue.id, to: next, label: label}
+          Process.send_after(self(), {:advance, advancing}, @advance_ms)
 
-          socket
-          |> assign(:notice, sent)
-          |> push_patch(to: if(next, do: ~p"/testing/#{next.id}", else: ~p"/testing"))
+          socket |> assign(:notice, sent) |> assign(:advancing, advancing)
 
         {:error, reason} ->
           socket
@@ -233,6 +259,9 @@ defmodule RailWeb.TestingLive do
 
     {:noreply, socket}
   end
+
+  # Leaving the field shows the notes saved last, which another tester's save may have replaced.
+  def handle_event("notes_blurred", _params, socket), do: {:noreply, update(socket, :notes_rev, &(&1 + 1))}
 
   def handle_event(event, _params, socket) when event in ["mark_tested", "send_to_triage"], do: {:noreply, socket}
 
@@ -269,7 +298,18 @@ defmodule RailWeb.TestingLive do
     {:noreply, load(socket)}
   end
 
-  # The navigation hook, the issue dialog and other tickets' notes and comments say things this page has no use for.
+  # Only the move its own action set off: a row opened since cleared it.
+  def handle_info({:advance, advancing}, %{assigns: %{advancing: advancing}} = socket) do
+    {:noreply, push_patch(socket, to: if(advancing.to, do: ~p"/testing/#{advancing.to.id}", else: ~p"/testing"))}
+  end
+
+  def handle_info({:cycles_changed, project_id}, %{assigns: %{issue: %Issue{project_id: project_id}}} = socket) do
+    socket = socket |> load() |> read_cycles()
+    {:noreply, socket}
+  end
+
+  # The navigation hook, the issue dialog, other tickets' notes and comments, other projects' cycles and a move a row
+  # click cancelled say things this page has no use for.
   def handle_info(_message, socket), do: {:noreply, socket}
 
   # An answer read for a ticket the page no longer shows is dropped.
@@ -363,7 +403,7 @@ defmodule RailWeb.TestingLive do
 
     if issue && shown && issue.id == shown.id,
       do: socket,
-      else: socket |> assign(:blockers, nil) |> read_blockers()
+      else: socket |> assign(:blockers, nil) |> read_blockers() |> read_cycles()
   end
 
   defp load_queue(socket) do
@@ -392,4 +432,12 @@ defmodule RailWeb.TestingLive do
   end
 
   defp read_blockers(socket), do: socket
+
+  # Only Rail schedules a ticket's cycles; any other ticket shows no cycle row.
+  defp read_cycles(%{assigns: %{issue: %Issue{tracker: :local, project: project}}} = socket) do
+    {:ok, %{cycles: cycles}} = Issues.get_cycles(project)
+    assign(socket, :cycles, cycles)
+  end
+
+  defp read_cycles(socket), do: assign(socket, :cycles, nil)
 end

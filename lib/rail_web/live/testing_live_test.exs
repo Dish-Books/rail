@@ -236,14 +236,14 @@ defmodule RailWeb.TestingLiveTest do
 
     view |> element("#testing-mark-tested") |> render_click()
 
-    assert_patch(view, ~p"/testing/#{first.id}")
+    assert_patch(view, ~p"/testing/#{first.id}", 1_000)
     assert %Issue{state: :done, testing_state: :tested} = Repo.get!(Issue, second.id)
     refute has_element?(view, "#testing-row-#{second.id}")
     refute has_element?(view, "#testing-notice")
 
     view |> element("#testing-mark-tested") |> render_click()
 
-    assert_patch(view, ~p"/testing")
+    assert_patch(view, ~p"/testing", 1_000)
     assert has_element?(view, "#testing-queue-empty")
     refute has_element?(view, "#testing-bar")
   end
@@ -258,7 +258,7 @@ defmodule RailWeb.TestingLiveTest do
     {:ok, view, _html} = live(conn, ~p"/testing/#{first.id}")
 
     view |> element("#testing-mark-tested") |> render_click()
-    assert_patch(view, ~p"/testing/#{second.id}")
+    assert_patch(view, ~p"/testing/#{second.id}", 1_000)
 
     render_hook(view, "mark_tested", %{"issue_id" => first.id})
     render_hook(view, "send_to_triage", %{"issue_id" => first.id})
@@ -282,7 +282,7 @@ defmodule RailWeb.TestingLiveTest do
 
     view |> element("#testing-send-to-triage") |> render_click()
 
-    assert_patch(view, ~p"/testing/#{next.id}")
+    assert_patch(view, ~p"/testing/#{next.id}", 1_000)
     assert %Issue{state: :done, testing_state: :sent_to_triage} = Repo.get!(Issue, sent.id)
 
     assert %{issues: [%Issue{identifier: created, description: "The row is cut off" <> _link}]} =
@@ -295,6 +295,7 @@ defmodule RailWeb.TestingLiveTest do
     assert has_element?(view, "#testing-notice")
 
     view |> element("#testing-mark-tested") |> render_click()
+    assert_patch(view, ~p"/testing", 1_000)
     refute has_element?(view, "#testing-notice")
   end
 
@@ -305,9 +306,123 @@ defmodule RailWeb.TestingLiveTest do
 
     view |> element("#testing-send-to-triage") |> render_click()
 
-    assert_patch(view, ~p"/testing")
+    assert has_element?(view, "#testing-advancing", "Updating the queue...")
+    assert_patch(view, ~p"/testing", 1_000)
     assert has_element?(view, "#testing-notice", "sent to triage as")
     assert has_element?(view, "#testing-queue-empty")
+  end
+
+  test "a finished action shows a loading screen that ignores a second click", %{conn: conn, done: done, here: here} do
+    first = done.(here, "First")
+    second = done.(here, "Second")
+    third = done.(here, "Third")
+    {:ok, _noted} = Issues.save_testing_notes(system_scope(), first, "Broken")
+    {:ok, view, _html} = live(conn, ~p"/testing/#{first.id}")
+
+    view |> element("#testing-send-to-triage") |> render_click()
+
+    assert has_element?(view, "#testing-advancing", "Opening #{second.identifier}...")
+    refute has_element?(view, "#testing-send-to-triage")
+    refute has_element?(view, "#testing-mark-tested")
+
+    render_hook(view, "send_to_triage", %{"issue_id" => first.id})
+
+    assert_patch(view, ~p"/testing/#{second.id}", 1_000)
+    assert has_element?(view, "#testing-notice", "sent to triage as")
+    assert %{total: 1} = Issues.list_issues(project_id: here.id, state: :triage)
+
+    view |> element("#testing-mark-tested") |> render_click()
+
+    assert has_element?(view, "#testing-advancing", "Opening #{third.identifier}...")
+    assert_patch(view, ~p"/testing/#{third.id}", 1_000)
+    assert %Issue{testing_state: :tested} = Repo.get!(Issue, second.id)
+    assert %Issue{testing_state: :waiting} = Repo.get!(Issue, third.id)
+  end
+
+  test "clicking a row during the loading screen opens that row and cancels the move", %{
+    conn: conn,
+    done: done,
+    here: here
+  } do
+    first = done.(here, "First")
+    _second = done.(here, "Second")
+    third = done.(here, "Third")
+    {:ok, view, _html} = live(conn, ~p"/testing/#{first.id}")
+
+    view |> element("#testing-mark-tested") |> render_click()
+    assert has_element?(view, "#testing-advancing")
+
+    view |> element("#testing-row-#{third.id}") |> render_click()
+    assert_patch(view, ~p"/testing/#{third.id}")
+
+    # Past the loading screen's own wait, so its move would have been sent by now.
+    Process.sleep(600)
+    assert has_element?(view, "#testing-bar", third.identifier)
+    refute_patched(view)
+  end
+
+  test "leaving the notes field shows the notes saved last", %{conn: conn, done: done, here: here} do
+    issue = done.(here, "Two testers")
+    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+
+    view
+    |> form("#testing-notes-form-#{issue.id}", %{issue_id: issue.id, notes: "Mine"})
+    |> render_change()
+
+    assert has_element?(view, "#testing-notes-#{issue.id}[data-rev='0']")
+    {:ok, _theirs} = Issues.save_testing_notes(system_scope(), issue, "Theirs, saved last")
+
+    view |> element("#testing-notes-#{issue.id}") |> render_blur()
+
+    assert has_element?(view, "#testing-notes-#{issue.id}[data-rev='1']", "Theirs, saved last")
+  end
+
+  test "a Rail-tracked ticket shows its cycle with no cycle menu, and a Linear one shows none", %{
+    conn: conn,
+    done: done,
+    here: here,
+    project: project,
+    user: user
+  } do
+    # Cycle 1 runs Nov 10 to 23.
+    :ok = Issues.close_cycle_day(~D[2026-11-10])
+    stub(Date, :utc_today, fn -> ~D[2026-11-12] end)
+    {:ok, %{cycles: [cycle | _later]}} = Issues.get_cycles(here)
+    planned = done.(here, "Planned")
+    {:ok, _planned} = Issues.set_issue_cycle(system_scope(), planned, cycle.id)
+    unplanned = done.(here, "Unplanned")
+    {:ok, _user} = Users.update_user(system_scope(), user, %{project_ids: [here.id, project.id]})
+
+    linear =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_tl_cycle",
+        identifier: "TLC-1",
+        title: "On Linear",
+        url: "https://linear.app/issue/TLC-1",
+        state: :in_review
+      })
+      |> Repo.insert!()
+      |> Issue.tracker_changeset(%{state: :done})
+      |> Repo.update!()
+
+    {:ok, view, _html} = live(conn, ~p"/testing/#{planned.id}")
+
+    assert has_element?(view, "#issue-cycle", "Cycle 1")
+    assert has_element?(view, "#issue-cycle", "Nov 10 – Nov 23")
+    refute has_element?(view, "button#issue-cycle")
+    refute has_element?(view, "#issue-cycle-menu")
+
+    {:ok, _cycle} = Issues.update_cycle(system_scope(), here, cycle.id, %{ends_on: ~D[2026-11-20]})
+    assert has_element?(view, "#issue-cycle", "Nov 10 – Nov 20")
+
+    render_patch(view, ~p"/testing/#{unplanned.id}")
+    assert has_element?(view, "#issue-cycle", "No cycle")
+
+    render_patch(view, ~p"/testing/#{linear.id}")
+    assert has_element?(view, "#testing-bar", "TLC-1")
+    refute has_element?(view, "#issue-cycle")
   end
 
   test "an action on a ticket another tab already finished says so and changes nothing", %{

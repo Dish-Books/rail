@@ -394,7 +394,7 @@ defmodule RailWeb.Components.IssueView do
             </div>
 
             <div
-              :if={@cycles}
+              :if={@cycles && !@read_only}
               class="relative"
               phx-click-away={JS.hide(to: "#issue-cycle-menu")}
               phx-window-keydown={JS.hide(to: "#issue-cycle-menu")}
@@ -471,6 +471,20 @@ defmodule RailWeb.Components.IssueView do
                   </li>
                 </ul>
               </div>
+            </div>
+
+            <div
+              :if={@cycles && @read_only}
+              id="issue-cycle"
+              data-qa="issue-cycle"
+              class="flex items-center gap-2.5"
+            >
+              <.icon name="pi-arrows-clockwise" class="h-4 w-4 text-slate-500 dark:text-slate-400" />
+              <span :if={@cycle} class="min-w-0 truncate">{cycle_label(@cycle)}</span>
+              <span :if={@cycle} class="shrink-0 text-xs text-slate-500 dark:text-slate-400">
+                {cycle_dates(@cycle)}
+              </span>
+              <span :if={!@cycle} class="text-slate-400 dark:text-slate-500">No cycle</span>
             </div>
           </section>
 
