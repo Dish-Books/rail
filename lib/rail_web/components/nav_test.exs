@@ -80,6 +80,17 @@ defmodule RailWeb.Components.NavTest do
              ~s(id="triage-badge")
   end
 
+  test "the Testing destination sits between Triage and Issues, with no badge" do
+    html = render_component(&Nav.nav/1, current_section: :testing, attention_count: 0, triage_count: 0)
+
+    assert [_before, after_triage] = String.split(html, ~s(id="nav-triage"))
+    assert [between, _after] = String.split(after_triage, ~s(id="nav-issues"))
+    assert between =~ ~r/id="nav-testing"[^>]*data-active="true"/
+    assert between =~ ~s(href="/testing")
+    assert between =~ ~s(aria-label="Testing")
+    refute between =~ "badge"
+  end
+
   test "nav_rail active state matches current section" do
     for section <- [:overview, :issues, :sandboxes, :settings] do
       html =

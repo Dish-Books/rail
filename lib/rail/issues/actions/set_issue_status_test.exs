@@ -605,6 +605,35 @@ defmodule Rail.Issues.Actions.SetIssueStatusTest do
       refute_enqueued(worker: SyncIssue)
     end
 
+    test "a move into Done waits for testing, and a Tested ticket reopened and done again stays Tested with its notes",
+         %{child: child} do
+      done = %{id: "done", name: "Done", state: :done}
+      in_progress = %{id: "in_progress", name: "In Progress", state: :in_progress}
+
+      assert {:ok, %Issue{state: :done, testing_state: :waiting} = waiting} =
+               Issues.set_issue_status(system_scope(), child, done)
+
+      {:ok, _noted} = Issues.save_testing_notes(system_scope(), waiting, "Looked fine")
+      {:ok, tested} = Issues.mark_issue_tested(system_scope(), waiting)
+
+      assert {:ok, %Issue{state: :in_progress, testing_state: :tested, testing_notes: "Looked fine"} = reopened} =
+               Issues.set_issue_status(system_scope(), tested, in_progress)
+
+      assert {:ok, %Issue{state: :done, testing_state: :tested, testing_notes: "Looked fine"}} =
+               Issues.set_issue_status(system_scope(), reopened, done)
+    end
+
+    test "canceling a Waiting ticket takes it out of the queue", %{child: %{id: child_id} = child} do
+      {:ok, waiting} = Issues.set_issue_status(system_scope(), child, %{id: "done", name: "Done", state: :done})
+
+      assert {:ok, %Issue{id: ^child_id, state: :canceled} = canceled} =
+               Issues.set_issue_status(system_scope(), waiting, %{id: "canceled", name: "Canceled", state: :canceled})
+
+      refute Issue.in_testing_queue?(canceled)
+      %{issues: queue} = Issues.list_issues(project_id: child.project_id, testing: true)
+      refute Enum.any?(queue, &(&1.id == child_id))
+    end
+
     test "a move out of Done clears the completed time and tells nobody again", %{child: %{id: child_id} = child} do
       {:ok, done} = Issues.set_issue_status(system_scope(), child, %{id: "done", name: "Done", state: :done})
 

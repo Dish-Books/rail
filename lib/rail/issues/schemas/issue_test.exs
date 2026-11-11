@@ -173,6 +173,50 @@ defmodule Rail.Issues.Schemas.IssueTest do
     end
   end
 
+  describe "testing" do
+    test "notes that are not blank move a Waiting ticket to In testing, and blank ones do not" do
+      waiting = %Issue{state: :done, testing_state: :waiting}
+
+      assert %Ecto.Changeset{changes: %{testing_notes: "Works", testing_state: :testing}} =
+               Issue.testing_notes_changeset(waiting, %{testing_notes: "Works"})
+
+      blank_only = %{testing_notes: " \n"}
+      assert %Ecto.Changeset{changes: ^blank_only} = Issue.testing_notes_changeset(waiting, blank_only)
+
+      assert %Ecto.Changeset{changes: %{testing_notes: "More"} = more} =
+               Issue.testing_notes_changeset(%Issue{state: :done, testing_state: :testing}, %{testing_notes: "More"})
+
+      refute Map.has_key?(more, :testing_state)
+    end
+
+    test "a ticket is in the queue only in Done and Waiting or In testing, each state with its label" do
+      assert Issue.in_testing_queue?(%Issue{state: :done, testing_state: :waiting})
+      assert Issue.in_testing_queue?(%Issue{state: :done, testing_state: :testing})
+      refute Issue.in_testing_queue?(%Issue{state: :done, testing_state: :tested})
+      refute Issue.in_testing_queue?(%Issue{state: :canceled, testing_state: :waiting})
+
+      assert ["Waiting", "In testing", "Tested", "Sent to triage"] =
+               Enum.map(Issue.testing_states(), &Issue.testing_label/1)
+    end
+
+    test "a ticket cannot be left with no testing state", %{project: project} do
+      issue =
+        %Issue{}
+        |> Issue.tracker_changeset(%{
+          project_id: project.id,
+          external_id: "lin_no_testing",
+          identifier: "NT-1",
+          title: "Done",
+          state: :done
+        })
+        |> Repo.insert!()
+
+      assert_raise Postgrex.Error, ~r/not_null_violation/, fn ->
+        issue |> Ecto.Changeset.change(testing_state: nil) |> Repo.update!()
+      end
+    end
+  end
+
   test "an issue with no skipped steps runs every step, with Plan, Engineer and Review as its stages" do
     issue = %Issue{}
 

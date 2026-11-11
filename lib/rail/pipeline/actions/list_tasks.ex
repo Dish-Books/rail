@@ -19,7 +19,7 @@ defmodule Rail.Pipeline.Actions.ListTasks do
   `ready: true` keeps the review queue: tasks at Finalize marked ready and not merged, whose issue Linear has
   not closed, oldest mark first.
   `plan_ready: true` keeps the tech leads' plans to approve: tasks whose first round's plan was sent and is not
-  approved, started or not, oldest sent first.
+  approved, started or not, oldest sent first, with that round alone as `rounds`.
   Cleaned-up tasks are left out unless `include_cleaned_up: true`.
   """
   def list_tasks(opts \\ []) do
@@ -101,6 +101,8 @@ defmodule Rail.Pipeline.Actions.ListTasks do
     query
     |> join(:inner, [task: t], r in Round, as: :round, on: r.task_id == t.id and r.number == 1)
     |> where([round: r], not is_nil(r.ready_at) and is_nil(r.approved_at))
+    # From the join, so a plan saved again between two queries cannot hand back a round the filter never matched.
+    |> preload([round: r], rounds: r)
     |> order_by([task: t, round: r], asc: r.ready_at, asc: t.id)
   end
 

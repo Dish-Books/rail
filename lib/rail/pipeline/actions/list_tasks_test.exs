@@ -7,6 +7,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
@@ -372,5 +373,40 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         do: {:ok, _marked} = Pipeline.update_task(task, %{stage: :finalize, marked_ready_at: marked})
 
     assert [%Task{id: ^low_id}, %Task{id: ^high_id}] = Pipeline.list_tasks(project_id: project.id, ready: true)
+  end
+
+  test "plan_ready: true gives each task the round the filter read, though the plan is saved again mid-read", %{
+    project: project,
+    task: %Task{id: task_id}
+  } do
+    Repo.insert!(%Round{task_id: task_id, number: 1, plan: "## Plan", ready_at: DateTime.utc_now()})
+    test_pid = self()
+    handler = "list-tasks-plan-ready-#{inspect(test_pid)}"
+
+    # Saving the plan again clears ready_at just after the filter's query, from this test's process only.
+    :ok =
+      :telemetry.attach(
+        handler,
+        [:rail, :repo, :query],
+        fn
+          _event, _measurements, %{source: "tasks", query: query}, _config ->
+            if self() == test_pid and query =~ "ready_at" and is_nil(Process.get(:plan_saved_again)) do
+              Process.put(:plan_saved_again, true)
+              Repo.update_all(from(r in Round, where: r.task_id == ^task_id), set: [ready_at: nil])
+            end
+
+          _event, _measurements, _metadata, _config ->
+            :ok
+        end,
+        nil
+      )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+
+    assert [%Task{id: ^task_id, rounds: [%Round{number: 1, ready_at: %DateTime{}}]}] =
+             Pipeline.list_tasks(project_id: project.id, plan_ready: true, preload: [:issue])
+
+    assert Process.get(:plan_saved_again)
+    assert [] = Pipeline.list_tasks(project_id: project.id, plan_ready: true)
   end
 end

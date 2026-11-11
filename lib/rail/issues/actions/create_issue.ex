@@ -37,7 +37,7 @@ defmodule Rail.Issues.Actions.CreateIssue do
           workflow_id: attrs[:workflow_id]
         })
 
-      # A tracker's webhook can announce the ticket before this insert, so the row it saved is kept.
+      # A tracker's webhook can announce the ticket before this insert, so the row it saved is kept, with its testing.
       # Set on the struct rather than cast, so no tracker write can change the steps after; `Issue.changeset/2`
       # takes no cycle or parent, which GitHub never sends.
       %Issue{
@@ -50,7 +50,9 @@ defmodule Rail.Issues.Actions.CreateIssue do
       # Rail's own tracker draws the id its URL names. On the struct it would make the insert read as an update.
       |> Ecto.Changeset.put_change(:id, tracked[:id])
       |> Repo.insert(
-        on_conflict: {:replace_all_except, [:id, :branch_name, :inserted_at, :cycle_external_id, :parent_external_id]},
+        on_conflict:
+          {:replace_all_except,
+           [:id, :branch_name, :inserted_at, :cycle_external_id, :parent_external_id, :testing_state, :testing_notes]},
         conflict_target: :external_id,
         returning: true
       )

@@ -416,6 +416,41 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
            } = Issue |> Repo.all() |> Map.new(&{&1.title, &1.state})
   end
 
+  test "an issue the sync moves into Done or first inserts already Done waits for testing", %{
+    project: project
+  } do
+    %Issue{id: moved_id} =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_to_done",
+        identifier: "SPI-60",
+        title: "Merged",
+        state: :in_review
+      })
+      |> Repo.insert!()
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      nodes =
+        for {id, identifier} <- [{"lin_to_done", "SPI-60"}, {"lin_born_done", "SPI-61"}] do
+          %{
+            "id" => id,
+            "identifier" => identifier,
+            "title" => identifier,
+            "state" => %{"id" => "st_done", "name" => "Done", "type" => "completed"}
+          }
+        end
+
+      Req.Test.json(conn, %{"data" => %{"issues" => %{"nodes" => nodes}}})
+    end)
+
+    assert :ok = perform_job(LinearSync, %{project_id: project.id})
+
+    assert %Issue{id: ^moved_id, state: :done, testing_state: :waiting} = Repo.get_by(Issue, external_id: "lin_to_done")
+    assert %Issue{state: :done, testing_state: :waiting} = Repo.get_by(Issue, external_id: "lin_born_done")
+    assert %{total: 2} = Issues.list_issues(project_id: project.id, testing: true)
+  end
+
   test "an issue synced as Backlog before Rail knew Duplicate is corrected and leaves the default list", %{
     project: project
   } do

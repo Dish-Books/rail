@@ -5,7 +5,7 @@ defmodule RailWeb.Components.IssueView do
 
   The issue page and the task page's first tab are the same view of the same
   thing, so both render this; the task page hides the section pointing at the
-  task the reader is already on. The events it raises - `assign`,
+  task the reader is already on. The testing page renders it read-only, raising no events. The events it raises - `assign`,
   `filter_assignees`, `set_cycle`, `comment`, `draft_comment`, `start_task`, `adopt_pull_request`, and for a
   Rail-tracked issue `edit_issue` and `remove_relation` - belong to whichever LiveView renders it.
   """
@@ -22,9 +22,11 @@ defmodule RailWeb.Components.IssueView do
 
   attr :issue, :any, required: true
   attr :current_scope, :any, required: true
-  attr :assignees, :list, required: true
-  attr :assignee_query, :string, required: true
-  attr :comment_nonce, :integer, required: true
+  attr :assignees, :list, default: []
+  attr :assignee_query, :string, default: ""
+  attr :comment_nonce, :integer, default: 0
+  # The testing page shows the ticket with no status or owner menu and no comment box.
+  attr :read_only, :boolean, default: false
   attr :show_task, :boolean, default: true
   # While GitHub is asked for a pull request the issue's work was opened as, which it would start at Review on.
   attr :checking_pull_request, :boolean, default: false
@@ -54,7 +56,7 @@ defmodule RailWeb.Components.IssueView do
 
     assigns =
       assigns
-      |> assign(:editable, issue.tracker == :local)
+      |> assign(:editable, issue.tracker == :local and !assigns.read_only)
       |> assign(:parent, Issue.calculate_parent(issue))
       |> assign(:blocked_by, blocked_by)
       |> assign(:open_blocker_count, length(Issue.calculate_open_blockers(blocked_by)))
@@ -237,6 +239,7 @@ defmodule RailWeb.Components.IssueView do
               </div>
 
               <.comment_form
+                :if={!@read_only}
                 id={"comment-reply-form-#{thread.id}"}
                 nonce={@comment_nonce}
                 parent_id={thread.id}
@@ -244,7 +247,10 @@ defmodule RailWeb.Components.IssueView do
               />
             </div>
 
-            <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+            <div
+              :if={!@read_only}
+              class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+            >
               <.comment_form
                 id="issue-comment-form"
                 nonce={@comment_nonce}
@@ -331,7 +337,13 @@ defmodule RailWeb.Components.IssueView do
           <section class="space-y-3">
             <h2 class="text-xs font-medium text-slate-500 dark:text-slate-400">Properties</h2>
 
+            <div :if={@read_only} id="issue-status" class="flex items-center gap-2.5">
+              <.status_icon state={Issue.calculate_shown_state(@issue)} />
+              <span>{Issue.calculate_status_name(@issue)}</span>
+            </div>
+
             <.live_component
+              :if={!@read_only}
               module={StatusPicker}
               id={"issue-status-picker-#{@issue.id}"}
               issue={@issue}
@@ -366,7 +378,7 @@ defmodule RailWeb.Components.IssueView do
             </.property_menu>
 
             <div
-              :if={!@owner_editable}
+              :if={!@owner_editable or @read_only}
               id="issue-owner"
               data-qa="issue-owner"
               class="flex items-center gap-2.5"
@@ -377,7 +389,7 @@ defmodule RailWeb.Components.IssueView do
             </div>
 
             <div
-              :if={@owner_editable}
+              :if={@owner_editable and !@read_only}
               class="relative"
               phx-click-away={JS.hide(to: "#issue-owner-menu")}
             >
@@ -481,8 +493,10 @@ defmodule RailWeb.Components.IssueView do
               </:option>
             </.property_menu>
 
+            <.testing_property issue={@issue} />
+
             <div
-              :if={@cycles}
+              :if={@cycles && !@read_only}
               class="relative"
               phx-click-away={JS.hide(to: "#issue-cycle-menu")}
               phx-window-keydown={JS.hide(to: "#issue-cycle-menu")}
@@ -570,6 +584,20 @@ defmodule RailWeb.Components.IssueView do
               </div>
             </div>
 
+            <div
+              :if={@cycles && @read_only}
+              id="issue-cycle"
+              data-qa="issue-cycle"
+              class="flex items-center gap-2.5"
+            >
+              <.icon name="pi-arrows-clockwise" class="h-4 w-4 text-slate-500 dark:text-slate-400" />
+              <span :if={@cycle} class="min-w-0 truncate">{cycle_label(@cycle)}</span>
+              <span :if={@cycle} class="shrink-0 text-xs text-slate-500 dark:text-slate-400">
+                {cycle_dates(@cycle)}
+              </span>
+              <span :if={!@cycle} class="text-slate-400 dark:text-slate-500">No cycle</span>
+            </div>
+
             <.live_component
               :if={@editable}
               module={IssuePicker}
@@ -650,6 +678,31 @@ defmodule RailWeb.Components.IssueView do
           <.icon name="pi-image" class="h-4 w-4 text-blue-500 dark:text-blue-400" />Drop to add to the description
         </div>
       </div>
+    </div>
+    """
+  end
+
+  attr :issue, Issue, required: true
+
+  # A ticket's testing state shows while it is in Done, and links to the Testing page while it is in the queue.
+  defp testing_property(%{issue: issue} = assigns) do
+    assigns =
+      assigns
+      |> assign(:show_testing, issue.state == :done)
+      |> assign(:show_testing_link, Issue.in_testing_queue?(issue))
+
+    ~H"""
+    <div :if={@show_testing} id="issue-testing" class="flex items-center gap-2.5">
+      <.link
+        :if={@show_testing_link}
+        navigate={~p"/testing/#{@issue.id}"}
+        id="issue-testing-link"
+        title="Open on the Testing page"
+        class="rounded hover:opacity-80 focus-visible:outline-2 focus-visible:outline-blue-500"
+      >
+        <.testing_badge state={@issue.testing_state} />
+      </.link>
+      <.testing_badge :if={!@show_testing_link} state={@issue.testing_state} />
     </div>
     """
   end
