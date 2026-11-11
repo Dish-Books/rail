@@ -1006,6 +1006,7 @@ defmodule RailWeb.IssuesLive do
   # Every issue a row shows, dimmed parents included.
   defp shown_issues(%{view: :cycle, groups: groups}), do: Enum.flat_map(groups, &row_issues(&1.rows))
   defp shown_issues(%{view: :list, rows: rows}), do: row_issues(rows)
+  defp shown_issues(%{view: :loading}), do: []
 
   defp row_issues(rows), do: Enum.flat_map(rows, fn row -> [row.issue | Enum.map(row.sub_issues, & &1.issue)] end)
 

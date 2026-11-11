@@ -3530,6 +3530,15 @@ defmodule RailWeb.IssuesLiveTest do
       assert has_element?(view, "#issue-card-#{blocked_id} [data-qa='issue-blocked']")
     end
 
+    test "a relation change while the cycle view waits on its trackers leaves the page waiting", %{conn: conn} do
+      stub(Issues, :get_cycles, fn _project -> Process.sleep(:infinity) end)
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=current")
+
+      send(view.pid, {:issue_relations_changed, ["iss_elsewhere", "iss_other"]})
+      assert render(view) =~ "Issues"
+      refute has_element?(view, "#issues-pagination")
+    end
+
     test "blockers Linear fails to read leave the rows unmarked", %{conn: conn, insert: insert} do
       blocked = insert.("NST-7", %{})
       stub(Issues, :get_blockers, fn _issues -> raise "Linear is down" end)
