@@ -2578,6 +2578,7 @@ defmodule RailWeb.OverviewLiveIssueEventsTest do
 
     Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_created, issue.id})
     Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_comments_changed, issue.id})
+    Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_relations_changed, [issue.id, "iss_other"]})
 
     assert has_element?(view, "#in-progress-task-#{task.id}[data-state='queued']")
   end

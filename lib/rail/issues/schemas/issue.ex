@@ -3,6 +3,7 @@ defmodule Rail.Issues.Schemas.Issue do
   use Rail.Schema
 
   alias Rail.Issues.Schemas.Comment
+  alias Rail.Issues.Schemas.IssueLink
   alias Rail.Issues.Schemas.IssueStage
   alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Issues.Workers.SyncIssue
@@ -80,6 +81,8 @@ defmodule Rail.Issues.Schemas.Issue do
     # The task it merged with, which `task` drops once it is cleaned up, right after the merge.
     has_one :merged_task, Task, where: [stage: :merged]
     has_many :comments, Comment
+    # Only Rail-tracked issues keep links here; other trackers hold their own.
+    has_many :links, IssueLink, preload_order: [asc: :inserted_at, asc: :id]
 
     timestamps()
   end
@@ -154,6 +157,17 @@ defmodule Rail.Issues.Schemas.Issue do
     if issue.testing_state == :waiting and String.trim(get_field(changeset, :testing_notes) || "") != "",
       do: put_change(changeset, :testing_state, :testing),
       else: changeset
+  end
+
+  @doc """
+  A person's edit of a Rail-tracked issue's text and properties. Rail is its tracker, so nothing is queued to push;
+  `Rail.Issues.edit_issue/3` broadcasts the change itself, and sets the parent apart from the cast.
+  """
+  def edit_changeset(issue, attrs) do
+    issue
+    |> cast(attrs, [:title, :description, :priority, :estimate])
+    |> validate_required([:title])
+    |> validate_number(:estimate, greater_than_or_equal_to: 0)
   end
 
   def priorities, do: @priorities

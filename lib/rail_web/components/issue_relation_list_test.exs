@@ -51,4 +51,33 @@ defmodule RailWeb.Components.IssueRelationListTest do
     assert html =~ "In another project"
     assert html =~ "Todo"
   end
+
+  test "a removable row links its identifier and title, with a button naming it that removes the relation" do
+    entries = [
+      %{
+        issue: %Issue{id: "iss_blocker", identifier: "TST-1", title: "Goes first", state: :todo},
+        in_project: true,
+        remove: %{blocker_id: "iss_blocker", blocked_id: "iss_page"}
+      }
+    ]
+
+    html =
+      render_component(&IssueRelationList.issue_relation_list/1,
+        id: "issue-blocked-by",
+        title: "Blocked by",
+        count: "1",
+        entries: entries,
+        blocked: true,
+        removable: true
+      )
+
+    assert html =~ ~s(id="issue-blocked-by-TST-1-link")
+    assert html =~ ~s(href="/issues/TST-1")
+    assert html =~ ~s(aria-label="Remove TST-1")
+    assert html =~ ~s(phx-click="remove_relation")
+    assert html =~ ~s(phx-value-blocker_id="iss_blocker")
+    assert html =~ ~s(phx-value-blocked_id="iss_page")
+    # The button cannot sit inside the link.
+    refute html =~ ~r/<a[^>]*>(?:(?!<\/a>).)*Remove TST-1/s
+  end
 end

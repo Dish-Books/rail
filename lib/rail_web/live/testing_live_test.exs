@@ -164,6 +164,13 @@ defmodule RailWeb.TestingLiveTest do
     refute has_element?(view, "#issue-comment-form")
     refute has_element?(view, "[id^='comment-reply-form-']")
     refute has_element?(view, "#issue-start")
+    refute has_element?(view, "#testing-ticket [contenteditable]")
+    refute has_element?(view, "#issue-description-editor-#{issue.id}")
+    refute has_element?(view, "#issue-priority-menu")
+    refute has_element?(view, "#issue-estimate-menu")
+    refute has_element?(view, "#issue-parent-picker-#{issue.id}")
+    refute has_element?(view, "#issue-relation-pickers")
+    refute has_element?(view, "[phx-click='remove_relation']")
     assert [_only] = view |> element("#testing-ticket") |> render() |> Floki.parse_fragment!() |> Floki.find("textarea")
   end
 
@@ -581,6 +588,19 @@ defmodule RailWeb.TestingLiveTest do
     refute_received {:blockers_read, _id}
 
     Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
+    render_async(view)
+    assert_received {:blockers_read, _id}
+
+    {:ok, blocker} = Issues.create_issue(system_scope(), here, %{title: "Blocks the open ticket"})
+    {:ok, bystander} = Issues.create_issue(system_scope(), here, %{title: "Blocked elsewhere"})
+    render_async(view)
+    refute_received {:blockers_read, _id}
+
+    :ok = Issues.block_issue(system_scope(), blocker, bystander)
+    render_async(view)
+    refute_received {:blockers_read, _id}
+
+    :ok = Issues.block_issue(system_scope(), blocker, issue)
     render_async(view)
     assert_received {:blockers_read, _id}
   end

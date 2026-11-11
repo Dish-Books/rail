@@ -1,8 +1,8 @@
 defmodule Rail.Issues.Tracker.Local do
   @moduledoc """
-  Issues kept in Rail alone. The `issues` and `issue_comments` rows are the tickets, Postgres numbers and names each
-  issue as it is inserted, and with no webhook to come back every status move writes the row itself. Its cycles are
-  the `cycles` rows, which `Rail.Issues.close_cycle_day/1` schedules and records.
+  Issues kept in Rail alone. The `issues` rows and their comments, relations and links are the tickets, Postgres
+  numbers and names each issue as it is inserted, and with no webhook to come back every status move writes the row.
+  Its cycles are the `cycles` rows, which `Rail.Issues.close_cycle_day/1` schedules and records.
   """
   @behaviour Rail.Issues.Tracker
 
@@ -13,6 +13,8 @@ defmodule Rail.Issues.Tracker.Local do
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueLink
+  alias Rail.Issues.Schemas.IssueRelation
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Scope
@@ -92,9 +94,16 @@ defmodule Rail.Issues.Tracker.Local do
     end
   end
 
-  # The issue's own page is where a link would go, and it lists nothing it was not given.
+  # The unique index keeps one link per URL, so a retried job adds nothing.
   @impl true
-  def link_url(%Issue{}, _url, _title), do: :ok
+  def link_url(%Issue{id: issue_id}, url, title) do
+    with {:ok, _link} <-
+           %IssueLink{issue_id: issue_id}
+           |> IssueLink.changeset(%{url: url, title: title})
+           |> Repo.insert(on_conflict: :nothing, conflict_target: [:issue_id, :url]) do
+      Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue_id})
+    end
+  end
 
   # `KEY-12` in any case, or `12`. A key may hold a `-`, so the key is matched whole rather than split off.
   @impl true
@@ -118,7 +127,7 @@ defmodule Rail.Issues.Tracker.Local do
   # A fresh id per upload, so a re-recorded demo gets a new address and no browser shows its cached copy of the old.
   @impl true
   def upload_asset(%Issue{id: issue_id}, filename, content_type, data_binary) do
-    name = "#{Ecto.UUID.generate()}-#{filename}"
+    name = "#{Ecto.UUID.generate()}-#{calculate_asset_name(filename)}"
 
     with :ok <- R2.put_object("#{issue_id}/#{name}", content_type, data_binary),
          do: {:ok, RailWeb.Endpoint.url() <> "/issues/#{issue_id}/assets/#{name}"}
@@ -170,7 +179,28 @@ defmodule Rail.Issues.Tracker.Local do
   end
 
   @impl true
-  def get_issue_relations(%Project{}, _external_ids), do: {:ok, %{}}
+  def get_issue_relations(%Project{id: project_id}, external_ids) do
+    rows =
+      Repo.all(
+        from(r in IssueRelation,
+          join: blocker in assoc(r, :blocker_issue),
+          join: blocked in assoc(r, :blocked_issue),
+          where: r.project_id == ^project_id,
+          where: blocker.external_id in ^external_ids or blocked.external_id in ^external_ids,
+          order_by: [asc: r.inserted_at, asc: r.id],
+          select: {blocker, blocked}
+        )
+      )
+
+    {:ok,
+     Map.new(external_ids, fn id ->
+       {id,
+        %{
+          blocked_by: for({blocker, %Issue{external_id: ^id}} <- rows, do: blocker),
+          blocks: for({%Issue{external_id: ^id}, blocked} <- rows, do: blocked)
+        }}
+     end)}
+  end
 
   @impl true
   def get_statuses(%Project{}) do
@@ -183,6 +213,14 @@ defmodule Rail.Issues.Tracker.Local do
 
   @impl true
   def check_assignable(%User{}), do: :ok
+
+  # Down to the shape `get_asset/2` serves, whatever a person's file was called.
+  defp calculate_asset_name(filename) do
+    case String.replace(filename, ~r/[^\w.-]+/, "-") do
+      "" -> "file"
+      name -> name
+    end
+  end
 
   defp status_attrs(state) do
     %{state: state, state_name: Issue.state_label(state), completed_at: if(state == :done, do: DateTime.utc_now(:second))}

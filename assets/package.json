@@ -7,7 +7,15 @@
   "dependencies": {
     "@phosphor-icons/core": "^2.1.1",
     "@phosphor-icons/web": "2.1.2",
-    "@tailwindcss/browser": "4.3.5"
+    "@tailwindcss/browser": "4.3.5",
+    "@tiptap/core": "3.33.0",
+    "@tiptap/extension-image": "3.33.0",
+    "@tiptap/extension-list": "3.33.0",
+    "@tiptap/extension-table": "3.33.0",
+    "@tiptap/extensions": "3.33.0",
+    "@tiptap/markdown": "3.33.0",
+    "@tiptap/pm": "3.33.0",
+    "@tiptap/starter-kit": "3.33.0"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.6"

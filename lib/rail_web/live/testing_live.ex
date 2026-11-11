@@ -284,6 +284,11 @@ defmodule RailWeb.TestingLive do
     {:noreply, socket}
   end
 
+  def handle_info({:issue_relations_changed, ids}, %{assigns: %{issue: %Issue{id: issue_id}}} = socket) do
+    socket = if issue_id in ids, do: read_blockers(socket), else: socket
+    {:noreply, socket}
+  end
+
   def handle_info({:issues_synced, project_id}, socket) do
     socket =
       if match?(%Issue{project_id: ^project_id}, socket.assigns.issue) or is_nil(socket.assigns.issue),

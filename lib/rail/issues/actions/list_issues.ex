@@ -10,11 +10,11 @@ defmodule Rail.Issues.Actions.ListIssues do
 
   @doc """
   Lists a page of issues, most recently updated first, along with how many
-  match in all.
+  match in all. A search puts the issue whose identifier it names first.
 
   Options: `:project_id` (one id or a list), `:owner_user_id`, `:cycle_id` (the tracker's id for a cycle of those projects,
   Rail's own for a Rail-tracked one, or a list), `:state`, `:show_finished`, `:search`, `:completed_after`, `:archived`,
-  `:priority`, `:testing`, `:limit`, `:offset` and `:preload`.
+  `:priority`, `:exclude_ids`, `:testing`, `:limit`, `:offset` and `:preload`.
 
   With `:cycle_id`, each issue is filtered and counted as its cycle holds it, so one a cycle held when it closed counts in
   the state it closed in. Each comes back live, with the cycle's state and status name in `cycle_state` and
@@ -40,6 +40,7 @@ defmodule Rail.Issues.Actions.ListIssues do
       |> filter_search(opts[:search])
       |> filter_completed_after(opts[:completed_after])
       |> filter_archived(Keyword.get(opts, :archived, opts[:testing] == true))
+      |> filter_excluded(opts[:exclude_ids])
       |> filter_testing(opts[:testing])
 
     priority_counts =
@@ -52,6 +53,7 @@ defmodule Rail.Issues.Actions.ListIssues do
     issues =
       matching
       |> filter_priority(opts[:priority])
+      |> exact_identifier_first(opts[:search])
       |> order_issues(opts[:testing])
       |> limit_to(opts[:limit])
       |> offset_by(opts[:offset])
@@ -92,6 +94,15 @@ defmodule Rail.Issues.Actions.ListIssues do
 
   defp filter_search(query, _none), do: query
 
+  defp exact_identifier_first(query, search) when is_binary(search) do
+    case String.trim(search) do
+      "" -> query
+      term -> order_by(query, [i], desc: fragment("lower(?) = lower(?)", i.identifier, ^term))
+    end
+  end
+
+  defp exact_identifier_first(query, _none), do: query
+
   defp filter_completed_after(query, nil), do: query
 
   defp filter_completed_after(query, %DateTime{} = after_at) do
@@ -102,6 +113,9 @@ defmodule Rail.Issues.Actions.ListIssues do
 
   defp filter_archived(query, false),
     do: where(query, [i], is_nil(i.archived_at) or i.id in subquery(from(t in Task, select: t.issue_id)))
+
+  defp filter_excluded(query, nil), do: query
+  defp filter_excluded(query, ids) when is_list(ids), do: where(query, [i], i.id not in ^ids)
 
   defp filter_testing(query, true), do: where(query, [i], i.state == :done and i.testing_state in ^[:waiting, :testing])
 
