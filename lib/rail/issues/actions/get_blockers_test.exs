@@ -3,6 +3,7 @@ defmodule Rail.Issues.Actions.GetBlockersTest do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Projects
   alias Rail.Repo
 
   setup %{project: project, github_project: github_project} do
@@ -97,10 +98,43 @@ defmodule Rail.Issues.Actions.GetBlockersTest do
     assert %{} == Issues.get_blockers([issue, elsewhere])
   end
 
-  test "a Rail-tracked issue has no blockers yet, and asks nobody", %{project: project} do
-    local = %{project | tracker: :local}
+  test "a Rail-tracked issue's blockers and what it blocks come from its relations, each in the project" do
+    key = "Gbl#{System.unique_integer([:positive])}"
 
-    assert %{} ==
-             Issues.get_blockers([%Issue{id: "iss_local", project_id: local.id, external_id: "loc_1", project: local}])
+    {:ok, local} =
+      Projects.create_project(system_scope(), %{
+        name: "Rail-tracked",
+        github_repo: "example/#{key}",
+        github_installation_id: 1,
+        tracker: :local,
+        key: key,
+        default_branch: "main",
+        clone_path: "/tmp/#{key}"
+      })
+
+    {:ok, %Issue{id: issue_id, external_id: external_id} = issue} =
+      Issues.create_issue(system_scope(), local, %{title: "In the middle"})
+
+    {:ok, %Issue{id: first_id} = first} = Issues.create_issue(system_scope(), local, %{title: "Goes first"})
+
+    {:ok, %Issue{id: later_id, external_id: later_external_id} = later} =
+      Issues.create_issue(system_scope(), local, %{title: "Waits"})
+
+    {:ok, %Issue{external_id: unrelated_external_id} = unrelated} =
+      Issues.create_issue(system_scope(), local, %{title: "Unrelated"})
+
+    :ok = Issues.block_issue(system_scope(), first, issue)
+    :ok = Issues.block_issue(system_scope(), issue, later)
+
+    assert %{
+             ^external_id => %{
+               blocked_by: [%{issue: %Issue{id: ^first_id, title: "Goes first"}, in_project: true}],
+               blocks: [%{issue: %Issue{id: ^later_id, title: "Waits"}, in_project: true}]
+             },
+             ^unrelated_external_id => %{blocked_by: [], blocks: []}
+           } = Issues.get_blockers([%{issue | project: local}, %{unrelated | project: local}])
+
+    assert %{^later_external_id => %{blocked_by: [%{issue: %Issue{id: ^issue_id}}], blocks: []}} =
+             Issues.get_blockers([%{later | project: local}])
   end
 end

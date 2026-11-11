@@ -3,6 +3,8 @@ defmodule Rail.Issues.Actions.LinkUrlTest do
   use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueLink
   alias Rail.Issues.Workers.LinkTrackerUrl
   alias Rail.Projects
 
@@ -93,7 +95,7 @@ defmodule Rail.Issues.Actions.LinkUrlTest do
              Issues.link_url(issue, "https://slack.example/archives/C1/p1", "Slack thread")
   end
 
-  test "the job has nothing to link for a Rail-tracked issue, and asks nobody" do
+  test "the job lists the link on a Rail-tracked issue once, however often it runs, and tells open pages" do
     key = "Lnk#{System.unique_integer([:positive])}"
 
     {:ok, project} =
@@ -107,13 +109,15 @@ defmodule Rail.Issues.Actions.LinkUrlTest do
         clone_path: "/tmp/#{key}"
       })
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Reported in Slack"})
+    {:ok, %Issue{id: issue_id}} = Issues.create_issue(system_scope(), project, %{title: "Reported in Slack"})
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+    args = %{issue_id: issue_id, url: "https://slack.example/archives/C1/p1", title: "Slack thread"}
 
-    assert :ok =
-             perform_job(LinkTrackerUrl, %{
-               issue_id: issue.id,
-               url: "https://slack.example/archives/C1/p1",
-               title: "Slack thread"
-             })
+    assert :ok = perform_job(LinkTrackerUrl, args)
+    assert_receive {:issue_changed, ^issue_id}
+    assert :ok = perform_job(LinkTrackerUrl, args)
+
+    assert {:ok, %Issue{links: [%IssueLink{url: "https://slack.example/archives/C1/p1", title: "Slack thread"}]}} =
+             Issues.get_issue(issue_id, preload: [:links])
   end
 end

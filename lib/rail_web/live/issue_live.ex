@@ -3,8 +3,7 @@ defmodule RailWeb.IssueLive do
   One issue, laid out the way Linear lays it out: the title and description on
   the left with its comment threads beneath, its properties down the right. The
   status and assignee can be changed and comments posted here, and all three reach
-  the tracker; everything else is edited there and arrives by sync or webhook. A
-  Rail-tracked issue's cycle is set here too.
+  the tracker. A Rail-tracked issue is edited here in full, its cycle included; any other is edited in its tracker.
   """
   use RailWeb, :live_view
 
@@ -18,7 +17,7 @@ defmodule RailWeb.IssueLive do
   alias Rail.Scope
   alias Rail.Users
 
-  @issue_events ["assign", "filter_assignees", "set_cycle", "draft_comment", "comment"]
+  @issue_events ["assign", "filter_assignees", "set_cycle", "draft_comment", "comment", "edit_issue", "remove_relation"]
 
   def mount(_params, _session, socket) do
     # Workflows too, since the byline names the workflow that opened the issue, and Rail's cycles, which the nightly
@@ -112,6 +111,11 @@ defmodule RailWeb.IssueLive do
     {:noreply, socket}
   end
 
+  def handle_info({:issue_relations_changed, ids}, %{assigns: %{issue: %Issue{id: issue_id}}} = socket) do
+    socket = if issue_id in ids, do: read_blockers(socket), else: socket
+    {:noreply, socket}
+  end
+
   # A sync may have renamed the workflow that opened this issue.
   def handle_info({:workflows_changed, project_id}, %{assigns: %{issue: %{project_id: project_id}}} = socket) do
     {:noreply, load_issue(socket, socket.assigns.issue.id)}
@@ -150,6 +154,7 @@ defmodule RailWeb.IssueLive do
       :workflow,
       :parent,
       :children,
+      :links,
       task: [:rounds, runs: :role, parent_task: [children: :issue]],
       comments: [:author_user, replies: :author_user]
     ]

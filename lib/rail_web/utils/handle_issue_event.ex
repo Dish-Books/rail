@@ -1,7 +1,7 @@
 defmodule RailWeb.Utils.HandleIssueEvent do
   @moduledoc """
-  The events `RailWeb.Components.IssueView` raises for its owner menu, cycle menu and comments,
-  for every LiveView that renders it. Each passes how it reloads the issue afterwards.
+  The events `RailWeb.Components.IssueView` raises for its owner menu, cycle menu, comments and a Rail-tracked
+  issue's properties and relations, for every LiveView that renders it. Each passes how it reloads the issue afterwards.
   """
   import Phoenix.Component, only: [assign: 3, update: 3]
   import Phoenix.LiveView, only: [put_flash: 3]
@@ -53,6 +53,34 @@ defmodule RailWeb.Utils.HandleIssueEvent do
     case String.trim(body) do
       "" -> socket
       body -> post_comment(socket, %{body: body, parent_id: params["parent_id"]}, reload)
+    end
+  end
+
+  # Only these: the description saves through its own component, and the parent through its picker.
+  def handle_issue_event("edit_issue", params, %{assigns: %{issue: issue, current_scope: scope}} = socket, reload) do
+    case Issues.edit_issue(scope, issue, Map.take(params, ["title", "priority", "estimate"])) do
+      {:ok, _issue} -> reload.(socket)
+      {:error, _reason} -> socket
+    end
+  end
+
+  # Only a relation the page lists, between issues it holds.
+  def handle_issue_event(
+        "remove_relation",
+        %{"blocker_id" => blocker_id, "blocked_id" => blocked_id},
+        %{assigns: %{issue: issue, current_scope: scope, blockers: blockers}} = socket,
+        _reload
+      ) do
+    shown = [issue | for(%{issue: related} <- (blockers && blockers.blocked_by ++ blockers.blocks) || [], do: related)]
+
+    with %Issue{} = blocker <- Enum.find(shown, &(&1.id == blocker_id)),
+         %Issue{} = blocked <- Enum.find(shown, &(&1.id == blocked_id)),
+         true <- issue.id in [blocker_id, blocked_id] do
+      # The page hears the change on "issues" and reads its blockers again, as every other open page does.
+      Issues.unblock_issue(scope, blocker, blocked)
+      socket
+    else
+      _not_shown -> socket
     end
   end
 

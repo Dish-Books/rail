@@ -193,6 +193,36 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
     assert %{total: 3} = Issues.list_issues(search: "   ")
   end
 
+  test "list_issues puts the issue a search names by its identifier first, ahead of newer ones it prefixes", %{
+    project: project
+  } do
+    %Issue{id: exact_id} =
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project.id,
+        external_id: "lin_exact",
+        identifier: "LI1-2",
+        title: "Named exactly",
+        state: :triage
+      })
+      |> Repo.insert!()
+
+    for n <- 20..29 do
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project.id,
+        external_id: "lin_prefixed_#{n}",
+        identifier: "LI1-#{n}",
+        title: "Prefixed #{n}",
+        state: :triage
+      })
+      |> Repo.insert!()
+    end
+
+    assert %{issues: [%Issue{id: ^exact_id} | _newer], total: 11} = Issues.list_issues(search: " li1-2 ", limit: 8)
+    assert %{issues: [%Issue{identifier: "LI1-29"} | _older]} = Issues.list_issues(search: "Prefixed", limit: 8)
+  end
+
   test "list_issues pages through issues, most recently updated first, and counts past the page", %{project: project} do
     issues =
       for {priority, n} <- Enum.with_index([:medium, :low, :high, :high, :urgent]) do
@@ -225,6 +255,10 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
              total: 2,
              priority_counts: %{urgent: 1, high: 2, low: 1, medium: 1}
            } = Issues.list_issues(priority: :high)
+
+    # Leaving issues out happens before the limit, so the page still fills.
+    assert %{issues: [%Issue{id: ^third}, %Issue{id: ^fourth}]} =
+             Issues.list_issues(limit: 2, exclude_ids: [first, second])
 
     # Updating the oldest issue brings it to the top.
     issues |> List.first() |> Issue.changeset(%{title: "Touched"}) |> Repo.update!()

@@ -1,5 +1,7 @@
 // Shows a status picker's menu as a popover, placed against its trigger in viewport
 // coordinates. The page keeps the placement through patches with JS.ignore_attributes.
+import { calculateNextItem } from "./menu_keys.js";
+
 const GAP = 4;
 const MARGIN = 8;
 
@@ -155,11 +157,10 @@ export const StatusMenu = {
   },
 
   step(event) {
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-    event.preventDefault();
     const items = this.items();
-    const step = event.key === "ArrowDown" ? 1 : -1;
-    const index = items.indexOf(document.activeElement) + step;
-    items[(index + items.length) % items.length]?.focus();
+    const next = calculateNextItem(items.indexOf(document.activeElement), items.length, event.key);
+    if (next === null) return;
+    event.preventDefault();
+    items[next].focus();
   }
 };

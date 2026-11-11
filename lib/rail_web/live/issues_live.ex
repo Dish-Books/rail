@@ -599,6 +599,18 @@ defmodule RailWeb.IssuesLive do
     {:noreply, socket}
   end
 
+  # Only a relation change reads blockers again, so a Linear project's list is not asked about on every change.
+  def handle_info({:issue_relations_changed, ids}, socket) do
+    issues = shown_issues(socket.assigns)
+
+    socket =
+      if Enum.any?(issues, &(&1.id in ids)),
+        do: read_blockers(socket, socket.assigns.blockers_for, issues),
+        else: socket
+
+    {:noreply, socket}
+  end
+
   def handle_info({:issue_comments_changed, _issue_id}, socket), do: {:noreply, socket}
 
   def handle_info({:workflows_changed, _project_id}, socket), do: {:noreply, reload_data(socket)}
@@ -994,6 +1006,7 @@ defmodule RailWeb.IssuesLive do
   # Every issue a row shows, dimmed parents included.
   defp shown_issues(%{view: :cycle, groups: groups}), do: Enum.flat_map(groups, &row_issues(&1.rows))
   defp shown_issues(%{view: :list, rows: rows}), do: row_issues(rows)
+  defp shown_issues(%{view: :loading}), do: []
 
   defp row_issues(rows), do: Enum.flat_map(rows, fn row -> [row.issue | Enum.map(row.sub_issues, & &1.issue)] end)
 

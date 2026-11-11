@@ -176,3 +176,45 @@ body {
     @apply bg-slate-100 dark:bg-slate-800 ring-1 ring-blue-500;
   }
 }
+
+/* A Rail-tracked issue's title and description are typed into in place, from the attributes the hooks and TipTap set.
+   Unlayered, so the typography plugin's list and paragraph spacing does not win over the editor's. */
+[data-placeholder][contenteditable="true"]:empty::before {
+  content: attr(data-placeholder);
+  @apply text-slate-400 dark:text-slate-600 pointer-events-none;
+}
+
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  @apply text-slate-400 dark:text-slate-500 pointer-events-none;
+}
+
+.tiptap img {
+  @apply inline-block max-w-full rounded-lg border border-slate-200 dark:border-slate-700 my-0;
+}
+
+.tiptap img.ProseMirror-selectednode {
+  @apply outline-2 outline-blue-500;
+}
+
+.tiptap ul[data-type="taskList"] {
+  @apply list-none pl-0;
+}
+
+.tiptap ul[data-type="taskList"] li {
+  @apply flex items-baseline gap-2 my-1 pl-0;
+}
+
+.tiptap ul[data-type="taskList"] li > label {
+  @apply shrink-0;
+}
+
+.tiptap ul[data-type="taskList"] li > div {
+  @apply flex-1 min-w-0;
+}
+
+.tiptap ul[data-type="taskList"] li > div > p {
+  @apply my-0;
+}
