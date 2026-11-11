@@ -523,6 +523,7 @@ defmodule RailWeb.Components.IssueView do
                       phx-click={
                         JS.push("set_cycle", value: %{cycle_id: ""})
                         |> JS.hide(to: "#issue-cycle-menu")
+                        |> JS.focus(to: "#issue-cycle")
                       }
                       class="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-sm hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500"
                     >
@@ -544,6 +545,7 @@ defmodule RailWeb.Components.IssueView do
                       phx-click={
                         JS.push("set_cycle", value: %{cycle_id: cycle.id})
                         |> JS.hide(to: "#issue-cycle-menu")
+                        |> JS.focus(to: "#issue-cycle")
                       }
                       class="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-sm hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500"
                     >

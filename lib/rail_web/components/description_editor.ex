@@ -120,7 +120,13 @@ defmodule RailWeb.Components.DescriptionEditor do
       |> Enum.map(fn {entry, index} -> {entry, refusal(upload, entry, index)} end)
       |> Enum.filter(fn {_entry, reason} -> is_binary(reason) end)
 
-    socket = if new != [] and refused == [], do: assign(socket, :upload_error, nil), else: socket
+    socket =
+      case refused do
+        [] when new != [] -> assign(socket, :upload_error, nil)
+        [] -> socket
+        _some -> assign(socket, :upload_error, Enum.map_join(refused, " ", fn {_entry, reason} -> reason end))
+      end
+
     {:noreply, Enum.reduce(refused, socket, &refuse/2)}
   end
 
@@ -191,11 +197,11 @@ defmodule RailWeb.Components.DescriptionEditor do
     end
   end
 
-  defp refuse({entry, reason}, socket) do
+  defp refuse({entry, _reason}, socket) do
     socket
     |> cancel_upload(:file, entry.ref)
     |> update(:started, &Map.delete(&1, entry.ref))
-    |> fail(entry.ref, reason)
+    |> push_event("upload_failed", %{ref: entry.ref})
   end
 
   defp take_started(socket, ref) do

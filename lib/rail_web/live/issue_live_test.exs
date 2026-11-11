@@ -1645,6 +1645,8 @@ defmodule RailWeb.IssueLiveTest do
       assert has_element?(view, "#issue-cycle-#{third.id}", "Dec 8 – Dec 21")
       assert has_element?(view, "#issue-cycle-#{fourth.id}", "Cycle 4")
       refute has_element?(list, "#issue-card-#{issue_id}")
+      assert has_element?(view, ~s(#issue-cycle-none[phx-click*='"focus",{"to":"#issue-cycle"}']))
+      assert has_element?(view, ~s(#issue-cycle-#{second.id}[phx-click*='"focus",{"to":"#issue-cycle"}']))
 
       view |> element("#issue-cycle-#{second.id}") |> render_click()
       assert has_element?(view, "#issue-cycle", "Cycle 2")

@@ -171,6 +171,63 @@ defmodule RailWeb.Components.DescriptionEditorTest do
            )
   end
 
+  test "a refusal's reason stays through a change with nothing new, and goes when a file Rail takes is added", %{
+    conn: conn,
+    issue: %Issue{id: issue_id}
+  } do
+    {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+    form = "#issue-description-editor-#{issue_id}-upload"
+
+    view
+    |> file_input(form, :file, [%{name: "readme", content: "Read me", type: "text/plain"}])
+    |> preflight_upload()
+
+    view |> element(form) |> render_change(%{})
+    assert has_element?(view, "#{form}-error", "readme is not a PNG, JPEG, GIF, WebP or PDF file.")
+
+    view |> element(form) |> render_change(%{})
+    assert has_element?(view, "#{form}-error", "readme is not a PNG, JPEG, GIF, WebP or PDF file.")
+
+    view
+    |> file_input(form, :file, [%{name: "shot.png", content: "PNG_BYTES", type: "image/png"}])
+    |> preflight_upload()
+
+    view |> element(form) |> render_change(%{})
+    assert_push_event(view, "upload_started", %{name: "shot.png"})
+    refute has_element?(view, "#{form}-error")
+  end
+
+  test "two files Rail does not take in one drop each show their reason, in the order they came", %{
+    conn: conn,
+    issue: %Issue{id: issue_id}
+  } do
+    {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+
+    dropped =
+      file_input(view, "#issue-description-editor-#{issue_id}-upload", :file, [
+        %{
+          name: "notes.docx",
+          content: "PK",
+          type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        },
+        %{name: "readme", content: "Read me", type: "text/plain"}
+      ])
+
+    preflight_upload(dropped)
+    view |> element("#issue-description-editor-#{issue_id}-upload") |> render_change(%{})
+
+    assert_push_event(view, "upload_started", %{ref: notes_ref, name: "notes.docx"})
+    assert_push_event(view, "upload_started", %{ref: readme_ref, name: "readme"})
+    assert_push_event(view, "upload_failed", %{ref: ^notes_ref})
+    assert_push_event(view, "upload_failed", %{ref: ^readme_ref})
+
+    assert has_element?(
+             view,
+             "#issue-description-editor-#{issue_id}-upload-error",
+             "notes.docx is not a PNG, JPEG, GIF, WebP or PDF file. readme is not a PNG, JPEG, GIF, WebP or PDF file."
+           )
+  end
+
   test "a PDF goes up and is inserted as a link the page serves", %{conn: conn, issue: %Issue{id: issue_id}} do
     {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
 
