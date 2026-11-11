@@ -50,9 +50,10 @@ defmodule Rail.Issues.Schemas.Issue do
     field :skipped_steps, {:array, Ecto.Enum}, values: @optional_steps, default: []
     # The stages its workflow's file named, custom ones with their prompts, copied the same way; empty runs the built-ins.
     embeds_many :stages, IssueStage, on_replace: :delete
-    # Where its testing stands since it last reached Done, and what the testers wrote. A trigger sets both on that move.
-    field :testing_state, Ecto.Enum, values: @testing_states, read_after_writes: true
-    field :testing_notes, :string, read_after_writes: true
+    # Every ticket starts Waiting, is queued only while in Done, and keeps its testing when it leaves. One already in
+    # Done when testing shipped has none.
+    field :testing_state, Ecto.Enum, values: @testing_states, default: :waiting
+    field :testing_notes, :string
     # Its cycle's id, Linear's or a Rail cycle's for a Rail-tracked issue, which Rail sets itself.
     field :cycle_external_id, :string
     # The state and status name a cycle's listing reads the issue in; set only by `list_issues/1` with `:cycle_id`.

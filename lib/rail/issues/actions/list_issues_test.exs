@@ -372,7 +372,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
 
     done.("lin_q8", other_id, ~U[2026-11-07 10:00:00Z])
 
-    # Done before testing shipped: inserted already Done, so the trigger never ran.
+    # Done before testing shipped: the migration left it with no testing state.
     %Issue{}
     |> Issue.tracker_changeset(%{
       project_id: project_id,
@@ -383,6 +383,8 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       completed_at: ~U[2026-11-01 10:00:00Z]
     })
     |> Repo.insert!()
+    |> Ecto.Changeset.change(testing_state: nil)
+    |> Repo.update!()
 
     assert %{
              issues: [

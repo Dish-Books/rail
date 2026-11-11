@@ -118,7 +118,7 @@ defmodule Rail.Issues.Workers.GithubSyncTest do
     assert_enqueued(worker: GithubSync, args: %{project_id: project_id, pass: "comments", page: 1})
   end
 
-  test "an issue the sync closes as completed waits for testing, and one it inserts already closed does not", %{
+  test "an issue the sync closes as completed, or first inserts already closed, waits for testing", %{
     github_project: %{id: project_id} = project
   } do
     active = github_issue(project, %{number: 14, state: :in_review})
@@ -151,7 +151,7 @@ defmodule Rail.Issues.Workers.GithubSyncTest do
     assert :ok = perform_job(GithubSync, %{project_id: project_id, pass: "closed", page: 1})
 
     assert %Issue{state: :done, testing_state: :waiting} = Repo.reload!(active)
-    assert %Issue{state: :done, testing_state: nil} = Repo.get_by!(Issue, project_id: project_id, number: 15)
+    assert %Issue{state: :done, testing_state: :waiting} = Repo.get_by!(Issue, project_id: project_id, number: 15)
   end
 
   test "Rail's owner stays unless GitHub names a different Rail user", %{github_project: %{id: project_id} = project} do

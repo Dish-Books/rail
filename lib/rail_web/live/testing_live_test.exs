@@ -77,18 +77,32 @@ defmodule RailWeb.TestingLiveTest do
     assert has_element?(view, "#testing-bar", issue.identifier)
   end
 
-  test "a Tested ticket reopened and done again comes back to the open queue", %{conn: conn, done: done, here: here} do
-    issue = done.(here, "Reopened later")
-    {:ok, _tested} = Issues.mark_issue_tested(system_scope(), issue)
+  test "a ticket reopened before it was tested comes back with its notes, and a Tested one stays out", %{
+    conn: conn,
+    done: done,
+    here: here
+  } do
+    in_progress = %{id: "in_progress", name: "In Progress", state: :in_progress}
+    halfway = done.(here, "Reopened halfway")
+    tested = done.(here, "Reopened after testing")
+    {:ok, halfway} = Issues.save_testing_notes(system_scope(), halfway, "Halfway")
+    {:ok, tested} = Issues.mark_issue_tested(system_scope(), tested)
     {:ok, view, _html} = live(conn, ~p"/testing")
-    refute has_element?(view, "#testing-row-#{issue.id}")
+    assert has_element?(view, "#testing-row-#{halfway.id}")
+    refute has_element?(view, "#testing-row-#{tested.id}")
 
-    {:ok, reopened} =
-      Issues.set_issue_status(system_scope(), issue, %{id: "in_progress", name: "In Progress", state: :in_progress})
+    {:ok, reopened} = Issues.set_issue_status(system_scope(), halfway, in_progress)
+    refute has_element?(view, "#testing-row-#{halfway.id}")
 
     {:ok, _done} = Issues.set_issue_status(system_scope(), reopened, @done)
+    assert has_element?(view, "#testing-row-#{halfway.id} [data-testing-state='testing']")
 
-    assert has_element?(view, "#testing-row-#{issue.id} [data-testing-state='waiting']")
+    view |> element("#testing-row-#{halfway.id}") |> render_click()
+    assert has_element?(view, "#testing-notes-#{halfway.id}", "Halfway")
+
+    {:ok, reopened} = Issues.set_issue_status(system_scope(), tested, in_progress)
+    {:ok, _done} = Issues.set_issue_status(system_scope(), reopened, @done)
+    refute has_element?(view, "#testing-row-#{tested.id}")
   end
 
   test "the queue lists the projects the user can see, oldest Done first, narrowed by the switcher", %{
@@ -466,6 +480,7 @@ defmodule RailWeb.TestingLiveTest do
     {:ok, _canceled} =
       Issues.set_issue_status(system_scope(), reopened, %{id: "canceled", name: "Canceled", state: :canceled})
 
+    refute has_element?(view, "#testing-bar-state")
     render_hook(view, "mark_tested", %{"issue_id" => reopened.id})
     assert has_element?(view, "#testing-notice", "#{reopened.identifier} is no longer in Done.")
   end

@@ -79,7 +79,7 @@ defmodule RailWeb.TestingLive do
           >
             <span class="font-mono text-xs text-slate-500 dark:text-slate-400">{@issue.identifier}</span>
             <.testing_badge
-              :if={@issue.testing_state}
+              :if={@show_testing_state}
               id="testing-bar-state"
               state={@issue.testing_state}
             />
@@ -417,6 +417,7 @@ defmodule RailWeb.TestingLive do
   defp assign_issue_flags(%{assigns: %{issue: issue}} = socket) do
     socket
     |> assign(:in_queue, issue != nil and Issue.in_testing_queue?(issue))
+    |> assign(:show_testing_state, issue != nil and issue.state == :done and issue.testing_state != nil)
     |> assign(:notes_blank, issue == nil or String.trim(issue.testing_notes || "") == "")
   end
 

@@ -416,7 +416,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
            } = Issue |> Repo.all() |> Map.new(&{&1.title, &1.state})
   end
 
-  test "an issue the sync moves into Done waits for testing, and one it inserts already Done does not", %{
+  test "an issue the sync moves into Done or first inserts already Done waits for testing", %{
     project: project
   } do
     %Issue{id: moved_id} =
@@ -447,7 +447,8 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
     assert :ok = perform_job(LinearSync, %{project_id: project.id})
 
     assert %Issue{id: ^moved_id, state: :done, testing_state: :waiting} = Repo.get_by(Issue, external_id: "lin_to_done")
-    assert %Issue{state: :done, testing_state: nil} = Repo.get_by(Issue, external_id: "lin_born_done")
+    assert %Issue{state: :done, testing_state: :waiting} = Repo.get_by(Issue, external_id: "lin_born_done")
+    assert %{total: 2} = Issues.list_issues(project_id: project.id, testing: true)
   end
 
   test "an issue synced as Backlog before Rail knew Duplicate is corrected and leaves the default list", %{

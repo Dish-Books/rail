@@ -63,7 +63,7 @@ defmodule Rail.Issues.Actions.SaveTestingNotesTest do
     assert %Issue{testing_state: :tested, testing_notes: "Passed"} = Repo.get!(Issue, issue_id)
   end
 
-  test "a ticket that never reached Done since testing shipped refuses", %{scope: scope, issue: issue} do
+  test "a ticket not in Done refuses, though it starts Waiting", %{scope: scope, issue: issue} do
     {:ok, open} = Issues.create_issue(system_scope(), Repo.preload(issue, :project).project, %{title: "Still open"})
     assert {:error, :testing_finished} = Issues.save_testing_notes(scope, open, "Nothing to test")
   end

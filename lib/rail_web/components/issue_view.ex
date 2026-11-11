@@ -50,6 +50,7 @@ defmodule RailWeb.Components.IssueView do
       |> assign(:sub_issue_count, "#{done}/#{total}")
       # A Rail-tracked issue's link is this page.
       |> assign(:show_tracker_link, assigns.issue.url not in [nil, ""] and assigns.issue.tracker != :local)
+      |> assign(:show_testing, assigns.issue.state == :done and assigns.issue.testing_state != nil)
       |> assign(:show_testing_link, Issue.in_testing_queue?(assigns.issue))
       |> assign(:cycle, Enum.find(assigns.cycles || [], &(&1.id == assigns.issue.cycle_external_id)))
       # An ended cycle keeps what it held as it closed, so nothing more is put in one.
@@ -380,7 +381,7 @@ defmodule RailWeb.Components.IssueView do
               <span :if={!@issue.estimate} class="text-slate-400 dark:text-slate-500">No points</span>
             </div>
 
-            <div :if={@issue.testing_state} id="issue-testing" class="flex items-center gap-2.5">
+            <div :if={@show_testing} id="issue-testing" class="flex items-center gap-2.5">
               <.link
                 :if={@show_testing_link}
                 navigate={~p"/testing/#{@issue.id}"}
