@@ -36,7 +36,7 @@ Check, with the App's id and key: mint a JWT, then `POST /app/installations/<id>
 
 ## 2. Signing in with GitHub (optional)
 
-Only needed if people sign in with GitHub rather than `/dev/login`. Create an OAuth App (Settings > Developer settings > OAuth Apps) with callback `https://<rail-host>/auth/github/callback`, and put its credentials in `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`. This is separate from the GitHub App above.
+Without Cloudflare Access, this is how people sign in, rather than `/dev/login`. With Access set up, people sign in through Access and a developer uses it to connect GitHub from Settings > Connected accounts, which approving, merging and commit signing need. Create an OAuth App (Settings > Developer settings > OAuth Apps) with callback `https://<rail-host>/auth/github/callback`, and put its credentials in `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`. This is separate from the GitHub App above.
 
 ## 3. Choosing an issue tracker
 

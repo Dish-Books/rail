@@ -49,6 +49,13 @@ defmodule Rail do
   @doc "Whether Goth runs, so Rail can reach Google for embeddings."
   def goth_enabled?, do: Application.get_env(:rail, :goth_enabled, false)
 
+  @doc "The Cloudflare Access team domain and application audience tag when both are set, so Access signs people in."
+  def cloudflare_access do
+    config = Application.get_env(:rail, :cloudflare_access, [])
+
+    if config[:team_domain] && config[:aud], do: %{team_domain: config[:team_domain], aud: config[:aud]}
+  end
+
   defp browser(key, default), do: :rail |> Application.get_env(:browser, []) |> Keyword.get(key, default)
 
   defp sandbox(key, default), do: :rail |> Application.get_env(:sandbox, []) |> Keyword.get(key, default)

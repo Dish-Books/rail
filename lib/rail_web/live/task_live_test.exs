@@ -661,6 +661,15 @@ defmodule RailWeb.TaskLiveTest do
     refute has_element?(view, "#claim-task")
   end
 
+  test "claiming a GitHub issue without GitHub connected says where to connect it", %{conn: conn, task: task} do
+    stub(Issues, :claim_issue, fn _scope, _issue -> {:error, :github_not_linked} end)
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    view |> element("#claim-task") |> render_click()
+
+    assert has_element?(view, "#flash-error", "Connect GitHub in Connected accounts before claiming a GitHub issue")
+  end
+
   test "claiming without a linked Linear account says what to do", %{conn: conn, task: task} do
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 

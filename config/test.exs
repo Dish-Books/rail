@@ -29,6 +29,7 @@ config :rail, RailWeb.Endpoint,
 
 config :rail, :adopt_on_boot, false
 config :rail, :backends_root, Path.join(System.tmp_dir!(), "rail_test_backends")
+config :rail, :cloudflare_access, req_options: [plug: {Req.Test, Rail.Users.Clients.CloudflareAccess}, retry: false]
 config :rail, :docker, req_options: [plug: {Req.Test, Rail.Tools.Clients.Docker}, retry: false]
 config :rail, :github, req_options: [plug: {Req.Test, Rail.GitHub.Client}]
 config :rail, :linear, req_options: [plug: {Req.Test, Rail.Linear}]

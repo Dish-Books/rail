@@ -79,7 +79,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
     assert {:error, {:redirect, %{to: "/"}}} = live(conn, ~p"/settings/users")
   end
 
-  test "lists each person with what they can access, their Linear account and role", %{
+  test "lists each person with what they can access, their connected accounts and role", %{
     admin_conn: conn,
     admin_user: admin_user,
     regular_user: regular_user,
@@ -107,8 +107,29 @@ defmodule RailWeb.Settings.UsersLiveTest do
 
     assert has_element?(view, "#user-role-badge-#{admin_user.id}", "Admin")
     assert has_element?(view, "#user-role-badge-#{regular_user.id}", "User")
-    assert has_element?(view, "#user-linear-badge-#{regular_user.id}", "Linear: Not Linked")
+    assert has_element?(view, "#user-accounts-#{regular_user.id}[aria-label='Connected: GitHub, no Linear']")
+    assert has_element?(view, "#user-github-chip-#{regular_user.id}[data-connected='true']", "GitHub")
+    assert has_element?(view, "#user-linear-chip-#{regular_user.id}[data-connected='false']", "Linear")
     refute has_element?(view, "#user-sheet")
+  end
+
+  test "a person without GitHub shows their email with no handle, and no GitHub among their accounts", %{
+    admin_conn: conn,
+    regular_user: regular_user
+  } do
+    {:ok, regular_user} = Users.unlink_github(Scope.for_user(regular_user))
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/users")
+
+    assert has_element?(view, "#user-accounts-#{regular_user.id}[aria-label='Connected: no GitHub, no Linear']")
+    assert has_element?(view, "#user-github-chip-#{regular_user.id}[data-connected='false']")
+    assert has_element?(view, "#user-login-#{regular_user.id}", regular_user.email)
+    refute has_element?(view, "#user-login-#{regular_user.id}", "·")
+
+    view |> element("#user-row-#{regular_user.id}") |> render_click()
+
+    assert has_element?(view, "#user-sheet", regular_user.email)
+    refute has_element?(view, "#user-sheet", "· #{regular_user.email}")
   end
 
   test "clicking a person opens their sheet with their projects ticked, and each tick saves", %{
@@ -126,6 +147,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
     assert has_element?(view, "#user-sheet[aria-label='#{regular_user.name}']")
     assert has_element?(view, "#user-sheet", "@#{regular_user.login} · #{regular_user.email}")
     assert has_element?(view, "#user-sheet", "Every project, and the settings screens.")
+    assert has_element?(view, "#sheet-accounts-#{regular_user.id}[aria-label='Connected: GitHub, no Linear']")
     refute has_element?(view, "#user-sheet-admin[checked]")
     assert has_element?(view, "#user-sheet-project-#{project.id}[checked]")
     refute has_element?(view, "#user-sheet-project-#{second_project.id}[checked]")
@@ -192,7 +214,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
     regular_user: regular_user
   } do
     assert {:ok, view, _html} = live(conn, ~p"/settings/users")
-    refute has_element?(view, "#user-tech-lead-badge-#{regular_user.login}")
+    refute has_element?(view, "#user-tech-lead-badge-#{regular_user.id}")
     view |> element("#user-row-#{regular_user.id}") |> render_click()
 
     assert has_element?(view, "#user-access-form", "Approves and merges tasks from Finalize.")
@@ -202,13 +224,13 @@ defmodule RailWeb.Settings.UsersLiveTest do
 
     assert %User{tech_lead: true} = Repo.get!(User, regular_user.id)
     assert has_element?(view, "#user-sheet-tech-lead[checked]")
-    assert has_element?(view, "#user-tech-lead-badge-#{regular_user.login}", "Tech lead")
+    assert has_element?(view, "#user-tech-lead-badge-#{regular_user.id}", "Tech lead")
     assert has_element?(view, "#user-role-badge-#{regular_user.id}", "User")
 
     view |> form("#user-access-form", %{"user" => %{"tech_lead" => "false"}}) |> render_change()
 
     assert %User{tech_lead: false} = Repo.get!(User, regular_user.id)
-    refute has_element?(view, "#user-tech-lead-badge-#{regular_user.login}")
+    refute has_element?(view, "#user-tech-lead-badge-#{regular_user.id}")
   end
 
   test "your own Admin box is disabled, and a crafted change to it does nothing", %{
@@ -311,7 +333,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
     user_conn = log_in_user(conn, updated_user)
 
     assert {:ok, view, _html} = live(user_conn, ~p"/settings/users")
-    assert has_element?(view, "#user-linear-badge-#{updated_user_id}", "Linear: Linked")
+    assert has_element?(view, "#user-linear-chip-#{updated_user_id}[data-connected='true']", "Linear")
     assert has_element?(view, "#user-placeholder-#{updated_user_id}", "U")
   end
 

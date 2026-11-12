@@ -571,11 +571,11 @@ defmodule RailWeb.Live.TaskActions do
   defp merge_message(:merging), do: "A merge is already under way."
   defp merge_message(:merged), do: "This task is already merged."
   defp merge_message(:no_pull_request), do: "This task has no pull request to merge."
-  defp merge_message(:no_github_token), do: "Sign in with GitHub again to merge. Nothing was sent."
+  defp merge_message(:no_github_token), do: "Connect GitHub in Connected accounts to merge. Nothing was sent."
   defp merge_message({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Finalize."
 
   defp approve_message({:approve_refused, said}), do: "GitHub refused the approval: #{said}"
-  defp approve_message(:no_github_token), do: "Sign in with GitHub again to approve. Nothing was sent."
+  defp approve_message(:no_github_token), do: "Connect GitHub in Connected accounts to approve. Nothing was sent."
   defp approve_message(:not_authorized), do: "Only a tech lead can approve a task."
   defp approve_message(:not_ready), do: "Mark the task ready for review before approving it."
   defp approve_message(:merged), do: "This task is already merged."

@@ -73,7 +73,7 @@ defmodule Rail.Users.Schemas.User do
     |> cast(attrs, @updatable_fields)
     # A form of checkboxes sends a blank alongside the ticked ones.
     |> update_change(:project_ids, &(&1 |> Enum.reject(fn id -> id == "" end) |> Enum.uniq()))
-    |> validate_required([:github_id, :login, :email])
+    |> validate_required([:email])
     |> unique_constraint(:github_id)
     |> unique_constraint(:login)
     |> unique_constraint(:email)
@@ -81,6 +81,15 @@ defmodule Rail.Users.Schemas.User do
     |> then(
       &if(fetch_change(&1, :slack_user_id) == {:ok, nil}, do: force_change(&1, :slack_notifications, false), else: &1)
     )
+  end
+
+  @doc """
+  Writes a GitHub profile onto the user, who then must have both its id and login.
+  """
+  def github_changeset(user, attrs) do
+    user
+    |> changeset(attrs)
+    |> validate_required([:github_id, :login])
   end
 
   @doc """

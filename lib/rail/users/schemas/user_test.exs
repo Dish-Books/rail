@@ -5,14 +5,18 @@ defmodule Rail.Users.Schemas.UserTest do
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
-  test "changeset validates required fields" do
+  test "changeset requires only an email, since a person may have no GitHub" do
     changeset = User.changeset(%User{}, %{})
 
-    assert %{
-             github_id: ["can't be blank"],
-             login: ["can't be blank"],
-             email: ["can't be blank"]
-           } = errors_on(changeset)
+    assert %{email: ["can't be blank"]} = errors_on(changeset)
+    refute Map.has_key?(errors_on(changeset), :github_id)
+    assert User.changeset(%User{}, %{email: "luis@example.com"}).valid?
+  end
+
+  test "github_changeset requires the GitHub id and login" do
+    changeset = User.github_changeset(%User{}, %{email: "luis@example.com"})
+
+    assert %{github_id: ["can't be blank"], login: ["can't be blank"]} = errors_on(changeset)
   end
 
   test "changeset accepts valid attributes" do

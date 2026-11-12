@@ -1488,4 +1488,5 @@ defmodule RailWeb.TaskLive do
 
   defp claim_error(:already_assigned), do: "Somebody else claimed this issue first"
   defp claim_error(:linear_not_linked), do: "Link your Linear account in Settings before claiming an issue"
+  defp claim_error(:github_not_linked), do: "Connect GitHub in Connected accounts before claiming a GitHub issue"
 end
