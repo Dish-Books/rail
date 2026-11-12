@@ -28,7 +28,7 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
     {:ok, regular} =
       Users.register_oauth_user(%{github_id: "wfl_gh_#{id}", login: "wfl_#{id}", email: "wfl_#{id}@example.com"})
 
-    %{conn: log_in_user(conn, admin), regular_conn: log_in_user(conn, regular)}
+    %{conn: log_in_user(conn, admin), regular_conn: log_in_user(conn, regular), regular: regular}
   end
 
   test "lists a merged workflow with its project, file, schedule and next start, and offers no way to edit it", %{
@@ -404,10 +404,60 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
     refute has_element?(view, "#workflows-list")
   end
 
-  test "someone who is not an admin is sent away and has no Workflows tab", %{regular_conn: conn} do
-    assert {:error, {:redirect, %{to: "/"}}} = live(conn, ~p"/settings/workflows")
-
+  test "someone who is not an admin has the Workflows tab and sees, pauses and runs only their projects' workflows", %{
+    regular_conn: conn,
+    regular: regular,
+    project: project,
+    github_project: github
+  } do
     {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
-    refute has_element?(view, "#tab-workflows")
+    assert has_element?(view, ~s(#tab-workflows[href="/settings/workflows"]))
+
+    # With no projects granted, nothing is listed.
+    %Workflow{id: id} =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/dependency-updates.yml",
+        definition: %WorkflowDefinition{
+          name: "Dependency updates",
+          schedule: "0 9 * * 1",
+          instructions: "Update the dependencies."
+        },
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
+
+    %Workflow{id: other_id} =
+      Repo.insert!(%Workflow{
+        project_id: github.id,
+        path: ".rail/workflows/sweep.yml",
+        definition: %WorkflowDefinition{name: "Sweep", schedule: "0 6 * * *", instructions: "Sweep the flaky tests."},
+        next_run_at: ~U[2026-10-12 06:00:00Z]
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/settings/workflows")
+    assert has_element?(view, "#workflows-empty")
+
+    {:ok, _regular} = Users.update_user(system_scope(), regular, %{project_ids: [project.id]})
+    {:ok, view, _html} = live(conn, ~p"/settings/workflows")
+
+    assert has_element?(view, "#workflow-name-#{id}", "Dependency updates")
+    refute has_element?(view, "#workflow-row-#{other_id}")
+
+    view |> element("#workflow-switch-#{id}") |> render_click()
+    assert has_element?(view, "#workflow-state-#{id}", "Paused")
+    assert %Workflow{paused: true} = Repo.get!(Workflow, id)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_TST-87", "identifier" => "TST-87", "title" => "Dependency updates 2026-10-12"}
+          }
+        }
+      })
+    end)
+
+    assert view |> element("#run-now-#{id}") |> render_click() =~ "Dependency updates opened TST-87."
   end
 end

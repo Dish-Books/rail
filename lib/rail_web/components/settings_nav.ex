@@ -75,7 +75,6 @@ defmodule RailWeb.Components.SettingsNav do
         </.link>
 
         <.link
-          :if={Scope.admin?(@current_scope)}
           navigate={~p"/settings/workflows"}
           class={[
             @active_tab == :workflows && "border-indigo-500 text-indigo-600 font-semibold",

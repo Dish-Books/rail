@@ -119,7 +119,7 @@ defmodule RailWeb.IssueLiveTest do
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
 
     assert has_element?(view, "#issue-workflow-byline", "Opened by the Flaky test sweep workflow on Oct 12, 08:00 UTC")
-    refute has_element?(view, "#issue-workflow-link")
+    assert has_element?(view, ~s(#issue-workflow-link[href="/settings/workflows"]), "Flaky test sweep")
     assert has_element?(view, "#issue-owner", "Unassigned")
 
     # Only a workflow change on this issue's project reloads it.
@@ -134,7 +134,7 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-workflow-byline", "Opened by the Flake sweep workflow")
   end
 
-  test "an admin follows the workflow's name to Settings, and a filed issue has no byline", %{
+  test "an admin follows the workflow's name to Settings too, and a filed issue has no byline", %{
     conn: conn,
     project: project
   } do

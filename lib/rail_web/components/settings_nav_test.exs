@@ -6,7 +6,7 @@ defmodule RailWeb.Components.SettingsNavTest do
   alias Rail.Scope
   alias RailWeb.Components.SettingsNav
 
-  test "renders only connected accounts tab for non-admin user" do
+  test "renders only the connected accounts and workflows tabs for non-admin user" do
     scope = Scope.for_user(%{admin: false})
 
     html =
@@ -16,8 +16,9 @@ defmodule RailWeb.Components.SettingsNavTest do
       )
 
     assert html =~ "Connected Accounts"
+    assert html =~ "tab-workflows"
     refute html =~ "tab-projects"
-    refute html =~ "tab-workflows"
+    refute html =~ "tab-users"
   end
 
   test "renders all tabs for admin user with active tab highlighted" do

@@ -117,6 +117,7 @@ defmodule RailWeb.Router do
       live "/testing/:id", TestingLive
       live "/tasks/:id", TaskLive
       live "/settings/connected-accounts", Settings.ConnectedAccountsLive
+      live "/settings/workflows", Settings.WorkflowsLive
     end
 
     live_session :require_admin_user,
@@ -126,7 +127,6 @@ defmodule RailWeb.Router do
         NavHook
       ] do
       live "/settings/projects", Settings.ProjectsLive
-      live "/settings/workflows", Settings.WorkflowsLive
       live "/settings/linear-workspaces", Settings.LinearWorkspacesLive
       live "/settings/slack-workspaces", Settings.SlackWorkspacesLive
       live "/settings/users", Settings.UsersLive

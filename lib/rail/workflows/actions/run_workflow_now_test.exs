@@ -119,7 +119,25 @@ defmodule Rail.Workflows.Actions.RunWorkflowNowTest do
     assert {:error, :invalid} = Workflows.run_workflow_now(system_scope(), stale)
   end
 
-  test "someone who is not an admin is refused", %{workflow: workflow} do
-    assert {:error, :not_authorized} = Workflows.run_workflow_now(user_scope(), workflow)
+  test "someone on the project runs it now, and someone who cannot access the project is refused", %{
+    project: project,
+    workflow: %{id: workflow_id} = workflow
+  } do
+    assert {:error, :not_found} = Workflows.run_workflow_now(user_scope(), workflow)
+    assert [] = Repo.all(from(i in Issue, where: i.workflow_id == ^workflow_id))
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_TST-86", "identifier" => "TST-86", "title" => "Dependency updates 2026-10-14"}
+          }
+        }
+      })
+    end)
+
+    assert {:ok, %Issue{identifier: "TST-86", workflow_id: ^workflow_id}} =
+             Workflows.run_workflow_now(user_scope(project_ids: [project.id]), workflow)
   end
 end

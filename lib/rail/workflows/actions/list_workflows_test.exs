@@ -77,7 +77,18 @@ defmodule Rail.Workflows.Actions.ListWorkflowsTest do
     assert {:ok, []} = Workflows.list_workflows(system_scope(), due: ~U[2027-01-01 00:00:00Z])
   end
 
-  test "someone who is not an admin is refused" do
-    assert {:error, :not_authorized} = Workflows.list_workflows(user_scope(), [])
+  test "someone who is not an admin sees only the workflows of the projects they can access", %{
+    project: project,
+    github_project: github
+  } do
+    for {project_id, path} <- [{project.id, ".rail/workflows/sweep.yml"}, {github.id, ".rail/workflows/deps.yml"}] do
+      Repo.insert!(%Workflow{project_id: project_id, path: path, next_run_at: ~U[2026-10-12 09:00:00Z]})
+    end
+
+    assert {:ok, [%Workflow{path: ".rail/workflows/sweep.yml"}]} =
+             Workflows.list_workflows(user_scope(project_ids: [project.id]), [])
+
+    assert {:ok, []} = Workflows.list_workflows(user_scope(), [])
+    assert {:error, :not_authorized} = Workflows.list_workflows(nil, [])
   end
 end

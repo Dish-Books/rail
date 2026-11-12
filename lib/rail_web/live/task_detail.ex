@@ -34,7 +34,6 @@ defmodule RailWeb.Live.TaskDetail do
   alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
-  alias Rail.Scope
   alias Rail.Tools
   alias Rail.Users
   alias RailWeb.Live.CustomStage
@@ -109,7 +108,6 @@ defmodule RailWeb.Live.TaskDetail do
         line={@line}
         title={@task.issue.title}
         status={@status}
-        link_workflow={Scope.admin?(@current_scope)}
         flush
       >
         <:breadcrumb :if={@breadcrumb != []}>{render_slot(@breadcrumb)}</:breadcrumb>
