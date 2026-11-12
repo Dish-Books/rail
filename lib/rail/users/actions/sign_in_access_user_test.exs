@@ -108,13 +108,17 @@ defmodule Rail.Users.Actions.SignInAccessUserTest do
     assert {:error, :not_found} = Users.get_user(email: email)
   end
 
-  test "signs nobody in when the team's keys cannot be read", %{key: key, claims: claims} do
+  test "signs nobody in when the team's keys cannot be read", %{key: key, claims: claims, email: email} do
     {_jws, token} = key |> JOSE.JWT.sign(%{"alg" => "RS256"}, claims) |> JOSE.JWS.compact()
 
     Req.Test.stub(CloudflareAccess, &(&1 |> Plug.Conn.put_status(503) |> Req.Test.json(%{})))
-    assert {:error, {:cloudflare_access_error, 503, %{}}} = Users.sign_in_access_user(token)
+    assert {:error, {:access_unreachable, {:cloudflare_access_error, 503, %{}}}} = Users.sign_in_access_user(token)
 
     Req.Test.stub(CloudflareAccess, &Req.Test.transport_error(&1, :econnrefused))
-    assert {:error, %Req.TransportError{reason: :econnrefused}} = Users.sign_in_access_user(token)
+
+    assert {:error, {:access_unreachable, %Req.TransportError{reason: :econnrefused}}} =
+             Users.sign_in_access_user(token)
+
+    assert {:error, :not_found} = Users.get_user(email: email)
   end
 end

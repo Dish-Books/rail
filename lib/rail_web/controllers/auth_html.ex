@@ -28,7 +28,19 @@ defmodule RailWeb.AuthHTML do
           Rail is invite only. An admin invites the email address on your GitHub account, then you sign in.
         </p>
 
-        <p :if={@access?} class="text-sm text-slate-500 dark:text-slate-400" id="auth-denied-help">
+        <p
+          :if={@show_unreachable}
+          class="text-sm text-slate-500 dark:text-slate-400"
+          id="auth-denied-unreachable"
+        >
+          Rail could not reach Cloudflare Access to check who you are. Try again in a moment.
+        </p>
+
+        <p
+          :if={@show_access_help}
+          class="text-sm text-slate-500 dark:text-slate-400"
+          id="auth-denied-help"
+        >
           Rail is invite only. Ask an admin to invite this address, or sign out of Cloudflare Access and use the address you were invited with.
         </p>
 
@@ -36,7 +48,16 @@ defmodule RailWeb.AuthHTML do
           Try again
         </.button>
 
-        <div :if={@access?} class="flex items-center justify-center gap-3">
+        <.button
+          :if={@show_unreachable}
+          href={~p"/sign-in"}
+          variant="primary"
+          id="auth-denied-try-again"
+        >
+          Try again
+        </.button>
+
+        <div :if={@show_access_help} class="flex items-center justify-center gap-3">
           <.button href="/cdn-cgi/access/logout" variant="primary" id="auth-denied-other-address">
             Use another address
           </.button>

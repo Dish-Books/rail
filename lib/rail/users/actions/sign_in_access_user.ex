@@ -11,14 +11,19 @@ defmodule Rail.Users.Actions.SignInAccessUser do
 
   @doc """
   Verifies `assertion`, the `cf-access-jwt-assertion` header, against the team's current keys and admits its email.
-  Refuses a token that is forged, expired, for another application or carries no email, as `:invalid_assertion`.
+  Refuses a forged, expired, other application's or emailless token as `:invalid_assertion`, and keys it
+  cannot read as `{:access_unreachable, reason}`.
   """
   def sign_in_access_user(assertion) when is_binary(assertion) do
     with %{team_domain: domain, aud: aud} <- Rail.cloudflare_access() || {:error, :access_off},
-         {:ok, keys} <- CloudflareAccess.certs(domain),
+         {:ok, keys} <- fetch_keys(domain),
          {:ok, email} <- verify(assertion, keys, "https://" <> domain, aud) do
       admit(email)
     end
+  end
+
+  defp fetch_keys(domain) do
+    with {:error, reason} <- CloudflareAccess.certs(domain), do: {:error, {:access_unreachable, reason}}
   end
 
   defp admit(email) do

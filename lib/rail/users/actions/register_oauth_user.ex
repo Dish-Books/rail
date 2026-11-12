@@ -36,8 +36,9 @@ defmodule Rail.Users.Actions.RegisterOAuthUser do
               Map.delete(attrs, :admin)
             end
 
+          # The email is how Access recognizes a person, so a sign-in never changes it.
           user
-          |> User.github_changeset(update_attrs)
+          |> User.github_changeset(Map.delete(update_attrs, :email))
           |> Repo.update()
           |> case do
             {:ok, updated_user} -> updated_user

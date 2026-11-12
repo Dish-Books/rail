@@ -17,10 +17,22 @@ defmodule RailWeb.SignInController do
 
   defp sign_in_access_user(conn, assertion) do
     case Users.sign_in_access_user(assertion) do
-      {:ok, user} -> UserAuth.log_in_user(conn, user)
-      {:error, {:not_invited, email}} -> deny(conn, "#{email} has not been invited to Rail.")
-      {:error, :invalid_assertion} -> deny(conn, "Cloudflare Access could not vouch for who you are.")
-      {:error, _reason} -> deny(conn, "Could not sign in through Cloudflare Access.")
+      {:ok, user} ->
+        UserAuth.log_in_user(conn, user)
+
+      {:error, {:not_invited, email}} ->
+        deny(conn, "#{email} has not been invited to Rail.")
+
+      {:error, :invalid_assertion} ->
+        deny(conn, "Cloudflare Access could not vouch for who you are.")
+
+      {:error, {:access_unreachable, _reason}} ->
+        redirect(conn, to: ~p"/auth/denied?reason=unreachable")
+
+      # coveralls-ignore-start (only a second tab inserting the same person reaches it, which the sandbox serializes)
+      {:error, _reason} ->
+        deny(conn, "Could not sign in through Cloudflare Access.")
+        # coveralls-ignore-stop
     end
   end
 

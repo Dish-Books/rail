@@ -44,8 +44,15 @@ defmodule RailWeb.AuthController do
     deny(conn, "Authentication was cancelled or failed.")
   end
 
-  def denied(conn, _params) do
-    render(conn, :denied, access?: Rail.cloudflare_access() != nil)
+  def denied(conn, params) do
+    access? = Rail.cloudflare_access() != nil
+    show_unreachable = access? and params["reason"] == "unreachable"
+
+    render(conn, :denied,
+      access?: access?,
+      show_unreachable: show_unreachable,
+      show_access_help: access? and not show_unreachable
+    )
   end
 
   def delete(conn, _params) do

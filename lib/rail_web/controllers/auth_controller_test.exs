@@ -125,6 +125,21 @@ defmodule RailWeb.AuthControllerTest do
       assert {%User{id: ^admin_id}, _inserted_at} = Users.get_user_by_session_token(token)
     end
 
+    test "a returning user who signs in with GitHub keeps the email Access knows them by", %{conn: conn, auth: auth} do
+      assert {:ok, %User{id: user_id}} =
+               Users.register_oauth_user(%{github_id: "77777", login: "luis", email: "luis@railai.dev"})
+
+      auth = %{auth | uid: "77777", info: %{auth.info | email: "luis.ortega@gmail.com", nickname: "luis"}}
+
+      conn =
+        conn
+        |> assign(:ueberauth_auth, auth)
+        |> AuthController.callback(%{})
+
+      assert {%User{id: ^user_id}, _inserted_at} = Users.get_user_by_session_token(get_session(conn, :user_token))
+      assert {:ok, %User{id: ^user_id, email: "luis@railai.dev"}} = Users.get_user(id: user_id)
+    end
+
     test "handles registration error gracefully", %{conn: conn, admin: admin, auth: auth} do
       assert {:ok, %Invite{}} = Users.invite_user(Scope.for_user(admin), %{email: "broken@example.com"})
 
@@ -257,6 +272,28 @@ defmodule RailWeb.AuthControllerTest do
       assert html =~ ~s(href="/cdn-cgi/access/logout")
       assert html =~ ~s(href="/auth/github")
       refute html =~ "auth-denied-retry"
+    end
+
+    test "under Access, says Rail could not reach Cloudflare rather than that the person is not invited" do
+      stub(Rail, :cloudflare_access, fn -> %{team_domain: "team.cloudflareaccess.com", aud: "rail-aud"} end)
+
+      html = build_conn() |> get(~p"/auth/denied?reason=unreachable") |> html_response(200)
+
+      assert html =~ "Rail could not reach Cloudflare Access"
+      assert ["/sign-in"] = html |> Floki.parse_document!() |> Floki.attribute("#auth-denied-try-again", "href")
+      refute html =~ "Rail is invite only"
+      refute html =~ "Ask an admin"
+      refute html =~ "/cdn-cgi/access/logout"
+      refute html =~ "/auth/github"
+    end
+
+    test "without Access, the unreachable reason changes nothing", %{conn: conn} do
+      html = conn |> get(~p"/auth/denied?reason=unreachable") |> html_response(200)
+
+      assert html =~ "An admin invites the email address on your GitHub account"
+      assert ["/auth/github"] = html |> Floki.parse_document!() |> Floki.attribute("#auth-denied-retry", "href")
+      refute html =~ "Rail could not reach Cloudflare Access"
+      refute html =~ "auth-denied-try-again"
     end
 
     test "shows the reason the sign-in was refused" do

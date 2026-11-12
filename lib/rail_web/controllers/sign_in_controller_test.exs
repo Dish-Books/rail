@@ -95,7 +95,9 @@ defmodule RailWeb.SignInControllerTest do
 
       conn = conn |> put_req_header("cf-access-jwt-assertion", token) |> get(~p"/sign-in")
 
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) == "Could not sign in through Cloudflare Access."
+      assert redirected_to(conn) == "/auth/denied?reason=unreachable"
+      refute Phoenix.Flash.get(conn.assigns.flash, :error)
+      refute get_session(conn, :user_token)
     end
 
     test "offers GitHub when the request carries no token", %{conn: conn} do
