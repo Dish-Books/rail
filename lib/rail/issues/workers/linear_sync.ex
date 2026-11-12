@@ -23,6 +23,7 @@ defmodule Rail.Issues.Workers.LinearSync do
   import Ecto.Query
   import Rail.Issues.Utils.FormatLinearComment
   import Rail.Issues.Utils.FormatLinearIssue
+  import Rail.Issues.Utils.MarkLabelledTested
 
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
@@ -187,6 +188,8 @@ defmodule Rail.Issues.Workers.LinearSync do
 
     users = users_by_linear_id(linear_user_ids)
     issue_ids = upsert_issues(project, nodes, users)
+    # A new row takes the Waiting default first, so a ticket first seen labeled is Tested too.
+    mark_labelled_tested(project, nodes)
 
     # A reply needs its parent's Rail id, so the threads' first comments go in first.
     {replies, top_level} = Enum.split_with(comments, fn {refs, _attrs} -> refs.parent_external_id end)

@@ -162,7 +162,7 @@ defmodule Rail.Linear.Client do
 
   @doc """
   Fetches one page of the issues on the project's team, found by its key,
-  archived ones included and oldest first, each with its first comments. Pass
+  archived ones included and oldest first, each with its label names and first comments. Pass
   `after:` the previous page's `pageInfo.endCursor` to continue.
   """
   def issues(%Project{} = project, opts \\ []) do
@@ -177,6 +177,11 @@ defmodule Rail.Linear.Client do
       ) {
         nodes {
           #{@issue_fields}
+          labels(first: 20) {
+            nodes {
+              name
+            }
+          }
           comments(first: #{@comments_per_issue}) {
             nodes {
               #{@comment_fields}

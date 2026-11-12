@@ -479,6 +479,51 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
     assert %{total: 2} = Issues.list_issues(project_id: project.id, testing: true)
   end
 
+  test "a page marks its queued tickets labeled Test done or Technical Tested, new ones included, and no other", %{
+    project: project
+  } do
+    %Issue{id: queued_id} =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_queued_labeled",
+        identifier: "SPI-62",
+        title: "SPI-62",
+        state: :done
+      })
+      |> Repo.insert!()
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"query" => query} = Jason.decode!(body)
+      assert query =~ "labels(first: 20)"
+
+      nodes =
+        for {id, identifier, labels} <- [
+              {"lin_queued_labeled", "SPI-62", ["Test done"]},
+              {"lin_new_labeled", "SPI-63", ["Bug", "TECHNICAL"]},
+              {"lin_unlabeled", "SPI-64", ["Bug"]}
+            ] do
+          %{
+            "id" => id,
+            "identifier" => identifier,
+            "title" => identifier,
+            "state" => %{"id" => "st_done", "name" => "Done", "type" => "completed"},
+            "labels" => %{"nodes" => Enum.map(labels, &%{"name" => &1})}
+          }
+        end
+
+      Req.Test.json(conn, %{"data" => %{"issues" => %{"nodes" => nodes}}})
+    end)
+
+    assert :ok = perform_job(LinearSync, %{project_id: project.id})
+
+    assert %Issue{id: ^queued_id, testing_state: :tested} = Repo.get_by(Issue, external_id: "lin_queued_labeled")
+    assert %Issue{testing_state: :tested} = Repo.get_by(Issue, external_id: "lin_new_labeled")
+    assert %Issue{testing_state: :waiting} = Repo.get_by(Issue, external_id: "lin_unlabeled")
+    assert %{total: 1} = Issues.list_issues(project_id: project.id, testing: true)
+  end
+
   test "an issue synced as Backlog before Rail knew Duplicate is corrected and leaves the default list", %{
     project: project
   } do

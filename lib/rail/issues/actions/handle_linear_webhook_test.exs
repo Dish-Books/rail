@@ -956,4 +956,77 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
       refute_enqueued(worker: AdvanceSplit)
     end
   end
+
+  describe "a ticket labeled Test done or Technical" do
+    setup %{project: project, workspace: workspace} do
+      send_labels = fn action, external_id, labels ->
+        Issues.handle_linear_webhook(workspace, %{
+          "type" => "Issue",
+          "action" => action,
+          "data" => %{
+            "id" => external_id,
+            "teamId" => "lin_team_id",
+            "identifier" => "HWH-T",
+            "title" => "Checked before merge",
+            "state" => %{"id" => "st_done", "name" => "Done", "type" => "completed"},
+            "labelIds" => Enum.map(labels, &"lbl_#{&1}"),
+            "labels" => Enum.map(labels, &%{"id" => "lbl_#{&1}", "color" => "#bec2c8", "name" => &1})
+          }
+        })
+      end
+
+      {:ok, issue} =
+        %Issue{}
+        |> Issue.tracker_changeset(%{
+          project_id: project.id,
+          external_id: "lin_lbl_1",
+          identifier: "HWH-T",
+          title: "Checked before merge",
+          state: :done
+        })
+        |> Repo.insert()
+
+      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
+      %{send_labels: send_labels, issue: issue}
+    end
+
+    test "an update adding Test done to a queued ticket returns and broadcasts it Tested with its notes", %{
+      send_labels: send_labels,
+      issue: %Issue{id: issue_id} = issue
+    } do
+      {:ok, %Issue{testing_state: :testing}} = Issues.save_testing_notes(system_scope(), issue, "Tried the merge")
+
+      assert {:ok, %Issue{id: ^issue_id, testing_state: :tested, testing_notes: "Tried the merge"}} =
+               send_labels.("update", "lin_lbl_1", ["Bug", "Test done"])
+
+      assert_receive {:issue_changed, ^issue_id}
+      assert %Issue{testing_state: :tested, testing_notes: "Tried the merge"} = Repo.get!(Issue, issue_id)
+    end
+
+    test "a create carrying the label in any case saves the ticket Tested", %{send_labels: send_labels} do
+      assert {:ok, %Issue{testing_state: :tested}} = send_labels.("create", "lin_lbl_2", ["technical"])
+      assert {:ok, %Issue{testing_state: :tested}} = send_labels.("create", "lin_lbl_3", [" TEST DONE "])
+      assert %Issue{testing_state: :tested} = Repo.get_by!(Issue, external_id: "lin_lbl_2")
+    end
+
+    test "another label, or none, leaves the ticket Waiting", %{send_labels: send_labels, issue: %Issue{id: issue_id}} do
+      assert {:ok, %Issue{id: ^issue_id, testing_state: :waiting}} = send_labels.("update", "lin_lbl_1", ["Bug"])
+      assert {:ok, %Issue{testing_state: :waiting}} = send_labels.("create", "lin_lbl_4", [])
+    end
+
+    test "a ticket Sent to triage keeps that state, and a Tested one stays Tested when its label goes", %{
+      send_labels: send_labels,
+      issue: %Issue{id: issue_id} = issue
+    } do
+      {:ok, _sent} = issue |> Ecto.Changeset.change(testing_state: :sent_to_triage) |> Repo.update()
+
+      assert {:ok, %Issue{id: ^issue_id, testing_state: :sent_to_triage}} =
+               send_labels.("update", "lin_lbl_1", ["Technical"])
+
+      {:ok, %Issue{id: tested_id, testing_state: :tested}} = send_labels.("create", "lin_lbl_5", ["Test done"])
+
+      assert {:ok, %Issue{id: ^tested_id, testing_state: :tested}} = send_labels.("update", "lin_lbl_5", [])
+    end
+  end
 end
