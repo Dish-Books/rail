@@ -24,11 +24,26 @@ defmodule RailWeb.AuthHTML do
           {Phoenix.Flash.get(@flash, :error)}
         </p>
 
-        <p class="text-sm text-slate-500 dark:text-slate-400" id="auth-denied-help">
+        <p :if={!@access?} class="text-sm text-slate-500 dark:text-slate-400" id="auth-denied-help">
           Rail is invite only. An admin invites the email address on your GitHub account, then you sign in.
         </p>
 
-        <.button href={~p"/auth/github"} variant="primary" id="auth-denied-retry">Try again</.button>
+        <p :if={@access?} class="text-sm text-slate-500 dark:text-slate-400" id="auth-denied-help">
+          Rail is invite only. Ask an admin to invite this address, or sign out of Cloudflare Access and use the address you were invited with.
+        </p>
+
+        <.button :if={!@access?} href={~p"/auth/github"} variant="primary" id="auth-denied-retry">
+          Try again
+        </.button>
+
+        <div :if={@access?} class="flex items-center justify-center gap-3">
+          <.button href="/cdn-cgi/access/logout" variant="primary" id="auth-denied-other-address">
+            Use another address
+          </.button>
+          <.button href={~p"/auth/github"} variant="secondary" id="auth-denied-github">
+            <.icon name="pi-github-logo" class="size-4" /> Sign in with GitHub
+          </.button>
+        </div>
       </div>
     </div>
     """

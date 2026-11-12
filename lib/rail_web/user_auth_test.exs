@@ -105,6 +105,17 @@ defmodule RailWeb.UserAuthTest do
       refute Users.get_user_by_session_token(user_token)
     end
 
+    test "under Access, also ends the Cloudflare Access session", %{conn: conn, user: user} do
+      stub(Rail, :cloudflare_access, fn -> %{team_domain: "team.cloudflareaccess.com", aud: "rail-aud"} end)
+      user_token = Users.generate_user_session_token(user)
+
+      conn = conn |> put_session(:user_token, user_token) |> UserAuth.log_out_user()
+
+      assert redirected_to(conn) == "/cdn-cgi/access/logout"
+      refute get_session(conn, :user_token)
+      refute Users.get_user_by_session_token(user_token)
+    end
+
     test "broadcasts to live_socket_id on logout", %{conn: conn, user: user} do
       user_token = Users.generate_user_session_token(user)
       live_socket_id = "users_sessions:#{Base.url_encode64(user_token)}"

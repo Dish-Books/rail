@@ -56,6 +56,7 @@ Dev loads `.env` from the checkout root (and mise loads it into the shell). None
 | `GITHUB_APP_PRIVATE_KEY` | a path to the App's `.pem`, or the PEM itself | the same |
 | `GITHUB_WEBHOOK_SECRET` | the secret set on the App's webhook | GitHub-tracked projects hearing about changes made on GitHub |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | an OAuth App's credentials | signing in with GitHub (not needed with `/dev/login`) |
+| `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` | the Access team's bare host, such as `team.cloudflareaccess.com`, and the Access application's audience tag | signing in through Cloudflare Access; both or neither |
 | `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET` | Linear OAuth | Linear-tracked projects only |
 | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | Slack OAuth | triage from Slack only |
 | `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | the Cloudflare account id, a private R2 bucket and an R2 API token's keys | screenshots and demo videos on Rail-tracked projects |
@@ -76,6 +77,7 @@ Dev loads `.env` from the checkout root (and mise loads it into the shell). None
 
 - Dev only: `http://localhost:${PORT:-4000}/dev/login` signs in as an admin, `qa-admin@rail.local`. `/dev/login/<email>` signs in as that email instead. Use your GitHub email, so a later GitHub sign-in becomes the same user rather than being refused as uninvited.
 - GitHub: needs the OAuth App from `docs/org-setup.md`, with callback `http://localhost:${PORT:-4000}/auth/github/callback`. The first account through an empty instance becomes its admin; everyone after needs an invite.
+- Cloudflare Access: with `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` set, Rail signs in the email Access vouches for, under the same invites, and sign-out ends the Access session too. The Access application covers Rail's whole hostname and bypasses `/webhooks/*` and `/_health`, so Linear and GitHub webhooks and the health check still arrive. Developers then connect GitHub from Settings > Connected accounts.
 
 ## 9. An account for the agents
 

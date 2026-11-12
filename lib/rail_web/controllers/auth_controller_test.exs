@@ -147,6 +147,90 @@ defmodule RailWeb.AuthControllerTest do
     end
   end
 
+  describe "callback/2 while signed in" do
+    setup %{auth: auth} do
+      {:ok, tester} =
+        Users.register_oauth_user(%{github_id: "gh_linking", login: "linking", email: "luis@dishbooks.com"})
+
+      {:ok, tester} = Users.unlink_github(Scope.for_user(tester))
+      %{tester: tester, auth: auth}
+    end
+
+    test "connects GitHub to the account instead of signing in, and returns to Connected accounts", %{
+      conn: conn,
+      tester: %User{id: tester_id} = tester,
+      auth: auth
+    } do
+      conn =
+        conn
+        |> assign(:current_scope, Scope.for_user(tester))
+        |> assign(:ueberauth_auth, auth)
+        |> AuthController.callback(%{})
+
+      assert redirected_to(conn) == ~p"/settings/connected-accounts"
+      refute Phoenix.Flash.get(conn.assigns.flash, :github_error)
+      refute get_session(conn, :user_token)
+
+      assert {:ok, %User{id: ^tester_id, github_id: "55555", login: "gh_controller_user", email: "luis@dishbooks.com"}} =
+               Users.get_user(id: tester_id)
+    end
+
+    test "refuses a GitHub account on another Rail account, naming both", %{conn: conn, tester: tester, auth: auth} do
+      {:ok, _priya} =
+        Users.register_oauth_user(%{github_id: "55555", login: "priyar", name: "Priya Raman", email: "priya@x.io"})
+
+      conn =
+        conn
+        |> assign(:current_scope, Scope.for_user(tester))
+        |> assign(:ueberauth_auth, auth)
+        |> AuthController.callback(%{})
+
+      assert redirected_to(conn) == ~p"/settings/connected-accounts"
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :github_error) ==
+               "That GitHub account, priyar, is already connected to Priya Raman's Rail account. Nothing changed."
+
+      assert %User{github_id: nil} = Repo.reload!(tester)
+    end
+
+    test "refuses a second GitHub account, and a profile it cannot save", %{conn: conn, tester: tester, auth: auth} do
+      {:ok, linked} =
+        Users.link_github(Scope.for_user(tester), %{auth | uid: "44444", info: %{auth.info | nickname: "first"}})
+
+      conn =
+        conn
+        |> assign(:current_scope, Scope.for_user(linked))
+        |> assign(:ueberauth_auth, auth)
+        |> AuthController.callback(%{})
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :github_error) =~ "connected to GitHub as first. Disconnect it"
+
+      {:ok, newcomer} = Users.register_oauth_user(%{github_id: "gh_newcomer", login: "newcomer", email: "new@x.io"})
+      {:ok, newcomer} = Users.unlink_github(Scope.for_user(newcomer))
+
+      conn =
+        build_conn()
+        |> init_test_session(%{})
+        |> fetch_flash()
+        |> assign(:current_scope, Scope.for_user(newcomer))
+        |> assign(:ueberauth_auth, %{auth | uid: "66666", info: %{auth.info | nickname: nil, name: nil}})
+        |> AuthController.callback(%{})
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :github_error) == "Could not connect GitHub. Nothing changed."
+    end
+
+    test "a cancelled or failed GitHub step leaves them signed in, on Connected accounts", %{conn: conn, tester: tester} do
+      conn =
+        conn
+        |> assign(:current_scope, Scope.for_user(tester))
+        |> assign(:ueberauth_failure, %Ueberauth.Failure{})
+        |> AuthController.callback(%{})
+
+      assert redirected_to(conn) == ~p"/settings/connected-accounts"
+      assert Phoenix.Flash.get(conn.assigns.flash, :github_error) == "GitHub did not finish connecting. Nothing changed."
+    end
+  end
+
   describe "denied/2" do
     test "renders the denied page without a session", %{conn: conn} do
       conn = get(conn, ~p"/auth/denied")
@@ -157,6 +241,22 @@ defmodule RailWeb.AuthControllerTest do
                conn |> html_response(200) |> Floki.parse_document!() |> Floki.attribute("#auth-denied", "class")
 
       assert "min-h-dvh" in String.split(class)
+    end
+
+    test "under Access, offers another address through Cloudflare's logout, or GitHub" do
+      stub(Rail, :cloudflare_access, fn -> %{team_domain: "team.cloudflareaccess.com", aud: "rail-aud"} end)
+
+      html =
+        build_conn()
+        |> init_test_session(%{"phoenix_flash" => %{"error" => "luis@gmail.com has not been invited to Rail."}})
+        |> get(~p"/auth/denied")
+        |> html_response(200)
+
+      assert html =~ "luis@gmail.com has not been invited to Rail."
+      assert html =~ "sign out of Cloudflare Access and use the address you were invited with"
+      assert html =~ ~s(href="/cdn-cgi/access/logout")
+      assert html =~ ~s(href="/auth/github")
+      refute html =~ "auth-denied-retry"
     end
 
     test "shows the reason the sign-in was refused" do

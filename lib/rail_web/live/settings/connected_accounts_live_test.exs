@@ -51,7 +51,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
              live(conn, ~p"/settings/connected-accounts")
   end
 
-  test "renders GitHub section and disconnected Linear section when not linked", %{
+  test "opens on the signed-in account, with GitHub connected first among the services", %{
     authed_conn: conn,
     user: user
   } do
@@ -63,20 +63,97 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
 
     assert html =~ "Connected Accounts"
     assert html =~ "Manage third-party services connected to your account"
-    assert html =~ "GitHub"
-    assert html =~ user.login
-    assert html =~ user.name
-    assert html =~ user.email
-    assert has_element?(view, "#github-avatar")
+    assert has_element?(view, "#account-section #account-name", user.name)
+    assert has_element?(view, "#account-section #account-email", user.email)
+    assert has_element?(view, "#account-avatar")
+    assert has_element?(view, "#account-sign-out-button[href='/auth/logout']")
+    # Without Access set up, the page does not claim Access signed them in.
+    refute has_element?(view, "#account-access")
+    assert has_element?(view, "#github-account-section #github-login", user.login)
+    assert has_element?(view, "#reconnect-github-button[href='/auth/github']")
+    assert has_element?(view, "#disconnect-github-button")
+    refute has_element?(view, "#connect-github-button")
     assert html =~ "issues and comments go out as the workspace"
     assert has_element?(view, "#connect-linear-button")
     refute has_element?(view, "#disconnect-linear-button")
   end
 
-  test "renders GitHub placeholder avatar when avatar_url is missing", %{conn: conn} do
+  test "says Cloudflare Access signed them in when Access is set up", %{authed_conn: conn} do
+    stub(Rail, :cloudflare_access, fn -> %{team_domain: "team.cloudflareaccess.com", aud: "aud-tag"} end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+
+    assert has_element?(view, "#account-access", "signed in through Cloudflare Access")
+  end
+
+  test "someone without GitHub sees it not connected, and the row flips when it is linked in another tab", %{
+    authed_conn: conn,
+    user: user
+  } do
+    {:ok, user} = Users.unlink_github(Scope.for_user(user))
+    assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+
+    assert has_element?(view, "#github-disconnected-message", "you cannot approve or merge tasks")
+    assert has_element?(view, "#connect-github-button[href='/auth/github']")
+    refute has_element?(view, "#capability-commit-signing")
+    refute has_element?(view, "#capability-repositories")
+    # Initials come from the name, and a disconnected user still has one.
+    assert has_element?(view, "#account-name", user.name)
+
+    auth = %Ueberauth.Auth{
+      uid: "linked_#{user.id}",
+      info: %Ueberauth.Auth.Info{nickname: "linked-#{user.id}", name: "Linked Name"},
+      credentials: %Ueberauth.Auth.Credentials{token: "gho_linked"}
+    }
+
+    {:ok, _linked} = Users.link_github(Scope.for_user(user), auth)
+
+    eventually(fn ->
+      assert has_element?(view, "#github-login", "linked-#{user.id}")
+      assert has_element?(view, "#disconnect-github-button")
+      refute has_element?(view, "#connect-github-button")
+    end)
+  end
+
+  test "Disconnect takes the signing key off GitHub and leaves them signed in without GitHub", %{
+    authed_conn: conn,
+    user: user
+  } do
+    {:ok, _keyed} =
+      Users.update_user(system_scope(), user, %{
+        github_token: "gho_user_token",
+        github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z],
+        signing_key: "private",
+        signing_public_key: "ssh-ed25519 AAAA rail",
+        signing_key_github_id: 4711
+      })
+
+    Req.Test.expect(Client, fn %{method: "DELETE", request_path: "/user/ssh_signing_keys/4711"} = req_conn ->
+      Plug.Conn.send_resp(req_conn, 204, "")
+    end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+    view |> element("#disconnect-github-button") |> render_click()
+
+    assert has_element?(view, "#connect-github-button")
+    assert has_element?(view, "#account-name", user.name)
+    assert %User{github_id: nil, login: nil, github_token: nil, signing_key: nil} = Repo.reload!(user)
+  end
+
+  test "a refused GitHub connection shows under the GitHub row, not as a toast", %{authed_conn: conn} do
+    message = "That GitHub account, priyar, is already connected to Priya Raman's Rail account. Nothing changed."
+    conn = put_session(conn, "phoenix_flash", %{"github_error" => message})
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+
+    assert has_element?(view, "#github-account-section #github-error[role='alert']", message)
+    refute has_element?(view, "#flash-github_error")
+  end
+
+  test "renders a placeholder avatar when avatar_url is missing", %{conn: conn} do
     id = System.unique_integer([:positive])
 
-    assert {:ok, %User{} = user_no_avatar} =
+    assert {:ok, %User{email: no_avatar_email} = user_no_avatar} =
              Users.register_oauth_user(%{
                github_id: "no_avatar_gh_#{id}",
                login: "no_avatar_#{id}",
@@ -95,16 +172,23 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/connected-accounts")
 
     # A user with no name falls back to the initial of their login.
-    assert has_element?(view, "#github-avatar-placeholder", "N")
+    assert has_element?(view, "#account-avatar-placeholder", "N")
+    assert has_element?(view, "#repository-access", "No repositories yet.")
+
+    # And with neither name nor login once GitHub is gone, to their email's.
+    {:ok, _unlinked} = Users.unlink_github(Scope.for_user(user_no_avatar))
+    assert {:ok, view, _html} = live(authed_conn, ~p"/settings/connected-accounts")
+    assert has_element?(view, "#account-name", no_avatar_email)
+    assert has_element?(view, "#account-avatar-placeholder", "N")
   end
 
-  test "counts the repositories Rail can reach as the projects the user can access", %{
+  test "lists the repositories Rail can reach as the projects the user can access", %{
     authed_conn: conn,
     user: user,
     project: project
   } do
     assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
-    assert has_element?(view, "#capability-repositories", "Read and write on 1 repository.")
+    assert has_element?(view, "#repository-access", project.github_repo)
 
     {:ok, second} =
       Projects.create_project(system_scope(), %{
@@ -117,12 +201,13 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
       })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
-    assert has_element?(view, "#capability-repositories", "Read and write on 1 repository.")
+    refute has_element?(view, "#repository-access", "org/second-project")
 
     {:ok, _user} = Users.update_user(system_scope(), user, %{project_ids: [project.id, second.id]})
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
-    assert has_element?(view, "#capability-repositories", "Read and write on 2 repositories.")
+    assert has_element?(view, "#repository-access", project.github_repo)
+    assert has_element?(view, "#repository-access", "org/second-project")
   end
 
   test "renders connected Linear section when user is linked", %{
@@ -307,12 +392,12 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
       assert has_element?(view, "[data-qa='commit_signing_error']", "SSH signing keys permission")
     end
 
-    test "says to sign in again when Rail holds no GitHub token", %{authed_conn: conn} do
+    test "says to reconnect GitHub when Rail holds no GitHub token", %{authed_conn: conn} do
       assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
 
       view |> element("#set-up-signing-button") |> render_click()
 
-      assert has_element?(view, "[data-qa='commit_signing_error']", "Sign in with GitHub again")
+      assert has_element?(view, "[data-qa='commit_signing_error']", "Reconnect GitHub")
     end
 
     test "says what came back when GitHub refused the key outright", %{authed_conn: conn, user: user} do
@@ -355,7 +440,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
       assert %User{signing_key: nil} = Repo.reload!(user)
     end
 
-    test "removing a key GitHub will not take the token for says to sign in again, and keeps the key", %{
+    test "removing a key GitHub will not take the token for says to reconnect GitHub, and keeps the key", %{
       authed_conn: conn,
       user: user
     } do
@@ -378,7 +463,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
 
       view |> element("#remove-signing-button") |> render_click()
 
-      assert has_element?(view, "[data-qa='commit_signing_error']", "Sign in with GitHub again")
+      assert has_element?(view, "[data-qa='commit_signing_error']", "Reconnect GitHub")
       assert has_element?(view, "#remove-signing-button")
       assert %User{signing_key_github_id: 4711} = Repo.reload!(user)
     end

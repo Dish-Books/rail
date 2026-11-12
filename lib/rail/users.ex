@@ -7,6 +7,7 @@ defmodule Rail.Users do
 
   defdelegate register_oauth_user(attrs), to: Actions.RegisterOAuthUser
   defdelegate sign_in_oauth_user(auth), to: Actions.SignInOAuthUser
+  defdelegate sign_in_access_user(assertion), to: Actions.SignInAccessUser
   defdelegate get_user_by_session_token(token), to: Actions.GetUserBySessionToken
   defdelegate generate_user_session_token(user), to: Actions.GenerateUserSessionToken
   defdelegate delete_user_session_token(token), to: Actions.DeleteUserSessionToken
@@ -36,6 +37,8 @@ defmodule Rail.Users do
   defdelegate delete_signing_key(scope), to: Actions.DeleteSigningKey
 
   defdelegate github_token(scope), to: Actions.GitHubToken
+  defdelegate link_github(scope, auth), to: Actions.LinkGitHub
+  defdelegate unlink_github(scope), to: Actions.UnlinkGitHub
 
   defdelegate linear_token(scope), to: Actions.LinearToken
   defdelegate link_linear(scope, code), to: Actions.LinkLinear

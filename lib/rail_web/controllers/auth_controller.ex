@@ -1,13 +1,23 @@
 defmodule RailWeb.AuthController do
   use RailWeb, :controller
 
+  alias Rail.Scope
   alias Rail.Users
+  alias Rail.Users.Schemas.User
   alias RailWeb.UserAuth
 
   plug Ueberauth when action in [:request, :callback]
 
   def request(conn, _params) do
     conn
+  end
+
+  # Someone already signed in is connecting GitHub from Connected accounts, not signing in.
+  def callback(%{assigns: %{current_scope: %Scope{user: %User{}} = scope}} = conn, _params) do
+    case conn.assigns do
+      %{ueberauth_auth: auth} -> link_github(conn, scope, auth)
+      _failed_or_cancelled -> github_error(conn, "GitHub did not finish connecting. Nothing changed.")
+    end
   end
 
   def callback(%{assigns: %{ueberauth_failure: _failure}} = conn, _params) do
@@ -35,11 +45,39 @@ defmodule RailWeb.AuthController do
   end
 
   def denied(conn, _params) do
-    render(conn, :denied)
+    render(conn, :denied, access?: Rail.cloudflare_access() != nil)
   end
 
   def delete(conn, _params) do
     UserAuth.log_out_user(conn)
+  end
+
+  defp link_github(conn, %Scope{} = scope, auth) do
+    case Users.link_github(scope, auth) do
+      {:ok, _user} ->
+        redirect(conn, to: ~p"/settings/connected-accounts")
+
+      {:error, {:github_taken, %User{} = holder}} ->
+        github_error(
+          conn,
+          "That GitHub account, #{holder.login}, is already connected to #{holder.name || holder.email}'s Rail account. Nothing changed."
+        )
+
+      {:error, {:github_already_linked, %User{} = user}} ->
+        github_error(
+          conn,
+          "Your Rail account is connected to GitHub as #{user.login}. Disconnect it to connect another. Nothing changed."
+        )
+
+      {:error, _reason} ->
+        github_error(conn, "Could not connect GitHub. Nothing changed.")
+    end
+  end
+
+  defp github_error(conn, message) do
+    conn
+    |> put_flash(:github_error, message)
+    |> redirect(to: ~p"/settings/connected-accounts")
   end
 
   # Every authenticated route bounces an anonymous visitor back to /auth/github, so a

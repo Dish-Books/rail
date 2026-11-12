@@ -22,6 +22,12 @@ config :rail, Rail.Vault,
     aes_gcm: {Cloak.Ciphers.AES.GCM, tag: "AES.GCM.V1", key: Base.decode64!(cloak_key), iv_length: 12}
   ]
 
+# Access signs people in when both are set: the team's bare host, such as `team.cloudflareaccess.com`,
+# and the application's audience tag.
+config :rail, :cloudflare_access,
+  team_domain: get_env.("CF_ACCESS_TEAM_DOMAIN", nil),
+  aud: get_env.("CF_ACCESS_AUD", nil)
+
 config :rail, :git,
   bot_name: "Rail",
   bot_email: "rail[bot]@railai.dev"

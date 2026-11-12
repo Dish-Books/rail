@@ -77,6 +77,18 @@ defmodule Rail.Issues.Actions.ClaimIssueTest do
     assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: issue.id})
   end
 
+  test "someone without GitHub cannot own a GitHub issue, and nothing is sent to GitHub", %{github_project: project} do
+    {:ok, user} =
+      Users.register_oauth_user(%{github_id: "gh_tester_claim", login: "tester-claim", email: "tester-claim@example.com"})
+
+    {:ok, user} = Users.unlink_github(Scope.for_user(user))
+    issue = github_issue(project)
+
+    assert {:error, :github_not_linked} = Issues.claim_issue(Scope.for_user(user), issue)
+    assert %Issue{owner_user_id: nil} = Repo.reload!(issue)
+    refute_enqueued(worker: AdvanceTrackerState, args: %{issue_id: issue.id})
+  end
+
   test "a user the issue's tracker cannot take as owner is told why, and nothing changes", %{github_project: project} do
     {:ok, user} = Users.register_oauth_user(%{github_id: "gh_refused", login: "refused", email: "refused@example.com"})
     issue = github_issue(project)

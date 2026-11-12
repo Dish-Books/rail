@@ -538,7 +538,28 @@ defmodule RailWeb.Live.TaskActionsTest do
     end)
   end
 
-  test "a tech lead with no GitHub token who approves or merges is told to sign in again, and both buttons stay", %{
+  test "a tech lead who never connected GitHub is told to connect it when approving, and nothing is sent", %{
+    conn: conn,
+    task: task,
+    dan: dan,
+    michael: michael
+  } do
+    {:ok, _marked} = Pipeline.mark_ready(Scope.for_user(dan), task)
+    {:ok, michael} = Users.unlink_github(Scope.for_user(michael))
+    assert {:ok, view, _html} = live(log_in_user(conn, michael), ~p"/tasks/#{task.id}")
+
+    view |> element("#task-approve") |> render_click()
+
+    eventually(fn ->
+      assert has_element?(
+               view,
+               "#task-actions-error[role='alert']",
+               "Connect GitHub in Connected accounts to approve. Nothing was sent."
+             )
+    end)
+  end
+
+  test "a tech lead whose GitHub sign-in lapsed who approves or merges is told to connect it, and both buttons stay", %{
     conn: conn,
     task: task,
     dan: dan,
@@ -553,7 +574,7 @@ defmodule RailWeb.Live.TaskActionsTest do
       assert has_element?(
                view,
                "#task-actions-error[role='alert']",
-               "Sign in with GitHub again to approve. Nothing was sent."
+               "Connect GitHub in Connected accounts to approve. Nothing was sent."
              )
 
       assert has_element?(view, "#task-approve:not([disabled])")
@@ -562,7 +583,7 @@ defmodule RailWeb.Live.TaskActionsTest do
     view |> element("#task-merge") |> render_click()
 
     eventually(fn ->
-      assert has_element?(view, "#task-actions-error", "Sign in with GitHub again to merge. Nothing was sent.")
+      assert has_element?(view, "#task-actions-error", "Connect GitHub in Connected accounts to merge. Nothing was sent.")
       assert has_element?(view, "#task-merge:not([disabled])")
     end)
   end
