@@ -290,7 +290,7 @@ defmodule Rail.Linear.Client do
 
   @doc """
   Fetches one page of every cycle of the team, archived ones included and with no date limit, each with its daily
-  history and the issues it left unfinished when it closed. Pass `after:` the previous page's `endCursor` to continue.
+  history, when Linear completed it and what it left unfinished. Pass `after:` the previous page's `endCursor` to continue.
   """
   def export_cycles(%Project{} = project, opts \\ []) do
     query = """
@@ -302,6 +302,7 @@ defmodule Rail.Linear.Client do
             number
             startsAt
             endsAt
+            completedAt
             scopeHistory
             inProgressScopeHistory
             completedScopeHistory

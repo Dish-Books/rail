@@ -133,11 +133,13 @@ defmodule Rail.Issues.Workers.MoveToLocalTracker do
           uniq: true,
           do: {external_id, url}
 
+    identifiers = Map.new(linear.issues, &{&1["id"], &1["identifier"]})
+
     Enum.reduce_while(pairs, {:ok, %{}}, fn {external_id, url} = pair, {:ok, files} ->
       case copy_file(project, Map.fetch!(ids, external_id), url) do
         {:ok, copied} -> {:cont, {:ok, Map.put(files, pair, copied)}}
         :gone -> {:cont, {:ok, files}}
-        {:error, reason} -> {:halt, {:error, {:copying_files, reason}}}
+        {:error, reason} -> {:halt, {:error, {:copying_files, {:file, identifiers[external_id], url, reason}}}}
       end
     end)
   end
@@ -202,6 +204,7 @@ defmodule Rail.Issues.Workers.MoveToLocalTracker do
           external_id: node["id"],
           node: node,
           number: trunc(node["number"]),
+          completed?: node["completedAt"] != nil,
           starts_on: node["startsAt"] |> DateTime.from_iso8601() |> elem(1) |> DateTime.to_date(),
           ends_on: node["endsAt"] |> DateTime.from_iso8601() |> elem(1) |> DateTime.to_date() |> Date.add(-1)
         }
@@ -288,14 +291,18 @@ defmodule Rail.Issues.Workers.MoveToLocalTracker do
     |> Map.new(&{&1.external_id, &1.id})
   end
 
-  # Every finished day, through yesterday, so the nightly run has no gap to fill and no ended cycle to close again. A day
-  # past Linear's history repeats its last value.
+  # Every finished day through yesterday, but a past cycle Linear has not completed leaves its last day to the nightly
+  # run, which then closes it. A day past Linear's history repeats its last value.
   defp insert_cycle_days(cycles, today) do
     last_day = Date.add(today, -1)
 
     rows =
       for cycle <- cycles,
-          last = Enum.min([cycle.ends_on, last_day], Date),
+          last =
+            if(Date.before?(cycle.ends_on, today) and not cycle.completed?,
+              do: Date.add(cycle.ends_on, -1),
+              else: Enum.min([cycle.ends_on, last_day], Date)
+            ),
           not Date.after?(cycle.starts_on, last),
           {day, index} <- Enum.with_index(Date.range(cycle.starts_on, last)) do
         completed = history_at(cycle.node["completedScopeHistory"], index)
@@ -314,10 +321,14 @@ defmodule Rail.Issues.Workers.MoveToLocalTracker do
     insert_chunks(CycleDay, rows, [])
   end
 
-  # What Rail's own close writes: the tickets the cycle still holds, as they stand, and those Linear left unfinished
-  # when it closed, as Todo.
+  # What Rail's own close writes for each cycle Linear has completed: the tickets it still holds, as they stand, and
+  # those Linear left unfinished when it closed, as Todo.
   defp insert_closed_cycle_issues(%Project{id: project_id}, cycles, issues, %{ids: ids, today: today} = moved) do
-    ended = for cycle <- cycles, Date.before?(cycle.ends_on, today), into: %{}, do: {cycle.external_id, cycle}
+    ended =
+      for cycle <- cycles,
+          cycle.completed? and Date.before?(cycle.ends_on, today),
+          into: %{},
+          do: {cycle.external_id, cycle}
 
     held =
       for issue <- issues,
@@ -537,6 +548,11 @@ defmodule Rail.Issues.Workers.MoveToLocalTracker do
     Phoenix.PubSub.broadcast(Rail.PubSub, "projects", {:project_changed, project_id})
     {:error, sentence}
   end
+
+  defp calculate_failure(_step, {:file, identifier, url, {:linear_api_error, status, _body}}),
+    do: "Linear answered #{status} for a file on #{identifier} (#{url}), so nothing was written."
+
+  defp calculate_failure(step, {:file, _identifier, _url, reason}), do: calculate_failure(step, reason)
 
   defp calculate_failure(step, {:linear_api_error, status, _body}),
     do: "Linear answered #{status} while #{step}, so nothing was written."

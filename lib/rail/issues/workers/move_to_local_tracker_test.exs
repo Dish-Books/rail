@@ -206,6 +206,7 @@ defmodule Rail.Issues.Workers.MoveToLocalTrackerTest do
 
     cycles = [
       cycle.(40, "2026-10-26", "2026-11-02", %{
+        "completedAt" => "2026-11-02T00:00:00.000Z",
         "scopeHistory" => [3.0, 5.0, 5.0],
         "inProgressScopeHistory" => [0.0, 3.0],
         "completedScopeHistory" => [0.0, 0.0, 2.0],
@@ -420,6 +421,34 @@ defmodule Rail.Issues.Workers.MoveToLocalTrackerTest do
     assert Repo.aggregate(from(c in ClosedCycleIssue, where: c.cycle_id == ^cycle_40), :count) == 3
   end
 
+  test "a cycle Linear has not closed yet is left for the nightly run to close and roll over", %{
+    project: %Project{id: project_id} = project
+  } do
+    stub(Date, :utc_today, fn -> ~D[2026-11-16] end)
+    {:ok, _job} = Issues.move_to_local_tracker(user_scope(admin: true), project)
+
+    assert %{success: 1} = Oban.drain_queue(queue: :issues)
+
+    %Cycle{id: cycle_41} = Repo.get_by!(Cycle, project_id: project_id, number: 41)
+    %Cycle{id: cycle_42} = Repo.get_by!(Cycle, project_id: project_id, number: 42)
+    %Issue{id: second_id} = Repo.get_by!(Issue, external_id: "lin_2")
+
+    refute Repo.exists?(from(c in ClosedCycleIssue, where: c.cycle_id == ^cycle_41))
+
+    assert ~D[2026-11-14] =
+             Repo.one(from(d in CycleDay, where: d.cycle_id == ^cycle_41, select: max(d.day)))
+
+    assert :ok = Issues.close_cycle_day(~D[2026-11-17])
+
+    assert ~D[2026-11-15] =
+             Repo.one(from(d in CycleDay, where: d.cycle_id == ^cycle_41, select: max(d.day)))
+
+    assert [{^second_id, :todo}] =
+             Repo.all(from(c in ClosedCycleIssue, where: c.cycle_id == ^cycle_41, select: {c.issue_id, c.state}))
+
+    assert %Issue{cycle_external_id: ^cycle_42} = Repo.get!(Issue, second_id)
+  end
+
   test "moves blockers and links, and the next ticket filed is numbered one past the highest", %{
     project: %Project{id: project_id} = project,
     existing: %Issue{id: existing_id},
@@ -480,8 +509,12 @@ defmodule Rail.Issues.Workers.MoveToLocalTrackerTest do
 
     assert %{discard: 1} = Oban.drain_queue(queue: :issues)
 
-    assert %Oban.Job{meta: %{"failure" => "Linear answered 403 while copying files, so nothing was written."}} =
-             Repo.get!(Oban.Job, job_id)
+    assert %Oban.Job{
+             meta: %{
+               "failure" =>
+                 "Linear answered 403 for a file on MVW-1 (https://uploads.linear.app/org/a1/shot.png), so nothing was written."
+             }
+           } = Repo.get!(Oban.Job, job_id)
 
     assert %Project{tracker: :linear} = Repo.get!(Project, project_id)
   end

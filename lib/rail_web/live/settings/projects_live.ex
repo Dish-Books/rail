@@ -144,7 +144,7 @@ defmodule RailWeb.Settings.ProjectsLive do
                     <span
                       :if={@move_rows[project.id].show_moving}
                       role="status"
-                      class="inline-flex items-center gap-1.5 rounded-md bg-blue-50 dark:bg-blue-400/10 px-2 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 ring-1 ring-inset ring-blue-600/20 dark:ring-blue-400/30"
+                      class="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md bg-blue-50 dark:bg-blue-400/10 px-2 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 ring-1 ring-inset ring-blue-600/20 dark:ring-blue-400/30"
                       id={"project-moving-#{project.id}"}
                     >
                       <.icon name="pi-circle-notch-bold" class="size-3.5 motion-safe:animate-spin" />

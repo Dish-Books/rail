@@ -361,6 +361,7 @@ defmodule Rail.Linear.ClientTest do
 
         assert query =~ "cycles(first: $first, after: $after, includeArchived: true)"
         refute query =~ "endsAt: {gt"
+        assert query =~ "completedAt"
         assert query =~ "inProgressScopeHistory"
         assert query =~ "uncompletedIssuesUponClose(first: 250, includeArchived: true)"
         Req.Test.json(conn, %{"data" => page})
