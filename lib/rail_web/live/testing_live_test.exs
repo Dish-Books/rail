@@ -459,6 +459,47 @@ defmodule RailWeb.TestingLiveTest do
     refute has_element?(view, "#issue-cycle")
   end
 
+  test "a Linear ticket labeled Test done in Linear leaves an open queue and reads Tested, its notes kept", %{
+    conn: conn,
+    done: done,
+    here: here,
+    project: project,
+    user: user
+  } do
+    {:ok, _user} = Users.update_user(system_scope(), user, %{project_ids: [here.id, project.id]})
+    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+    open = done.(here, "Still to test")
+
+    label = fn labels ->
+      Issues.handle_linear_webhook(workspace, %{
+        "type" => "Issue",
+        "action" => "update",
+        "data" => %{
+          "id" => "lin_tl_label",
+          "teamId" => project.linear_team_id,
+          "identifier" => "TLL-1",
+          "title" => "Checked before merge",
+          "state" => %{"id" => "st_done", "name" => "Done", "type" => "completed"},
+          "labels" => Enum.map(labels, &%{"id" => "lbl_#{&1}", "name" => &1})
+        }
+      })
+    end
+
+    {:ok, linear} = label.([])
+    {:ok, _noted} = Issues.save_testing_notes(system_scope(), linear, "Looked at the merge")
+    {:ok, view, _html} = live(conn, ~p"/testing/#{open.id}")
+    assert has_element?(view, "#testing-row-#{linear.id} [data-testing-state='testing']")
+
+    {:ok, _tested} = label.(["Test done"])
+
+    refute has_element?(view, "#testing-row-#{linear.id}")
+    assert has_element?(view, "#testing-bar", open.identifier)
+    assert %Issue{testing_state: :tested, testing_notes: "Looked at the merge"} = Repo.get!(Issue, linear.id)
+
+    {:ok, view, _html} = live(conn, ~p"/issues/#{linear.identifier}")
+    assert has_element?(view, "#issue-testing [data-testing-state='tested']", "Tested")
+  end
+
   test "an action on a ticket another tab already finished says so and changes nothing", %{
     conn: conn,
     done: done,
