@@ -80,10 +80,10 @@ defmodule Rail.Issues.Workers.LinearSync do
     end
   end
 
-  # Under the project's lock, which the move into Rail takes too, so a page never writes Linear's fields over a moved
-  # ticket.
+  # The move into Rail takes FOR UPDATE, which waits on this, so a page never writes over a moved ticket. Not FOR UPDATE
+  # here: it conflicts with the KEY SHARE an issue insert holds, and two syncs deadlocked upgrading to it.
   defp write_page(%Project{id: project_id} = project, nodes) do
-    case Repo.one!(from(p in Project, where: p.id == ^project_id, lock: "FOR UPDATE", select: p.tracker)) do
+    case Repo.one!(from(p in Project, where: p.id == ^project_id, lock: "FOR NO KEY UPDATE", select: p.tracker)) do
       :linear -> upsert(project, nodes)
       _moved -> :left_linear
     end
