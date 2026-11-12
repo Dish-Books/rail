@@ -48,14 +48,12 @@ defmodule Rail.Users.Actions.SignInAccessUser do
         when is_integer(exp) and exp > now and email != "" ->
           aud in List.wrap(auds) && email
 
+        # A forged token, or a string that is not a token at all, which JOSE answers with an error.
         _refused ->
           nil
       end
     end)
     |> then(&if(&1, do: {:ok, &1}, else: {:error, :invalid_assertion}))
-  rescue
-    # JOSE raises on a string that is not a token at all, which is refused like a forged one.
-    _malformed -> {:error, :invalid_assertion}
   end
 
   # A returning person is left as they are; a new one has only the email to be named by.

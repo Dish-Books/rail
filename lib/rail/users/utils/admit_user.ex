@@ -41,7 +41,7 @@ defmodule Rail.Users.Utils.AdmitUser do
     user
   end
 
-  defp promote(%User{admin: true} = user), do: user
+  # Only ever a user just created, who is not an admin yet.
   defp promote(%User{} = user), do: user |> User.changeset(%{admin: true}) |> Repo.update!()
 
   defp blank?(value), do: is_nil(value) or value == ""
