@@ -2,6 +2,7 @@ defmodule RailWeb.Settings.ProjectsLive do
   @moduledoc false
   use RailWeb, :live_view
 
+  alias Rail.Issues
   alias Rail.Projects
   alias Rail.Projects.Schemas.EnvFile
   alias Rail.Projects.Schemas.Project
@@ -36,6 +37,9 @@ defmodule RailWeb.Settings.ProjectsLive do
       |> assign(:selected_project, nil)
       |> assign_changeset(nil)
       |> assign_env_file(nil, nil, nil)
+      |> assign(:move_project, nil)
+      |> assign(:move_error, nil)
+      |> assign_move_rows()
 
     {:ok, socket}
   end
@@ -111,77 +115,130 @@ defmodule RailWeb.Settings.ProjectsLive do
           >
             <li
               :for={project <- @projects}
-              class="p-6 flex items-center justify-between gap-6 hover:bg-slate-100 dark:hover:bg-slate-700"
+              class="hover:bg-slate-100 dark:hover:bg-slate-700"
               id={"project-item-#{project.id}"}
             >
-              <div class="min-w-0 space-y-1">
-                <div class="flex items-center space-x-3">
-                  <span
-                    class="text-base font-semibold text-slate-900 dark:text-slate-100"
-                    id={"project-name-#{project.id}"}
-                  >
-                    {project.name}
-                  </span>
-                  <span
-                    :if={project.active}
-                    class="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20"
-                    id={"project-status-#{project.id}"}
-                  >
-                    Active
-                  </span>
-                  <span
-                    :if={!project.active}
-                    class="inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-700 px-2 py-1 text-xs font-medium text-slate-500 dark:text-slate-400 ring-1 ring-inset ring-zinc-500/20"
-                    id={"project-status-#{project.id}"}
-                  >
-                    Inactive
-                  </span>
-                </div>
-                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
-                  <span id={"project-repo-#{project.id}"}>
-                    Repo:
-                    <span class="font-mono text-slate-900 dark:text-slate-100">{project.github_repo}</span>
-                  </span>
-                  <span>•</span>
-                  <span id={"project-team-key-#{project.id}"}>
-                    Key:
-                    <span class="font-semibold text-slate-900 dark:text-slate-100">
-                      {project.key}
+              <div class="p-6 flex items-center justify-between gap-6">
+                <div class="min-w-0 space-y-1">
+                  <div class="flex items-center space-x-3">
+                    <span
+                      class="text-base font-semibold text-slate-900 dark:text-slate-100"
+                      id={"project-name-#{project.id}"}
+                    >
+                      {project.name}
                     </span>
-                    <span class="text-slate-500 dark:text-slate-400">({tracker_label(project.tracker)})</span>
-                  </span>
-                  <span>•</span>
-                  <span id={"project-branch-#{project.id}"}>
-                    Branch:
-                    <span class="font-mono text-slate-900 dark:text-slate-100">{project.default_branch}</span>
-                  </span>
-                  <span>•</span>
-                  <span id={"project-ci-#{project.id}"}>
-                    CI:
-                    <span class="font-mono text-slate-900 dark:text-slate-100">{ci_reservation(
-                      project
-                    )}</span>
-                  </span>
+                    <span
+                      :if={project.active}
+                      class="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20"
+                      id={"project-status-#{project.id}"}
+                    >
+                      Active
+                    </span>
+                    <span
+                      :if={!project.active}
+                      class="inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-700 px-2 py-1 text-xs font-medium text-slate-500 dark:text-slate-400 ring-1 ring-inset ring-zinc-500/20"
+                      id={"project-status-#{project.id}"}
+                    >
+                      Inactive
+                    </span>
+                    <span
+                      :if={@move_rows[project.id].show_moving}
+                      role="status"
+                      class="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md bg-blue-50 dark:bg-blue-400/10 px-2 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 ring-1 ring-inset ring-blue-600/20 dark:ring-blue-400/30"
+                      id={"project-moving-#{project.id}"}
+                    >
+                      <.icon name="pi-circle-notch-bold" class="size-3.5 motion-safe:animate-spin" />
+                      Moving to Rail
+                    </span>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+                    <span id={"project-repo-#{project.id}"}>
+                      Repo:
+                      <span class="font-mono text-slate-900 dark:text-slate-100">{project.github_repo}</span>
+                    </span>
+                    <span>•</span>
+                    <span id={"project-team-key-#{project.id}"}>
+                      Key:
+                      <span class="font-semibold text-slate-900 dark:text-slate-100">
+                        {project.key}
+                      </span>
+                      <span class="text-slate-500 dark:text-slate-400">({tracker_label(
+                        project.tracker
+                      )})</span>
+                    </span>
+                    <span>•</span>
+                    <span id={"project-branch-#{project.id}"}>
+                      Branch:
+                      <span class="font-mono text-slate-900 dark:text-slate-100">{project.default_branch}</span>
+                    </span>
+                    <span>•</span>
+                    <span id={"project-ci-#{project.id}"}>
+                      CI:
+                      <span class="font-mono text-slate-900 dark:text-slate-100">{ci_reservation(
+                        project
+                      )}</span>
+                    </span>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2 shrink-0">
+                  <.button
+                    :if={@move_rows[project.id].show_move}
+                    size="sm"
+                    phx-click="open_move"
+                    phx-value-project_id={project.id}
+                    id={"move-project-#{project.id}"}
+                  >
+                    <.icon name="pi-arrow-square-right" class="h-3.5 w-3.5" /> Move to Rail
+                  </.button>
+                  <.button
+                    size="sm"
+                    phx-click="open_env_file"
+                    phx-value-project_id={project.id}
+                    id={"env-file-project-#{project.id}"}
+                  >
+                    <.icon name="pi-key" class="h-3.5 w-3.5" /><span class="font-mono">.env</span>
+                  </.button>
+                  <.button
+                    size="sm"
+                    phx-click="edit_project"
+                    phx-value-project_id={project.id}
+                    id={"edit-project-#{project.id}"}
+                  >
+                    <.icon name="pi-pencil-simple" class="h-3.5 w-3.5" /> Edit
+                  </.button>
                 </div>
               </div>
-
-              <div class="flex items-center gap-2 shrink-0">
-                <.button
-                  size="sm"
-                  phx-click="open_env_file"
-                  phx-value-project_id={project.id}
-                  id={"env-file-project-#{project.id}"}
+              <div :if={@move_rows[project.id].stopped} class="px-6 pb-5 -mt-2">
+                <div
+                  role="alert"
+                  id={"project-move-stopped-#{project.id}"}
+                  class="flex items-start justify-between gap-4 rounded-md bg-red-50 dark:bg-red-400/10 ring-1 ring-inset ring-red-200 dark:ring-red-400/30 px-3 py-2.5 text-xs"
                 >
-                  <.icon name="pi-key" class="h-3.5 w-3.5" /><span class="font-mono">.env</span>
-                </.button>
-                <.button
-                  size="sm"
-                  phx-click="edit_project"
-                  phx-value-project_id={project.id}
-                  id={"edit-project-#{project.id}"}
-                >
-                  <.icon name="pi-pencil-simple" class="h-3.5 w-3.5" /> Edit
-                </.button>
+                  <div class="flex gap-2 min-w-0">
+                    <.icon
+                      name="pi-warning-circle-fill"
+                      class="size-4 text-red-600 dark:text-red-400"
+                    />
+                    <div class="min-w-0">
+                      <p class="font-semibold text-red-700 dark:text-red-300 break-words">
+                        The move stopped. {project.name} is still on Linear, unchanged.
+                      </p>
+                      <p class="mt-0.5 text-slate-600 dark:text-slate-300 break-words">
+                        {@move_rows[project.id].stopped}
+                      </p>
+                    </div>
+                  </div>
+                  <.button
+                    size="sm"
+                    class="shrink-0"
+                    phx-click="confirm_move"
+                    phx-value-project_id={project.id}
+                    id={"retry-move-#{project.id}"}
+                  >
+                    <.icon name="pi-arrow-clockwise" class="h-3.5 w-3.5" /> Try again
+                  </.button>
+                </div>
               </div>
             </li>
           </ul>
@@ -842,6 +899,8 @@ defmodule RailWeb.Settings.ProjectsLive do
       </div>
     </Layouts.app>
 
+    <.move_to_rail_dialog :if={@move_project} project={@move_project} error={@move_error} />
+
     <div
       :if={@env_project}
       id="env-file-overlay"
@@ -1206,6 +1265,7 @@ defmodule RailWeb.Settings.ProjectsLive do
             socket =
               socket
               |> assign(:projects, projects)
+              |> assign_move_rows()
               |> assign(:show_modal, nil)
               |> assign(:modal_title, nil)
               |> assign(:selected_project, nil)
@@ -1228,6 +1288,7 @@ defmodule RailWeb.Settings.ProjectsLive do
             socket =
               socket
               |> assign(:projects, projects)
+              |> assign_move_rows()
               |> assign(:show_modal, nil)
               |> assign(:modal_title, nil)
               |> assign(:selected_project, nil)
@@ -1299,11 +1360,46 @@ defmodule RailWeb.Settings.ProjectsLive do
     {:noreply, socket}
   end
 
+  def handle_event("open_move", %{"project_id" => project_id}, socket) do
+    socket =
+      socket
+      |> assign(:move_project, Enum.find(socket.assigns.projects, &(&1.id == project_id)))
+      |> assign(:move_error, nil)
+
+    {:noreply, socket}
+  end
+
+  def handle_event("close_move", _params, socket) do
+    socket = close_move(socket)
+    {:noreply, socket}
+  end
+
+  # Try again confirms straight from the row, with no dialog open.
+  def handle_event("confirm_move", %{"project_id" => project_id}, socket) do
+    project = Enum.find(socket.assigns.projects, &(&1.id == project_id))
+
+    socket =
+      case Issues.move_to_local_tracker(socket.assigns.current_scope, project) do
+        {:ok, %Oban.Job{}} ->
+          socket |> close_move() |> assign_move_rows()
+
+        {:error, :not_on_linear} ->
+          socket
+          |> assign(:move_project, project)
+          |> assign(:move_error, "#{project.name} is no longer on Linear. Another tab already moved it.")
+      end
+
+    {:noreply, socket}
+  end
+
   # An edit from anywhere, such as a learnings channel picked on the Learnings page, shows here too.
   def handle_info({:project_changed, project_id}, socket) do
-    if Enum.any?(socket.assigns.projects, &(&1.id == project_id)),
-      do: {:noreply, refresh_project(socket, project_id)},
-      else: {:noreply, socket}
+    socket =
+      if Enum.any?(socket.assigns.projects, &(&1.id == project_id)),
+        do: socket |> refresh_project(project_id) |> assign_move_rows(),
+        else: socket
+
+    {:noreply, socket}
   end
 
   # The navigation hook subscribes this view to pipeline events it does not use.
@@ -1354,6 +1450,35 @@ defmodule RailWeb.Settings.ProjectsLive do
     |> assign(:show_local_fields, tracker == :local)
     |> assign(:key_placeholder, key_placeholder(tracker))
   end
+
+  defp close_move(socket) do
+    socket
+    |> assign(:move_project, nil)
+    |> assign(:move_error, nil)
+  end
+
+  # Each row reads Move to Rail, Moving to Rail, or why the last move stopped; only a Linear project shows any of them.
+  defp assign_move_rows(socket) do
+    {:ok, moves} = Issues.list_tracker_moves(socket.assigns.current_scope, socket.assigns.projects)
+
+    rows =
+      Map.new(socket.assigns.projects, fn %Project{id: id, tracker: tracker} ->
+        linear? = tracker == :linear
+        move = moves[id]
+
+        {id,
+         %{
+           show_move: linear? and is_nil(move),
+           show_moving: linear? and move == :moving,
+           stopped: if(linear?, do: stopped_reason(move))
+         }}
+      end)
+
+    assign(socket, :move_rows, rows)
+  end
+
+  defp stopped_reason({:stopped, sentence}), do: sentence
+  defp stopped_reason(_moving_or_none), do: nil
 
   defp ci_reservation(%Project{ci_command: command}) when command in [nil, ""], do: "No CI"
   defp ci_reservation(%Project{ci_reserved_cpus: cpus}), do: format_reservation(%{reserved_cpus: cpus})

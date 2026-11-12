@@ -57,6 +57,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate learnings_queue(assigns), to: Components.LearningsQueue
   defdelegate local_time(assigns), to: Components.LocalTime
   defdelegate markdown(assigns), to: Components.Markdown
+  defdelegate move_to_rail_dialog(assigns), to: Components.MoveToRailDialog
   defdelegate nav(assigns), to: Components.Nav
   defdelegate overview_stats(assigns), to: Components.OverviewStats
   defdelegate plan_comment_card(assigns), to: Components.PlanCommentCard

@@ -61,17 +61,31 @@ defmodule Rail.Issues.Workers.LinearSync do
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"project_id" => project_id} = args}) do
     case Repo.get(Project, project_id) do
-      %Project{} = project -> sync_page(project, args["cursor"], args["started_at"])
-      nil -> :ok
+      %Project{tracker: :linear} = project -> sync_page(project, args["cursor"], args["started_at"])
+      _moved_or_gone -> :ok
     end
   end
 
   defp sync_page(%Project{} = project, cursor, started_at) do
-    with {:ok, %{"issues" => %{"nodes" => nodes} = issues}} <- Linear.issues(project, after: cursor),
-         {:ok, :ok} <- Repo.transaction(fn -> upsert(project, written(nodes)) end) do
-      # An empty first and only page is likelier a wrong team key than a team with nothing left.
-      prune_since = if cursor == nil and nodes == [], do: nil, else: started_at
-      continue(project, issues["pageInfo"], started_at, prune_since)
+    with {:ok, %{"issues" => %{"nodes" => nodes} = issues}} <- Linear.issues(project, after: cursor) do
+      case Repo.transaction(fn -> write_page(project, written(nodes)) end) do
+        {:ok, :ok} ->
+          # An empty first and only page is likelier a wrong team key than a team with nothing left.
+          prune_since = if cursor == nil and nodes == [], do: nil, else: started_at
+          continue(project, issues["pageInfo"], started_at, prune_since)
+
+        {:ok, :left_linear} ->
+          :ok
+      end
+    end
+  end
+
+  # The move into Rail takes FOR UPDATE, which waits on this, so a page never writes over a moved ticket. Not FOR UPDATE
+  # here: it conflicts with the KEY SHARE an issue insert holds, and two syncs deadlocked upgrading to it.
+  defp write_page(%Project{id: project_id} = project, nodes) do
+    case Repo.one!(from(p in Project, where: p.id == ^project_id, lock: "FOR NO KEY UPDATE", select: p.tracker)) do
+      :linear -> upsert(project, nodes)
+      _moved -> :left_linear
     end
   end
 

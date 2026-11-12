@@ -9,6 +9,8 @@ defmodule Rail.Issues do
   edited here in full, and those edits only tell open pages.
   """
 
+  use Rail.PermissionsDecorator
+
   alias Rail.Issues.Actions
 
   defdelegate list_issues(opts \\ []), to: Actions.ListIssues
@@ -36,6 +38,12 @@ defmodule Rail.Issues do
   defdelegate upload_file(scope, issue, filename, data), to: Actions.UploadFile
   defdelegate block_issue(scope, blocker, blocked), to: Actions.BlockIssue
   defdelegate unblock_issue(scope, blocker, blocked), to: Actions.UnblockIssue
+
+  @decorate can?(resource: :projects, action: :update)
+  defdelegate move_to_local_tracker(scope, project), to: Actions.MoveToLocalTracker
+
+  @decorate can?(resource: :projects, action: :update)
+  defdelegate list_tracker_moves(scope, projects), to: Actions.ListTrackerMoves
 
   defdelegate sync_issues(project), to: Actions.SyncIssues
   defdelegate import_issue(project, identifier), to: Actions.ImportIssue

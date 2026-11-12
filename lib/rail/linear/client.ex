@@ -27,6 +27,10 @@ defmodule Rail.Linear.Client do
   @default_scope "read,write,issues:create,comments:create"
   @page_size 50
   @comments_per_issue 50
+  # Smaller pages than a sync's, since each export node nests up to hundreds more and Linear caps a query's complexity.
+  @export_issues_page 25
+  @export_comments_page 100
+  @export_cycles_page 20
 
   @issue_fields """
   id
@@ -188,6 +192,136 @@ defmodule Rail.Linear.Client do
     """
 
     variables = %{"teamKey" => project.key, "first" => @page_size, "after" => opts[:after]}
+
+    with {:ok, token} <- token(project, opts) do
+      execute_query(token, query, variables, opts)
+    end
+  end
+
+  @doc """
+  Fetches one page of the project's team by its id: its key, and its issues oldest first, archived ones included, each
+  with up to 100 relations each way and 100 attachments. Pass `after:` the previous page's `endCursor` to continue.
+  """
+  def export_issues(%Project{} = project, opts \\ []) do
+    query = """
+    query ExportIssues($teamId: String!, $first: Int!, $after: String) {
+      team(id: $teamId) {
+        key
+        issues(first: $first, after: $after, includeArchived: true, orderBy: createdAt) {
+          nodes {
+            #{@issue_fields}
+            relations(first: 100) {
+              nodes {
+                type
+                relatedIssue {
+                  id
+                  identifier
+                  url
+                }
+              }
+            }
+            inverseRelations(first: 100) {
+              nodes {
+                type
+                issue {
+                  id
+                  identifier
+                  url
+                }
+              }
+            }
+            attachments(first: 100) {
+              nodes {
+                title
+                url
+              }
+            }
+          }
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+        }
+      }
+    }
+    """
+
+    variables = %{"teamId" => project.linear_team_id, "first" => @export_issues_page, "after" => opts[:after]}
+
+    with {:ok, token} <- token(project, opts) do
+      execute_query(token, query, variables, opts)
+    end
+  end
+
+  @doc """
+  Fetches one page of every comment on the team's issues, archived ones included and oldest first, each with its
+  issue's id. Pass `after:` the previous page's `endCursor` to continue.
+  """
+  def export_comments(%Project{} = project, opts \\ []) do
+    query = """
+    query ExportComments($teamId: ID!, $first: Int!, $after: String) {
+      comments(
+        first: $first
+        after: $after
+        includeArchived: true
+        orderBy: createdAt
+        filter: {issue: {team: {id: {eq: $teamId}}}}
+      ) {
+        nodes {
+          #{@comment_fields}
+          issue {
+            id
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+    """
+
+    variables = %{"teamId" => project.linear_team_id, "first" => @export_comments_page, "after" => opts[:after]}
+
+    with {:ok, token} <- token(project, opts) do
+      execute_query(token, query, variables, opts)
+    end
+  end
+
+  @doc """
+  Fetches one page of every cycle of the team, archived ones included and with no date limit, each with its daily
+  history, when Linear completed it and what it left unfinished. Pass `after:` the previous page's `endCursor` to continue.
+  """
+  def export_cycles(%Project{} = project, opts \\ []) do
+    query = """
+    query ExportCycles($teamId: String!, $first: Int!, $after: String) {
+      team(id: $teamId) {
+        cycles(first: $first, after: $after, includeArchived: true) {
+          nodes {
+            id
+            number
+            startsAt
+            endsAt
+            completedAt
+            scopeHistory
+            inProgressScopeHistory
+            completedScopeHistory
+            uncompletedIssuesUponClose(first: 250, includeArchived: true) {
+              nodes {
+                id
+              }
+            }
+          }
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+        }
+      }
+    }
+    """
+
+    variables = %{"teamId" => project.linear_team_id, "first" => @export_cycles_page, "after" => opts[:after]}
 
     with {:ok, token} <- token(project, opts) do
       execute_query(token, query, variables, opts)

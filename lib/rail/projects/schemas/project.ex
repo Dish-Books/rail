@@ -16,8 +16,8 @@ defmodule Rail.Projects.Schemas.Project do
     field :name, :string
     field :github_repo, :string
     field :github_installation_id, :integer
-    # Where its issues live, Linear, GitHub or Rail itself, and the key they are named by: a Linear team's key, or the
-    # prefix in `<key>#<number>` on GitHub and `<key>-<number>` on Rail. Fixed once there are any.
+    # Where its issues live and the key they are named by: a Linear team's key, or the prefix in `<key>#<number>` on
+    # GitHub and `<key>-<number>` on Rail. Once issues exist, only a move to Rail changes them.
     field :tracker, Ecto.Enum, values: [:linear, :github, :local], default: :linear
     field :key, :string
     field :default_branch, :string
@@ -108,6 +108,16 @@ defmodule Rail.Projects.Schemas.Project do
     |> unique_constraint(:github_repo)
     |> cast_assoc(:slack_channels)
     |> put_linear_team_id()
+  end
+
+  @doc """
+  Moves the project onto Rail's own tracker under `key`, as its moved tickets spell it, and off its Linear team. Only the
+  move writes it, so it skips the lock `changeset/2` keeps on the tracker once issues exist.
+  """
+  def local_tracker_changeset(%__MODULE__{} = project, key) when is_binary(key) do
+    project
+    |> change(tracker: :local, key: key, linear_team_id: nil, linear_state_ids: %{}, linear_workspace_id: nil)
+    |> unique_constraint(:key)
   end
 
   # The form edits the globs one to a line.

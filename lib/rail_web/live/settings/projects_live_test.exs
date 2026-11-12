@@ -1,9 +1,11 @@
 defmodule RailWeb.Settings.ProjectsLiveTest do
   use RailWeb.ConnCase, async: true
 
+  import Ecto.Query
   import Phoenix.LiveViewTest
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Workers.MoveToLocalTracker
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
@@ -1413,6 +1415,147 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
 
       view |> form("#env-file-form") |> render_change()
       refute has_element?(view, "#env-file-refused-0")
+    end
+  end
+
+  describe "moving a project to Rail" do
+    setup do
+      %Project{id: project_id} =
+        project =
+        Repo.insert!(%Project{
+          name: "Moving App",
+          github_repo: "example/moving-app",
+          github_installation_id: 1,
+          default_branch: "main",
+          key: "MVL",
+          linear_team_id: "lin_team_mvl",
+          linear_workspace_id: "lw_test_seed",
+          clone_path: "/tmp/moving-app"
+        })
+
+      %{move_project: project, move_project_id: project_id}
+    end
+
+    test "only a Linear project's row offers Move to Rail", %{
+      admin_conn: conn,
+      move_project_id: project_id,
+      github_project: github_project
+    } do
+      %Project{id: local_id} =
+        Repo.insert!(%Project{
+          name: "Already on Rail",
+          github_repo: "example/already-on-rail",
+          github_installation_id: 1,
+          default_branch: "main",
+          tracker: :local,
+          key: "AOR",
+          clone_path: "/tmp/already-on-rail"
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/settings/projects")
+
+      assert has_element?(view, "#move-project-#{project_id}", "Move to Rail")
+      refute has_element?(view, "#move-project-#{local_id}")
+      refute has_element?(view, "#move-project-#{github_project.id}")
+    end
+
+    test "confirming queues one move, which every open tab shows as moving and then as on Rail", %{
+      admin_conn: conn,
+      move_project_id: project_id
+    } do
+      {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      {:ok, other_tab, _html} = live(conn, ~p"/settings/projects")
+
+      view |> element("#move-project-#{project_id}") |> render_click()
+      assert has_element?(view, "#move-title", "Move Moving App off Linear?")
+
+      view |> element("#confirm-move") |> render_click()
+
+      refute has_element?(view, "#move-dialog")
+      assert has_element?(view, "#project-moving-#{project_id}", "Moving to Rail")
+      refute has_element?(view, "#move-project-#{project_id}")
+      assert has_element?(other_tab, "#project-moving-#{project_id}", "Moving to Rail")
+      refute has_element?(other_tab, "#move-project-#{project_id}")
+
+      # The other tab's click, sent before it heard, starts no second move.
+      render_click(other_tab, "confirm_move", %{"project_id" => project_id})
+      assert [%Oban.Job{}] = Repo.all(from(j in Oban.Job, where: fragment("?->>'project_id'", j.args) == ^project_id))
+
+      Repo.update_all(from(p in Project, where: p.id == ^project_id), set: [tracker: :local])
+      Phoenix.PubSub.broadcast(Rail.PubSub, "projects", {:project_changed, project_id})
+
+      for tab <- [view, other_tab] do
+        assert has_element?(tab, "#project-team-key-#{project_id}", "(Rail)")
+        refute has_element?(tab, "#project-moving-#{project_id}")
+        refute has_element?(tab, "#move-project-#{project_id}")
+      end
+    end
+
+    test "a stopped move says why under the row, after a reload too, and Try again starts it again", %{
+      admin_conn: conn,
+      move_project_id: project_id
+    } do
+      {:ok, %Oban.Job{id: job_id}} = Oban.insert(MoveToLocalTracker.new(%{project_id: project_id}))
+
+      Repo.update_all(from(j in Oban.Job, where: j.id == ^job_id),
+        set: [
+          state: "discarded",
+          meta: %{"failure" => "Linear answered 502 while reading comments, so nothing was written."}
+        ]
+      )
+
+      {:ok, view, _html} = live(conn, ~p"/settings/projects")
+
+      assert has_element?(
+               view,
+               "#project-move-stopped-#{project_id}[role=alert]",
+               "The move stopped. Moving App is still on Linear, unchanged."
+             )
+
+      assert has_element?(
+               view,
+               "#project-move-stopped-#{project_id}",
+               "Linear answered 502 while reading comments, so nothing was written."
+             )
+
+      refute has_element?(view, "#move-project-#{project_id}")
+
+      view |> element("#retry-move-#{project_id}") |> render_click()
+
+      refute has_element?(view, "#project-move-stopped-#{project_id}")
+      assert has_element?(view, "#project-moving-#{project_id}")
+
+      assert [%Oban.Job{id: ^job_id}, %Oban.Job{state: "available"}] =
+               Repo.all(from(j in Oban.Job, where: fragment("?->>'project_id'", j.args) == ^project_id, order_by: j.id))
+    end
+
+    test "a project another tab already moved says so in the dialog", %{
+      admin_conn: conn,
+      move_project_id: project_id
+    } do
+      {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      view |> element("#move-project-#{project_id}") |> render_click()
+      Repo.update_all(from(p in Project, where: p.id == ^project_id), set: [tracker: :local])
+
+      view |> element("#confirm-move") |> render_click()
+
+      assert has_element?(view, "#move-error", "Moving App is no longer on Linear. Another tab already moved it.")
+      assert [] = Repo.all(from(j in Oban.Job, where: fragment("?->>'project_id'", j.args) == ^project_id))
+    end
+
+    test "Cancel and Escape close the dialog and start nothing", %{admin_conn: conn, move_project_id: project_id} do
+      {:ok, view, _html} = live(conn, ~p"/settings/projects")
+
+      view |> element("#move-project-#{project_id}") |> render_click()
+      view |> element("#cancel-move") |> render_click()
+      refute has_element?(view, "#move-dialog")
+
+      view |> element("#move-project-#{project_id}") |> render_click()
+      render_keydown(view, "close_move", %{"key" => "Escape"})
+      refute has_element?(view, "#move-dialog")
+
+      assert has_element?(view, "#move-project-#{project_id}")
+      assert [] = Repo.all(from(j in Oban.Job, where: fragment("?->>'project_id'", j.args) == ^project_id))
     end
   end
 end

@@ -9,6 +9,8 @@ defmodule Rail.Issues.Actions.CreateIssue do
   to wait for them would be an issue nothing could act on yet.
   """
 
+  import Ecto.Query
+
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Tracker
   alias Rail.Projects.Schemas.Project
@@ -23,7 +25,9 @@ defmodule Rail.Issues.Actions.CreateIssue do
   turned off, `:stages`, the `IssueStage`s its file named, and `:parent`, the issue it is a sub-issue of. The ticket is opened in triage, or in Todo for a sub-issue, whose work is
   already planned. Broadcasts `{:issue_created, issue_id}` on `"issues"`.
   """
-  def create_issue(%Scope{} = scope, %Project{} = project, %{} = attrs) do
+  def create_issue(%Scope{} = scope, %Project{id: project_id} = project, %{} = attrs) do
+    # Read again, so a form opened before the project moved off Linear files its ticket where the project is now.
+    project = %{project | tracker: Repo.one!(from(p in Project, where: p.id == ^project_id, select: p.tracker))}
     state = if attrs[:parent], do: :todo, else: :triage
 
     with {:ok, tracked} <- Tracker.tracker(project).create_issue(scope, project, Map.put(attrs, :state, state)) do

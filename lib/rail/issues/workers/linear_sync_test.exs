@@ -29,6 +29,34 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
     %{project: project}
   end
 
+  test "a project already moved off Linear asks Linear nothing and writes nothing", %{project: project} do
+    Repo.update_all(from(p in Project, where: p.id == ^project.id), set: [tracker: :local])
+
+    assert :ok = perform_job(LinearSync, %{project_id: project.id, started_at: "2026-10-06T10:00:00.000000Z"})
+  end
+
+  test "a page whose project moves off Linear while it is fetched writes nothing over the moved tickets", %{
+    project: %{id: project_id} = project
+  } do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Repo.update_all(from(p in Project, where: p.id == ^project_id), set: [tracker: :local])
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issues" => %{
+            "nodes" => [%{"id" => "lin_after_move", "identifier" => "SPI-9", "title" => "Late", "state" => nil}],
+            "pageInfo" => %{"hasNextPage" => true, "endCursor" => "cursor_2"}
+          }
+        }
+      })
+    end)
+
+    assert :ok = perform_job(LinearSync, %{project_id: project.id, started_at: "2026-10-06T10:00:00.000000Z"})
+
+    refute Repo.get_by(Issue, external_id: "lin_after_move")
+    refute_enqueued(worker: LinearSync)
+  end
+
   test "writes a page and queues the next one from its cursor", %{project: %{id: project_id} = project} do
     %Issue{id: existing_id} =
       %Issue{}
