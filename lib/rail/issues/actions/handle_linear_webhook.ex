@@ -32,7 +32,8 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   updates are upserted onto the project on the issue's team and broadcast as
   `{:issue_changed, issue_id}` on `"issues"`, an archive among them. A remove or
   a trash deletes the issue and its task, broadcast the same way. Anything else,
-  including a team no project is on or an update older than the row, is ignored.
+  including a team no project is on, an update older than the row or a ticket
+  Rail now keeps itself, is ignored.
   """
   def handle_linear_webhook(%LinearWorkspace{projects: projects}, %{
         "type" => "Issue",
@@ -77,7 +78,13 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
         "action" => "remove",
         "data" => %{"id" => external_id}
       }) do
-    case Repo.get_by(Comment, external_id: external_id) do
+    # A moved ticket keeps its Linear ids, so only one Linear still tracks takes the remove.
+    case Repo.one(
+           from(c in Comment,
+             join: i in assoc(c, :issue),
+             where: c.external_id == ^external_id and i.tracker == :linear
+           )
+         ) do
       %Comment{} = comment ->
         with {:ok, comment} <- Repo.delete(comment) do
           Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_comments_changed, comment.issue_id})
@@ -105,7 +112,8 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
             existing =
               Repo.one(from(i in Issue, where: i.external_id == ^external_id, lock: "FOR UPDATE")) || %Issue{}
 
-            if stale?(existing, attrs),
+            # One Rail moved off Linear keeps its id, so another project on the workspace could otherwise take it.
+            if existing.tracker == :local or stale?(existing, attrs),
               do: {existing, :ok},
               else: {existing, existing |> Issue.tracker_changeset(attrs) |> Repo.insert_or_update()}
           end)

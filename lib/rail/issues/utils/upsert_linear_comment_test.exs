@@ -60,4 +60,13 @@ defmodule Rail.Issues.Utils.UpsertLinearCommentTest do
 
     assert [] = Repo.all(Comment)
   end
+
+  test "a comment on a ticket Rail keeps itself now is not Linear's to write", %{issue: issue} do
+    issue |> Ecto.Changeset.change(tracker: :local, number: 1) |> Repo.update!()
+
+    assert {:error, :issue_not_found} =
+             upsert_linear_comment(%{"id" => "lin_upc_com_4", "body" => "Late", "issueId" => "lin_upc_1"})
+
+    assert [] = Repo.all(Comment)
+  end
 end

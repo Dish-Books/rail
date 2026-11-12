@@ -532,6 +532,17 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
       refute_enqueued(worker: AdvanceTrackerState)
     end
 
+    test "a ticket filed from the project as a page loaded it before it moved off Linear lands in Rail", %{
+      local_project: %{id: project_id} = project,
+      key: key
+    } do
+      identifier = "#{key}-1"
+
+      # No Linear stub is queued, so a request would raise.
+      assert {:ok, %Issue{project_id: ^project_id, tracker: :local, identifier: ^identifier}} =
+               Issues.create_issue(system_scope(), %{project | tracker: :linear}, %{title: "Filed late"})
+    end
+
     test "two issues can never share a number", %{local_project: project} do
       {:ok, %Issue{number: 1}} = Issues.create_issue(system_scope(), project, %{title: "First"})
 

@@ -25,6 +25,8 @@ defmodule Rail.Projects do
   @decorate can?(resource: :projects, action: :update)
   defdelegate update_project(scope, project, attrs), to: Actions.UpdateProject
 
+  defdelegate switch_to_local_tracker(project, key), to: Actions.SwitchToLocalTracker
+
   @decorate can?(resource: :projects, action: :update)
   defdelegate read_env_file(scope, project), to: Actions.ReadEnvFile
 

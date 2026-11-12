@@ -19,7 +19,7 @@ defmodule Rail.Issues.Utils.UpsertLinearComment do
   broadcasts `{:issue_comments_changed, issue_id}` on `"issues"`.
 
   Returns `{:error, :issue_not_found}` or `{:error, :parent_not_found}` when
-  Rail has not synced what the comment belongs to yet.
+  Rail has not synced what the comment belongs to yet, or keeps the issue itself now.
   """
   def upsert_linear_comment(%{} = node) do
     {refs, attrs} = node |> format_linear_comment() |> Map.split(@refs)
@@ -38,7 +38,7 @@ defmodule Rail.Issues.Utils.UpsertLinearComment do
   end
 
   defp issue_id(external_id) when is_binary(external_id) do
-    case Repo.one(from i in Issue, where: i.external_id == ^external_id, select: i.id) do
+    case Repo.one(from i in Issue, where: i.external_id == ^external_id and i.tracker == :linear, select: i.id) do
       issue_id when is_binary(issue_id) -> {:ok, issue_id}
       nil -> {:error, :issue_not_found}
     end

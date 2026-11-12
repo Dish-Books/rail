@@ -798,6 +798,66 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
     assert :ok = Issues.handle_linear_webhook(workspace, remove)
   end
 
+  test "a ticket moved off Linear takes no issue update, comment or comment remove Linear sends for it", %{
+    workspace: workspace
+  } do
+    %Project{id: moved_project_id} =
+      Repo.insert!(%Project{
+        name: "Moved Webhook Project",
+        github_repo: "org/moved-webhook",
+        github_installation_id: 1,
+        default_branch: "main",
+        tracker: :local,
+        key: "MWH",
+        clone_path: "/tmp/repos/moved-webhook"
+      })
+
+    %Issue{id: issue_id} =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: moved_project_id,
+        tracker: :local,
+        number: 1,
+        external_id: "lin_wh_moved",
+        identifier: "MWH-1",
+        title: "Moved",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    %Comment{id: comment_id} =
+      %Comment{}
+      |> Comment.changeset(%{issue_id: issue_id, external_id: "lin_wh_moved_com", body: "Kept"})
+      |> Repo.insert!()
+
+    # The workspace's project is on the team this update names, so only the guard keeps the ticket where it is.
+    assert :ok =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "update",
+               "data" => %{"id" => "lin_wh_moved", "teamId" => "lin_team_id", "identifier" => "HWH-9", "title" => "Taken"}
+             })
+
+    assert :ok =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Comment",
+               "action" => "create",
+               "data" => %{"id" => "lin_wh_moved_com_2", "body" => "Late", "issueId" => "lin_wh_moved"}
+             })
+
+    assert :ok =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Comment",
+               "action" => "remove",
+               "data" => %{"id" => "lin_wh_moved_com"}
+             })
+
+    assert %Issue{project_id: ^moved_project_id, identifier: "MWH-1", title: "Moved", tracker: :local} =
+             Repo.get!(Issue, issue_id)
+
+    assert [%Comment{id: ^comment_id, body: "Kept"}] = Repo.all(from(c in Comment, where: c.issue_id == ^issue_id))
+  end
+
   test "a comment on an issue or thread Rail has not synced yet is left for the next sync", %{workspace: workspace} do
     assert :ok =
              Issues.handle_linear_webhook(workspace, %{

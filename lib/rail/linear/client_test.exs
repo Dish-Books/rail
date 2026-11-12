@@ -299,6 +299,77 @@ defmodule Rail.Linear.ClientTest do
     end
   end
 
+  describe "export_issues/2" do
+    test "asks for a page of the team's issues, archived ones included, with their relations and attachments", %{
+      project: project
+    } do
+      page = %{
+        "team" => %{
+          "key" => "TEAM",
+          "issues" => %{"nodes" => [], "pageInfo" => %{"hasNextPage" => false, "endCursor" => nil}}
+        }
+      }
+
+      Req.Test.expect(Linear, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+        assert %{"query" => query, "variables" => %{"teamId" => "lin_team_uuid", "first" => 25, "after" => "cursor_1"}} =
+                 Jason.decode!(body)
+
+        assert query =~ "issues(first: $first, after: $after, includeArchived: true, orderBy: createdAt)"
+        assert query =~ ~r/relations\(first: 100\) \{\s+nodes \{\s+type\s+relatedIssue/
+        assert query =~ ~r/inverseRelations\(first: 100\) \{\s+nodes \{\s+type\s+issue/
+        assert query =~ ~r/attachments\(first: 100\) \{\s+nodes \{\s+title\s+url/
+        Req.Test.json(conn, %{"data" => page})
+      end)
+
+      assert {:ok, ^page} = Client.export_issues(%{project | linear_team_id: "lin_team_uuid"}, after: "cursor_1")
+    end
+  end
+
+  describe "export_comments/2" do
+    test "asks for a page of every comment on the team's issues, each with its issue", %{project: project} do
+      page = %{"comments" => %{"nodes" => [], "pageInfo" => %{"hasNextPage" => false}}}
+
+      Req.Test.expect(Linear, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+        assert %{"query" => query, "variables" => %{"teamId" => "lin_team_uuid", "first" => 100, "after" => nil}} =
+                 Jason.decode!(body)
+
+        assert query =~ "filter: {issue: {team: {id: {eq: $teamId}}}}"
+        assert query =~ "includeArchived: true"
+        assert query =~ ~r/issue \{\s+id\s+\}/
+        Req.Test.json(conn, %{"data" => page})
+      end)
+
+      assert {:ok, ^page} = Client.export_comments(%{project | linear_team_id: "lin_team_uuid"})
+    end
+  end
+
+  describe "export_cycles/2" do
+    test "asks for a page of all the team's cycles, with their history and what each left unfinished", %{
+      project: project
+    } do
+      page = %{"team" => %{"cycles" => %{"nodes" => [], "pageInfo" => %{"hasNextPage" => false}}}}
+
+      Req.Test.expect(Linear, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+        assert %{"query" => query, "variables" => %{"teamId" => "lin_team_uuid", "first" => 20, "after" => nil}} =
+                 Jason.decode!(body)
+
+        assert query =~ "cycles(first: $first, after: $after, includeArchived: true)"
+        refute query =~ "endsAt: {gt"
+        assert query =~ "inProgressScopeHistory"
+        assert query =~ "uncompletedIssuesUponClose(first: 250, includeArchived: true)"
+        Req.Test.json(conn, %{"data" => page})
+      end)
+
+      assert {:ok, ^page} = Client.export_cycles(%{project | linear_team_id: "lin_team_uuid"})
+    end
+  end
+
   describe "team/2" do
     test "looks the team up by the project's key", %{project: project} do
       Req.Test.expect(Linear, fn conn ->
