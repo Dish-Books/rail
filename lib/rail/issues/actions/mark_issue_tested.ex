@@ -21,7 +21,7 @@ defmodule Rail.Issues.Actions.MarkIssueTested do
       )
 
     if Scope.can_access_project?(scope, project_id) do
-      case Repo.update_all(queued, set: [testing_state: :tested, updated_at: DateTime.utc_now(:second)]) do
+      case Repo.update_all(queued, set: [testing_state: :tested, updated_at: DateTime.utc_now()]) do
         {1, [tested]} ->
           Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, id})
           {:ok, tested}

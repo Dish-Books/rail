@@ -27,7 +27,7 @@ defmodule Rail.Issues.Utils.MarkLabelledTested do
               where: i.project_id == ^project_id and i.external_id in ^labeled,
               where: i.testing_state in ^[:waiting, :testing]
             ),
-            set: [testing_state: :tested, updated_at: DateTime.utc_now(:second)]
+            set: [testing_state: :tested, updated_at: DateTime.utc_now()]
           )
 
         count

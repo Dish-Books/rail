@@ -516,7 +516,9 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
       Req.Test.json(conn, %{"data" => %{"issues" => %{"nodes" => nodes}}})
     end)
 
-    assert :ok = perform_job(LinearSync, %{project_id: project.id})
+    started_at = DateTime.to_iso8601(DateTime.utc_now())
+
+    assert :ok = perform_job(LinearSync, %{project_id: project.id, started_at: started_at})
 
     assert %Issue{id: ^queued_id, testing_state: :tested} = Repo.get_by(Issue, external_id: "lin_queued_labeled")
     assert %Issue{testing_state: :tested} = Repo.get_by(Issue, external_id: "lin_new_labeled")
