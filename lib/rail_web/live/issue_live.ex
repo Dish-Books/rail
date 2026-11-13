@@ -71,7 +71,6 @@ defmodule RailWeb.IssueLive do
           not match?(%{task: %Task{parent_task_id: parent_id}} when is_binary(parent_id), @issue)
         }
         workflow={@issue.workflow}
-        link_workflow={Scope.admin?(@current_scope)}
         blockers={@blockers}
         cycles={@cycles}
       />

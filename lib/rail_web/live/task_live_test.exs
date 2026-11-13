@@ -170,12 +170,13 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "#selected-project-name", project.name)
   end
 
-  test "a workflow's task names the workflow and its stages after the PR, linked to Settings for an admin", %{
-    conn: conn,
-    project: project,
-    issue: issue,
-    task: task
-  } do
+  test "a workflow's task names the workflow and its stages after the PR, linked to Settings for anyone on the project",
+       %{
+         conn: conn,
+         project: project,
+         issue: issue,
+         task: task
+       } do
     workflow =
       Repo.insert!(%Workflow{
         project_id: project.id,
@@ -214,8 +215,7 @@ defmodule RailWeb.TaskLiveTest do
 
     assert {:ok, view, _html} = live(log_in_user(build_conn(), member), ~p"/tasks/#{task.id}")
 
-    assert has_element?(view, "#task-workflow-name", "Flake sweep")
-    refute has_element?(view, "#task-workflow-link")
+    assert has_element?(view, ~s(#task-workflow a#task-workflow-link[href="/settings/workflows"]), "Flake sweep")
   end
 
   test "a task with every Plan step off reads Plan as off, with the issue as its ticket and no plan or design", %{
