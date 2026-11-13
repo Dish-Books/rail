@@ -32,9 +32,8 @@ defmodule RailWeb.Components.IssueView do
   attr :checking_pull_request, :boolean, default: false
   # A child of a split is owned through its parent, so its owner is read here, not changed.
   attr :owner_editable, :boolean, default: true
-  # The workflow that opened the issue, named under its title; only admins can follow it to Settings.
+  # The workflow that opened the issue, named under its title and linked to Settings › Workflows.
   attr :workflow, :any, default: nil
-  attr :link_workflow, :boolean, default: false
   # What blocks the issue and what it blocks, as `Rail.Issues.get_blockers/1` reads them; nil until Linear answers.
   attr :blockers, :any, default: nil
   # A Rail-tracked issue's project's cycles, as `Rail.Issues.get_cycles/1` reads them; nil shows no Cycle row.
@@ -130,17 +129,15 @@ defmodule RailWeb.Components.IssueView do
               <.icon name="pi-repeat" class="h-4 w-4" />
               <span>
                 Opened by the <.link
-                  :if={@link_workflow}
                   navigate={~p"/settings/workflows"}
                   id="issue-workflow-link"
                   title="Settings › Workflows"
                   class="font-medium text-slate-700 dark:text-slate-200 underline decoration-slate-400 dark:decoration-slate-600 underline-offset-2 hover:decoration-slate-300 focus-visible:outline-2 focus-visible:outline-indigo-500 rounded"
                   phx-no-format
-                >{Workflow.name(@workflow)}</.link>
-                <span :if={!@link_workflow} class="font-medium text-slate-700 dark:text-slate-200">
-                  {Workflow.name(@workflow)}
-                </span>
-                workflow on {Calendar.strftime(@issue.inserted_at, "%b %-d, %H:%M")} UTC
+                >{Workflow.name(@workflow)}</.link> workflow on {Calendar.strftime(
+                  @issue.inserted_at,
+                  "%b %-d, %H:%M"
+                )} UTC
               </span>
             </p>
           </div>

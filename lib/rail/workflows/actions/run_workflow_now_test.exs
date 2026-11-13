@@ -119,7 +119,32 @@ defmodule Rail.Workflows.Actions.RunWorkflowNowTest do
     assert {:error, :invalid} = Workflows.run_workflow_now(system_scope(), stale)
   end
 
-  test "someone who is not an admin is refused", %{workflow: workflow} do
-    assert {:error, :not_authorized} = Workflows.run_workflow_now(user_scope(), workflow)
+  test "someone given the project opens the workflow's issue", %{
+    project: project,
+    workflow: %{id: workflow_id} = workflow
+  } do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_TST-86", "identifier" => "TST-86", "title" => "Dependency updates 2026-10-14"}
+          }
+        }
+      })
+    end)
+
+    assert {:ok, %Issue{identifier: "TST-86", workflow_id: ^workflow_id}} =
+             Workflows.run_workflow_now(user_scope(project_ids: [project.id]), workflow)
+  end
+
+  test "someone without the project is refused as not found, and no issue is opened", %{
+    github_project: github,
+    workflow: %{id: workflow_id} = workflow
+  } do
+    # No tracker request is expected, so one would raise.
+    assert {:error, :not_found} = Workflows.run_workflow_now(user_scope(project_ids: [github.id]), workflow)
+    assert [] = Repo.all(from(i in Issue, where: i.workflow_id == ^workflow_id))
+    assert [] = all_enqueued(worker: StartWorkflowTask)
   end
 end

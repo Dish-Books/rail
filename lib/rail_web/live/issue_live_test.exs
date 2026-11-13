@@ -86,7 +86,7 @@ defmodule RailWeb.IssueLiveTest do
     refute has_element?(view, "#issue-cycle")
   end
 
-  test "an issue a workflow opened names it under the title, as plain text for someone who is not an admin", %{
+  test "an issue a workflow opened names it under the title, linked to Settings for someone who is not an admin", %{
     conn: conn,
     project: project
   } do
@@ -120,7 +120,13 @@ defmodule RailWeb.IssueLiveTest do
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
 
     assert has_element?(view, "#issue-workflow-byline", "Opened by the Flaky test sweep workflow on Oct 12, 08:00 UTC")
-    refute has_element?(view, "#issue-workflow-link")
+
+    assert has_element?(
+             view,
+             ~s(#issue-workflow-byline a#issue-workflow-link[href="/settings/workflows"]),
+             "Flaky test sweep"
+           )
+
     assert has_element?(view, "#issue-owner", "Unassigned")
 
     # Only a workflow change on this issue's project reloads it.
