@@ -157,7 +157,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
 
       plan =
         "## Implementation plan\n\n### Approach\n\nExtend it.\n\n### Decisions\n\n- Decision: one module changes.\n\n" <>
-          "### Changes\n\n#### `lib/rail.ex`\n\nExtends it.\n\n### Acceptance criteria\n\n- 1: `lib/rail.ex`\n\n" <>
+          "### Changes\n\n#### `lib/rail.ex`\n\nExtends it.\n\n```elixir sketch\ndef go, do: :ok\n```\n\n### Acceptance criteria\n\n- 1: `lib/rail.ex`\n\n" <>
           "### Verification\n\n- `lib/rail_test.exs`: covers it."
 
       {:ok, _saved} = Pipeline.save_plan(task, %{title: "A ticket", description: "Body.", plan: plan, design: "table"})

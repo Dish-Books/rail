@@ -2197,8 +2197,8 @@ defmodule RailWeb.Live.TaskDetailTest do
       plan =
         "Two fixes.\n\n### What changes\n\n#### `view-only-send`\n\nCheck the role.\n\n#### `send-twice`\n\n" <>
           "Disable Send.\n\n#### Comment 1\n\nNamed.\n\n### File-level changes\n\n" <>
-          "#### `lib/rail/send.ex`\n\nChecks the role. For `view-only-send`.\n\n" <>
-          "#### `lib/rail_web/tray.ex`\n\nDisables Send. For `send-twice` and comment 1."
+          "#### `lib/rail/send.ex`\n\nChecks the role. For `view-only-send`.\n\n```elixir sketch\ndef go, do: :ok\n```\n\n" <>
+          "#### `lib/rail_web/tray.ex`\n\nDisables Send. For `send-twice` and comment 1.\n\n```elixir sketch\ndef go, do: :ok\n```"
 
       %{plan: plan, diff: diff, view_only: view_only, twice: twice}
     end

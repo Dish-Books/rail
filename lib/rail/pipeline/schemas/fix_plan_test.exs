@@ -29,17 +29,33 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
 
         Reads screen comments. For `send-drops-screen-comments`.
 
+        ```elixir sketch
+        def go, do: :ok
+        ```
+
         #### `lib/rail_web/tray.ex`
 
         Counts finding comments. For `tray-count-skips-finding-comments`.
+
+        ```elixir sketch
+        def go, do: :ok
+        ```
 
         #### `lib/rail_web/diff_comment.ex`
 
         Draws a sent comment. For comment 1.
 
+        ```elixir sketch
+        def go, do: :ok
+        ```
+
         #### `lib/rail/send_test.exs`
 
         One Send lists all three. For `send-drops-screen-comments`.
+
+        ```elixir sketch
+        def go, do: :ok
+        ```
 
         ### Verification
 
@@ -147,7 +163,7 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
       plan =
         "### Changes to the plan\n\n- Criterion 1: a dot, not parentheses.\n\n### What changes\n\n" <>
           "#### Changes to the plan\n\nThe heading takes a dot.\n\n" <>
-          "### File-level changes\n\n#### `lib/heading.ex`\n\nThe dot. For the changes to the plan."
+          "### File-level changes\n\n#### `lib/heading.ex`\n\nThe dot. For the changes to the plan.\n\n```elixir sketch\n@moduledoc \"A dot.\"\n```"
 
       fix_plan = %{fix_plan | findings: [], comments: []}
 
@@ -361,7 +377,7 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
       plan =
         "### Changes to the plan\n\n- Criterion 1: a dot.\n\n### What changes\n\n" <>
           "#### Changes to the plan\n\nThe heading takes a dot.\n\n### File-level changes\n\n" <>
-          "#### `lib/heading.ex`\n\nThe dot. For the changes to the plan."
+          "#### `lib/heading.ex`\n\nThe dot. For the changes to the plan.\n\n```elixir sketch\n@moduledoc \"A dot.\"\n```"
 
       {:ok, saved} =
         %{fix_plan | findings: [], comments: []} |> FixPlan.save_changeset(%{"plan" => plan}) |> apply_action(:update)

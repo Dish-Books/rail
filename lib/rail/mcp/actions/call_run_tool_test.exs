@@ -33,6 +33,10 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
 
   Extends the module.
 
+  ```elixir sketch
+  def go, do: :ok
+  ```
+
   ### Acceptance criteria
 
   - 1: `lib/rail.ex`

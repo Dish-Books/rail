@@ -14,8 +14,8 @@ defmodule RailWeb.Components.FixPlanSheetTest do
       "Two changes.\n\n### What changes\n\n#### `send-drops`\n\nReads screen comments.\n\n#### `tray-count`\n\nCounts them.\n\n" <>
         "#### Comment 1\n\nKept under its line.\n\n### File-level changes\n\n" <>
         "#### `lib/send.ex`\n\nReads them. For `send-drops`.\n\n```elixir sketch\ndef read(comments), do: comments\n```\n\n" <>
-        "#### `lib/tray.ex`\n\nCounts them. For `tray-count`.\n\n" <>
-        "#### `lib/diff_comment.ex`\n\nKeeps it. For comment 1.\n\n#### `lib/send_test.exs`\n\nAll three. For `send-drops`.\n\n" <>
+        "#### `lib/tray.ex`\n\nCounts them. For `tray-count`.\n\n```elixir sketch\ndef go, do: :ok\n```\n\n" <>
+        "#### `lib/diff_comment.ex`\n\nKeeps it. For comment 1.\n\n```elixir sketch\ndef go, do: :ok\n```\n\n#### `lib/send_test.exs`\n\nAll three. For `send-drops`.\n\n```elixir sketch\ndef go, do: :ok\n```\n\n" <>
         "### Verification\n\n`mix test lib/send_test.exs`."
 
     fix_plan =
@@ -76,7 +76,6 @@ defmodule RailWeb.Components.FixPlanSheetTest do
 
     assert doc |> Floki.find("#fix-plan-card-1 [data-qa=plan_card_sketch]") |> Floki.text() =~ "Show code"
     assert doc |> Floki.find("#fix-plan-card-1 [data-qa=plan_card_sketch]") |> Floki.text() =~ "read(comments)"
-    assert Floki.find(doc, "#fix-plan-card-2 [data-qa=plan_card_sketch]") == []
     assert Floki.find(doc, "[data-qa=plan_card_reviewed]") == []
   end
 

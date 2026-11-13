@@ -28,6 +28,10 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
 
   Decides.
 
+  ```elixir sketch
+  def go, do: :ok
+  ```
+
   ### Acceptance criteria
 
   - 1: `lib/rail.ex`

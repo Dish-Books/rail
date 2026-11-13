@@ -47,6 +47,10 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
 
   Extends the module.
 
+  ```elixir sketch
+  def go, do: :ok
+  ```
+
   ### Acceptance criteria
 
   - 1: `lib/rail.ex`
