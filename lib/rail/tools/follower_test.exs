@@ -881,7 +881,7 @@ defmodule Rail.Tools.FollowerTest do
       })
     end)
 
-    {:ok, issue_12505} = Issues.create_issue(system_scope(), project, %{description: "Task 12505"})
+    {:ok, issue_12505} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Task 12505"})
 
     {:ok, task} = Pipeline.create_task(issue_12505, :plan)
 

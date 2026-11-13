@@ -34,7 +34,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Merge Task"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Merge Task"})
     {:ok, task} = Pipeline.create_task(issue, :finalize)
     {:ok, task} = Pipeline.update_task(task, %{pr_number: 151, marked_ready_at: DateTime.utc_now()})
 

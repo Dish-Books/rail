@@ -29,7 +29,7 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Engineer Finished"})
+    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Engineer Finished"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     # Whether the turn committed or left work is asked of Rail.Git, so the worktree is a plain directory and each
     # test says what the stubs answer.

@@ -19,7 +19,7 @@ defmodule Rail.Issues.Actions.GetAssetTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Get Asset Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Get Asset Issue"})
 
     %{issue: Repo.preload(issue, :project)}
   end

@@ -195,6 +195,20 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
     assert %{priority: ["is invalid"]} = errors_on(changeset)
   end
 
+  test "create_issue/2 refuses an estimate below 0 or a blank title before asking the tracker", %{
+    project: %{id: project_id} = project
+  } do
+    # No Linear request is expected, so one made would fail the test.
+    assert {:error, %Ecto.Changeset{} = changeset} =
+             Issues.create_issue(system_scope(), project, %{title: "Negative", estimate: -5})
+
+    assert %{estimate: ["must be greater than or equal to 0"]} = errors_on(changeset)
+
+    assert {:error, %Ecto.Changeset{} = changeset} = Issues.create_issue(system_scope(), project, %{title: "  "})
+    assert %{title: ["can't be blank"]} = errors_on(changeset)
+    refute Repo.exists?(from(i in Issue, where: i.project_id == ^project_id and i.title in ["Negative", "  "]))
+  end
+
   test "create_issue/2 keeps the workflow opening it and the steps it skips, over a row the webhook saved first", %{
     project: project
   } do

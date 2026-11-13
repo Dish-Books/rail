@@ -46,7 +46,9 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
       %IssueStage{stage: :review}
     ]
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Enter Stage Issue", stages: stages})
+    {:ok, issue} =
+      Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Enter Stage Issue", stages: stages})
+
     {:ok, task} = Pipeline.create_task(issue, :plan)
 
     %{project: project, task: task, roles: roles}

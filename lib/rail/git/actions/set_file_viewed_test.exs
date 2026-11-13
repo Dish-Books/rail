@@ -21,7 +21,7 @@ defmodule Rail.Git.Actions.SetFileViewedTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Viewed Files"})
+    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Viewed Files"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 

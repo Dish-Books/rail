@@ -35,7 +35,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Filter invoices by vendor."})
+    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Filter invoices by vendor."})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 

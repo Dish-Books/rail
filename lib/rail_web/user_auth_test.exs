@@ -303,6 +303,31 @@ defmodule RailWeb.UserAuthTest do
       assert {:cont, _socket} = UserAuth.on_mount(:require_admin, %{}, session, socket)
     end
 
+    test "require_github halts for someone without GitHub, sending them to connect it", %{user: user} do
+      {:ok, user} = Users.unlink_github(Scope.for_user(user))
+
+      socket = %LiveView.Socket{
+        endpoint: RailWeb.Endpoint,
+        assigns: %{__changed__: %{}, flash: %{}, current_scope: Scope.for_user(user)}
+      }
+
+      assert {:halt,
+              %LiveView.Socket{
+                redirected: {:redirect, %{to: "/settings/connected-accounts"}},
+                assigns: %{flash: %{"error" => "Connect GitHub to work on issues and tasks."}}
+              }} = UserAuth.on_mount(:require_github, %{}, %{}, socket)
+    end
+
+    test "require_github continues for someone with GitHub", %{user: user} do
+      socket = %LiveView.Socket{
+        endpoint: RailWeb.Endpoint,
+        assigns: %{__changed__: %{}, flash: %{}, current_scope: Scope.for_user(user)},
+        private: %{live_temp: %{}, lifecycle: %LiveView.Lifecycle{}}
+      }
+
+      assert {:cont, %LiveView.Socket{redirected: nil}} = UserAuth.on_mount(:require_github, %{}, %{}, socket)
+    end
+
     test "require_admin halts when user is not admin", %{user: user} do
       assert {:ok, non_admin_user} = Users.update_user(Scope.for_system(), user, %{admin: false})
       user_token = Users.generate_user_session_token(non_admin_user)

@@ -2519,6 +2519,25 @@ defmodule RailWeb.IssuesLiveTest do
       refute has_element?(view, "#task-link-#{working.id}")
     end
 
+    test "Start from someone who has since disconnected GitHub says to connect it, and starts nothing", %{
+      conn: conn,
+      viewer: viewer,
+      ready: %Issue{id: ready_id, state: state, owner_user_id: owner_user_id}
+    } do
+      reject(&Pipeline.start_task/2)
+      reject(&Pipeline.adopt_pull_request/2)
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      allow(Pipeline, self(), view.pid)
+      render_async(view)
+      {:ok, _viewer} = Users.unlink_github(Scope.for_user(viewer))
+
+      view |> element("#issue-start-#{ready_id}") |> render_click()
+
+      assert has_element?(view, "#flash-error", "Connect GitHub in Connected accounts before you start an issue.")
+      refute Repo.get_by(Task, issue_id: ready_id)
+      assert %Issue{state: ^state, owner_user_id: ^owner_user_id} = Repo.get!(Issue, ready_id)
+    end
+
     test "a Start clicked on a row that has not caught up with In Progress still starts the issue", %{
       conn: conn,
       ready: ready

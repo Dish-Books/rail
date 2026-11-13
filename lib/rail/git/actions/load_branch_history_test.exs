@@ -17,7 +17,7 @@ defmodule Rail.Git.Actions.LoadBranchHistoryTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Load Branch History"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Load Branch History"})
     {:ok, task} = Pipeline.create_task(issue, :review)
 
     remote = create_temp_git_repo(prefix: "rail_branch_history_remote")

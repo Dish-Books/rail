@@ -27,9 +27,44 @@ defmodule RailWeb.McpControllerTest do
   end
 
   test "rejects a request without a run token", %{conn: conn} do
-    conn = conn |> put_req_header("content-type", "application/json") |> post(~p"/mcp", "{}")
+    conn = conn |> put_req_header("content-type", "application/json") |> post(~p"/mcp/internal", "{}")
 
     assert %{"error" => "invalid_token"} = json_response(conn, 401)
+  end
+
+  test "a person's access token gets the agents' 401 at /mcp/internal", %{conn: conn} do
+    id = System.unique_integer([:positive])
+
+    {:ok, user} =
+      Rail.Users.register_oauth_user(%{github_id: "mci_#{id}", login: "mci_#{id}", email: "mci_#{id}@example.com"})
+
+    {:ok, client, nil} = Mcp.register_dynamic_client(%{"redirect_uris" => ["http://localhost/callback"]})
+    verifier = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+
+    {:ok, %{redirect_url: url}} =
+      Mcp.authorize(Rail.Scope.for_user(user), %{
+        "client_id" => client.client_id,
+        "redirect_uri" => "http://localhost/callback",
+        "code_challenge" => Base.url_encode64(:crypto.hash(:sha256, verifier), padding: false),
+        "code_challenge_method" => "S256"
+      })
+
+    {:ok, %{access_token: access_token}} =
+      Mcp.exchange_code(client, %{
+        "grant_type" => "authorization_code",
+        "code" => URI.decode_query(URI.parse(url).query)["code"],
+        "redirect_uri" => "http://localhost/callback",
+        "code_verifier" => verifier
+      })
+
+    denied =
+      conn
+      |> put_req_header("authorization", "Bearer #{access_token}")
+      |> put_req_header("content-type", "application/json")
+      |> post(~p"/mcp/internal", Jason.encode!(%{"jsonrpc" => "2.0", "id" => 1, "method" => "tools/list"}))
+
+    assert %{"error" => "invalid_token"} = json_response(denied, 401)
+    assert [~s(Bearer error="invalid_token")] = get_resp_header(denied, "www-authenticate")
   end
 
   test "initialize answers the client's version when supported, else its own", %{authed: conn} do
@@ -42,34 +77,35 @@ defmodule RailWeb.McpControllerTest do
                "capabilities" => %{"tools" => %{}},
                "serverInfo" => %{"name" => "rail"}
              }
-           } = conn |> post(~p"/mcp", Jason.encode!(message)) |> json_response(200)
+           } = conn |> post(~p"/mcp/internal", Jason.encode!(message)) |> json_response(200)
 
     message = %{"jsonrpc" => "2.0", "id" => 2, "method" => "initialize"}
 
     assert %{"result" => %{"protocolVersion" => "2025-06-18"}} =
-             conn |> post(~p"/mcp", Jason.encode!(message)) |> json_response(200)
+             conn |> post(~p"/mcp/internal", Jason.encode!(message)) |> json_response(200)
   end
 
   test "accepts notifications and responses without a reply", %{authed: conn} do
     message = %{"jsonrpc" => "2.0", "method" => "notifications/initialized"}
 
-    assert "" = conn |> post(~p"/mcp", Jason.encode!(message)) |> response(202)
+    assert "" = conn |> post(~p"/mcp/internal", Jason.encode!(message)) |> response(202)
   end
 
   test "answers ping, and an unknown method with method not found", %{authed: conn} do
     assert %{"id" => 3, "result" => %{}} =
              conn
-             |> post(~p"/mcp", Jason.encode!(%{"jsonrpc" => "2.0", "id" => 3, "method" => "ping"}))
+             |> post(~p"/mcp/internal", Jason.encode!(%{"jsonrpc" => "2.0", "id" => 3, "method" => "ping"}))
              |> json_response(200)
 
     assert %{"id" => 4, "error" => %{"code" => -32_601}} =
              conn
-             |> post(~p"/mcp", Jason.encode!(%{"jsonrpc" => "2.0", "id" => 4, "method" => "resources/list"}))
+             |> post(~p"/mcp/internal", Jason.encode!(%{"jsonrpc" => "2.0", "id" => 4, "method" => "resources/list"}))
              |> json_response(200)
   end
 
   test "rejects a body that is not a JSON-RPC message", %{authed: conn} do
-    assert %{"error" => %{"code" => -32_600}} = conn |> post(~p"/mcp", ~s({"hello":"world"})) |> json_response(400)
+    assert %{"error" => %{"code" => -32_600}} =
+             conn |> post(~p"/mcp/internal", ~s({"hello":"world"})) |> json_response(400)
   end
 
   test "tools/list lists the run's tools", %{authed: conn, context: context} do
@@ -77,7 +113,7 @@ defmodule RailWeb.McpControllerTest do
 
     assert %{"result" => %{"tools" => [%{"name" => "open__echo"}]}} =
              conn
-             |> post(~p"/mcp", Jason.encode!(%{"jsonrpc" => "2.0", "id" => 5, "method" => "tools/list"}))
+             |> post(~p"/mcp/internal", Jason.encode!(%{"jsonrpc" => "2.0", "id" => 5, "method" => "tools/list"}))
              |> json_response(200)
   end
 
@@ -90,7 +126,7 @@ defmodule RailWeb.McpControllerTest do
         "params" => %{"name" => name, "arguments" => %{"x" => 1}}
       }
 
-      conn |> post(~p"/mcp", Jason.encode!(message)) |> json_response(200)
+      conn |> post(~p"/mcp/internal", Jason.encode!(message)) |> json_response(200)
     end
 
     stub(Mcp, :call_run_tool, fn
@@ -129,7 +165,7 @@ defmodule RailWeb.McpControllerTest do
     message = %{"jsonrpc" => "2.0", "id" => 7, "method" => "tools/call", "params" => %{"name" => "save_finding"}}
 
     assert %{"result" => %{"isError" => true, "content" => [%{"type" => "text", "text" => ^sentence}]}} =
-             conn |> post(~p"/mcp", Jason.encode!(message)) |> json_response(200)
+             conn |> post(~p"/mcp/internal", Jason.encode!(message)) |> json_response(200)
   end
 
   # Only a proxied server's failure is the server's; Rail's own tools fail as Rail.
@@ -143,7 +179,7 @@ defmodule RailWeb.McpControllerTest do
     said = "Rail could not run qa_shot: {:browser_unavailable, :chrome_not_found}"
 
     assert %{"result" => %{"isError" => true, "content" => [%{"text" => ^said}]}} =
-             conn |> post(~p"/mcp", Jason.encode!(message)) |> json_response(200)
+             conn |> post(~p"/mcp/internal", Jason.encode!(message)) |> json_response(200)
 
     refute said =~ "MCP server request failed"
   end
@@ -159,7 +195,7 @@ defmodule RailWeb.McpControllerTest do
       "Rail could not run request_merge: fatal: 'gone.git' does not appear to be a git repository\nfatal: Could not read"
 
     assert %{"result" => %{"isError" => true, "content" => [%{"text" => ^said}]}} =
-             conn |> post(~p"/mcp", Jason.encode!(message)) |> json_response(200)
+             conn |> post(~p"/mcp/internal", Jason.encode!(message)) |> json_response(200)
   end
 
   test "an ask_questions call round-trips into asked rows, and a malformed entry comes back named", %{
@@ -183,7 +219,7 @@ defmodule RailWeb.McpControllerTest do
         "params" => %{"name" => "ask_questions", "arguments" => %{"questions" => questions}}
       }
 
-      conn |> post(~p"/mcp", Jason.encode!(message)) |> json_response(200)
+      conn |> post(~p"/mcp/internal", Jason.encode!(message)) |> json_response(200)
     end
 
     assert %{"result" => %{"content" => [%{"text" => "Asked 2 questions. " <> _rest}]}} =
@@ -204,7 +240,7 @@ defmodule RailWeb.McpControllerTest do
   end
 
   test "GET offers no event stream", %{authed: conn} do
-    conn = get(conn, ~p"/mcp")
+    conn = get(conn, ~p"/mcp/internal")
 
     assert "" = response(conn, 405)
     assert ["POST"] = get_resp_header(conn, "allow")

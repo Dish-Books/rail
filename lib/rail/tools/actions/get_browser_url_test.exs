@@ -19,7 +19,7 @@ defmodule Rail.Tools.Actions.GetBrowserUrlTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Browser Url"})
+    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Browser Url"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 

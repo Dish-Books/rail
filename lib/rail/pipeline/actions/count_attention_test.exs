@@ -36,7 +36,7 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
         })
       end)
 
-      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Attention #{n}"})
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Attention #{n}"})
       {:ok, task} = Pipeline.create_task(issue, :plan)
       {:ok, task} = Pipeline.update_task(task, %{stage: stage})
       Repo.preload(task, :issue)

@@ -9,6 +9,7 @@ defmodule Rail.Issues.Actions.ClaimIssueTest do
   alias Rail.Projects
   alias Rail.Scope
   alias Rail.Users
+  alias Rail.Users.Schemas.User
 
   setup %{project: project} do
     issue =
@@ -67,6 +68,21 @@ defmodule Rail.Issues.Actions.ClaimIssueTest do
     assert Repo.get!(Issue, issue.id).owner_user_id == nil
   end
 
+  test "someone who disconnected GitHub cannot claim a Linear issue, even from a scope built before, Linear linked or not",
+       %{issue: %Issue{id: issue_id} = issue, claimer: claimer} do
+    scope = Scope.for_user(claimer)
+    {:ok, _claimer} = Users.unlink_github(scope)
+
+    assert {:error, :github_not_linked} = Issues.claim_issue(scope, issue)
+    assert %Issue{owner_user_id: nil} = Repo.get!(Issue, issue_id)
+    refute_enqueued(worker: SyncIssue, args: %{issue_id: issue_id})
+  end
+
+  test "a user who is gone claims nothing", %{issue: %Issue{id: issue_id} = issue} do
+    assert {:error, :not_found} = Issues.claim_issue(Scope.for_user(%User{id: "usr_gone", github_id: "gh_gone"}), issue)
+    assert %Issue{owner_user_id: nil} = Repo.get!(Issue, issue_id)
+  end
+
   test "a GitHub issue is claimable without a Linear account, and catches its label up", %{github_project: project} do
     {:ok, %{id: user_id} = user} =
       Users.register_oauth_user(%{github_id: "gh_gh_claimer", login: "gh-claimer", email: "gh-claimer@example.com"})
@@ -98,7 +114,7 @@ defmodule Rail.Issues.Actions.ClaimIssueTest do
     assert %Issue{owner_user_id: nil} = Repo.reload!(issue)
   end
 
-  test "anyone can claim a Rail-tracked issue, Linear or not, and the change is queued for open pages" do
+  test "anyone with GitHub can claim a Rail-tracked issue, Linear or not, and the change is queued for open pages" do
     key = "Clm#{System.unique_integer([:positive])}"
 
     {:ok, project} =
@@ -119,5 +135,30 @@ defmodule Rail.Issues.Actions.ClaimIssueTest do
 
     assert {:ok, %Issue{owner_user_id: ^user_id}} = Issues.claim_issue(Scope.for_user(user), issue)
     assert_enqueued(worker: SyncIssue, args: %{issue_id: issue.id, fields: ["owner_user_id"]})
+  end
+
+  test "someone who disconnected GitHub cannot claim a Rail-tracked issue" do
+    key = "Clg#{System.unique_integer([:positive])}"
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Rail-tracked",
+        github_repo: "example/#{key}",
+        github_installation_id: 1,
+        tracker: :local,
+        key: key,
+        default_branch: "main",
+        clone_path: "/tmp/#{key}"
+      })
+
+    {:ok, %Issue{id: issue_id} = issue} = Issues.create_issue(system_scope(), project, %{title: "Up for grabs"})
+
+    {:ok, user} =
+      Users.register_oauth_user(%{github_id: "gh_local_unlinked", login: "local-unlinked", email: "lcu@example.com"})
+
+    {:ok, user} = Users.unlink_github(Scope.for_user(user))
+
+    assert {:error, :github_not_linked} = Issues.claim_issue(Scope.for_user(user), issue)
+    assert %Issue{owner_user_id: nil} = Repo.get!(Issue, issue_id)
   end
 end

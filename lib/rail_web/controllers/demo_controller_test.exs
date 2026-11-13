@@ -26,7 +26,7 @@ defmodule RailWeb.DemoControllerTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Demo Controller"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Demo Controller"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     demo_dir = Path.join(task.scratch_path, "demo")
     File.mkdir_p!(demo_dir)

@@ -31,7 +31,7 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Encode Demo"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Encode Demo"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     demo_dir = Path.join(task.scratch_path, "demo")
     File.mkdir_p!(demo_dir)

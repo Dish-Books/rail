@@ -8,6 +8,7 @@ defmodule RailWeb.SandboxesLive do
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Tools.Schemas.ToolchainInstall
+  alias Rail.Users.Schemas.User
 
   # Usage is read from Docker, which takes a moment per container, so it is
   # re-read on its own clock rather than with everything else.
@@ -313,6 +314,11 @@ defmodule RailWeb.SandboxesLive do
       </div>
     </Layouts.app>
     """
+  end
+
+  def handle_event("stop", _params, %{assigns: %{current_scope: %Scope{user: %User{github_id: nil}}}} = socket) do
+    socket = put_flash(socket, :error, "Connect GitHub in Connected accounts before you stop a run.")
+    {:noreply, socket}
   end
 
   # Only a run in a row this user can see, so a crafted id cannot stop another project's.

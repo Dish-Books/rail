@@ -21,7 +21,7 @@ defmodule Rail.Mcp.Utils.RunToolBrowserCloseTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Close Browsers"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Close Browsers"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 

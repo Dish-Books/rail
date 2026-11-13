@@ -23,7 +23,7 @@ defmodule Rail.Git.Actions.LoadDiffTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Load Diff"})
+    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Load Diff"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 
     remote = create_temp_git_repo(prefix: "rail_load_diff_remote")

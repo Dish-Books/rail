@@ -9,7 +9,11 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
 
   def mount(_params, _session, socket) do
     %Scope{user: %User{} = user} = current_scope = socket.assigns.current_scope
-    if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "users")
+
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "users")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "mcp_authorizations")
+    end
 
     socket =
       socket
@@ -27,6 +31,9 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
       |> assign(:repository_access, repository_access(socket.assigns.projects))
       |> assign(:mcp_servers, Enum.filter(Mcp.list_servers(), &(&1.enabled and &1.auth == :oauth)))
       |> assign(:mcp_connected_ids, mcp_connected_ids(current_scope))
+      |> assign(:rail_mcp_url, url(~p"/mcp"))
+      |> assign(:mcp_authorizations, Mcp.list_authorizations(current_scope))
+      |> assign(:revoking_family_id, nil)
 
     {:ok, socket}
   end
@@ -510,8 +517,192 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
             </div>
           </div>
         </div>
+
+        <section
+          id="rail-mcp-section"
+          class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 overflow-hidden"
+        >
+          <div class="flex items-center gap-4 p-5">
+            <div class="size-11 shrink-0 rounded-full bg-slate-100 dark:bg-slate-700 grid place-items-center">
+              <.icon name="pi-plugs-connected" class="size-[18px] text-slate-500 dark:text-slate-300" />
+            </div>
+
+            <div class="min-w-0 flex-1">
+              <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Rail MCP</h2>
+              <p id="rail-mcp-description" class="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+                Claude works on tickets as you, in the {project_count(@projects)} you can open. Each Claude you connect
+                is listed here, and revoking one leaves the others connected.
+              </p>
+            </div>
+          </div>
+
+          <p
+            :if={!@github_connected}
+            id="rail-mcp-github-required"
+            class="flex items-start gap-2 border-t border-slate-200 dark:border-slate-700 px-5 py-4 text-sm text-slate-600 dark:text-slate-300"
+          >
+            <.icon name="pi-github-logo" class="size-4 mt-0.5 shrink-0 text-slate-400" />
+            Connect GitHub above to connect Claude to Rail.
+          </p>
+
+          <div
+            :if={@github_connected}
+            id="rail-mcp-add"
+            class="border-t border-slate-200 dark:border-slate-700 px-5 py-4 grid grid-cols-1 xl:grid-cols-2 gap-4"
+          >
+            <div class="min-w-0">
+              <p class="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Claude Code: run this in a terminal
+              </p>
+              <div class="relative mt-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 ring-1 ring-slate-200 dark:ring-slate-700">
+                <pre
+                  id="rail-mcp-claude-code"
+                  class="px-3 py-2 pr-11 font-mono text-[13px] leading-6 text-slate-700 dark:text-slate-200 whitespace-pre-wrap break-all"
+                >{claude_code_command(@rail_mcp_url)}</pre>
+                <.copy_button
+                  id="copy-rail-mcp-claude-code"
+                  text={claude_code_command(@rail_mcp_url)}
+                />
+              </div>
+            </div>
+
+            <div class="min-w-0">
+              <p class="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Claude Desktop or claude.ai: Settings, Connectors, Add custom connector
+              </p>
+              <div class="relative mt-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 ring-1 ring-slate-200 dark:ring-slate-700">
+                <pre
+                  id="rail-mcp-url"
+                  class="px-3 py-2 pr-11 font-mono text-[13px] leading-6 text-slate-700 dark:text-slate-200 whitespace-pre-wrap break-all"
+                >{@rail_mcp_url}</pre>
+                <.copy_button id="copy-rail-mcp-url" text={@rail_mcp_url} />
+              </div>
+            </div>
+
+            <p class="xl:col-span-2 text-sm text-slate-500 dark:text-slate-400">
+              Claude opens Rail in your browser to connect. There is nothing to paste and no token to keep.
+            </p>
+          </div>
+
+          <table
+            :if={@mcp_authorizations != []}
+            id="rail-mcp-connections"
+            class="w-full border-t border-slate-200 dark:border-slate-700"
+          >
+            <thead>
+              <tr class="text-left text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                <th class="px-5 py-2 font-bold">Client</th>
+                <th class="px-5 py-2 font-bold w-48">Connected</th>
+                <th class="px-5 py-2 font-bold w-48">Last used</th>
+                <th class="px-5 py-2 w-28"><span class="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                :for={authorization <- @mcp_authorizations}
+                id={"rail-mcp-connection-#{authorization.family_id}"}
+                class="border-t border-slate-200 dark:border-slate-700 text-sm"
+              >
+                <td class="px-5 py-3 max-w-0 w-full">
+                  <span class="block truncate text-slate-900 dark:text-slate-100 font-medium">
+                    {authorization.client_name}
+                  </span>
+                  <span class="block truncate text-xs text-slate-400 dark:text-slate-500">
+                    Returns to {authorization.redirect_host}
+                  </span>
+                </td>
+                <td class="px-5 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                  <.local_time
+                    id={"rail-mcp-connected-#{authorization.family_id}"}
+                    at={authorization.connected_at}
+                  />
+                </td>
+                <td class="px-5 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                  <.local_time
+                    id={"rail-mcp-last-used-#{authorization.family_id}"}
+                    at={authorization.last_used_at}
+                  />
+                </td>
+                <td class="px-5 py-3 text-right">
+                  <.button
+                    variant="ghost_danger"
+                    size="sm"
+                    phx-click="revoke_mcp"
+                    phx-value-family_id={authorization.family_id}
+                    id={"revoke-rail-mcp-#{authorization.family_id}"}
+                  >
+                    Revoke
+                  </.button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div
+            :if={@mcp_authorizations == []}
+            id="rail-mcp-empty"
+            class="border-t border-slate-200 dark:border-slate-700 px-5 py-10 text-center"
+          >
+            <.icon name="pi-plugs" class="size-6 text-slate-400 dark:text-slate-500" />
+            <p class="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+              No Claude connected
+            </p>
+            <p class="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+              Add Rail in Claude with one of the two above, and it shows here once you allow it.
+            </p>
+          </div>
+        </section>
       </div>
     </Layouts.app>
+
+    <div
+      :if={@revoking_family_id}
+      id="revoke-rail-mcp-modal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
+      phx-window-keydown="close_revoke_mcp"
+      phx-key="Escape"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="revoke-rail-mcp-title"
+        class="w-full max-w-xl rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-6"
+      >
+        <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-4">
+          <h2
+            class="text-lg font-semibold text-slate-900 dark:text-slate-100"
+            id="revoke-rail-mcp-title"
+          >
+            Revoke this Claude connection?
+          </h2>
+          <button
+            type="button"
+            phx-click="close_revoke_mcp"
+            id="close-revoke-rail-mcp"
+            aria-label="Close"
+            class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold focus-visible:outline-2 focus-visible:outline-indigo-500"
+          >
+            ✕
+          </button>
+        </div>
+
+        <p class="text-sm text-slate-600 dark:text-slate-300">
+          That Claude stops reaching Rail at once, until you connect it again. Your other connections keep working.
+        </p>
+
+        <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+          <.button type="button" phx-click="close_revoke_mcp" id="cancel-revoke-rail-mcp">Cancel</.button>
+          <.button
+            type="button"
+            variant="danger_solid"
+            phx-click="confirm_revoke_mcp"
+            id="confirm-revoke-rail-mcp"
+          >
+            Revoke
+          </.button>
+        </div>
+      </div>
+    </div>
     """
   end
 
@@ -613,6 +804,29 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
     {:noreply, assign(socket, :mcp_connected_ids, mcp_connected_ids(scope))}
   end
 
+  def handle_event("revoke_mcp", %{"family_id" => family_id}, socket) do
+    {:noreply, assign(socket, :revoking_family_id, family_id)}
+  end
+
+  def handle_event("close_revoke_mcp", _params, socket) do
+    {:noreply, assign(socket, :revoking_family_id, nil)}
+  end
+
+  # One revoked elsewhere meanwhile is not found, and the list read again shows it gone.
+  def handle_event("confirm_revoke_mcp", _params, %{assigns: %{revoking_family_id: family_id}} = socket)
+      when is_binary(family_id) do
+    _revoked_or_gone = Mcp.revoke_authorization(socket.assigns.current_scope, family_id)
+
+    socket =
+      socket
+      |> assign(:revoking_family_id, nil)
+      |> assign(:mcp_authorizations, Mcp.list_authorizations(socket.assigns.current_scope))
+
+    {:noreply, socket}
+  end
+
+  def handle_event("confirm_revoke_mcp", _params, socket), do: {:noreply, socket}
+
   def handle_info({:users_changed, id}, %{assigns: %{current_user: %User{id: id}}} = socket) do
     {:ok, user} = Users.get_user(id: id)
     socket = apply_user(socket, user)
@@ -621,6 +835,53 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
   end
 
   def handle_info({:users_changed, _someone_else}, socket), do: {:noreply, socket}
+
+  # A connection made, used or revoked in Claude or another tab; a modal for one now gone closes.
+  def handle_info({:mcp_authorizations_changed, id}, %{assigns: %{current_user: %User{id: id}}} = socket) do
+    authorizations = Mcp.list_authorizations(socket.assigns.current_scope)
+    revoking = socket.assigns.revoking_family_id
+
+    socket =
+      socket
+      |> assign(:mcp_authorizations, authorizations)
+      |> assign(:revoking_family_id, Enum.find_value(authorizations, &(&1.family_id == revoking && revoking)))
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:mcp_authorizations_changed, _someone_else}, socket), do: {:noreply, socket}
+
+  attr :id, :string, required: true
+  attr :text, :string, required: true
+
+  defp copy_button(assigns) do
+    ~H"""
+    <button
+      type="button"
+      id={@id}
+      phx-hook="CopyText"
+      data-copy-text={@text}
+      aria-label="Copy"
+      title="Copy"
+      class="group absolute top-1.5 right-1.5 h-7 w-7 grid place-items-center rounded-md text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-100 cursor-pointer focus-visible:outline-2 focus-visible:outline-indigo-500"
+    >
+      <.icon name="pi-copy" class="h-4 w-4 group-data-[copied=true]:hidden" />
+      <.icon
+        name="pi-check"
+        class="h-4 w-4 text-green-600 hidden group-data-[copied=true]:inline-block"
+      />
+    </button>
+    """
+  end
+
+  defp claude_code_command(url), do: "claude mcp add --transport http rail #{url}"
+
+  defp project_count(projects) do
+    case length(projects) do
+      1 -> "1 project"
+      count -> "#{count} projects"
+    end
+  end
 
   attr :label, :string, required: true
   attr :src, :any, default: nil

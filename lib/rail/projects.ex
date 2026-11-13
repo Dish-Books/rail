@@ -10,6 +10,8 @@ defmodule Rail.Projects do
 
   defdelegate list_projects(scope), to: Actions.ListProjects
 
+  defdelegate find_project(scope, key_or_name), to: Actions.FindProject
+
   defdelegate get_project(id), to: Actions.GetProject
 
   defdelegate list_linear_workspaces(), to: Actions.ListLinearWorkspaces

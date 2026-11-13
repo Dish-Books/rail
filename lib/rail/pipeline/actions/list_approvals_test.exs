@@ -21,7 +21,7 @@ defmodule Rail.Pipeline.Actions.ListApprovalsTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "List Approvals"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "List Approvals"})
     {:ok, task} = Pipeline.create_task(issue, :finalize)
     {:ok, task} = Pipeline.update_task(task, %{pr_number: 151, marked_ready_at: DateTime.utc_now()})
 

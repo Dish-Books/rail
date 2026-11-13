@@ -538,7 +538,7 @@ defmodule RailWeb.Live.TaskActionsTest do
     end)
   end
 
-  test "a tech lead who never connected GitHub is told to connect it when approving, and nothing is sent", %{
+  test "a tech lead who never connected GitHub is sent to connect it rather than shown Approve", %{
     conn: conn,
     task: task,
     dan: dan,
@@ -546,17 +546,9 @@ defmodule RailWeb.Live.TaskActionsTest do
   } do
     {:ok, _marked} = Pipeline.mark_ready(Scope.for_user(dan), task)
     {:ok, michael} = Users.unlink_github(Scope.for_user(michael))
-    assert {:ok, view, _html} = live(log_in_user(conn, michael), ~p"/tasks/#{task.id}")
 
-    view |> element("#task-approve") |> render_click()
-
-    eventually(fn ->
-      assert has_element?(
-               view,
-               "#task-actions-error[role='alert']",
-               "Connect GitHub in Connected accounts to approve. Nothing was sent."
-             )
-    end)
+    assert {:error, {:redirect, %{to: "/settings/connected-accounts"}}} =
+             live(log_in_user(conn, michael), ~p"/tasks/#{task.id}")
   end
 
   test "a tech lead whose GitHub sign-in lapsed who approves or merges is told to connect it, and both buttons stay", %{

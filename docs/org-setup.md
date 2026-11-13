@@ -114,3 +114,21 @@ Check: Settings > Roles lists a role for each of plan, engineer, review, QA and 
 ## 8. First task
 
 Pick a small issue and start Plan. Starting makes you the issue's owner, which Rail needs before it moves a tracker's status forward. On a Linear project that takes a linked Linear account. Without one the issue stays unassigned until you link it and press Claim on the task page. A run tab appears on the task within seconds. On a GitHub-tracked project the issue's label moves to `rail:in-progress`, then `rail:in-review` once review starts. On a project Rail tracks itself, the issue moves to In Progress, In Review and Done with its task whether or not anyone owns it.
+
+## 9. People's Claude
+
+A person adds Rail to their own Claude Code, Claude Desktop or claude.ai at `<Rail's URL>/mcp`, and Claude signs in through Rail's consent page (Settings > Connected accounts shows the command and the address). Claude calls Rail from outside, with no Cloudflare Access cookie, so behind Access these paths need an application of their own with a Bypass policy:
+
+| Path | Why |
+|---|---|
+| `/mcp` | Claude's MCP calls, each carrying the person's Rail token |
+| `/.well-known/oauth-protected-resource` | where Claude finds the server that issues tokens for `/mcp` |
+| `/.well-known/oauth-authorization-server` | the consent page, token and registration addresses |
+| `/oauth/register` | Claude registering itself as a client |
+| `/oauth/token` | Claude exchanging its code and refreshing its token |
+
+- **`/mcp/internal`** is where Rail's own agents call, on localhost. Give it an Access application of its own that keeps the usual policy, since it is more specific than the `/mcp` bypass and would otherwise inherit it.
+- **`/oauth/mcp/authorize`** stays behind Access. The person opens it in their own browser, signed in to Access already.
+- **Registration is open to any client,** so add a Cloudflare rate-limiting rule on `/oauth/register`: 20 requests an hour from one IP, blocked for an hour.
+
+Check: run `claude mcp add --transport http rail <Rail's URL>/mcp`, then `/mcp` in Claude Code and choose to authenticate. Rail's consent page opens in the browser, Allow returns to Claude, and Claude lists Rail's seven ticket tools, from `list_projects` to `create_comment`. The connection shows on Connected accounts.

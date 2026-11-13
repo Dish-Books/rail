@@ -73,7 +73,7 @@ defmodule Rail.Tools.Actions.BuildArgs do
       "mcpServers" => %{
         "rail" => %{
           "type" => "http",
-          "url" => "http://localhost:#{RailWeb.Endpoint.config(:http)[:port]}/mcp",
+          "url" => "http://localhost:#{RailWeb.Endpoint.config(:http)[:port]}/mcp/internal",
           "headers" => %{"Authorization" => "Bearer ${RAIL_MCP_TOKEN}"}
         }
       }

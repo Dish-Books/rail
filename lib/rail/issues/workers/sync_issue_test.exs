@@ -27,7 +27,7 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Sync Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Sync Issue"})
 
     %{project: project, issue: issue}
   end

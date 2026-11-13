@@ -20,9 +20,12 @@ defmodule Rail.Pipeline.Actions.ListDiffCommentsTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Diff Comments"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Diff Comments"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
-    {:ok, other_issue} = Issues.create_issue(system_scope(), project, %{description: "Other Diff Comments"})
+
+    {:ok, other_issue} =
+      Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Other Diff Comments"})
+
     {:ok, other_task} = Pipeline.create_task(other_issue, :engineer)
     on_exit(fn -> Enum.each([task, other_task], &File.rm_rf(&1.scratch_path)) end)
 

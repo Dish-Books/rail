@@ -20,7 +20,7 @@ defmodule Rail.Git.Actions.PushBranchTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Push Branch"})
+    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Push Branch"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 
     # No initial commit on the remote: two repos with their own first commit have

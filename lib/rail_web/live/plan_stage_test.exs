@@ -71,7 +71,7 @@ defmodule RailWeb.Live.PlanStageTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(Scope.for_system(), project, %{description: "Plan Stage Issue"})
+    {:ok, issue} = Issues.create_issue(Scope.for_system(), project, %{title: "Issue", description: "Plan Stage Issue"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 

@@ -28,7 +28,7 @@ defmodule Rail.Tools.Actions.RunInSandboxTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Seed"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Seed"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     # Out of the seeded project's clone, so making the worktree does not make the clone too.
     worktree_path = Path.join(task.scratch_path, "worktree")

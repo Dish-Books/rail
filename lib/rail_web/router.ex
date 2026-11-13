@@ -28,9 +28,14 @@ defmodule RailWeb.Router do
     plug :accepts, ["json"]
   end
 
-  pipeline :mcp do
+  pipeline :mcp_internal do
     plug :accepts, ["json"]
     plug RailWeb.Plugs.McpRunAuth
+  end
+
+  # No `accepts`: the MCP transport's event-stream GET asks for text/event-stream.
+  pipeline :mcp do
+    plug RailWeb.Plugs.OAuth
   end
 
   scope "/webhooks", RailWeb do
@@ -40,11 +45,39 @@ defmodule RailWeb.Router do
     post "/github", GithubWebhookController, :handle
   end
 
-  scope "/mcp", RailWeb do
-    pipe_through :mcp
+  # Before `/mcp`, whose forward would otherwise take it.
+  scope "/mcp/internal", RailWeb do
+    pipe_through :mcp_internal
 
     post "/", McpController, :handle
     get "/", McpController, :stream
+  end
+
+  scope "/mcp" do
+    pipe_through :mcp
+
+    forward "/", Anubis.Server.Transport.StreamableHTTP.Plug, server: RailWeb.Mcp.Server
+  end
+
+  scope "/.well-known", RailWeb do
+    get "/oauth-authorization-server", WellKnownController, :oauth_authorization_server
+    get "/oauth-protected-resource", WellKnownController, :oauth_protected_resource
+    get "/oauth-protected-resource/mcp", WellKnownController, :oauth_protected_resource
+  end
+
+  scope "/oauth", RailWeb do
+    pipe_through :api
+
+    post "/token", OAuthAuthorizationController, :token
+    post "/register", OAuthAuthorizationController, :register
+  end
+
+  scope "/oauth/mcp", RailWeb do
+    pipe_through [:browser, :require_authenticated_user]
+
+    live_session :mcp_authorize, on_mount: [{RailWeb.UserAuth, :require_authenticated}] do
+      live "/authorize", McpAuthorizeLive
+    end
   end
 
   scope "/auth/linear", RailWeb do

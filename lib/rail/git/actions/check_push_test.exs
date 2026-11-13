@@ -18,7 +18,7 @@ defmodule Rail.Git.Actions.CheckPushTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Check Push"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Check Push"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 
     remote = create_temp_git_repo(prefix: "rail_git_remote", initial_commit: false)

@@ -18,6 +18,7 @@ defmodule Rail.DataCase do
       import Rail.DataCase
       import Rail.Scope, only: [user_scope: 0, user_scope: 1, temp_user_scope: 0, temp_user_scope: 1, system_scope: 0]
       import RailTest.Helpers
+      import RailTest.McpHelpers
 
       alias Rail.Repo
 

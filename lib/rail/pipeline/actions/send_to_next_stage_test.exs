@@ -34,7 +34,7 @@ defmodule Rail.Pipeline.Actions.SendToNextStageTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Send To Review"})
+    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Send To Review"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 

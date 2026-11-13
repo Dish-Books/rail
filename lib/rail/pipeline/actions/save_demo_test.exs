@@ -21,7 +21,7 @@ defmodule Rail.Pipeline.Actions.SaveDemoTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Save Demo"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Save Demo"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 

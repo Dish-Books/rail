@@ -28,7 +28,7 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Pick Design"})
+    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Pick Design"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     # Git is stubbed, so the worktree is only ever looked for: a plain directory stands in for it.
     worktree_path = Path.join(System.tmp_dir!(), "rail_pkd_wt_#{System.unique_integer([:positive])}")

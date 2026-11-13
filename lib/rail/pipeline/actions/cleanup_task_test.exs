@@ -36,7 +36,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Cleanup Task Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Cleanup Task Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :plan)
 
@@ -243,7 +243,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
       })
     end)
 
-    {:ok, issue_8709} = Issues.create_issue(system_scope(), project, %{description: "Task 8709"})
+    {:ok, issue_8709} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Task 8709"})
 
     {:ok, task} = Pipeline.create_task(issue_8709, :plan)
 
@@ -271,7 +271,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Task cleaned twice"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Task cleaned twice"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     {:ok, task} = Pipeline.update_task(task, %{stage: :merged})
 

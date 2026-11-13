@@ -23,7 +23,7 @@ defmodule Rail.Pipeline.Actions.ApproveTaskTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Approve Task"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Approve Task"})
     {:ok, task} = Pipeline.create_task(issue, :finalize)
     {:ok, task} = Pipeline.update_task(task, %{pr_number: 151, marked_ready_at: DateTime.utc_now()})
 

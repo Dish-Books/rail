@@ -20,7 +20,7 @@ defmodule Rail.Git.Actions.LoadDiffHunksTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Diff Hunk"})
+    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Diff Hunk"})
     {:ok, task} = Pipeline.create_task(issue, :review)
 
     # Two edits far enough apart to land in hunks of their own, beside a file the branch leaves alone.

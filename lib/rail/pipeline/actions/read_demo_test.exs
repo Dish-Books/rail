@@ -19,7 +19,7 @@ defmodule Rail.Pipeline.Actions.ReadDemoTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Read Demo"})
+    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Read Demo"})
     {:ok, task} = Pipeline.create_task(issue, :review)
 
     demo_dir = Path.join(task.scratch_path, "demo")

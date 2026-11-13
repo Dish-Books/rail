@@ -19,6 +19,7 @@ defmodule RailWeb.IssueLiveTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
+  alias Rail.Scope
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
@@ -1125,6 +1126,56 @@ defmodule RailWeb.IssueLiveTest do
     |> render_submit(%{"body" => "An orphan", "parent_id" => "com_missing"})
 
     assert has_element?(view, "#flash-error", "Could not post the comment")
+  end
+
+  test "someone who disconnected GitHub is sent to connect it rather than shown the issue", %{
+    conn: conn,
+    user: user,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_gh_1",
+        identifier: "IPG-91",
+        title: "Needs GitHub",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    {:ok, _user} = Users.unlink_github(Scope.for_user(user))
+
+    assert {:error,
+            {:redirect,
+             %{to: "/settings/connected-accounts", flash: %{"error" => "Connect GitHub to work on issues and tasks."}}}} =
+             live(conn, ~p"/issues/#{issue.identifier}")
+  end
+
+  test "an open issue page sends its person to connect GitHub once they disconnect it, and no one else's change does", %{
+    conn: conn,
+    user: user,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_gh_2",
+        identifier: "IPG-92",
+        title: "Needs GitHub",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    send(view.pid, {:users_changed, "usr_someone_else"})
+    send(view.pid, {:users_changed, user.id})
+    assert has_element?(view, "#issue-title")
+
+    {:ok, _user} = Users.unlink_github(Scope.for_user(user))
+    assert_redirect(view, "/settings/connected-accounts")
   end
 
   test "reloads when its own project syncs or its own comments change", %{conn: conn, project: project} do

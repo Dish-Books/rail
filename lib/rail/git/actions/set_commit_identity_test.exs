@@ -19,7 +19,7 @@ defmodule Rail.Git.Actions.SetCommitIdentityTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Set Commit Identity"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Set Commit Identity"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     clone = create_temp_git_repo()
     worktree = Path.join(clone, ".worktrees/sci-1")

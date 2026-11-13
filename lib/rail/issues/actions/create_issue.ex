@@ -20,6 +20,8 @@ defmodule Rail.Issues.Actions.CreateIssue do
   @doc """
   Creates the ticket and inserts the issue it came back as.
 
+  A blank title or an estimate below 0 is the changeset's error, before the tracker is asked.
+
   `attrs` carries `:title` and `:description`, and optionally `:priority`, `:estimate`,
   `:owner_user_id`, `:workflow_id`, the workflow opening it, `:skipped_steps`, the steps its file
   turned off, `:stages`, the `IssueStage`s its file named, and `:parent`, the issue it is a sub-issue of. The ticket is opened in triage, or in Todo for a sub-issue, whose work is
@@ -30,7 +32,8 @@ defmodule Rail.Issues.Actions.CreateIssue do
     project = %{project | tracker: Repo.one!(from(p in Project, where: p.id == ^project_id, select: p.tracker))}
     state = if attrs[:parent], do: :todo, else: :triage
 
-    with {:ok, tracked} <- Tracker.tracker(project).create_issue(scope, project, Map.put(attrs, :state, state)) do
+    with %Ecto.Changeset{valid?: true} <- Issue.edit_changeset(%Issue{}, Map.take(attrs, [:title, :estimate])),
+         {:ok, tracked} <- Tracker.tracker(project).create_issue(scope, project, Map.put(attrs, :state, state)) do
       local =
         Map.merge(tracked, %{
           tracker: project.tracker,
@@ -70,6 +73,9 @@ defmodule Rail.Issues.Actions.CreateIssue do
         {:error, changeset} ->
           {:error, changeset}
       end
+    else
+      %Ecto.Changeset{} = changeset -> {:error, changeset}
+      {:error, _reason} = error -> error
     end
   end
 end

@@ -802,4 +802,169 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
       assert %User{slack_notifications: false} = Repo.reload!(user)
     end
   end
+
+  describe "Rail MCP" do
+    setup %{user: user} do
+      {:ok, code_client, nil} =
+        Rail.Mcp.register_dynamic_client(%{
+          "client_name" => "Claude Code",
+          "redirect_uris" => ["http://localhost/callback"]
+        })
+
+      {:ok, web_client, nil} =
+        Rail.Mcp.register_dynamic_client(%{"client_name" => "Claude", "redirect_uris" => ["https://claude.ai/callback"]})
+
+      connect = fn client ->
+        verifier = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+        [redirect_uri] = client.redirect_uris
+
+        {:ok, %{redirect_url: url}} =
+          Rail.Mcp.authorize(Scope.for_user(user), %{
+            "client_id" => client.client_id,
+            "redirect_uri" => redirect_uri,
+            "code_challenge" => Base.url_encode64(:crypto.hash(:sha256, verifier), padding: false),
+            "code_challenge_method" => "S256"
+          })
+
+        {:ok, %{access_token: access_token}} =
+          Rail.Mcp.exchange_code(client, %{
+            "grant_type" => "authorization_code",
+            "code" => URI.decode_query(URI.parse(url).query)["code"],
+            "redirect_uri" => redirect_uri,
+            "code_verifier" => verifier
+          })
+
+        access_token
+      end
+
+      %{code_client: code_client, web_client: web_client, connect: connect}
+    end
+
+    test "shows the address and the Claude Code command, and says when no Claude is connected", %{authed_conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+      address = RailWeb.Endpoint.url() <> "/mcp"
+
+      assert has_element?(view, "#rail-mcp-url", address)
+      assert has_element?(view, "#rail-mcp-claude-code", "claude mcp add --transport http rail #{address}")
+      assert has_element?(view, "#copy-rail-mcp-url[data-copy-text='#{address}']")
+      assert has_element?(view, "#rail-mcp-description", "in the 1 project you can open")
+      assert has_element?(view, "#rail-mcp-empty", "No Claude connected")
+      refute has_element?(view, "#rail-mcp-connections")
+    end
+
+    test "once GitHub is disconnected, asks for it in place of the command and keeps the connections listed", %{
+      authed_conn: conn,
+      user: user,
+      web_client: web_client,
+      connect: connect
+    } do
+      connect.(web_client)
+      {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+      assert has_element?(view, "#rail-mcp-claude-code")
+      refute has_element?(view, "#rail-mcp-github-required")
+
+      {:ok, _user} = Users.unlink_github(Scope.for_user(user))
+
+      assert has_element?(view, "#rail-mcp-github-required", "Connect GitHub above to connect Claude to Rail.")
+      refute has_element?(view, "#rail-mcp-claude-code")
+      refute has_element?(view, "#rail-mcp-url")
+      assert has_element?(view, "#rail-mcp-connections tbody tr", "Returns to claude.ai")
+    end
+
+    test "lists one row per connection, newest first, and one made elsewhere shows without a reload", %{
+      authed_conn: conn,
+      code_client: code_client,
+      web_client: web_client,
+      connect: connect
+    } do
+      connect.(web_client)
+      {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+      assert has_element?(view, "#rail-mcp-connections tbody tr", "Returns to claude.ai")
+
+      connect.(code_client)
+
+      assert [_header, newest, oldest] =
+               view
+               |> render()
+               |> LazyHTML.from_fragment()
+               |> LazyHTML.query("#rail-mcp-connections tr")
+               |> Enum.to_list()
+
+      assert LazyHTML.text(newest) =~ "Claude Code"
+      assert LazyHTML.text(newest) =~ "Returns to localhost"
+      assert LazyHTML.text(oldest) =~ "Returns to claude.ai"
+      refute has_element?(view, "#rail-mcp-empty")
+    end
+
+    test "Revoke asks first, then refuses that Claude and leaves the others", %{
+      authed_conn: conn,
+      user: user,
+      code_client: code_client,
+      web_client: web_client,
+      connect: connect
+    } do
+      kept = connect.(web_client)
+      revoked = connect.(code_client)
+      [%{family_id: family_id}, %{family_id: kept_family}] = Rail.Mcp.list_authorizations(Scope.for_user(user))
+      {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+
+      view |> element("#revoke-rail-mcp-#{family_id}") |> render_click()
+      assert has_element?(view, "#revoke-rail-mcp-modal", "Revoke this Claude connection?")
+
+      view |> element("#cancel-revoke-rail-mcp") |> render_click()
+      refute has_element?(view, "#revoke-rail-mcp-modal")
+      assert {:ok, %Scope{}} = Rail.Mcp.resolve_access_token(revoked)
+
+      view |> element("#revoke-rail-mcp-#{family_id}") |> render_click()
+      view |> element("#revoke-rail-mcp-modal") |> render_keydown(%{"key" => "Escape"})
+      refute has_element?(view, "#revoke-rail-mcp-modal")
+
+      view |> element("#revoke-rail-mcp-#{family_id}") |> render_click()
+      view |> element("#confirm-revoke-rail-mcp") |> render_click()
+
+      refute has_element?(view, "#revoke-rail-mcp-modal")
+      refute has_element?(view, "#rail-mcp-connection-#{family_id}")
+      assert has_element?(view, "#rail-mcp-connection-#{kept_family}")
+      assert {:error, :revoked} = Rail.Mcp.resolve_access_token(revoked)
+      assert {:ok, %Scope{}} = Rail.Mcp.resolve_access_token(kept)
+    end
+
+    test "a connection revoked in another tab while its modal is open closes it, and a confirm then does nothing", %{
+      authed_conn: conn,
+      user: user,
+      code_client: code_client,
+      connect: connect
+    } do
+      connect.(code_client)
+      [%{family_id: family_id}] = Rail.Mcp.list_authorizations(Scope.for_user(user))
+      {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+      view |> element("#revoke-rail-mcp-#{family_id}") |> render_click()
+
+      :ok = Rail.Mcp.revoke_authorization(Scope.for_user(user), family_id)
+
+      refute has_element?(view, "#revoke-rail-mcp-modal")
+      assert has_element?(view, "#rail-mcp-empty")
+      render_click(view, "confirm_revoke_mcp", %{})
+      assert has_element?(view, "#rail-mcp-empty")
+    end
+
+    test "a use elsewhere updates Last used without a reload, and another person's changes are ignored", %{
+      authed_conn: conn,
+      user: user,
+      code_client: code_client,
+      connect: connect
+    } do
+      access_token = connect.(code_client)
+      [%{family_id: family_id}] = Rail.Mcp.list_authorizations(Scope.for_user(user))
+      Repo.update_all(Rail.Mcp.Schemas.OauthAccessToken, set: [inserted_at: ~U[2026-01-02 03:04:05Z]])
+      {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+      assert has_element?(view, "#rail-mcp-last-used-#{family_id}", "Jan 2, 3:04 AM UTC")
+
+      send(view.pid, {:mcp_authorizations_changed, "usr_someone_else"})
+      {:ok, _scope} = Rail.Mcp.resolve_access_token(access_token)
+
+      refute has_element?(view, "#rail-mcp-last-used-#{family_id}", "Jan 2, 3:04 AM UTC")
+      assert has_element?(view, "#rail-mcp-connected-#{family_id}", "Jan 2, 3:04 AM UTC")
+    end
+  end
 end

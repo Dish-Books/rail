@@ -17,7 +17,8 @@ defmodule Rail.Application do
           (Rail.goth_enabled?() && {Goth, name: Rail.Goth}) || nil,
           Rail.Tools,
           Rail.Triage,
-          RailWeb.Endpoint
+          RailWeb.Endpoint,
+          {RailWeb.Mcp.Server, transport: {:streamable_http, start: true}}
         ],
         &is_nil/1
       )

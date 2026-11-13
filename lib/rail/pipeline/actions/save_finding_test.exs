@@ -20,7 +20,7 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Save Finding"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Save Finding"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     # HEAD is asked of Rail.Git, so the worktree is a plain directory and the stub says which commit it is on.
     # A test that moves the branch stubs it again with the new commit.

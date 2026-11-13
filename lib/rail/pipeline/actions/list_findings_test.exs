@@ -17,7 +17,7 @@ defmodule Rail.Pipeline.Actions.ListFindingsTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "List Findings"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "List Findings"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 

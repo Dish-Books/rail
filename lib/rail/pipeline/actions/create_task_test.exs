@@ -26,7 +26,7 @@ defmodule Rail.Pipeline.Actions.CreateTaskTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Create Task Issue"})
+    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Create Task Issue"})
 
     %{issue: issue}
   end

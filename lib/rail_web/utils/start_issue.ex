@@ -16,13 +16,16 @@ defmodule RailWeb.Utils.StartIssue do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Scope
+  alias Rail.Users
+  alias Rail.Users.Schemas.User
 
   # Read again rather than trusted from the page: the id comes from the browser, and a start from a stale page opens
   # the task it finds.
   def start_issue(socket, issue_id, reload) do
     scope = socket.assigns.current_scope
 
-    with {:ok, %Issue{} = issue} <- Issues.get_issue(issue_id, preload: [:project, :task]),
+    with {:ok, %User{github_id: github_id}} when is_binary(github_id) <- Users.get_user(id: scope.user.id),
+         {:ok, %Issue{} = issue} <- Issues.get_issue(issue_id, preload: [:project, :task]),
          true <- Scope.can_access_project?(scope, issue.project_id) and not Issue.finished_state?(issue.state) do
       cond do
         match?(%Task{}, issue.task) ->
@@ -35,6 +38,7 @@ defmodule RailWeb.Utils.StartIssue do
           scope |> Pipeline.start_task(issue) |> finish(socket, reload, &start_error/1)
       end
     else
+      {:ok, %User{}} -> put_flash(socket, :error, "Connect GitHub in Connected accounts before you start an issue.")
       _gone_or_refused -> reload.(socket)
     end
   end
