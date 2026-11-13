@@ -134,6 +134,20 @@ defmodule RailWeb.McpAuthorizeLiveTest do
     assert has_element?(view, "#mcp-authorize-error", "error = access_denied")
   end
 
+  test "someone who disconnected GitHub is told to connect it, and nothing is issued", %{
+    conn: conn,
+    user: %{id: user_id} = user,
+    params: params
+  } do
+    {:ok, user} = Users.unlink_github(Rail.Scope.for_user(user))
+    {:ok, view, _html} = conn |> log_in_user(user) |> live(~p"/oauth/mcp/authorize?#{params}")
+
+    assert has_element?(view, "#mcp-authorize-error", "error = github_required")
+    assert has_element?(view, "#mcp-authorize-error", "Connect GitHub under Settings, Connected accounts")
+    refute has_element?(view, "#mcp-allow")
+    assert [] = Repo.all(from(c in OauthAuthorizationCode, where: c.user_id == ^user_id))
+  end
+
   test "a client gone before Allow renders the error instead", %{
     conn: conn,
     user: user,

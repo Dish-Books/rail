@@ -87,6 +87,87 @@ defmodule RailWeb.Mcp.Tools.UpdateIssueTest do
     assert %Issue{title: "Kept in Linear", state: :todo} = Repo.get!(Issue, issue.id)
   end
 
+  test "on a Linear ticket, a status sent with null fields moves it, the nulls counted as left out", %{project: project} do
+    {:ok, %Issue{id: id} = issue} =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_mcp_update_2",
+        identifier: "#{project.key}-7502",
+        title: "Kept in Linear",
+        state: :todo
+      })
+      |> Repo.insert()
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "teams" => %{
+            "nodes" => [
+              %{
+                "states" => %{
+                  "nodes" => [
+                    %{"id" => "st_todo", "name" => "Todo", "type" => "unstarted", "position" => 1.0},
+                    %{"id" => "st_done", "name" => "Done", "type" => "completed", "position" => 5.0}
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      })
+    end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"id" => "lin_mcp_update_2", "input" => %{"stateId" => "st_done"}} = Jason.decode!(body)["variables"]
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueUpdate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_mcp_update_2",
+              "identifier" => issue.identifier,
+              "title" => "Kept in Linear",
+              "state" => %{"name" => "Done", "type" => "completed"},
+              "completedAt" => "2026-11-12T10:00:00.000Z",
+              "updatedAt" => "2026-11-12T10:00:00.000Z"
+            }
+          }
+        }
+      })
+    end)
+
+    assert {:ok, %{"issue" => %{"title" => "Kept in Linear"}}} =
+             call_mcp_tool(user_scope(project_ids: [project.id]), "update_issue", %{
+               "identifier" => issue.identifier,
+               "status" => "Done",
+               "title" => nil,
+               "parent" => nil
+             })
+
+    assert %Issue{title: "Kept in Linear", state: :done} = Repo.get!(Issue, id)
+  end
+
+  test "a parent left null on a Rail ticket stays its parent", %{
+    local: local,
+    issue: %Issue{identifier: parent_identifier, external_id: parent_external_id} = parent,
+    scope: scope
+  } do
+    {:ok, %Issue{id: id, identifier: identifier}} =
+      Issues.create_issue(system_scope(), local, %{title: "A part", parent: parent})
+
+    assert {:ok, %{"issue" => %{"status" => "In Progress", "parent" => %{"identifier" => ^parent_identifier}}}} =
+             call_mcp_tool(scope, "update_issue", %{
+               "identifier" => identifier,
+               "status" => "In Progress",
+               "parent" => nil
+             })
+
+    assert %Issue{parent_external_id: ^parent_external_id, state: :in_progress} = Repo.get!(Issue, id)
+  end
+
   test "an unknown ticket, or a field that does not resolve, changes nothing", %{
     issue: %Issue{id: id, identifier: identifier},
     scope: scope

@@ -18,7 +18,7 @@ defmodule Rail.Pipeline.Actions.SaveDesignOptionTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Save Design Option"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Save Design Option"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     dir = Path.join(task.scratch_path, "design")
     File.mkdir_p!(dir)

@@ -17,7 +17,7 @@ defmodule Rail.Git.Actions.BranchChangedTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Branch Changed"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Branch Changed"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 
     remote = create_temp_git_repo(prefix: "rail_branch_changed_remote")

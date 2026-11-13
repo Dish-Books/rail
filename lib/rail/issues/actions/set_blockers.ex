@@ -12,8 +12,8 @@ defmodule Rail.Issues.Actions.SetBlockers do
   @doc """
   Makes the tickets blocking a Rail-tracked `issue` exactly `blockers`, issues of its project: unblocks what is no longer
   listed, then blocks what is new. A listed ticket this one already blocks is refused before anything is written, as
-  `{:error, {:already_blocks, identifiers}}`, since `Rail.Issues.block_issue/3` leaves a reversed pair as it is.
-  Returns `{:ok, issue}`, `{:error, :unsupported}` on another tracker, or `{:error, :not_found}`.
+  `{:error, {:already_blocks, identifiers}}`, since `Rail.Issues.block_issue/3` leaves a reversed pair as it is, and a
+  list naming the issue itself as `{:error, :blocks_itself}`. Returns `{:ok, issue}`, `{:error, :unsupported}` on another tracker, or `{:error, :not_found}`.
   """
   def set_blockers(%Scope{} = scope, %Issue{project_id: project_id} = issue, blockers) when is_list(blockers) do
     cond do
@@ -37,14 +37,19 @@ defmodule Rail.Issues.Actions.SetBlockers do
     current_ids = Enum.map(blocked_by, & &1.id)
     wanted_ids = Enum.map(blockers, & &1.id)
 
-    case for(%Issue{id: blocker_id} = blocker <- blockers, blocker_id in blocks, do: blocker.identifier) do
-      [] ->
+    reversed = for %Issue{id: blocker_id} = blocker <- blockers, blocker_id in blocks, do: blocker.identifier
+
+    cond do
+      id in wanted_ids ->
+        {:error, :blocks_itself}
+
+      reversed != [] ->
+        {:error, {:already_blocks, reversed}}
+
+      true ->
         with :ok <- each(Enum.reject(blocked_by, &(&1.id in wanted_ids)), &Issues.unblock_issue(scope, &1, issue)),
              :ok <- each(Enum.reject(blockers, &(&1.id in current_ids)), &Issues.block_issue(scope, &1, issue)),
              do: {:ok, issue}
-
-      identifiers ->
-        {:error, {:already_blocks, identifiers}}
     end
   end
 

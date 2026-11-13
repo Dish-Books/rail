@@ -12,8 +12,10 @@ defmodule Rail.Mcp.Actions.Authorize do
 
   @doc """
   A person's Allow: checks the request again and issues a code for them in a new token family. Returns the URL that
-  sends the code and the client's `state` back to the client.
+  sends the code and the client's `state` back to the client, or `{:error, :github_required}` for someone without GitHub.
   """
+  def authorize(%Scope{user: %{github_id: nil}}, _params), do: {:error, :github_required}
+
   def authorize(%Scope{user: %{id: user_id}}, %{} = params) do
     with {:ok, client} <- validate_authorization(params) do
       {plaintext, selector, verifier_hash} = generate_token(:authorization_code)

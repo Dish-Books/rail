@@ -17,7 +17,8 @@ defmodule RailWeb.McpAuthorizeLive do
       |> assign(:authorized, false)
 
     socket =
-      with {:ok, client} <- Mcp.validate_authorize_request(params),
+      with true <- is_binary(scope.user.github_id) || {:error, :github_required},
+           {:ok, client} <- Mcp.validate_authorize_request(params),
            [_first | _rest] = projects <- Projects.list_projects(scope) do
         redirect_host = URI.parse(params["redirect_uri"]).host
 
@@ -178,6 +179,9 @@ defmodule RailWeb.McpAuthorizeLive do
   defp describe(:invalid_target), do: "The connection names a server other than this Rail."
   defp describe(:unsupported_response_type), do: "Only response_type=code is supported."
   defp describe(:invalid_pkce), do: "The connection needs a PKCE challenge using S256."
+
+  defp describe(:github_required),
+    do: "Connect GitHub under Settings, Connected accounts before you connect Claude to Rail."
 
   defp describe(:access_denied),
     do:

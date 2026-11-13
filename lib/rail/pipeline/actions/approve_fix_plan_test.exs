@@ -39,7 +39,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Approve Fix Plan"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Approve Fix Plan"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     # Git is stubbed, so the worktree is only ever looked for: a plain directory stands in for it.
     worktree_path = Path.join(System.tmp_dir!(), "rail_afp_wt_#{System.unique_integer([:positive])}")

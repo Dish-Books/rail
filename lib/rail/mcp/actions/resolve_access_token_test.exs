@@ -70,4 +70,14 @@ defmodule Rail.Mcp.Actions.ResolveAccessTokenTest do
     Repo.update_all(OauthAccessToken, set: [expires_at: DateTime.shift(DateTime.utc_now(), second: -1)])
     assert {:error, :expired} = Mcp.resolve_access_token(access_token)
   end
+
+  test "a token whose person has since disconnected GitHub does not resolve, and is not marked used", %{
+    user: %{id: user_id} = user,
+    access_token: access_token
+  } do
+    {:ok, _user} = Users.unlink_github(Scope.for_user(user))
+
+    assert {:error, :github_required} = Mcp.resolve_access_token(access_token)
+    assert [%OauthAccessToken{last_used_at: nil}] = Repo.all(where(OauthAccessToken, user_id: ^user_id))
+  end
 end

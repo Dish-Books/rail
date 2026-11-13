@@ -116,6 +116,35 @@ defmodule RailWeb.UserAuth do
     end
   end
 
+  # Issue and task pages: someone without GitHub is sent to connect it, and so is an open page once they disconnect.
+  def on_mount(
+        :require_github,
+        _params,
+        _session,
+        %{assigns: %{current_scope: %Scope{user: %User{github_id: nil}}}} = socket
+      ), do: {:halt, github_required(socket)}
+
+  def on_mount(:require_github, _params, _session, socket) do
+    if Phoenix.LiveView.connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "users")
+    {:cont, Phoenix.LiveView.attach_hook(socket, :require_github, :handle_info, &recheck_github/2)}
+  end
+
+  defp recheck_github({:users_changed, id}, %{assigns: %{current_scope: %Scope{user: %User{id: id}}}} = socket) do
+    case Users.get_user(id: id) do
+      {:ok, %User{github_id: github_id}} when is_binary(github_id) -> {:halt, socket}
+      _gone_or_unlinked -> {:halt, github_required(socket)}
+    end
+  end
+
+  defp recheck_github({:users_changed, _someone_else}, socket), do: {:halt, socket}
+  defp recheck_github(_message, socket), do: {:cont, socket}
+
+  defp github_required(socket) do
+    socket
+    |> Phoenix.LiveView.put_flash(:error, "Connect GitHub to work on issues and tasks.")
+    |> Phoenix.LiveView.redirect(to: ~p"/settings/connected-accounts")
+  end
+
   defp maybe_reissue_user_session_token(conn, user, token_inserted_at) do
     token_age = DateTime.diff(DateTime.utc_now(), token_inserted_at, :day)
 

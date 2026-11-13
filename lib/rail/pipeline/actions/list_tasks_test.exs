@@ -30,7 +30,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "List Tasks Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "List Tasks Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :plan)
 
@@ -65,7 +65,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
       })
     end)
 
-    {:ok, issue_7103} = Issues.create_issue(system_scope(), project, %{description: "Task 7103"})
+    {:ok, issue_7103} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Task 7103"})
 
     {:ok, %Task{id: eng_q_id}} = Pipeline.create_task(issue_7103, :plan)
 
@@ -89,7 +89,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
       })
     end)
 
-    {:ok, issue_7104} = Issues.create_issue(system_scope(), project, %{description: "Task 7104"})
+    {:ok, issue_7104} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Task 7104"})
 
     {:ok, t_eng_other} = Pipeline.create_task(issue_7104, :plan)
 
@@ -122,7 +122,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
       })
     end)
 
-    {:ok, issue_7105} = Issues.create_issue(system_scope(), project, %{description: "Beta"})
+    {:ok, issue_7105} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Beta"})
 
     {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7105, :plan)
 
@@ -176,7 +176,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
       })
     end)
 
-    {:ok, issue_7106} = Issues.create_issue(system_scope(), p2, %{description: "P2 Task"})
+    {:ok, issue_7106} = Issues.create_issue(system_scope(), p2, %{title: "Issue", description: "P2 Task"})
 
     {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7106, :plan)
 
@@ -228,7 +228,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
           })
         end)
 
-        {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Task #{n}"})
+        {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Task #{n}"})
         {:ok, issue} = Issues.update_issue(issue, %{owner_user_id: owner_id})
         {:ok, task} = Pipeline.create_task(issue, :plan)
         task
@@ -301,7 +301,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     now = DateTime.utc_now()
 
     task = fn stage, attrs ->
-      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Ready"})
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Ready"})
       {:ok, task} = Pipeline.create_task(issue, stage)
       {:ok, task} = Pipeline.update_task(task, attrs)
       task
@@ -342,7 +342,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     open_issue |> Issue.tracker_changeset(%{state: :in_review}) |> Repo.update!()
 
     for closed <- [%{state: :done, completed_at: now}, %{state: :canceled}, %{state: :duplicate}] do
-      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Closed"})
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Closed"})
       issue |> Issue.tracker_changeset(closed) |> Repo.update!()
       {:ok, task} = Pipeline.create_task(issue, :finalize)
       {:ok, _marked} = Pipeline.update_task(task, %{marked_ready_at: now})
@@ -364,7 +364,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Tie"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Tie"})
     {:ok, second} = Pipeline.create_task(issue, :finalize)
     marked = DateTime.utc_now()
     [%Task{id: low_id}, %Task{id: high_id}] = Enum.sort_by([first, second], & &1.id)

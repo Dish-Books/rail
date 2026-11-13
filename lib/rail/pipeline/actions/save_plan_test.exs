@@ -46,7 +46,14 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Save Plan", priority: :high, estimate: 3})
+    {:ok, issue} =
+      Issues.create_issue(system_scope(), project, %{
+        title: "Issue",
+        description: "Save Plan",
+        priority: :high,
+        estimate: 3
+      })
+
     {:ok, %Task{scratch_path: scratch} = task} = Pipeline.create_task(issue, :plan)
     on_exit(fn -> File.rm_rf(scratch) end)
 

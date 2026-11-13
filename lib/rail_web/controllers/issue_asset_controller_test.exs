@@ -28,7 +28,7 @@ defmodule RailWeb.IssueAssetControllerTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Issue Asset Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Issue Asset Issue"})
 
     %{conn: log_in_user(conn, user), issue: issue}
   end

@@ -2,11 +2,14 @@ defmodule Rail.Issues.Actions.ChangeIssueTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  import Rail.Pipeline.Utils.BuildTask
+
   alias Rail.Issues
   alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueRelation
   alias Rail.Issues.Workers.SyncIssue
+  alias Rail.Pipeline
   alias Rail.Projects
   alias Rail.Users
 
@@ -209,14 +212,40 @@ defmodule Rail.Issues.Actions.ChangeIssueTest do
   end
 
   test "a write that fails after others says which were saved, and a first failure is its own error", %{
-    issue: %Issue{id: id, identifier: identifier} = issue,
+    local: local,
+    issue: parent_issue,
     scope: scope
   } do
-    assert {:error, {:partly_saved, [:title, :priority], [:blocked_by], %Ecto.Changeset{}}} =
-             Issues.change_issue(scope, issue, %{title: "Renamed", priority: "low", blocked_by: [identifier]})
+    {:ok, parent} = Pipeline.create_task(parent_issue, :split)
+    {:ok, %Issue{id: id} = child} = Issues.create_issue(system_scope(), local, %{title: "A part", parent: parent_issue})
 
-    assert %Issue{title: "Renamed", priority: :low} = Repo.get!(Issue, id)
-    assert {:error, %Ecto.Changeset{}} = Issues.change_issue(scope, issue, %{blocked_by: [identifier]})
+    local
+    |> build_task(child, %{stage: :engineer, split_position: 1, builds_on: []})
+    |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+    |> Repo.insert!()
+
+    assert {:error, {:partly_saved, [:title], [:assignee], :split_child}} =
+             Issues.change_issue(scope, child, %{title: "Renamed", assignee: "me"})
+
+    assert %Issue{title: "Renamed", owner_user_id: nil} = Repo.get!(Issue, id)
+    assert {:error, :split_child} = Issues.change_issue(scope, child, %{assignee: "me"})
+  end
+
+  test "blockers naming the ticket itself write nothing, and its blockers stay", %{
+    local: local,
+    issue: %Issue{id: id, identifier: identifier} = issue,
+    other: %Issue{id: other_id} = other,
+    scope: scope
+  } do
+    {:ok, %Issue{id: second_id} = second} = Issues.create_issue(system_scope(), local, %{title: "Second"})
+    {:ok, third} = Issues.create_issue(system_scope(), local, %{title: "Third"})
+    {:ok, %Issue{}} = Issues.set_blockers(scope, issue, [other, second])
+
+    assert {:error, {:invalid, :blocked_by, "names this ticket itself: " <> ^identifier}} =
+             Issues.change_issue(scope, issue, %{blocked_by: [third.identifier, identifier]})
+
+    assert Enum.sort([other_id, second_id]) ==
+             Enum.sort(Repo.all(from(r in IssueRelation, where: r.blocked_issue_id == ^id, select: r.blocker_issue_id)))
   end
 
   test "a project with no cycles has no current or next one, nor one after its last", %{scope: scope, teammate: teammate} do

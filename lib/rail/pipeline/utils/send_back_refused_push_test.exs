@@ -23,7 +23,7 @@ defmodule Rail.Pipeline.Utils.SendBackRefusedPushTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Send Back Push"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Send Back Push"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     # Resuming the engineer asks Rail.Git for the worktree, so it is a plain directory the stub hands back.
     worktree = Path.join(task.scratch_path, "worktree")

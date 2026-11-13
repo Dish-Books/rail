@@ -29,7 +29,7 @@ defmodule Rail.Pipeline.Actions.DismissRoundTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Dismiss Round Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Dismiss Round Issue"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 
     {:ok, run} =

@@ -24,7 +24,7 @@ defmodule Rail.Pipeline.Actions.SetDiffCommentResolvedTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Diff Comments"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Diff Comments"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 

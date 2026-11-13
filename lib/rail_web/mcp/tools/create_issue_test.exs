@@ -95,6 +95,24 @@ defmodule RailWeb.Mcp.Tools.CreateIssueTest do
              call_mcp_tool(scope, "create_issue", %{"project" => local.key, "title" => "X", "assignee" => "stranger"})
   end
 
+  test "a null assignee files the ticket assigned to the person", %{
+    local: local,
+    user: %{id: user_id, login: login},
+    scope: scope
+  } do
+    assert {:ok, %{"issue" => %{"identifier" => identifier, "assignee" => ^login}}} =
+             call_mcp_tool(scope, "create_issue", %{"project" => local.key, "title" => "Mine", "assignee" => nil})
+
+    assert {:ok, %Issue{owner_user_id: ^user_id}} = Issues.get_issue(identifier)
+  end
+
+  test "an estimate below 0 is refused and files nothing", %{local: %{id: local_id} = local, scope: scope} do
+    assert {:error, "estimate must be greater than or equal to 0."} =
+             call_mcp_tool(scope, "create_issue", %{"project" => local.key, "title" => "Negative", "estimate" => -5})
+
+    refute Repo.exists?(from(i in Issue, where: i.project_id == ^local_id))
+  end
+
   test "files a Linear ticket unassigned, and says so, when Linear cannot assign the person", %{
     project: linear,
     user: user

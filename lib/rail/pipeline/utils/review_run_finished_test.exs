@@ -29,7 +29,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Review Finished"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Review Finished"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     # HEAD is asked of Rail.Git, so the worktree is a plain directory and the stub says which commit it is on.
     worktree = Path.join(task.scratch_path, "worktree")

@@ -54,7 +54,11 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
         })
 
       {:ok, issue} =
-        Issues.create_issue(system_scope(), project, %{description: "Advance Issue", owner_user_id: owner.id})
+        Issues.create_issue(system_scope(), project, %{
+          title: "Issue",
+          description: "Advance Issue",
+          owner_user_id: owner.id
+        })
 
       {:ok, task} = Pipeline.create_task(issue, :plan)
 

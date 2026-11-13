@@ -23,7 +23,7 @@ defmodule Rail.Issues.Actions.LinkUrlTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Link Url Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Link Url Issue"})
 
     %{issue: issue}
   end

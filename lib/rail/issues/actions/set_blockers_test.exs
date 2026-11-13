@@ -60,8 +60,34 @@ defmodule Rail.Issues.Actions.SetBlockersTest do
     assert [] = blocked_by.(issue)
   end
 
+  test "naming the issue itself writes nothing, and its blockers stay", %{
+    issues: [issue, %{id: first_id} = first, %{id: second_id} = second, third],
+    scope: scope,
+    blocked_by: blocked_by
+  } do
+    {:ok, %Issue{}} = Issues.set_blockers(scope, issue, [first, second])
+
+    assert {:error, :blocks_itself} = Issues.set_blockers(scope, issue, [third, issue])
+    assert Enum.sort([first_id, second_id]) == Enum.sort(blocked_by.(issue))
+  end
+
   test "a write the relation refuses stops there", %{issues: [issue | _others], scope: scope} do
-    assert {:error, %Ecto.Changeset{}} = Issues.set_blockers(scope, issue, [issue])
+    key = "Sbo#{System.unique_integer([:positive])}"
+
+    {:ok, elsewhere} =
+      Projects.create_project(system_scope(), %{
+        name: "Blocked elsewhere",
+        github_repo: "example/#{key}",
+        github_installation_id: 1,
+        tracker: :local,
+        key: key,
+        default_branch: "main",
+        clone_path: "/tmp/#{key}"
+      })
+
+    {:ok, outsider} = Issues.create_issue(system_scope(), elsewhere, %{title: "Not here"})
+
+    assert {:error, :not_found} = Issues.set_blockers(scope, issue, [outsider])
   end
 
   test "another tracker's ticket is unsupported, and a project the scope cannot open is not found", %{

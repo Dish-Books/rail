@@ -29,8 +29,11 @@ defmodule RailWeb.Mcp.Tools.UpdateIssue do
 
   @impl true
   def execute(%{identifier: identifier} = params, %{assigns: %{current_scope: scope}} = frame) do
+    # A field sent as null is left out, as the description says, rather than cleared.
+    attrs = params |> Map.delete(:identifier) |> Map.reject(fn {_field, value} -> is_nil(value) end)
+
     with {:ok, %{issue: issue}} <- read_mcp_issue(scope, identifier),
-         {:ok, _issue} <- Issues.change_issue(scope, issue, Map.delete(params, :identifier)),
+         {:ok, _issue} <- Issues.change_issue(scope, issue, attrs),
          {:ok, assigns} <- read_mcp_issue(scope, identifier) do
       {:reply, Response.json(Response.tool(), IssueJSON.show(assigns)), frame}
     else

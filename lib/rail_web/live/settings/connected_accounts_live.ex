@@ -536,7 +536,17 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
             </div>
           </div>
 
+          <p
+            :if={!@github_connected}
+            id="rail-mcp-github-required"
+            class="flex items-start gap-2 border-t border-slate-200 dark:border-slate-700 px-5 py-4 text-sm text-slate-600 dark:text-slate-300"
+          >
+            <.icon name="pi-github-logo" class="size-4 mt-0.5 shrink-0 text-slate-400" />
+            Connect GitHub above to connect Claude to Rail.
+          </p>
+
           <div
+            :if={@github_connected}
             id="rail-mcp-add"
             class="border-t border-slate-200 dark:border-slate-700 px-5 py-4 grid grid-cols-1 xl:grid-cols-2 gap-4"
           >

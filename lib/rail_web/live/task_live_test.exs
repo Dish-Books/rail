@@ -107,7 +107,7 @@ defmodule RailWeb.TaskLiveTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Task Live Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Task Live Issue"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     File.mkdir_p!(Path.join(task.scratch_path, "tickets"))
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
@@ -661,13 +661,37 @@ defmodule RailWeb.TaskLiveTest do
     refute has_element?(view, "#claim-task")
   end
 
-  test "claiming a GitHub issue without GitHub connected says where to connect it", %{conn: conn, task: task} do
+  test "claiming without GitHub connected says where to connect it", %{conn: conn, task: task} do
     stub(Issues, :claim_issue, fn _scope, _issue -> {:error, :github_not_linked} end)
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
     view |> element("#claim-task") |> render_click()
 
-    assert has_element?(view, "#flash-error", "Connect GitHub in Connected accounts before claiming a GitHub issue")
+    assert has_element?(view, "#flash-error", "Connect GitHub in Connected accounts before claiming an issue")
+  end
+
+  test "someone who disconnected GitHub is sent to connect it rather than shown the task", %{
+    conn: conn,
+    scope: scope,
+    task: task
+  } do
+    {:ok, _user} = Users.unlink_github(scope)
+
+    assert {:error,
+            {:redirect,
+             %{to: "/settings/connected-accounts", flash: %{"error" => "Connect GitHub to work on issues and tasks."}}}} =
+             live(conn, ~p"/tasks/#{task.id}")
+  end
+
+  test "an open task page sends its person to connect GitHub once they disconnect it", %{
+    conn: conn,
+    scope: scope,
+    task: task
+  } do
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    {:ok, _user} = Users.unlink_github(scope)
+    assert_redirect(view, "/settings/connected-accounts")
   end
 
   test "claiming without a linked Linear account says what to do", %{conn: conn, task: task} do

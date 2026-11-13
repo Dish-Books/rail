@@ -35,7 +35,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     end)
 
     {:ok, %Issue{id: issue_id} = issue} =
-      Issues.create_issue(system_scope(), project, %{description: "Task Schema Issue"})
+      Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Task Schema Issue"})
 
     {:ok, %Task{id: task_id} = task} = Pipeline.create_task(issue, :plan)
 

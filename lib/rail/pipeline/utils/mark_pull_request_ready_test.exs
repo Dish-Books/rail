@@ -20,7 +20,7 @@ defmodule Rail.Pipeline.Utils.MarkPullRequestReadyTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Mark Ready"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Mark Ready"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     {:ok, task} = Pipeline.update_task(task, %{pr_number: 42, pr_is_draft: true})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)

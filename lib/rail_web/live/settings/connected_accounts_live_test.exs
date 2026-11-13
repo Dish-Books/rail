@@ -852,6 +852,25 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
       refute has_element?(view, "#rail-mcp-connections")
     end
 
+    test "once GitHub is disconnected, asks for it in place of the command and keeps the connections listed", %{
+      authed_conn: conn,
+      user: user,
+      web_client: web_client,
+      connect: connect
+    } do
+      connect.(web_client)
+      {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+      assert has_element?(view, "#rail-mcp-claude-code")
+      refute has_element?(view, "#rail-mcp-github-required")
+
+      {:ok, _user} = Users.unlink_github(Scope.for_user(user))
+
+      assert has_element?(view, "#rail-mcp-github-required", "Connect GitHub above to connect Claude to Rail.")
+      refute has_element?(view, "#rail-mcp-claude-code")
+      refute has_element?(view, "#rail-mcp-url")
+      assert has_element?(view, "#rail-mcp-connections tbody tr", "Returns to claude.ai")
+    end
+
     test "lists one row per connection, newest first, and one made elsewhere shows without a reload", %{
       authed_conn: conn,
       code_client: code_client,

@@ -19,7 +19,7 @@ defmodule Rail.Tools.Actions.GetBrowserFrameTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Browser Frame"})
+    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Browser Frame"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 

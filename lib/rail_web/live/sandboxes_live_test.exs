@@ -358,6 +358,21 @@ defmodule RailWeb.SandboxesLiveTest do
     assert {:ok, %OsProcess{ended_reason: :stopped, stopped_by_id: ^user_id}} = Tools.get_os_process(next.id)
   end
 
+  test "someone who disconnected GitHub is told to connect it, and Stop stops nothing", %{
+    conn: conn,
+    next: %{id: next_id},
+    user: user
+  } do
+    {:ok, _user} = Users.unlink_github(Rail.Scope.for_user(user))
+    {:ok, view, _html} = live(conn, ~p"/sandboxes")
+
+    view |> element("#waiting-#{next_id} button", "Stop") |> render_click()
+
+    assert has_element?(view, "#flash-error", "Connect GitHub in Connected accounts before you stop a run.")
+    assert has_element?(view, "#waiting-#{next_id}")
+    assert {:ok, %OsProcess{ended_reason: nil, stopped_by_id: nil}} = Tools.get_os_process(next_id)
+  end
+
   test "another project's sandboxes count toward the machine but show no row, and cannot be stopped", %{
     conn: conn,
     engineer: engineer,

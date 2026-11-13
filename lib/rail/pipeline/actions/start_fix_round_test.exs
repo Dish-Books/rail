@@ -34,7 +34,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Start Fix Round"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Start Fix Round"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     # HEAD is asked of Rail.Git, so the worktree is a plain directory and the stub says which commit it is on.
     # A test that moves the branch stubs it again with the new commit.

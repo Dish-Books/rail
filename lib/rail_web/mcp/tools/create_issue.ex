@@ -31,6 +31,9 @@ defmodule RailWeb.Mcp.Tools.CreateIssue do
 
   @impl true
   def execute(params, %{assigns: %{current_scope: scope}} = frame) do
+    # A field sent as null is left out, so a null assignee still means the person.
+    params = Map.reject(params, fn {_field, value} -> is_nil(value) end)
+
     with {:ok, project} <- Projects.find_project(scope, params.project),
          {:ok, parent} <- find_parent(scope, project, params[:parent]),
          {:ok, owner_user_id, note} <- find_owner(scope, project, params) do

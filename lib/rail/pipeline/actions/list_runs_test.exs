@@ -27,7 +27,7 @@ defmodule Rail.Pipeline.Actions.ListRunsTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "List Runs Issue"})
+    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "List Runs Issue"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
 
     {:ok, run} =
@@ -75,7 +75,7 @@ defmodule Rail.Pipeline.Actions.ListRunsTest do
           })
         end)
 
-        {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "List Runs #{n}"})
+        {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "List Runs #{n}"})
         {:ok, issue} = Issues.update_issue(issue, %{owner_user_id: owner_id})
         {:ok, task} = Pipeline.create_task(issue, :plan)
 

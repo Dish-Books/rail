@@ -48,7 +48,7 @@ defmodule Rail.Users.Actions.ListAssignableUsersTest do
     assert length(Users.list_assignable_users()) == 4
   end
 
-  test "for a GitHub issue, lists everyone, since everyone signs in with GitHub" do
+  test "for a GitHub issue, lists everyone with GitHub" do
     {:ok, %User{id: user_id}} =
       Users.register_oauth_user(%{github_id: "gh_assignable", login: "assignable", email: "assignable@example.com"})
 
@@ -56,11 +56,23 @@ defmodule Rail.Users.Actions.ListAssignableUsersTest do
     refute user_id in Enum.map(Users.list_assignable_users(), & &1.id)
   end
 
-  test "for a Rail-tracked issue, lists everyone, whether or not they linked Linear" do
+  test "for a Rail-tracked issue, lists everyone with GitHub, whether or not they linked Linear" do
     {:ok, %User{id: user_id}} =
       Users.register_oauth_user(%{github_id: "gh_assignable_local", login: "assignable-local", email: "al@example.com"})
 
     assert user_id in Enum.map(Users.list_assignable_users(tracker: :local), & &1.id)
     refute user_id in Enum.map(Users.list_assignable_users(tracker: :linear), & &1.id)
+  end
+
+  test "someone who disconnected GitHub is assignable on no tracker, Linear linked or not" do
+    {:ok, user} =
+      Users.register_oauth_user(%{github_id: "gh_assignable_gone", login: "assignable-gone", email: "ag@example.com"})
+
+    user |> Ecto.Changeset.change(linear_user_id: "lin_usr_gone") |> Repo.update!()
+    {:ok, %User{id: user_id}} = Users.unlink_github(Rail.Scope.for_user(user))
+
+    for tracker <- [:local, :github, :linear] do
+      refute user_id in Enum.map(Users.list_assignable_users(tracker: tracker), & &1.id)
+    end
   end
 end

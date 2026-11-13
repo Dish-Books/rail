@@ -35,7 +35,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Dispatch Message Issue"})
+    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Dispatch Message Issue"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 

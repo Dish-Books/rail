@@ -20,7 +20,7 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidenceTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Capture Evidence"})
+    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Capture Evidence"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 

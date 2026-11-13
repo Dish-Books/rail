@@ -54,7 +54,7 @@ defmodule Rail.Pipeline.Utils.PlanRunFinishedTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Plan Finished"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Plan Finished"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     design_dir = Path.join(task.scratch_path, "design")
     File.mkdir_p!(design_dir)

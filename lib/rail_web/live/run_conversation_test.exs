@@ -44,7 +44,7 @@ defmodule RailWeb.Live.RunConversationTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Conversation Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Conversation Issue"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
 

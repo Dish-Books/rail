@@ -20,9 +20,9 @@ defmodule Rail.Tools.Actions.ListBrowserSessionsTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "List Browsers"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "List Browsers"})
     {:ok, task} = Pipeline.create_task(issue, :review)
-    {:ok, other_issue} = Issues.create_issue(system_scope(), project, %{description: "Other Browsers"})
+    {:ok, other_issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Other Browsers"})
     {:ok, other} = Pipeline.create_task(other_issue, :review)
 
     on_exit(fn ->

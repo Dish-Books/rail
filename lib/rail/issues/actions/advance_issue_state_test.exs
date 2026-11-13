@@ -18,7 +18,7 @@ defmodule Rail.Issues.Actions.AdvanceIssueStateTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Advance Action Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Advance Action Issue"})
 
     %{issue: issue}
   end

@@ -19,7 +19,7 @@ defmodule Rail.Pipeline.Actions.ReadPlanTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Plans"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Plans"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 

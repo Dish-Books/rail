@@ -34,7 +34,7 @@ defmodule Rail.Pipeline.Workers.CleanupMergedTaskTest do
     end)
 
     {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Cleanup Merged"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Cleanup Merged"})
     {:ok, task} = Pipeline.create_task(issue, :finalize)
     {:ok, task} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
     File.mkdir_p!(task.scratch_path)

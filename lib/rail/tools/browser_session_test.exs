@@ -40,7 +40,7 @@ defmodule Rail.Tools.BrowserSessionTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Browser Session"})
+    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Browser Session"})
     {:ok, task} = Pipeline.create_task(issue, :review)
 
     page = Path.join(task.scratch_path, "page.html")
@@ -146,7 +146,7 @@ defmodule Rail.Tools.BrowserSessionTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Other"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Other"})
     {:ok, other} = Pipeline.create_task(issue, :review)
 
     on_exit(fn ->

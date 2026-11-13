@@ -111,7 +111,10 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     end)
 
     {:ok, issue} =
-      Issues.create_issue(system_scope(), project, %{description: "Attachments follow their source document"})
+      Issues.create_issue(system_scope(), project, %{
+        title: "Issue",
+        description: "Attachments follow their source document"
+      })
 
     # Git is only ever asked through Rail.Git, so a worktree is a plain directory where the task says it goes, on the
     # commit whose sha is all a's, and the repo has no prompts of its own.

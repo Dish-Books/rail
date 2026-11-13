@@ -54,4 +54,11 @@ defmodule Rail.Mcp.Actions.AuthorizeTest do
 
     assert [] = Repo.all(from(c in OauthAuthorizationCode, where: c.user_id == ^user_id))
   end
+
+  test "issues nothing for someone who disconnected GitHub", %{user: %{id: user_id} = user, params: params} do
+    {:ok, user} = Users.unlink_github(Scope.for_user(user))
+
+    assert {:error, :github_required} = Mcp.authorize(Scope.for_user(user), params)
+    assert [] = Repo.all(from(c in OauthAuthorizationCode, where: c.user_id == ^user_id))
+  end
 end

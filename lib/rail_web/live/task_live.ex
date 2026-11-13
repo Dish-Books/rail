@@ -44,6 +44,8 @@ defmodule RailWeb.TaskLive do
   alias RailWeb.Live.TaskActions
   alias RailWeb.Live.TaskDetail
 
+  on_mount {RailWeb.UserAuth, :require_github}
+
   # The engineer writes files as it works and the pane reads them off disk, so a
   # reader watching a run wants the diff to keep up. Re-reading on every batch of
   # log lines would shell out to git several times a second, so it is throttled to
@@ -1488,5 +1490,5 @@ defmodule RailWeb.TaskLive do
 
   defp claim_error(:already_assigned), do: "Somebody else claimed this issue first"
   defp claim_error(:linear_not_linked), do: "Link your Linear account in Settings before claiming an issue"
-  defp claim_error(:github_not_linked), do: "Connect GitHub in Connected accounts before claiming a GitHub issue"
+  defp claim_error(:github_not_linked), do: "Connect GitHub in Connected accounts before claiming an issue"
 end

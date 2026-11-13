@@ -29,7 +29,7 @@ defmodule Rail.Issues.Actions.UpdateIssueTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Initial Title"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Initial Title"})
 
     %{project: project, issue: issue}
   end

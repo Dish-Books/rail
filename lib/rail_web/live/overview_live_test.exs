@@ -419,7 +419,7 @@ defmodule RailWeb.OverviewLiveTest do
           })
         end)
 
-        {:ok, issue} = Issues.create_issue(system_scope(), task_project, %{description: title})
+        {:ok, issue} = Issues.create_issue(system_scope(), task_project, %{title: "Issue", description: title})
 
         issue =
           issue
@@ -2565,7 +2565,7 @@ defmodule RailWeb.OverviewLiveIssueEventsTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Queued work"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Queued work"})
     issue = issue |> Issue.tracker_changeset(%{owner_user_id: user.id}) |> Repo.update!()
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 

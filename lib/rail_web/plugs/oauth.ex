@@ -27,6 +27,7 @@ defmodule RailWeb.Plugs.OAuth do
         :revoked -> "the access token was revoked"
         :missing_token -> "no bearer token supplied"
         :invalid_token -> "the access token is invalid"
+        :github_required -> "connect GitHub in Rail to use its tools"
       end
 
     metadata_url = RailWeb.Endpoint.url() <> "/.well-known/oauth-protected-resource/mcp"

@@ -1,6 +1,6 @@
 defmodule Rail.Issues.Actions.ClaimIssue do
   @moduledoc """
-  Assigns an unassigned issue to the scope's user. The tracker hears about it from the
+  Assigns an unassigned issue to the scope's user, who must have connected GitHub. The tracker hears about it from the
   sync the write enqueues, so it has to be one the tracker can name, such as a user who linked Linear.
 
   An unowned ticket's tracker status is held back while its task runs. The write
@@ -11,13 +11,21 @@ defmodule Rail.Issues.Actions.ClaimIssue do
   alias Rail.Issues.Tracker
   alias Rail.Repo
   alias Rail.Scope
+  alias Rail.Users.Schemas.User
 
   @doc """
-  Makes the scope's user the owner of `issue`, unless somebody already is, or says why the
-  issue's tracker cannot take them as its owner.
+  Makes the scope's user the owner of `issue`, unless somebody already is, or says why they cannot own it:
+  `{:error, :github_not_linked}` for someone without GitHub, or the tracker's own refusal.
   """
-  def claim_issue(%Scope{user: user}, %Issue{} = issue) do
-    with :ok <- Tracker.tracker(issue).check_assignable(user), do: claim(user, issue)
+  def claim_issue(%Scope{user: %User{id: user_id}}, %Issue{} = issue) do
+    # Read again, since a page's scope can be from before they disconnected GitHub.
+    with %User{github_id: github_id} = user when is_binary(github_id) <- Repo.get(User, user_id) || {:error, :not_found},
+         :ok <- Tracker.tracker(issue).check_assignable(user) do
+      claim(user, issue)
+    else
+      %User{} -> {:error, :github_not_linked}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   # No transaction of its own: a start claims inside its own, which a rollback here would abort.

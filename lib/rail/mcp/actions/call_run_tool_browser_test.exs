@@ -44,7 +44,7 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Qa Tools"})
+    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Qa Tools"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     File.mkdir_p!(task.scratch_path)
 

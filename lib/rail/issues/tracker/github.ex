@@ -157,10 +157,9 @@ defmodule Rail.Issues.Tracker.Github do
     end
   end
 
-  # An owner is assigned on GitHub by login, which someone who never connected GitHub does not have.
+  # Assigned on GitHub by login, and `Rail.Issues.claim_issue/2` already refuses anyone without GitHub.
   @impl true
-  def check_assignable(%User{login: login}) when is_binary(login), do: :ok
-  def check_assignable(%User{}), do: {:error, :github_not_linked}
+  def check_assignable(%User{}), do: :ok
 
   defp token(%Project{github_installation_id: installation_id}), do: GitHub.installation_token(installation_id)
 

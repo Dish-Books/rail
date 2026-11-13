@@ -35,7 +35,9 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Filter invoices by vendor."})
+    {:ok, issue} =
+      Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Filter invoices by vendor."})
+
     {:ok, task} = Pipeline.create_task(issue, :review)
     # HEAD and the diff are asked of Rail.Git, so the worktree is a plain directory and the stubs answer for a
     # branch on one commit with nothing changed.

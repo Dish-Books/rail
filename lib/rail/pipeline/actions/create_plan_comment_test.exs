@@ -54,7 +54,7 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Plan Comments"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Plan Comments"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     # Git is stubbed, so the worktree is only ever looked for: a plain directory stands in for it.
     worktree_path = Path.join(System.tmp_dir!(), "rail_cpc_wt_#{System.unique_integer([:positive])}")

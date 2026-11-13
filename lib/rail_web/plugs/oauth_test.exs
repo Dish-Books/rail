@@ -106,4 +106,20 @@ defmodule RailWeb.Plugs.OAuthTest do
              |> tap(&assert(&1.status == 401))
              |> get_resp_header("www-authenticate")
   end
+
+  test "a token whose person has since disconnected GitHub gets a 401 saying to connect it", %{
+    conn: conn,
+    user: user,
+    connect: connect
+  } do
+    access_token = connect.()
+    {:ok, _user} = Users.unlink_github(Scope.for_user(user))
+    conn = conn |> put_req_header("authorization", "Bearer #{access_token}") |> OAuth.call(OAuth.init([]))
+
+    assert %{"error" => "invalid_token", "error_description" => "connect GitHub in Rail to use its tools"} =
+             json_response(conn, 401)
+
+    assert [~s(Bearer error="invalid_token", error_description="connect GitHub in Rail to use its tools") <> _rest] =
+             get_resp_header(conn, "www-authenticate")
+  end
 end

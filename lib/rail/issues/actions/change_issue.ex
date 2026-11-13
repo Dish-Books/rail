@@ -176,7 +176,7 @@ defmodule Rail.Issues.Actions.ChangeIssue do
 
   defp resolve_assignee(_scope, _issue, _attrs), do: {:ok, nil}
 
-  defp resolve_blockers(scope, %Issue{} = issue, %{blocked_by: identifiers}) when is_list(identifiers) do
+  defp resolve_blockers(scope, %Issue{id: id} = issue, %{blocked_by: identifiers}) when is_list(identifiers) do
     found = Enum.map(identifiers, &{&1, find_in_project(scope, issue, &1)})
 
     blocks =
@@ -184,12 +184,16 @@ defmodule Rail.Issues.Actions.ChangeIssue do
 
     blocked_ids = for %{issue: %Issue{id: blocked_id}} <- blocks, do: blocked_id
 
+    itself = for {identifier, %Issue{id: ^id}} <- found, do: identifier
     missing = for {identifier, nil} <- found, do: identifier
 
     reversed =
       for {_identifier, %Issue{id: blocker_id} = blocker} <- found, blocker_id in blocked_ids, do: blocker.identifier
 
     cond do
+      itself != [] ->
+        {:error, {:invalid, :blocked_by, "names this ticket itself: " <> Enum.join(itself, ", ")}}
+
       missing != [] ->
         {:error, {:invalid, :blocked_by, "names no ticket in this project: " <> Enum.join(missing, ", ")}}
 

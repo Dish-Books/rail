@@ -55,6 +55,17 @@ defmodule Rail.Issues.Actions.AssignIssueTest do
     assert %Issue{owner_user_id: nil} = Repo.get!(Issue, issue_id)
   end
 
+  test "a teammate who disconnected GitHub is refused", %{
+    teammate: teammate,
+    issue: %Issue{id: issue_id} = issue,
+    scope: scope
+  } do
+    {:ok, %{id: teammate_id}} = Users.unlink_github(Rail.Scope.for_user(teammate))
+
+    assert {:error, :not_assignable} = Issues.assign_issue(scope, issue, teammate_id)
+    assert %Issue{owner_user_id: nil} = Repo.get!(Issue, issue_id)
+  end
+
   test "a project the scope cannot open is not found", %{teammate: teammate, issue: issue} do
     assert {:error, :not_found} = Issues.assign_issue(user_scope(project_ids: []), issue, teammate.id)
   end

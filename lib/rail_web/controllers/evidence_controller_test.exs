@@ -28,7 +28,7 @@ defmodule RailWeb.EvidenceControllerTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Evidence Controller"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Evidence Controller"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     qa = Path.join(task.scratch_path, "qa")
     File.mkdir_p!(Path.join(qa, "shots"))

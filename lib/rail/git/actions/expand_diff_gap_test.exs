@@ -19,7 +19,7 @@ defmodule Rail.Git.Actions.ExpandDiffGapTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Expand Gap"})
+    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Expand Gap"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     repo = create_temp_git_repo()
     File.write!(Path.join(repo, "tracked.txt"), Enum.map_join(1..10, "", &"line #{&1}\n"))
