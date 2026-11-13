@@ -459,8 +459,9 @@ defmodule RailWeb.Live.DiffViewTest do
     # As the Review tray's Send leaves them, and tells the page.
     Repo.update_all(from(c in DiffComment, where: c.task_id == ^task.id and c.status == :unsent), set: [status: :sent])
     send(view.pid, {:diff_comments_changed, task.id})
-    # The page hands the pane its comments through send_update, which queues behind the first render.
-    _settled = render(view)
+    # Two send_updates, the page's to the pane and the pane's to the file, each queued behind a render.
+    _pane_settled = render(view)
+    _file_settled = render(view)
 
     assert has_element?(view, "[data-qa='diff_comment']", "Sent")
     assert view |> render() |> Floki.parse_document!() |> Floki.find(".diff-body .diff-code") == code
