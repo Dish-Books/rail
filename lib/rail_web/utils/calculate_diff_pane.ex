@@ -4,8 +4,8 @@ defmodule RailWeb.Utils.CalculateDiffPane do
 
   The browser redraws everything under whatever a patch touches, so the toolbar,
   the file list and each file are live components of their own. `RailWeb.Live.DiffView`
-  assigns each part on its own, so a change reaches only the part it moved, in the
-  same reply as the event that moved it.
+  draws the pane again only when its `frame` changes, and otherwise sends each part
+  that moved its own update, so a change reaches only that part.
   """
 
   use RailWeb, :verified_routes

@@ -6,8 +6,9 @@ defmodule RailWeb.Live.DiffView do
 
   The diff is read off the worktree on mount, when the page asks with `reload`, and when HEAD or the
   worktree's status has moved since; a file whose digest has not moved keeps its highlighting. Marking a
-  file read is per person and pinned to the file as it was read. Each part of the pane is an assign of its
-  own, so an event's reply redraws every part it moved and no other.
+  file read is per person and pinned to the file as it was read. The pane is drawn again only when the files
+  in it, the filter or the stray comments change; otherwise each part an event moved, the toolbar, the file
+  list or a file, is sent its own update, so the browser patches that part and not the whole diff.
 
   A merge puts the diff away: the header's Merge says so with `merging` before it starts, and a task merging
   or merged keeps it away. The browser walks every row of a large diff each time the page around it changes,
@@ -21,6 +22,9 @@ defmodule RailWeb.Live.DiffView do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Task
+  alias RailWeb.Live.DiffFile
+  alias RailWeb.Live.DiffFileTree
+  alias RailWeb.Live.DiffToolbar
 
   # Another of the reader's tabs saved, removed, sent or resolved comments. Only
   # they moved, so the diff is not read again.
@@ -473,15 +477,55 @@ defmodule RailWeb.Live.DiffView do
     end
   end
 
+  # Before patching a component the browser walks every node under it, which for
+  # this pane is every line of the diff. So the pane is only drawn again when what
+  # it holds changes, and each part that moved inside it is told on its own, which
+  # patches that part alone. What each part was last told is kept out of the
+  # assigns, since keeping it there would draw the pane again.
   defp sync_pane(socket) do
     pane = socket.assigns |> pane_state() |> calculate_diff_pane()
+    parts = parts(pane)
+    told = socket.private[:told] || %{}
 
-    socket
-    |> assign(:frame, pane.frame)
-    |> assign(:toolbar, pane.toolbar)
-    |> assign(:tree, pane.tree)
-    |> assign(:sections, pane.sections)
+    socket =
+      if redraw?(socket, pane.frame) do
+        # A part told something since the pane was last drawn may still have it on
+        # the way, landing after this draw and undoing it, so it is told again.
+        drawn = parts(socket.assigns)
+        for {key, part} <- told, Map.get(drawn, key) != part, do: tell(key, parts[key])
+
+        socket
+        |> assign(:frame, pane.frame)
+        |> assign(:toolbar, pane.toolbar)
+        |> assign(:tree, pane.tree)
+        |> assign(:sections, pane.sections)
+      else
+        for {key, part} <- parts, Map.get(told, key) != part, do: tell(key, part)
+
+        socket
+      end
+
+    put_private(socket, :told, parts)
   end
+
+  # The pane shows up again after loading or a refused merge drawn with whatever it
+  # was last given, so it is given everything.
+  defp redraw?(socket, frame) do
+    socket.assigns[:frame] != frame or changed?(socket, :loading?) or changed?(socket, :put_away)
+  end
+
+  defp parts(%{toolbar: toolbar, tree: tree, sections: sections}) do
+    Map.new(
+      [{{DiffToolbar, "diff-toolbar"}, toolbar}, {{DiffFileTree, "diff-file-tree"}, tree}] ++
+        for({id, section} <- sections, do: {{DiffFile, id}, section})
+    )
+  end
+
+  defp parts(_never_drawn), do: %{}
+
+  # Gone from the pane, or the file list while there are no files.
+  defp tell(_key, nil), do: :ok
+  defp tell({module, id}, assigns), do: send_update(module, Map.put(assigns, :id, id))
 
   defp pane_state(assigns) do
     %{
