@@ -14,6 +14,7 @@ defmodule RailWeb.Components.ScreenGridTest do
           file: "screens/file-list/2.jpg",
           commit: "e52a0bd91",
           taken_at: ~U[2026-10-08 09:00:00Z],
+          round: 2,
           findings: []
         },
         %{
@@ -22,6 +23,7 @@ defmodule RailWeb.Components.ScreenGridTest do
           file: "screens/toolbar/1.jpg",
           commit: nil,
           taken_at: ~U[2026-10-07 09:00:00Z],
+          round: 2,
           findings: []
         }
       ]
@@ -49,6 +51,7 @@ defmodule RailWeb.Components.ScreenGridTest do
     assert ["/tasks/tsk_1/screens/file-list?at=1791450000000000"] = card |> Floki.find("img") |> Floki.attribute("src")
     assert [] = Floki.find(doc, "#screen-toolbar [data-qa=screen_card_unsent]")
     assert doc |> Floki.find("[data-qa=review_screens_on]") |> Floki.text() =~ "latest taken on e52a0bd"
+    assert doc |> Floki.find("[data-qa=review_screens_round]") |> Floki.text() =~ "round 2"
   end
 
   test "with no screens it says so" do

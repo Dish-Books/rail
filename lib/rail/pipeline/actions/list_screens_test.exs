@@ -98,6 +98,21 @@ defmodule Rail.Pipeline.Actions.ListScreensTest do
     assert [%{key: "toolbar", file: "screens/toolbar/2.jpg", findings: []}] = Pipeline.list_screens(task)
   end
 
+  # Mixing rounds shows states beside each other that no one commit left together.
+  test "lists only the newest round's states, or every round's when asked", %{task: task, qa: qa} do
+    for {key, round} <- [{"toolbar", 2}, {"file-list", 3}, {"activity", nil}] do
+      File.mkdir_p!(Path.join([qa, "screens", key]))
+      File.write!(Path.join([qa, "screens", key, "1.jpg"]), "jpeg")
+      shot = %{label: key, taken_at: "2026-10-08T09:00:00Z", round: round}
+      File.write!(Path.join([qa, "screens", key, "1.json"]), Jason.encode!(shot))
+    end
+
+    assert [%{key: "file-list", round: 3}] = Pipeline.list_screens(task)
+
+    assert [%{key: "activity", round: 0}, %{key: "file-list", round: 3}, %{key: "toolbar", round: 2}] =
+             Pipeline.list_screens(task, all_rounds: true)
+  end
+
   test "a task with no screens has none", %{task: task} do
     assert [] = Pipeline.list_screens(task)
   end

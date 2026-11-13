@@ -106,7 +106,8 @@ defmodule Rail.Pipeline do
   defdelegate update_branch(scope, task), to: Actions.UpdateBranch
   defdelegate retry_run(scope, run), to: Actions.RetryRun
   defdelegate save_screen(task, attrs), to: Actions.SaveScreen
-  defdelegate list_screens(task), to: Actions.ListScreens
+  defdelegate carry_screen(task, key), to: Actions.CarryScreen
+  defdelegate list_screens(task, opts \\ []), to: Actions.ListScreens
 
   defdelegate start_task(scope, issue), to: Actions.StartTask
   defdelegate adopt_pull_request(scope, issue), to: Actions.AdoptPullRequest

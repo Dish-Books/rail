@@ -33,9 +33,9 @@ defmodule Rail.Mcp.Utils.McpTools do
 
   `@qa_tools` are about a pass rather than a page. `qa_plan` writes the checklist
   before anything is opened, `qa_check` marks a row off as it is reached,
-  `qa_shot` saves a picture for a finding to cite, and `save_screen` saves a
-  screen state's picture for HEAD's commit, retaken every round. None of them
-  opens a browser of its own.
+  `qa_shot` saves a picture for a finding to cite, `save_screen` saves a screen
+  state's picture for HEAD's commit and the round, and `carry_screen` carries an
+  untouched state's picture into the round. None of them opens a browser of its own.
 
   Every stage hands its output over through save tools of its own, checked when
   called. The Review lead's subagents inherit its tools, so the one register is
@@ -219,8 +219,8 @@ defmodule Rail.Mcp.Utils.McpTools do
     %{
       "name" => "save_screen",
       "description" =>
-        "Photograph one screen state the change affects and save it as that state's image for HEAD's commit. It " <>
-          "replaces the state's earlier picture each round. Take it of the state as the change leaves it, under the " <>
+        "Photograph one screen state the change affects and save it as that state's image for HEAD's commit and " <>
+          "this round. It replaces the state's earlier picture. Take it of the state as the change leaves it, under the " <>
           "same `key` every round. Refused while the worktree has uncommitted changes, and for a picture all one color, " <>
           "which keeps the earlier one. Returns the path, which a finding can cite as evidence, with the picture attached.",
       "inputSchema" => %{
@@ -238,6 +238,20 @@ defmodule Rail.Mcp.Utils.McpTools do
           "width" => @width
         },
         "required" => ["key", "label"]
+      }
+    },
+    %{
+      "name" => "carry_screen",
+      "description" =>
+        "Carry a screen state an earlier round shot into this round as it is, for a state this round's change " <>
+          "has not touched. Only this round's states are shown once it has any, so one you neither shoot nor " <>
+          "carry drops off. The picture keeps the commit it was taken on.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "key" => %{"type" => "string", "description" => "The state's key, as an earlier round saved it."}
+        },
+        "required" => ["key"]
       }
     }
   ]

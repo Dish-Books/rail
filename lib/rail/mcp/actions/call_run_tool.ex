@@ -34,6 +34,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   import Rail.Mcp.Utils.RunToolBrowserClose
   import Rail.Mcp.Utils.RunToolBrowserConnect
   import Rail.Mcp.Utils.RunToolBrowserProblems
+  import Rail.Mcp.Utils.RunToolCarryScreen
   import Rail.Mcp.Utils.RunToolDemoCut
   import Rail.Mcp.Utils.RunToolDemoSay
   import Rail.Mcp.Utils.RunToolDemoStart
@@ -72,6 +73,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
     "save_report",
     "save_demo",
     "save_screen",
+    "carry_screen",
     "save_stage_output"
   ]
 
@@ -260,6 +262,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp run("qa_check", task, arguments, opts), do: run_tool_qa_check(task, arguments, opts)
   defp run("qa_shot", task, arguments, opts), do: run_tool_qa_shot(task, arguments, opts)
   defp run("save_screen", task, arguments, opts), do: run_tool_save_screen(task, arguments, opts)
+  defp run("carry_screen", task, arguments, opts), do: run_tool_carry_screen(task, arguments, opts)
   defp run("demo_start", task, arguments, opts), do: run_tool_demo_start(task, arguments, opts)
   defp run("demo_say", task, arguments, opts), do: run_tool_demo_say(task, arguments, opts)
   defp run("demo_cut", task, arguments, opts), do: run_tool_demo_cut(task, arguments, opts)

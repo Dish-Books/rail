@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.ScreenGrid do
   @moduledoc """
-  Review's Screens item: how many screen states there are and the commit the latest shot was taken on, then a card
-  of each state's one shot with its label and commit, and how many of the reader's comments on it are not sent. A
+  Review's Screens item: how many screen states the latest round has, its number and the commit its latest shot was
+  taken on, then a card of each state's one shot with its label and commit, and how many of the reader's comments on it are not sent. A
   card opens the state in the screen view, and is where focus goes back to when it closes.
   """
   use RailWeb, :html
@@ -28,6 +28,13 @@ defmodule RailWeb.Components.ScreenGrid do
           {length(@screens)}
         </span>
         <span
+          :if={@latest && @latest.round > 0}
+          data-qa="review_screens_round"
+          class="shrink-0 text-xs text-slate-500 dark:text-slate-400"
+        >
+          · round {@latest.round}
+        </span>
+        <span
           :if={@latest && @latest.commit}
           data-qa="review_screens_on"
           class="min-w-0 truncate text-xs text-slate-500 dark:text-slate-400"
@@ -41,7 +48,7 @@ defmodule RailWeb.Components.ScreenGrid do
         data-qa="review_screens_none"
         class="p-5 text-sm text-slate-500 dark:text-slate-400"
       >
-        No screens yet. QA shoots every screen state the change affects each round, and they appear here.
+        No screens yet. QA shoots or carries forward every screen state the change affects each round, and that round's appear here.
       </p>
 
       <div :if={@screens != []} class="p-5">
