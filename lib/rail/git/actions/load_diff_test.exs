@@ -523,6 +523,34 @@ defmodule Rail.Git.Actions.LoadDiffTest do
     assert html =~ "rewritten"
   end
 
+  # A pane that colors only what its reader comes near reads the rest plain, and
+  # never takes a file it was handed plain for one already colored.
+  test "without highlighting, a file comes back plain unless it was handed back colored", %{scope: scope, task: task} do
+    {:ok, files} = Git.load_diff(scope, task, :branch)
+
+    handed =
+      Enum.map(files, fn
+        %{path: "shipped.ex"} = file -> %{file | rows: Enum.map(file.rows, &Map.put(&1, :html, "kept"))}
+        file -> Map.put(file, :highlighted?, false)
+      end)
+
+    assert {:ok, files} = Git.load_diff(scope, task, :branch, handed, highlight: false)
+
+    assert %{highlighted?: true, rows: [_header, %{html: "kept"}]} = Enum.find(files, &(&1.path == "shipped.ex"))
+    assert %{highlighted?: false, rows: [_header, wip]} = Enum.find(files, &(&1.path == "wip.ex"))
+    refute Map.has_key?(wip, :html)
+  end
+
+  test "a file read plain is colored on its own once asked for", %{scope: scope, task: task} do
+    {:ok, files} = Git.load_diff(scope, task, :branch, [], highlight: false)
+    wip = Enum.find(files, &(&1.path == "wip.ex"))
+
+    assert [%{path: "wip.ex", highlighted?: true, rows: [_header, %{html: html}]}] =
+             Git.highlight_diff_files(task, :branch, [wip])
+
+    assert html =~ "uncommitted"
+  end
+
   test "a file is read only while it still looks the way it did", %{scope: scope, task: task} do
     {:ok, files} = Git.load_diff(scope, task, :branch)
     shipped = Enum.find(files, &(&1.path == "shipped.ex"))

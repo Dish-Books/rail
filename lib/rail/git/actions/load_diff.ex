@@ -35,24 +35,22 @@ defmodule Rail.Git.Actions.LoadDiff do
   Returns `{:ok, files}`, or `{:error, :no_worktree}` once the worktree has been
   cleaned up, since the change only ever existed on disk.
   """
-  def load_diff(%Scope{} = scope, %Task{} = task, filter \\ :branch, previous_files \\ []) do
+  def load_diff(%Scope{} = scope, %Task{} = task, filter \\ :branch, previous_files \\ [], opts \\ []) do
     if Task.worktree_present?(task) do
+      # `highlight: false` leaves a file plain unless `previous_files` already has it
+      # highlighted, for a caller that highlights only what its reader comes near.
+      highlight? = Keyword.get(opts, :highlight, true)
       viewed = Git.list_viewed_files(scope, task, :diff)
-      drawn = Map.new(previous_files, &{{&1.path, &1.digest}, &1.rows})
+      drawn = for file <- previous_files, highlighted?(file), into: %{}, do: {{file.path, file.digest}, file.rows}
       sides = diff_sides(task, filter)
       parsed = task |> raw_diff(filter, sides) |> parse_diff()
 
       highlighted =
-        parsed
-        |> Enum.reject(&Map.has_key?(drawn, {&1.path, &1.digest}))
-        |> Elixir.Task.async_stream(&highlight(&1, task.worktree_path, sides),
-          ordered: true,
-          max_concurrency: System.schedulers_online(),
-          timeout: :infinity
-        )
-        |> Enum.map(fn {:ok, file} -> file end)
+        if highlight?,
+          do: parsed |> Enum.reject(&Map.has_key?(drawn, {&1.path, &1.digest})) |> highlight_all(task, sides),
+          else: []
 
-      {files, []} = Enum.map_reduce(parsed, highlighted, &draw(&1, &2, drawn))
+      {files, []} = Enum.map_reduce(parsed, highlighted, &draw(&1, &2, drawn, highlight?))
 
       {:ok, Enum.map(files, &Map.put(&1, :viewed?, Map.get(viewed, &1.path) == &1.digest))}
     else
@@ -60,12 +58,32 @@ defmodule Rail.Git.Actions.LoadDiff do
     end
   end
 
+  @doc """
+  Highlights `files`, which `load_diff/5` left plain, as `task`'s diff under `filter` draws them.
+  """
+  def highlight_diff_files(%Task{} = task, filter, files) do
+    highlight_all(files, task, diff_sides(task, filter))
+  end
+
+  defp highlight_all(files, task, sides) do
+    files
+    |> Elixir.Task.async_stream(&highlight(&1, task.worktree_path, sides),
+      ordered: true,
+      max_concurrency: System.schedulers_online(),
+      timeout: :infinity
+    )
+    |> Enum.map(fn {:ok, file} -> Map.put(file, :highlighted?, true) end)
+  end
+
+  defp highlighted?(file), do: Map.get(file, :highlighted?, true)
+
   # Kept rows are put back here rather than in the tasks, so they stay the terms
   # the caller already holds instead of copies made on the way out and back.
-  defp draw(file, highlighted, drawn) do
+  defp draw(file, highlighted, drawn, highlight?) do
     case Map.fetch(drawn, {file.path, file.digest}) do
-      {:ok, rows} -> {%{file | rows: rows}, highlighted}
-      :error -> {hd(highlighted), tl(highlighted)}
+      {:ok, rows} -> {Map.put(%{file | rows: rows}, :highlighted?, true), highlighted}
+      :error when highlight? -> {hd(highlighted), tl(highlighted)}
+      :error -> {Map.put(file, :highlighted?, false), highlighted}
     end
   end
 

@@ -94,6 +94,7 @@ defmodule RailWeb.Live.TaskDetailTest do
     end
 
     stub(Git, :load_diff, load_diff)
+    stub(Git, :load_diff, fn scope, task, filter, previous, _opts -> load_diff.(scope, task, filter, previous) end)
     stub(Git, :load_diff, fn scope, task, filter -> load_diff.(scope, task, filter, []) end)
     stub(Git, :worktree_dirty?, fn _worktree_path -> false end)
 

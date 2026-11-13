@@ -26,6 +26,9 @@ defmodule RailWeb.Live.DiffView do
   alias RailWeb.Live.DiffFileTree
   alias RailWeb.Live.DiffToolbar
 
+  # Unread files are open, so the first few are what the pane opens on.
+  @drawn_first 3
+
   # Another of the reader's tabs saved, removed, sent or resolved comments. Only
   # they moved, so the diff is not read again.
   @impl true
@@ -63,6 +66,7 @@ defmodule RailWeb.Live.DiffView do
       |> assign_new(:selected_file, fn -> nil end)
       |> assign_new(:expanded_gaps, fn -> %{} end)
       |> assign_new(:highlighted, fn -> %{} end)
+      |> assign_new(:near, fn -> MapSet.new() end)
       |> assign_new(:files, fn -> [] end)
       |> assign_new(:history, fn -> nil end)
       |> assign_new(:dirty?, fn -> false end)
@@ -176,9 +180,10 @@ defmodule RailWeb.Live.DiffView do
   end
 
   def handle_event("toggle_collapsed", %{"path" => path}, socket) do
-    collapsed = toggle(socket.assigns.collapsed, path, path not in socket.assigns.collapsed)
+    opening? = path in socket.assigns.collapsed
+    collapsed = toggle(socket.assigns.collapsed, path, not opening?)
 
-    socket = socket |> assign(:collapsed, collapsed) |> sync_pane()
+    socket = socket |> assign(:collapsed, collapsed) |> draw(if(opening?, do: [path], else: [])) |> sync_pane()
 
     {:noreply, socket}
   end
@@ -190,8 +195,16 @@ defmodule RailWeb.Live.DiffView do
       socket
       |> assign(:selected_file, path)
       |> assign(:collapsed, toggle(socket.assigns.collapsed, path, false))
+      |> draw([path])
       |> push_event("diff:scroll_to", %{path: path})
       |> sync_pane()
+
+    {:noreply, socket}
+  end
+
+  # The page asks for the files the reader has come near, whose lines it has not been sent.
+  def handle_event("draw_diff_files", %{"paths" => paths}, socket) when is_list(paths) do
+    socket = socket |> draw(paths) |> sync_pane()
 
     {:noreply, socket}
   end
@@ -409,6 +422,7 @@ defmodule RailWeb.Live.DiffView do
     |> assign(:collapsed, [])
     |> assign(:auto_collapsed, MapSet.new())
     |> assign(:selected_file, socket.assigns.focus_file)
+    |> assign(:near, MapSet.new())
     |> assign(:draft, nil)
   end
 
@@ -435,9 +449,16 @@ defmodule RailWeb.Live.DiffView do
         do: {:branch, diff(scope, task, :branch, previous)},
         else: {view, files}
 
+    # The files the pane opens on are drawn with it, and any the reader has already
+    # come near; the rest wait until the reader comes near them.
+    first = Enum.take(for(%{viewed?: false, path: path} <- files, do: path), @drawn_first)
+    near = MapSet.union(socket.assigns.near, MapSet.new(List.wrap(socket.assigns.focus_file) ++ first))
+    files = highlight_files(files, task, view, near)
+
     present? = Task.worktree_present?(task)
 
     socket
+    |> assign(:near, near)
     |> assign(:view, view)
     |> assign(:history, history)
     |> assign(:dirty?, present? and Git.worktree_dirty?(task.worktree_path))
@@ -467,6 +488,7 @@ defmodule RailWeb.Live.DiffView do
         socket
         |> assign(:selected_comment, id)
         |> assign(:collapsed, toggle(socket.assigns.collapsed, path, false))
+        |> draw([path])
         |> assign(:open_comments, toggle(socket.assigns.open_comments, id, comment.status == :resolved))
         |> assign(:query, if(hidden?, do: "", else: query))
         |> push_event("diff:scroll_to", %{id: "diff-comment-#{id}"})
@@ -544,6 +566,7 @@ defmodule RailWeb.Live.DiffView do
       collapsed: assigns.collapsed,
       expanded_gaps: assigns.expanded_gaps,
       selected_file: assigns.selected_file,
+      near: assigns.near,
       scroll_to: assigns.focus_file,
       target: assigns.myself,
       empty_message: empty_message(assigns.view),
@@ -606,10 +629,40 @@ defmodule RailWeb.Live.DiffView do
     |> MapSet.difference(MapSet.new(unread, & &1.path))
   end
 
+  # A large diff's lines are most of what it costs, in highlighting them, in what
+  # the page is sent and in what the browser lays out, so a file's lines are only
+  # sent, highlighted, once the reader comes near it. Until then it is its header
+  # and a space as tall as its lines. One already highlighted keeps its colors.
   defp diff(scope, task, view, previous_files) do
-    case Git.load_diff(scope, task, view, previous_files) do
+    case Git.load_diff(scope, task, view, previous_files, highlight: false) do
       {:ok, files} -> files
       {:error, :no_worktree} -> []
+    end
+  end
+
+  # Only paths this pane has, since they may come from the page.
+  defp draw(socket, paths) do
+    %{files: files, task: task, view: view, highlighted: highlighted, near: near} = socket.assigns
+    near = MapSet.union(near, MapSet.new(for(%{path: path} <- files, path in paths, do: path)))
+    lit = highlight_files(files, task, view, paths)
+
+    socket = assign(socket, :near, near)
+
+    if lit == files,
+      do: socket,
+      else: socket |> assign(:files, lit) |> assign(:highlighted, Map.put(highlighted, view, lit))
+  end
+
+  defp highlight_files(files, task, view, paths) do
+    wanted = for %{highlighted?: false} = file <- files, file.path in paths, do: file
+
+    case wanted do
+      [] ->
+        files
+
+      wanted ->
+        lit = task |> Git.highlight_diff_files(view, wanted) |> Map.new(&{{&1.path, &1.digest}, &1})
+        Enum.map(files, &Map.get(lit, {&1.path, &1.digest}, &1))
     end
   end
 
@@ -623,6 +676,7 @@ defmodule RailWeb.Live.DiffView do
         socket
         |> assign(:selected_file, next)
         |> assign(:collapsed, toggle(socket.assigns.collapsed, next, false))
+        |> draw([next])
         |> push_event("diff:scroll_to", %{path: next})
 
       nil ->

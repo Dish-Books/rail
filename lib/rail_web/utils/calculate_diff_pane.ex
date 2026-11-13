@@ -120,14 +120,18 @@ defmodule RailWeb.Utils.CalculateDiffPane do
   defp tree_row(file, shared, selected_file, comments) do
     %{
       id: section_id(file, shared),
-      file: Map.drop(file, [:rows, :viewed?]),
+      file: Map.drop(file, [:rows, :viewed?, :highlighted?]),
       viewed?: file.viewed?,
       selected?: file.path == selected_file,
       unsent: unsent(Map.get(comments, file.path, []))
     }
   end
 
+  # A file the reader has not come near is sent no lines, only how many there are,
+  # so the space it stands in is as tall as they will be. Without `near`, every
+  # file is near.
   defp section(file, comments, open, assigns) do
+    far? = match?(%MapSet{}, assigns[:near]) and not MapSet.member?(assigns.near, file.path)
     gap_keys = for %{kind: :gap, key: key} <- file.rows, do: key
     draft = if assigns.draft && assigns.draft.path == file.path, do: assigns.draft
     {placed, lifted} = Enum.split_with(comments, &(anchor(&1, file.rows, assigns.filter) != nil))
@@ -136,7 +140,8 @@ defmodule RailWeb.Utils.CalculateDiffPane do
     %{
       target: assigns.target,
       file: Map.drop(file, [:rows, :viewed?]),
-      segments: segments(file.rows, placed, draft, assigns.filter),
+      segments: if(far?, do: [], else: segments(file.rows, placed, draft, assigns.filter)),
+      far_rows: if(far?, do: length(file.rows)),
       lifted: lifted,
       changed_count: Enum.count(lifted, fn {comment, changed?} -> changed? and comment.status == :unsent end),
       unsent: unsent(comments),

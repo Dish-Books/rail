@@ -1695,7 +1695,7 @@ defmodule RailWeb.Live.RunConversationTest do
         %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
       end)
 
-      stub(Git, :load_diff, fn _scope, _task, _filter, _previous -> {:ok, []} end)
+      stub(Git, :load_diff, fn _scope, _task, _filter, _previous, _opts -> {:ok, []} end)
       # Nothing the findings name is on the branch, so none of their places has lines to show.
       stub(Git, :load_diff_hunks, fn _scope, _task, ranges -> Enum.map(ranges, fn _range -> nil end) end)
       stub(Git, :branch_fingerprint, fn _worktree_path -> %{head_sha: String.duplicate("a", 40), dirty_digest: ""} end)

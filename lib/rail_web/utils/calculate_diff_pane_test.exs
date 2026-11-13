@@ -69,6 +69,17 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
     assert Map.keys(expanded) == ["lib/filter.ex:0"]
   end
 
+  # A file's lines are sent once the reader comes near it; until then only how many there are.
+  test "a file the reader has not come near carries no lines, only their count", %{assigns: assigns, diff: diff} do
+    other = %{diff | path: "mix.exs", display_path: "mix.exs", rows: [%{kind: :gap, key: "mix.exs:0"}, %{kind: :binary}]}
+    assigns = %{assigns | files: [diff, other]}
+
+    assert %{sections: [{_near, %{far_rows: nil, segments: [_drawn]}}, {_far, %{far_rows: 2, segments: []}}]} =
+             calculate_diff_pane(Map.put(assigns, :near, MapSet.new([diff.path])))
+
+    assert %{sections: [{_one, %{far_rows: nil}}, {_other, %{far_rows: nil}}]} = calculate_diff_pane(assigns)
+  end
+
   test "a file that is not a picture has no image", %{assigns: assigns} do
     assert %{sections: [{_id, %{image: nil}}]} = calculate_diff_pane(assigns)
   end

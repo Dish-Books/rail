@@ -85,7 +85,7 @@ defmodule RailWeb.Live.TaskActionsTest do
     stub(Git, :branch_unpushed?, fn _worktree_path -> false end)
 
     # Rows come back unhighlighted, which the pane draws as their text.
-    stub(Git, :load_diff, fn _scope, _task, _filter, _previous ->
+    stub(Git, :load_diff, fn _scope, _task, _filter, _previous, _opts ->
       patch = """
       diff --git a/round.ex b/round.ex
       new file mode 100644
