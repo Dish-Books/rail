@@ -18,6 +18,7 @@ defmodule RailWeb.ConnCase do
       import Rail.DataCase, only: [errors_on: 1]
       import Rail.Scope, only: [user_scope: 0, user_scope: 1, temp_user_scope: 0, temp_user_scope: 1, system_scope: 0]
       import RailTest.Helpers
+      import RailTest.McpHelpers
       import RailWeb.ConnCase
 
       @endpoint RailWeb.Endpoint

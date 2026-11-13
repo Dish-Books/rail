@@ -23,6 +23,7 @@ defmodule Rail.Issues do
   defdelegate set_issue_cycle(scope, issue, cycle_id), to: Actions.SetIssueCycle
   defdelegate close_cycle_day(today), to: Actions.CloseCycleDay
   defdelegate get_issue(id, opts \\ []), to: Actions.GetIssue
+  defdelegate find_issue(scope, identifier, opts \\ []), to: Actions.FindIssue
   defdelegate create_issue(scope, project, attrs), to: Actions.CreateIssue
   defdelegate update_issue(issue, attrs), to: Actions.UpdateIssue
   defdelegate claim_issue(scope, issue), to: Actions.ClaimIssue
@@ -38,6 +39,9 @@ defmodule Rail.Issues do
   defdelegate upload_file(scope, issue, filename, data), to: Actions.UploadFile
   defdelegate block_issue(scope, blocker, blocked), to: Actions.BlockIssue
   defdelegate unblock_issue(scope, blocker, blocked), to: Actions.UnblockIssue
+  defdelegate assign_issue(scope, issue, owner_user_id), to: Actions.AssignIssue
+  defdelegate set_blockers(scope, issue, blockers), to: Actions.SetBlockers
+  defdelegate change_issue(scope, issue, attrs), to: Actions.ChangeIssue
 
   @decorate can?(resource: :projects, action: :update)
   defdelegate move_to_local_tracker(scope, project), to: Actions.MoveToLocalTracker

@@ -48,6 +48,7 @@ defmodule Rail.MixProject do
 
   defp deps do
     [
+      {:anubis_mcp, "~> 2.2"},
       {:attrs, "~> 0.6"},
       {:bandit, "~> 1.14"},
       {:cloak_ecto, github: "michaelst/cloak_ecto", ref: "5a97ae633be28d5d98d010450a396e11c65d5cc8"},

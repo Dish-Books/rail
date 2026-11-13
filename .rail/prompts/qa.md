@@ -90,7 +90,7 @@ The worktree's database starts with little or nothing in it. Build what each che
   `{"loggedIn":true}` at once, reads the prompt on stdin, prints init, assistant and result lines,
   and never writes into `$PWD`. Key its behavior on `basename $PWD` and a control file so you can
   make it finish, ask, fail or hang on cue. It asks as a real agent does, with a `tools/call` of
-  `ask_questions` POSTed to the `/mcp` URL in its `--mcp-config`, bearing `$RAIL_MCP_TOKEN`.
+  `ask_questions` POSTed to the `/mcp/internal` URL in its `--mcp-config`, bearing `$RAIL_MCP_TOKEN`.
 - **Keep it all re-runnable** under `<scratch>/qa/env/` (`seed.exs`, `config.exs`, `rpc.sh`,
   `q.sh`, `bin/fake-agent`). Another task's `qa/env/` under the same scratch root is a fair place
   to start from rather than writing these again.
