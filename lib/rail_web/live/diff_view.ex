@@ -17,6 +17,7 @@ defmodule RailWeb.Live.DiffView do
   use RailWeb, :live_component
 
   import RailWeb.Utils.CalculateDiffPane
+  import RailWeb.Utils.TestFile
 
   alias Rail.Git
   alias Rail.Pipeline
@@ -60,6 +61,7 @@ defmodule RailWeb.Live.DiffView do
       |> assign_new(:view, fn -> :branch end)
       |> assign_new(:wrap, fn -> :scroll end)
       |> assign_new(:query, fn -> "" end)
+      |> assign_new(:hide_tests, fn -> false end)
       |> assign_new(:show_files, fn -> true end)
       |> assign_new(:collapsed, fn -> [] end)
       |> assign_new(:auto_collapsed, fn -> MapSet.new() end)
@@ -169,6 +171,13 @@ defmodule RailWeb.Live.DiffView do
 
   def handle_event("filter_diff_files", %{"query" => query}, socket) do
     socket = socket |> assign(:query, query) |> sync_pane()
+
+    {:noreply, socket}
+  end
+
+  # Like the query, kept on this socket alone and counted in the toolbar's totals all the same.
+  def handle_event("toggle_test_files", _params, socket) do
+    socket = socket |> assign(:hide_tests, not socket.assigns.hide_tests) |> sync_pane()
 
     {:noreply, socket}
   end
@@ -409,7 +418,11 @@ defmodule RailWeb.Live.DiffView do
   # one is followed once.
   defp open(%{assigns: %{open: %{at: at} = open, opened: opened}} = socket) when at != opened do
     view = open[:view] || if(is_binary(open[:commit]), do: {:commit, open.commit}, else: :branch)
-    {socket |> new_view(view) |> assign(:opened, at), true}
+    # The file a link was followed for is shown, even when it is a test.
+    focus_file = socket.assigns.focus_file
+    hide_tests = socket.assigns.hide_tests and not (is_binary(focus_file) and test_file?(focus_file))
+
+    {socket |> new_view(view) |> assign(:opened, at) |> assign(:hide_tests, hide_tests), true}
   end
 
   defp open(socket), do: {socket, false}
@@ -450,8 +463,15 @@ defmodule RailWeb.Live.DiffView do
         else: {view, files}
 
     # The files the pane opens on are drawn with it, and any the reader has already
-    # come near; the rest wait until the reader comes near them.
-    first = Enum.take(for(%{viewed?: false, path: path} <- files, do: path), @drawn_first)
+    # come near; the rest wait until the reader comes near them. Hidden tests are not opened on.
+    hide_tests = socket.assigns.hide_tests
+
+    first =
+      Enum.take(
+        for(%{viewed?: false, path: path} <- files, not (hide_tests and test_file?(path)), do: path),
+        @drawn_first
+      )
+
     near = MapSet.union(socket.assigns.near, MapSet.new(List.wrap(socket.assigns.focus_file) ++ first))
     files = highlight_files(files, task, view, near)
 
@@ -477,9 +497,9 @@ defmodule RailWeb.Live.DiffView do
   defp lacks_file?(_view, _files, _file), do: false
 
   # Jumping to a comment is asking to read it, so whatever would hide it is undone:
-  # its file's fold, its own fold if resolved, and a filter its file falls outside.
+  # its file's fold, its own fold if resolved, and a filter or Hide tests its file falls outside.
   defp select_comment(socket, id) do
-    %{comments: comments, query: query} = socket.assigns
+    %{comments: comments, query: query, hide_tests: hide_tests} = socket.assigns
 
     case Enum.find(comments, &(&1.id == id)) do
       %{path: path} = comment ->
@@ -491,6 +511,7 @@ defmodule RailWeb.Live.DiffView do
         |> draw([path])
         |> assign(:open_comments, toggle(socket.assigns.open_comments, id, comment.status == :resolved))
         |> assign(:query, if(hidden?, do: "", else: query))
+        |> assign(:hide_tests, hide_tests and not test_file?(path))
         |> push_event("diff:scroll_to", %{id: "diff-comment-#{id}"})
         |> sync_pane()
 
@@ -562,6 +583,7 @@ defmodule RailWeb.Live.DiffView do
       },
       wrap: assigns.wrap,
       query: assigns.query,
+      hide_tests: assigns.hide_tests,
       show_file_tree: assigns.show_files,
       collapsed: assigns.collapsed,
       expanded_gaps: assigns.expanded_gaps,
@@ -667,11 +689,12 @@ defmodule RailWeb.Live.DiffView do
   end
 
   # The first unread file after the one just read, wrapping round to the top so
-  # one skipped earlier is not left behind.
+  # one skipped earlier is not left behind. A hidden test is not one to move on to.
   defp go_to_next_unread(socket, path) do
     {before, after_read} = Enum.split_while(socket.assigns.files, &(&1.path != path))
+    hide_tests = socket.assigns.hide_tests
 
-    case Enum.find(after_read ++ before, &(not &1.viewed?)) do
+    case Enum.find(after_read ++ before, &(not &1.viewed? and not (hide_tests and test_file?(&1.path)))) do
       %{path: next} ->
         socket
         |> assign(:selected_file, next)

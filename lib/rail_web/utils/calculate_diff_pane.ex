@@ -10,6 +10,8 @@ defmodule RailWeb.Utils.CalculateDiffPane do
 
   use RailWeb, :verified_routes
 
+  import RailWeb.Utils.TestFile
+
   @doc """
   The pane's `frame`, which only changes when files come or go or a comment's
   file leaves the view (`stray`), then the assigns of its `toolbar`, its file
@@ -18,13 +20,14 @@ defmodule RailWeb.Utils.CalculateDiffPane do
   after each line with comments or the comment being written under it, and the
   comments that no longer have their line are `lifted` to the top of it. Only
   unsent comments are counted, since the counts are of what Send would send.
+  `hide_tests` leaves test files out as the query does, and `no_match` says why nothing is left.
   `filter` is the view: `:branch`, `:uncommitted` or `{:commit, sha}`. A picture's
   section carries the `image` addresses of its `old` and `new` sides, each `nil`
   where the file has no such side; any other file's is `nil`.
   """
   def calculate_diff_pane(assigns) do
-    %{files: files, query: query, target: target} = assigns
-    visible = Enum.filter(files, &matches?(&1, query))
+    %{files: files, query: query, hide_tests: hide_tests} = assigns
+    {matched, visible} = visible(files, query, hide_tests)
     comments = Enum.group_by(assigns.comments, & &1.path)
     open = MapSet.new(assigns.open_comments)
 
@@ -35,25 +38,31 @@ defmodule RailWeb.Utils.CalculateDiffPane do
       frame: %{
         sections: Enum.map(visible, &section_id(&1, shared)),
         empty_message: if(files == [], do: assigns.empty_message),
-        no_match: if(files != [] and visible == [], do: query),
+        no_match: if(files != [] and visible == [], do: no_match(query, matched)),
         scroll_to: assigns.scroll_to,
         stray: stray(comments, files, open)
       },
-      toolbar: %{
-        target: target,
-        show_file_tree: assigns.show_file_tree,
-        picker: assigns.picker,
-        wrap: assigns.wrap,
-        query: query,
-        additions: Enum.sum_by(files, & &1.additions),
-        deletions: Enum.sum_by(files, & &1.deletions),
-        viewed: Enum.count(files, & &1.viewed?),
-        total: length(files),
-        unsent: Enum.count(assigns.comments, &(&1.status == :unsent)),
-        commentable?: assigns.commentable?
-      },
+      toolbar: toolbar(assigns),
       tree: if(files != [], do: tree(visible, shared, comments, assigns)),
       sections: Enum.map(visible, &{section_id(&1, shared), section(&1, Map.get(comments, &1.path, []), open, assigns)})
+    }
+  end
+
+  defp toolbar(%{files: files} = assigns) do
+    %{
+      target: assigns.target,
+      show_file_tree: assigns.show_file_tree,
+      picker: assigns.picker,
+      wrap: assigns.wrap,
+      query: assigns.query,
+      hide_tests: assigns.hide_tests,
+      test_count: Enum.count(files, &test_file?(&1.path)),
+      additions: Enum.sum_by(files, & &1.additions),
+      deletions: Enum.sum_by(files, & &1.deletions),
+      viewed: Enum.count(files, & &1.viewed?),
+      total: length(files),
+      unsent: Enum.count(assigns.comments, &(&1.status == :unsent)),
+      commentable?: assigns.commentable?
     }
   end
 
@@ -71,8 +80,18 @@ defmodule RailWeb.Utils.CalculateDiffPane do
     }
   end
 
+  defp visible(files, query, hide_tests) do
+    matched = Enum.filter(files, &matches?(&1, query))
+    {matched, if(hide_tests, do: Enum.reject(matched, &test_file?(&1.path)), else: matched)}
+  end
+
   defp matches?(_file, ""), do: true
   defp matches?(file, query), do: String.contains?(String.downcase(file.path), String.downcase(query))
+
+  # Only reached with nothing left to show, so anything the query matched is a hidden test.
+  defp no_match("", _matched), do: "Every file here is a test, and tests are hidden."
+  defp no_match(query, []), do: "No file here matches #{query}."
+  defp no_match(query, _tests), do: "Only tests match #{query}, and tests are hidden."
 
   defp files_changed([_one]), do: "1 file changed"
   defp files_changed(files), do: "#{length(files)} files changed"

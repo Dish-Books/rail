@@ -5,7 +5,7 @@ defmodule RailWeb.Live.DiffToolbar do
   commit says which first parent it is shown against. It folds at `@5xl` and again at
   `@3xl` of its own width, which is what a 1440 and a 1280 window leave it. A merge's
   view takes no comments, and a view whose comments go out with Review's tray has no
-  Send of its own.
+  Send of its own. Hide tests shows only while the diff has a test file.
   """
   use RailWeb, :live_component
 
@@ -80,6 +80,28 @@ defmodule RailWeb.Live.DiffToolbar do
           {@viewed}/{@total}
         </span>
       </div>
+
+      <button
+        :if={@test_count > 0}
+        type="button"
+        id="diff-toggle-tests"
+        data-qa="diff_toggle_tests"
+        phx-click="toggle_test_files"
+        phx-target={@target}
+        aria-pressed={to_string(@hide_tests)}
+        title={"Hide the #{@test_count} test #{if @test_count == 1, do: "file", else: "files"} from the diff"}
+        class={[
+          "shrink-0 h-8 inline-flex items-center gap-1.5 rounded-lg border px-2 text-xs font-semibold cursor-pointer",
+          @hide_tests &&
+            "border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100",
+          not @hide_tests &&
+            "border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+        ]}
+      >
+        <.icon name="pi-test-tube" class="size-4" />
+        <span class="hidden @3xl:inline">Hide tests</span>
+        <span class="font-mono text-[11px] tabular-nums">{@test_count}</span>
+      </button>
 
       <form
         id="diff-file-filter"

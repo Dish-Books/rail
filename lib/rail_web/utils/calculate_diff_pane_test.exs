@@ -22,6 +22,7 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
       assigns: %{
         files: [diff],
         query: "",
+        hide_tests: false,
         target: nil,
         collapsed: [],
         expanded_gaps: %{},
@@ -127,8 +128,37 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
   end
 
   test "says so when the query leaves nothing", %{assigns: assigns} do
-    assert %{frame: %{no_match: "nothing-like-this", sections: []}} =
+    assert %{frame: %{no_match: "No file here matches nothing-like-this.", sections: []}} =
              calculate_diff_pane(%{assigns | query: "nothing-like-this"})
+  end
+
+  test "hiding tests leaves them out of the file list and the diff, while the toolbar still counts them",
+       %{assigns: assigns, diff: diff} do
+    test = %{diff | path: "lib/filter_test.exs", display_path: "lib/filter_test.exs", viewed?: true}
+    files = [diff, test]
+
+    assert %{toolbar: %{hide_tests: false, test_count: 1}, frame: %{sections: ["lib/filter.ex", "lib/filter_test.exs"]}} =
+             calculate_diff_pane(%{assigns | files: files})
+
+    assert %{
+             toolbar: %{hide_tests: true, test_count: 1, viewed: 1, total: 2},
+             frame: %{sections: ["lib/filter.ex"], no_match: nil},
+             tree: %{label: "2 files changed", rows: [%{id: "lib/filter.ex"}]},
+             sections: [{"lib/filter.ex", _section}]
+           } = calculate_diff_pane(%{assigns | files: files, hide_tests: true})
+  end
+
+  test "says why nothing is left when the tests it hides were all there was", %{assigns: assigns, diff: diff} do
+    test = %{diff | path: "test/support/case.ex", display_path: "test/support/case.ex"}
+
+    assert %{frame: %{no_match: "Every file here is a test, and tests are hidden.", sections: []}} =
+             calculate_diff_pane(%{assigns | files: [test], hide_tests: true})
+
+    assert %{frame: %{no_match: "Only tests match case, and tests are hidden."}} =
+             calculate_diff_pane(%{assigns | files: [diff, test], hide_tests: true, query: "case"})
+
+    assert %{frame: %{no_match: "No file here matches nope."}} =
+             calculate_diff_pane(%{assigns | files: [diff, test], hide_tests: true, query: "nope"})
   end
 
   test "has no file list and says so when there are no files", %{assigns: assigns} do
