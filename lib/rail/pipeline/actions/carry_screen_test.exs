@@ -42,4 +42,16 @@ defmodule Rail.Pipeline.Actions.CarryScreenTest do
     assert {:error, :current} = Pipeline.carry_screen(task, "toolbar")
     assert {:error, :not_found} = Pipeline.carry_screen(task, "activity")
   end
+
+  # Before a task has a round, every shot is round 0's, which is the round it is on.
+  test "a task with no round yet has nothing earlier to carry", %{project: project} do
+    task = learnings_task(project, "CSC-2", :review)
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    folder = Path.join([task.scratch_path, "qa", "screens", "toolbar"])
+    File.mkdir_p!(folder)
+    File.write!(Path.join(folder, "1.jpg"), "jpeg")
+    File.write!(Path.join(folder, "1.json"), Jason.encode!(%{label: "Toolbar", taken_at: "2026-10-08T09:00:00Z"}))
+
+    assert {:error, :current} = Pipeline.carry_screen(task, "toolbar")
+  end
 end
