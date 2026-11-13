@@ -33,6 +33,8 @@ defmodule RailWeb.Live.DiffToolbarTest do
         picker: %{view: :branch, history: history, dirty?: false, parent: nil},
         wrap: :scroll,
         query: "",
+        hide_tests: false,
+        test_count: 0,
         additions: 10,
         deletions: 3,
         viewed: 1,
@@ -85,6 +87,19 @@ defmodule RailWeb.Live.DiffToolbarTest do
 
   test "reads as nothing read when there is nothing to read", %{toolbar: toolbar} do
     assert render_component(DiffToolbar, %{toolbar | viewed: 0, total: 0}) =~ "width: 0%;"
+  end
+
+  test "offers to hide the tests only while the diff has some, pressed while they are hidden", %{toolbar: toolbar} do
+    none = DiffToolbar |> render_component(toolbar) |> Floki.parse_fragment!()
+    shown = DiffToolbar |> render_component(%{toolbar | test_count: 3}) |> Floki.parse_fragment!()
+    hidden = DiffToolbar |> render_component(%{toolbar | test_count: 1, hide_tests: true}) |> Floki.parse_fragment!()
+
+    assert [] = Floki.find(none, "#diff-toggle-tests")
+    assert Floki.attribute(shown, "#diff-toggle-tests", "aria-pressed") == ["false"]
+    assert Floki.attribute(shown, "#diff-toggle-tests", "title") == ["Hide the 3 test files from the diff"]
+    assert shown |> Floki.find("#diff-toggle-tests") |> Floki.text() =~ ~r/Hide tests\s*3/
+    assert Floki.attribute(hidden, "#diff-toggle-tests", "aria-pressed") == ["true"]
+    assert Floki.attribute(hidden, "#diff-toggle-tests", "title") == ["Hide the 1 test file from the diff"]
   end
 
   test "long lines scroll or wrap, as the reader chose", %{toolbar: toolbar} do

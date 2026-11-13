@@ -517,6 +517,48 @@ defmodule RailWeb.Live.DiffViewTest do
     assert Git.list_viewed_files(scope, task, :plan) == %{"rows.ex" => "card_digest"}
   end
 
+  test "hiding tests takes them out of the diff, and marking a file read moves past them to the next file", %{
+    conn: conn,
+    task: task,
+    repo: repo,
+    engineer: engineer,
+    fix: fix
+  } do
+    [rows, fix_patch] = Enum.map([engineer, fix], &File.read!(Path.join(repo, "#{&1}.diff")))
+
+    File.write!(Path.join(repo, "branch.diff"), """
+    #{rows}diff --git a/test/rows_test.exs b/test/rows_test.exs
+    new file mode 100644
+    index 0000000..1b2c3d4
+    --- /dev/null
+    +++ b/test/rows_test.exs
+    @@ -0,0 +1 @@
+    +defmodule RowsTest do end
+    #{fix_patch}
+    """)
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    section = "[data-qa='diff_file_section'][data-path='test/rows_test.exs']"
+
+    assert has_element?(view, section)
+    assert has_element?(view, "#diff-toggle-tests[aria-pressed='false']", "1")
+
+    view |> element("#diff-toggle-tests") |> render_click()
+
+    assert has_element?(view, "#diff-toggle-tests[aria-pressed='true']")
+    refute has_element?(view, section)
+    refute has_element?(view, "[data-qa='diff-file-row'][phx-value-path='test/rows_test.exs']")
+    assert has_element?(view, "[data-qa='diff_file_section'][data-path='fix.ex']")
+
+    view |> element("#diff-header-rows-ex [data-qa='diff-viewed-checkbox']") |> render_click()
+
+    assert has_element?(view, "[data-qa='diff-file-row'][phx-value-path='fix.ex'][aria-current='true']")
+
+    view |> element("#diff-toggle-tests") |> render_click()
+
+    assert has_element?(view, section)
+  end
+
   describe "long lines" do
     test "scroll until the reader picks Wrap, which redraws no line and does not reach another reading the same task",
          %{conn: conn, task: task} do

@@ -27,6 +27,7 @@ defmodule RailWeb.Components.DiffPaneTest do
     state = %{
       files: [],
       query: "",
+      hide_tests: false,
       target: nil,
       collapsed: [],
       expanded_gaps: %{},
