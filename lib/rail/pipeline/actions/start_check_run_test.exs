@@ -187,13 +187,36 @@ defmodule Rail.Pipeline.Actions.StartCheckRunTest do
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
       assert prompt =~ "Read what changed since with `git diff <commit> HEAD`"
-      assert prompt =~ "Leave a state nothing has touched as it is."
+      assert prompt =~ "Carry a state nothing has touched forward with `carry_screen`, as it is"
       assert prompt =~ "`file-list` (File list) on #{String.slice(commit, 0, 7)}."
 
       {:ok, %OsProcess{run: spawned}}
     end)
 
     assert {:ok, %OsProcess{}} = Pipeline.start_check_run(runs.qa)
+  end
+
+  # Only the round before's states can be carried, so QA starting a round deletes any it let go of before that.
+  test "QA's start deletes the states of rounds older than the newest earlier one, and keeps this round's", %{
+    task: task,
+    runs: runs
+  } do
+    Repo.insert!(%Round{task_id: task.id, number: 1})
+    Repo.insert!(%Round{task_id: task.id, number: 2})
+    Repo.insert!(%Round{task_id: task.id, number: 3})
+    screens = Path.join([task.scratch_path, "qa", "screens"])
+
+    for {key, round} <- [{"dropped", 1}, {"kept", 2}, {"current", 3}] do
+      File.mkdir_p!(Path.join(screens, key))
+      File.write!(Path.join([screens, key, "1.jpg"]), "jpeg")
+      shot = %{label: key, taken_at: "2026-10-08T09:00:00Z", round: round}
+      File.write!(Path.join([screens, key, "1.json"]), Jason.encode!(shot))
+    end
+
+    stub(Tools, :start_os_process, fn %Run{} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_check_run(runs.qa)
+    assert screens |> File.ls!() |> Enum.sort() == ["current", "kept"]
   end
 
   test "the demo recorder films one walkthrough in its own browser and saves it", %{runs: runs} do

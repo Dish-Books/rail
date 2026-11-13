@@ -1,8 +1,8 @@
 defmodule Rail.Pipeline.Actions.ListScreens do
   @moduledoc """
-  Reads the screen states the explorers shot, each by its latest shot, out of the QA folder. A record that is not
-  the shape Rail writes, or whose picture is not a plain file, is passed over, since anything under scratch can
-  have been written by an agent.
+  Reads the screen states the latest round shot or carried forward, each by its latest shot, out of the QA folder. A
+  record that is not the shape Rail writes, or whose picture is not a plain file, is passed over, since anything under
+  scratch can have been written by an agent.
   """
 
   alias Rail.Pipeline
@@ -12,11 +12,12 @@ defmodule Rail.Pipeline.Actions.ListScreens do
   @key ~r/\A[a-z0-9][a-z0-9-]{0,59}\z/
 
   @doc """
-  Returns `task`'s screen states by label, the key breaking a tie, so a round's retakes never reorder them, as
-  `%{key:, label:, file:, commit:, browser:, taken_at:, findings:}` for each state's newest shot. `file` is relative
-  to the QA folder, and `findings` are `%{key:, title:}` whose evidence cites that picture.
+  Returns `task`'s screen states of the newest round that has any, by label, the key breaking a tie, so a round's
+  retakes never reorder them, as `%{key:, label:, file:, commit:, browser:, taken_at:, round:, findings:}` for each
+  state's newest shot. `file` is relative to the QA folder, and `findings` are `%{key:, title:}` whose evidence cites
+  that picture. `all_rounds: true` lists earlier rounds' states too.
   """
-  def list_screens(%Task{scratch_path: scratch_path} = task) do
+  def list_screens(%Task{scratch_path: scratch_path} = task, opts \\ []) do
     qa = Path.join(scratch_path, "qa")
 
     shots =
@@ -27,7 +28,7 @@ defmodule Rail.Pipeline.Actions.ListScreens do
 
     case shots do
       [] -> []
-      shots -> states(shots, Pipeline.list_findings(task))
+      shots -> shots |> states(Pipeline.list_findings(task)) |> latest_round(opts[:all_rounds])
     end
   end
 
@@ -46,6 +47,13 @@ defmodule Rail.Pipeline.Actions.ListScreens do
       )
     end)
     |> Enum.sort_by(&{&1.label, &1.key})
+  end
+
+  defp latest_round(states, true), do: states
+
+  defp latest_round(states, _latest_only) do
+    newest = states |> Enum.map(& &1.round) |> Enum.max()
+    Enum.filter(states, &(&1.round == newest))
   end
 
   # Saving a finding copies a cited picture into its own folder under a prefix, keeping its name.
@@ -78,7 +86,9 @@ defmodule Rail.Pipeline.Actions.ListScreens do
           label: label,
           commit: text(shot["commit"]),
           browser: text(shot["browser"]),
-          taken_at: taken_at
+          taken_at: taken_at,
+          # A shot from before rounds were stamped counts as older than any round's.
+          round: if(is_integer(shot["round"]), do: shot["round"], else: 0)
         }
       ]
     else

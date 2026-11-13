@@ -81,6 +81,7 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
                  "qa_check",
                  "qa_shot",
                  "save_screen",
+                 "carry_screen",
                  "save_report",
                  "knowledge_search",
                  "search_issues",
@@ -171,6 +172,14 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
            } = %Role{stage: :qa} |> mcp_tools() |> Enum.find(&(&1["name"] == "save_screen"))
 
     assert Map.keys(properties) == ["browser", "key", "label", "width"]
+  end
+
+  # A carried state keeps its picture, so there is nothing to photograph or label.
+  test "carry_screen takes only the state's key" do
+    assert %{"inputSchema" => %{"properties" => properties, "required" => ["key"]}} =
+             %Role{stage: :qa} |> mcp_tools() |> Enum.find(&(&1["name"] == "carry_screen"))
+
+    assert Map.keys(properties) == ["key"]
   end
 
   test "a stage with no output of its own is offered only the knowledge base and the project's tickets", %{names: names} do

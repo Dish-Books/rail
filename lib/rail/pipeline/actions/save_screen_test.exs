@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.SaveScreenTest do
 
   alias Rail.Git
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
 
   setup %{project: project} do
     task = learnings_task(project, "SSC-1", :review)
@@ -37,6 +38,20 @@ defmodule Rail.Pipeline.Actions.SaveScreenTest do
              |> Jason.decode!()
 
     assert_received {:output_saved, ^task_id}
+  end
+
+  # The round is what Screens shows a state by, so a shot is the round's the task is on.
+  test "stamps the shot with the task's current round, or 0 before it has one", %{task: task} do
+    file = "screens/toolbar/1.jpg"
+    assert {:ok, %{round: 0}} = Pipeline.save_screen(task, %{key: "toolbar", label: "Toolbar", file: file})
+
+    Repo.insert!(%Round{task_id: task.id, number: 1})
+    Repo.insert!(%Round{task_id: task.id, number: 2})
+
+    assert {:ok, %{round: 2}} = Pipeline.save_screen(task, %{key: "toolbar", label: "Toolbar", file: file})
+
+    assert %{"round" => 2} =
+             [task.scratch_path, "qa", "screens/toolbar/1.json"] |> Path.join() |> File.read!() |> Jason.decode!()
   end
 
   test "a retake leaves only the new picture and record in the state's folder, and other states' alone", %{

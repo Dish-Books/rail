@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.StartCheckRun do
   @moduledoc """
-  Spawns one of the agents that check a round's change once it is pushed: QA, which also shoots the screen states
-  the change has left out of date, the code reviewer or the demo recorder. Each is a run of its own that Rail starts, on
+  Spawns one of the agents that check a round's change once it is pushed: QA, which also shoots the round's screen
+  states, the code reviewer or the demo recorder. Each is a run of its own that Rail starts, on
   a clean conversation, with a brief saying how its part works. None of them changes the code or saves a finding: QA and the code reviewer save a
   report, and the review agent that follows them decides what is a finding.
   """
@@ -12,6 +12,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -26,6 +27,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
     task = Repo.preload(task, [:project, issue: [comments: :replies]], force: true)
     File.mkdir_p!(Path.join([task.scratch_path, "qa", "evidence"]))
     File.mkdir_p!(Path.join(task.scratch_path, "demo"))
+    if stage == :qa, do: prune_screens(task)
 
     prompt =
       Pipeline.build_prompt(
@@ -139,10 +141,10 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
     end
   end
 
-  # A state is shot again only when a commit since its picture can have changed it, so a round that leaves the
-  # screens alone reshoots nothing.
+  # A state is shot again only when a commit since its picture can have changed it, and one nothing touched is
+  # carried forward instead, so a round that leaves the screens alone reshoots nothing.
   defp screens(%Task{} = task) do
-    "Keep the screen states current, so the human sees each one as the latest commit leaves it. A state is one screen as a person meets it, the primary one or an empty, error or edge state the acceptance criteria name, with a lowercase hyphenated `key` and a `label` saying what it shows, such as `file-list-after-send`, \"File list just after Send\". #{known_screens(task)} Take `save_screen` of each state you shoot once you have reached it: one state, whole, at the width a person would meet it, with realistic content. Each shot replaces the state's last picture. A change with nothing on screen has no states: take none and say so."
+    "Keep the screen states current, so the human sees each one as the latest commit leaves it, and only this round's. A state is one screen as a person meets it, the primary one or an empty, error or edge state the acceptance criteria name, with a lowercase hyphenated `key` and a `label` saying what it shows, such as `file-list-after-send`, \"File list just after Send\". #{known_screens(task)} Take `save_screen` of each state you shoot once you have reached it: one state, whole, at the width a person would meet it, with realistic content. Each shot replaces the state's last picture. A change with nothing on screen has no states: take none and say so."
   end
 
   # The states an earlier round shot keep their keys, so each one's pictures line up across commits.
@@ -152,9 +154,28 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
         "No state has been shot yet: shoot every state the change affects. The keys are yours to choose; later rounds keep them."
 
       screens ->
-        "These states were shot before, each on the commit named. Read what changed since with `git diff <commit> HEAD`, and shoot again, under the same `key`, only a state that change can alter: what it renders, the data it shows or the way to reach it. Leave a state nothing has touched as it is. Shoot any state the change now affects that has no key yet: " <>
+        "These states were shot before, each on the commit named. Once you save or carry one, the human sees only the states this round saved or carried, so each one that still shows part of the change is either shot again or carried forward. Read what changed since with `git diff <commit> HEAD`, and shoot again, under the same `key`, only a state that change can alter: what it renders, the data it shows or the way to reach it. Carry a state nothing has touched forward with `carry_screen`, as it is, and let go of one the change no longer reaches. Shoot any state the change now affects that has no key yet: " <>
           Enum.map_join(screens, "; ", &"`#{&1.key}` (#{&1.label}) on #{String.slice(&1.commit || "no commit", 0, 7)}") <>
           "."
+    end
+  end
+
+  # Only the states of the newest round before this one can still be carried forward, so older ones are deleted.
+  defp prune_screens(%Task{} = task) do
+    current =
+      case Pipeline.read_plan(task) do
+        %Round{number: number} -> number
+        nil -> 0
+      end
+
+    earlier = for %{round: round} = state <- Pipeline.list_screens(task, all_rounds: true), round < current, do: state
+
+    if earlier != [] do
+      newest = earlier |> Enum.map(& &1.round) |> Enum.max()
+
+      for %{round: round, key: key} <- earlier,
+          round < newest,
+          do: File.rm_rf!(Path.join([task.scratch_path, "qa", "screens", key]))
     end
   end
 
