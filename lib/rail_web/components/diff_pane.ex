@@ -80,7 +80,7 @@ defmodule RailWeb.Components.DiffPane do
               data-qa="diff_no_match"
               class="py-10 text-center text-sm text-slate-500 dark:text-slate-400"
             >
-              No file here matches {@frame.no_match}.
+              {@frame.no_match}
             </p>
 
             <.live_component
