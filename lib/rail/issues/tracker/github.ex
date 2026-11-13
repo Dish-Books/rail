@@ -157,9 +157,10 @@ defmodule Rail.Issues.Tracker.Github do
     end
   end
 
-  # Everyone signs in with GitHub, so anyone can own a GitHub issue.
+  # An owner is assigned on GitHub by login, which someone who never connected GitHub does not have.
   @impl true
-  def check_assignable(%User{}), do: :ok
+  def check_assignable(%User{login: login}) when is_binary(login), do: :ok
+  def check_assignable(%User{}), do: {:error, :github_not_linked}
 
   defp token(%Project{github_installation_id: installation_id}), do: GitHub.installation_token(installation_id)
 

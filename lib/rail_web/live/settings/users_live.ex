@@ -110,7 +110,7 @@ defmodule RailWeb.Settings.UsersLive do
                   <tr>
                     <.th>Person</.th>
                     <.th>Projects</.th>
-                    <.th>Linear</.th>
+                    <.th>Accounts</.th>
                     <.th>Role</.th>
                     <th></th>
                   </tr>
@@ -157,7 +157,7 @@ defmodule RailWeb.Settings.UsersLive do
                             id={"user-login-#{user.id}"}
                             class="text-xs text-slate-500 dark:text-slate-400 truncate"
                           >
-                            @{user.login} · {user.email}
+                            {handle_line(user)}
                           </p>
                         </div>
                       </div>
@@ -169,8 +169,8 @@ defmodule RailWeb.Settings.UsersLive do
                         names={project_names(@projects, user.project_ids)}
                       />
                     </td>
-                    <td class="px-4 py-3 whitespace-nowrap">
-                      <.linear_badge user={user} />
+                    <td class="px-4 py-3">
+                      <.accounts user={user} />
                     </td>
                     <td class="px-4 py-3 whitespace-nowrap">
                       <div class="flex flex-col items-start gap-1">
@@ -190,7 +190,7 @@ defmodule RailWeb.Settings.UsersLive do
                         </span>
                         <span
                           :if={user.tech_lead}
-                          id={"user-tech-lead-badge-#{user.login}"}
+                          id={"user-tech-lead-badge-#{user.id}"}
                           class="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-700 px-2 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 ring-1 ring-inset ring-slate-500/40"
                         >
                           <.icon name="pi-seal-check" class="size-3.5" />Tech lead
@@ -298,9 +298,9 @@ defmodule RailWeb.Settings.UsersLive do
                 {@sheet_user.name || @sheet_user.login}
               </p>
               <p class="text-xs text-slate-500 dark:text-slate-400 truncate">
-                @{@sheet_user.login} · {@sheet_user.email}
+                {handle_line(@sheet_user)}
               </p>
-              <div class="mt-2"><.linear_badge user={@sheet_user} id_prefix="sheet" /></div>
+              <div class="mt-2"><.accounts user={@sheet_user} id_prefix="sheet" /></div>
             </div>
           </div>
         </:header>
@@ -644,21 +644,57 @@ defmodule RailWeb.Settings.UsersLive do
   attr :user, :any, required: true
   attr :id_prefix, :string, default: "user"
 
-  defp linear_badge(assigns) do
+  defp accounts(assigns) do
+    assigns =
+      assigns
+      |> assign(:github?, is_binary(assigns.user.github_id))
+      |> assign(:linear?, linear_connected?(assigns.user))
+
+    ~H"""
+    <div
+      id={"#{@id_prefix}-accounts-#{@user.id}"}
+      class="flex flex-wrap gap-1.5"
+      role="group"
+      aria-label={"Connected: #{if @github?, do: "GitHub", else: "no GitHub"}, #{if @linear?, do: "Linear", else: "no Linear"}"}
+    >
+      <.account_chip
+        id={"#{@id_prefix}-github-chip-#{@user.id}"}
+        icon="pi-github-logo"
+        connected={@github?}
+      >
+        GitHub
+      </.account_chip>
+      <.account_chip
+        id={"#{@id_prefix}-linear-chip-#{@user.id}"}
+        icon="pi-kanban"
+        connected={@linear?}
+      >
+        Linear
+      </.account_chip>
+    </div>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :icon, :string, required: true
+  attr :connected, :boolean, required: true
+  slot :inner_block, required: true
+
+  defp account_chip(assigns) do
     ~H"""
     <span
-      :if={linear_connected?(@user)}
-      id={"#{@id_prefix}-linear-badge-#{@user.id}"}
-      class="inline-flex items-center rounded-md bg-blue-50 dark:bg-blue-400/10 px-2 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 ring-1 ring-inset ring-blue-700/10 dark:ring-blue-400/30 whitespace-nowrap"
+      id={@id}
+      data-connected={to_string(@connected)}
+      class={[
+        "inline-flex max-w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset",
+        @connected &&
+          "bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 ring-slate-500/40",
+        not @connected &&
+          "text-slate-400 dark:text-slate-500 ring-slate-300 dark:ring-slate-600 line-through decoration-slate-400 dark:decoration-slate-600"
+      ]}
     >
-      Linear: {@user.linear_name || "Linked"}
-    </span>
-    <span
-      :if={!linear_connected?(@user)}
-      id={"#{@id_prefix}-linear-badge-#{@user.id}"}
-      class="inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-700 px-2 py-1 text-xs font-medium text-slate-500 dark:text-slate-400 ring-1 ring-inset ring-zinc-500/10 whitespace-nowrap"
-    >
-      Linear: Not Linked
+      <.icon name={@icon} class="size-3.5 shrink-0" />
+      <span class="truncate">{render_slot(@inner_block)}</span>
     </span>
     """
   end
@@ -735,8 +771,12 @@ defmodule RailWeb.Settings.UsersLive do
     is_binary(user.linear_user_id) or (is_binary(user.linear_access_token) and user.linear_access_token != "")
   end
 
+  # A person without GitHub has no handle, so the line is only their email.
+  defp handle_line(%{login: login, email: email}) when is_binary(login), do: "@#{login} · #{email}"
+  defp handle_line(%{email: email}), do: email
+
   defp initials_for(user) do
-    case String.split(user.name || user.login || "", ~r/\s+/, trim: true) do
+    case String.split(user.name || user.login || user.email || "", ~r/\s+/, trim: true) do
       [] -> "U"
       words -> words |> Enum.take(2) |> Enum.map_join(&String.first/1) |> String.upcase()
     end

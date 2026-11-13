@@ -13,6 +13,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
 
   import Ecto.Query
   import Rail.Issues.Utils.FormatLinearIssue
+  import Rail.Issues.Utils.MarkLabelledTested
   import Rail.Issues.Utils.UpsertLinearComment
 
   alias Rail.Issues.Schemas.Comment
@@ -30,8 +31,9 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   @doc """
   Applies `payload` for `workspace`, its projects preloaded. Issue creates and
   updates are upserted onto the project on the issue's team and broadcast as
-  `{:issue_changed, issue_id}` on `"issues"`, an archive among them. A remove or
-  a trash deletes the issue and its task, broadcast the same way. Anything else,
+  `{:issue_changed, issue_id}` on `"issues"`, an archive among them, and one
+  labeled Test done or Technical leaves the testing queue. A remove or a trash
+  deletes the issue and its task, broadcast the same way. Anything else,
   including a team no project is on, an update older than the row or a ticket
   Rail now keeps itself, is ignored.
   """
@@ -100,7 +102,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
 
   defp upsert_issue(projects, action, %{"id" => external_id} = data, updated_from) do
     case Enum.find(projects, &(&1.linear_team_id == data["teamId"])) do
-      %Project{id: project_id} ->
+      %Project{id: project_id} = project ->
         attrs =
           data
           |> with_cleared(updated_from)
@@ -115,7 +117,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
             # One Rail moved off Linear keeps its id, so another project on the workspace could otherwise take it.
             if existing.tracker == :local or stale?(existing, attrs),
               do: {existing, :ok},
-              else: {existing, existing |> Issue.tracker_changeset(attrs) |> Repo.insert_or_update()}
+              else: {existing, write_issue(project, existing, attrs, data)}
           end)
 
         with {:ok, issue} <- result do
@@ -134,6 +136,12 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
 
       nil ->
         :ok
+    end
+  end
+
+  defp write_issue(%Project{} = project, %Issue{} = existing, attrs, data) do
+    with {:ok, issue} <- existing |> Issue.tracker_changeset(attrs) |> Repo.insert_or_update() do
+      if mark_labelled_tested(project, [data]) > 0, do: {:ok, Repo.reload!(issue)}, else: {:ok, issue}
     end
   end
 

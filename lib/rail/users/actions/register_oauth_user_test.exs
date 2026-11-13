@@ -93,7 +93,7 @@ defmodule Rail.Users.Actions.RegisterOAuthUserTest do
               id: ^user_id,
               login: "new_login",
               name: "New Name",
-              email: "new-register-oauth-user@example.com",
+              email: "orig@example.com",
               admin: true
             } = updated_user} =
              Users.register_oauth_user(%{

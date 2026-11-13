@@ -8,7 +8,7 @@ defmodule Rail.Users.Actions.ListAssignableUsers do
 
   @doc """
   Lists the users an issue can be assigned to: in `:tracker` `:linear` (the default) those who
-  linked a Linear account, in `:github` and `:local` everyone, since everyone signs in with GitHub.
+  linked a Linear account, in `:github` those who connected GitHub, and in `:local` everyone.
   `:project_id` keeps the admins and the users granted that project.
   """
   def list_assignable_users(opts \\ []) do

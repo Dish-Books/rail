@@ -39,6 +39,16 @@ defmodule Rail.Issues.Actions.MarkIssueTestedTest do
     assert %{issues: []} = Issues.list_issues(project_id: project_id, testing: true)
   end
 
+  test "a ticket marked Tested keeps an updated_at no older than the moment it was marked", %{
+    issue: issue,
+    scope: scope
+  } do
+    before = DateTime.utc_now()
+
+    assert {:ok, %Issue{testing_state: :tested, updated_at: updated_at}} = Issues.mark_issue_tested(scope, issue)
+    assert DateTime.compare(updated_at, before) != :lt
+  end
+
   test "a second call changes nothing and says testing already finished", %{
     issue: %Issue{id: issue_id} = issue,
     scope: scope

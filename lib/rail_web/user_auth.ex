@@ -44,9 +44,10 @@ defmodule RailWeb.UserAuth do
       RailWeb.Endpoint.broadcast(live_socket_id, "disconnect", %{})
     end
 
+    # Under Access the next visit would sign straight back in, so Cloudflare's session ends too.
     conn
     |> renew_session(nil)
-    |> redirect(to: ~p"/sign-in")
+    |> redirect(to: if(Rail.cloudflare_access(), do: "/cdn-cgi/access/logout", else: ~p"/sign-in"))
   end
 
   def fetch_current_user(conn, _opts) do
