@@ -35,6 +35,10 @@ defmodule RailWeb.Live.PlanStageTest do
 
   Does all of it.
 
+  ```elixir sketch
+  def go, do: :ok
+  ```
+
   ### Acceptance criteria
 
   - 1: `lib/rail.ex`

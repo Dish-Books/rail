@@ -11,6 +11,9 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
   @sections ["Approach", "Data changes", "Decisions", "Changes", "Acceptance criteria", "Verification"]
   @required @sections -- ["Data changes"]
 
+  # A card for an image or a PDF needs no sketch: there is no text to show, so its sentences say what changes.
+  @unsketched [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".pdf"]
+
   @decision_kinds %{"Decision" => :decision, "Ruled out" => :ruled_out, "Assumption" => :assumption}
 
   @extension [autolink: true, strikethrough: true, table: true, tasklist: true, inline_code_attributes: false]
@@ -231,12 +234,29 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
         end
       end)
 
-    if Enum.count(blocks, & &1) > 1 or Enum.count(blocks, &(not &1)) > 1,
-      do: [
-        "has more than one code block of a kind under `#{heading}`; a card holds one block of signatures and one " <>
-          "marked `sketch` at most"
-      ],
-      else: []
+    cond do
+      Enum.count(blocks, & &1) > 1 or Enum.count(blocks, &(not &1)) > 1 ->
+        [
+          "has more than one code block of a kind under `#{heading}`; a card holds one block of signatures and one " <>
+            "marked `sketch` at most"
+        ]
+
+      not Enum.any?(blocks) and needs_sketch?(heading) ->
+        [
+          "has no `sketch` block under `#{heading}`; give the card one fenced block marked `sketch`, such as " <>
+            "```elixir sketch, showing every change the file gets"
+        ]
+
+      true ->
+        []
+    end
+  end
+
+  # A reader approves a file's change, its code or a document's wording, by its sketch. A deleted file has nothing to
+  # show, and an image is described by its card's sentences.
+  defp needs_sketch?(heading) do
+    [_heading, path] = Regex.run(~r/\A#### `([^`]+)`/, heading)
+    not String.ends_with?(String.trim_trailing(heading), " deleted") and Path.extname(path) not in @unsketched
   end
 
   defp bullet_errors(lines, title, pattern, shape) do

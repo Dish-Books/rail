@@ -6,7 +6,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveFixPlanTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
 
-  @plan "### What changes\n\n#### `nil-crash`\n\nGuard nil.\n\n### File-level changes\n\n#### `lib/a.ex`\n\nFor `nil-crash`."
+  @plan "### What changes\n\n#### `nil-crash`\n\nGuard nil.\n\n### File-level changes\n\n#### `lib/a.ex`\n\nFor `nil-crash`.\n\n```elixir sketch\ndef go, do: :ok\n```"
 
   setup do
     scratch = Path.join(System.tmp_dir!(), "rt_save_fix_plan_#{System.unique_integer([:positive])}")

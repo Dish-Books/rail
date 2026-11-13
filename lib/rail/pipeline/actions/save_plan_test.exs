@@ -25,6 +25,10 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
 
   Extends the module.
 
+  ```elixir sketch
+  def go, do: :ok
+  ```
+
   ### Acceptance criteria
 
   - 1: `lib/rail.ex`
@@ -241,9 +245,12 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
                  String.replace(
                    @plan,
                    "### Acceptance criteria",
-                   "#### `lib/rail.ex`\n\nAgain.\n\n### Acceptance criteria"
+                   "#### `lib/rail.ex`\n\nAgain.\n\n```elixir sketch\ndef again, do: :ok\n```\n\n### Acceptance criteria"
                  )
                )
+
+      assert ["has no `sketch` block under `#### `lib/rail.ex``; give the card one fenced block marked `sketch`" <> _rest] =
+               refused.(String.replace(@plan, ~r/```elixir sketch\n.*?```\n/s, ""))
 
       assert ["has a line under `### Acceptance criteria` that is not a bullet starting with the number" <> _rest] =
                refused.(String.replace(@plan, "- 1: `lib/rail.ex`", "- `lib/rail.ex`"))

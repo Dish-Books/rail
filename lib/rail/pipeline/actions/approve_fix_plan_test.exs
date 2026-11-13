@@ -19,7 +19,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
   alias Rail.Users
 
   @plan "Guard nil.\n\n### What changes\n\n#### `nil-crash`\n\nGuard it at the caller.\n\n" <>
-          "### File-level changes\n\n#### `lib/a.ex`\n\nGuards nil. For `nil-crash`."
+          "### File-level changes\n\n#### `lib/a.ex`\n\nGuards nil. For `nil-crash`.\n\n```elixir sketch\ndef go, do: :ok\n```"
 
   setup %{project: project} do
     stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)

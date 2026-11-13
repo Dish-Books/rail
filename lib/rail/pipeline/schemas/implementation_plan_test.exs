@@ -160,6 +160,34 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
                errors_on(check.(plan))
     end
 
+    # A reader approves a file's change by its sketch, so every card shows one but a deleted file's or an image's.
+    test "refuses a card with no sketch, a document's included, and asks none of a deleted file or an image", %{
+      check: check
+    } do
+      plan =
+        String.replace(sheet_plan(), "```heex sketch\n<.button phx-click=\"send_back\">Send back</.button>\n```\n", "")
+
+      expected =
+        "has no `sketch` block under `#### `lib/rail_web/live/review_stage.ex``; give the card one fenced " <>
+          "block marked `sketch`, such as ```elixir sketch, showing every change the file gets"
+
+      assert %{plan: [^expected]} = errors_on(check.(plan))
+
+      # Signatures alone are not the change.
+      plan = String.replace(sheet_plan(), ~r/```elixir sketch\ndefdelegate.*?```\n/s, "")
+      assert %{plan: ["has no `sketch` block under `#### `lib/rail/pipeline.ex``" <> _rest]} = errors_on(check.(plan))
+
+      doc = "#### `docs/sending-back.md`\n\nSays how to send a task back.\n\n"
+      plan = String.replace(sheet_plan(), "### Acceptance criteria", doc <> "### Acceptance criteria")
+      assert %{plan: ["has no `sketch` block under `#### `docs/sending-back.md``" <> _rest]} = errors_on(check.(plan))
+
+      worded = doc <> "```markdown sketch\nSend back returns the task to Architect.\n```\n\n"
+      assert check.(String.replace(sheet_plan(), "### Acceptance criteria", worded <> "### Acceptance criteria")).valid?
+
+      image = "#### `assets/static/images/send-back.png`\n\nThe Send back icon.\n\n"
+      assert check.(String.replace(sheet_plan(), "### Acceptance criteria", image <> "### Acceptance criteria")).valid?
+    end
+
     test "refuses what passes the line checks but does not lay out, such as code among the decisions", %{
       check: check
     } do
@@ -215,7 +243,7 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
                    signatures: "```elixir\ndef send_back_to_architect(%Run{} = run, note)\n```",
                    sketch: "```elixir sketch\ndef send_back_to_architect" <> _sketch
                  },
-                 %{path: "lib/rail_web/live/review_stage.ex", signatures: nil, sketch: nil},
+                 %{path: "lib/rail_web/live/review_stage.ex", signatures: nil, sketch: "```heex sketch\n" <> _button},
                  %{path: "lib/rail/pipeline.ex", signatures: "```elixir\ndefdelegate" <> _delegate},
                  %{path: "priv/repo/migrations/20261022000000_add_sent_back_note.exs"},
                  %{

@@ -34,6 +34,10 @@ end
 
 Adds the Send back button beside Send to QA.
 
+```heex sketch
+<.button phx-click="send_back">Send back</.button>
+```
+
 #### `lib/rail/pipeline.ex`
 
 Delegates `send_back_to_architect/2` beside `send_to_qa/1`.
@@ -42,9 +46,17 @@ Delegates `send_back_to_architect/2` beside `send_to_qa/1`.
 defdelegate send_back_to_architect(run, note), to: Actions.SendBackToArchitect
 ```
 
+```elixir sketch
+defdelegate send_back_to_architect(run, note), to: Actions.SendBackToArchitect
+```
+
 #### `priv/repo/migrations/20261022000000_add_sent_back_note.exs`
 
 Adds the column.
+
+```elixir sketch
+alter table(:tasks), do: add(:sent_back_note, :text)
+```
 
 #### `lib/rail/pipeline/actions/old_send_back.ex` deleted
 

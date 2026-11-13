@@ -30,6 +30,10 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
 
   Groups.
 
+  ```elixir sketch
+  def go, do: :ok
+  ```
+
   ### Acceptance criteria
 
   - 1: `lib/rail.ex`

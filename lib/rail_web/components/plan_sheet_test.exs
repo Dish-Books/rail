@@ -90,7 +90,7 @@ defmodule RailWeb.Components.PlanSheetTest do
 
     assert Floki.text(Floki.find(html, "#plan-card-3 [data-qa='plan_card_deleted']")) =~ "Deleted"
     assert Floki.text(Floki.find(html, "#plan-card-3")) =~ "lib/rail/pipeline/actions/old_send_back.ex"
-    assert Floki.find(html, "#plan-card-2 [data-qa='plan_card_sketch']") == []
+    assert Floki.find(html, "#plan-card-3 [data-qa='plan_card_sketch']") == []
   end
 
   test "a path on the default branch reads Changed and links to it on GitHub in a new tab, one off it reads New", %{

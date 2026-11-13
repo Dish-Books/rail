@@ -188,9 +188,9 @@ The body is the sections below, in this order, under exactly these `###` titles,
 **4. `### Changes`.** A card per application file, in the order the change would be built. Rail groups the cards by where the code goes, so write no groups of your own. Each card is:
 
 - a `####` heading holding the file's path in backticks, followed by `deleted` when the change deletes the file, such as `` #### `lib/rail/pipeline/actions/old_notify.ex` deleted ``;
-- a sentence or two of prose: what this file does differently once the change is in, and why it is this file that changes. A new file says what it is for, a deleted one why it goes. Name a function or module only where the reader needs it to follow the change, and then by name alone, such as `pick_design_option/2`. No code in the sentences: no option values, column types, return tuples, patterns, `@doc` wording or line numbers. A file whose change takes more than two sentences is a sign the plan is too big or the file is doing two jobs; say which.
+- a sentence or two of prose: what this file does differently once the change is in, and why it is this file that changes. A new file says what it is for, a deleted one why it goes. Name a function or module only where the reader needs it to follow the change, and then by name alone, such as `pick_design_option/3`. No code in the sentences: no option values, column types, return tuples, patterns, `@doc` wording or line numbers. A file whose change takes more than two sentences is a sign the plan is too big or the file is doing two jobs; say which.
 - then, when it adds or changes public functions, one fenced block of their signatures, without `@spec` (Rail does not use them), including the `defdelegate` line a context module gains for each new action;
-- then, when there is code the change turns on, one fenced block marked `sketch`, such as `` ```elixir sketch ``, holding only that code: the key function or the new clause, never the whole file. It is a sketch and need not compile. The reader opens it with Show code.
+- then, always, one fenced block marked `sketch`, such as `` ```elixir sketch ``, showing every change the file gets, not only the key one: each new or changed function, private ones included, and each new clause, schema field, route, config key or migration step. Write `# ...` for code the change leaves as it is rather than copying it. A new file's sketch is the whole file. A document's sketch, such as a prompt, a doc or a help article, is its new or changed wording, word for word, in a `` ```markdown sketch `` block, so a person approves the words as written. It is a sketch and need not compile. The reader opens it with Show code. Only a deleted file or an image goes without one, and Rail refuses any other card that has none.
 
 Every name is real: an existing module or function exactly as the code defines it, a new one exactly as its card names it. Test files get no card; the criteria name them.
 
@@ -200,11 +200,34 @@ Good:
 
 After a pick is accepted, deletes the options not picked and rewrites the manifest to list only the picked one, so one option is refined and one is planned for. It is the one place Rail already writes into the design folder.
 
+```elixir sketch
+def pick_design_option(%Scope{} = scope, %Run{} = run, key) when is_binary(key) do
+  # ...
+  with {:ok, _reply} <- Pipeline.send_message(run, pick_message(key)) do
+    prune_options(design_dir(run), key)
+  end
+end
+
+defp prune_options(dir, key) do
+  manifest_path = Path.join(dir, "manifest.json")
+  manifest = manifest_path |> File.read!() |> Jason.decode!()
+  {picked, others} = Enum.split_with(manifest["options"], &(&1["key"] == key))
+
+  for %{"key" => other} <- others, ext <- ["html", "png"] do
+    File.rm(Path.join(dir, "#{other}.#{ext}"))
+  end
+
+  File.write!(manifest_path, Jason.encode!(%{manifest | "options" => picked}, pretty: true))
+end
+```
+
 Bad:
 
 #### `lib/rail/pipeline/actions/pick_design_option.ex`
 
 After `Pipeline.send_message/2` returns `{:ok, _}`, re-read `manifest.json` with `File.read!` + `Jason.decode!`, keep the first `%{"key" => ^key}` entry, write it back with `Jason.encode!(..., pretty: true)`, and `File.rm/1` each other `<key>.html` and `<key>.png`, ignoring `{:error, :enoent}`.
+
+The Bad card's detail is real, but it belongs in the sketch, where it reads as code, not in the sentences.
 
 **5. `### Acceptance criteria`.** A flat bullet per acceptance criterion of the ticket, led by the criterion's number in the ticket's list and a colon, then the path in backticks of each file and test that satisfies it:
 
