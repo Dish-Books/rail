@@ -135,7 +135,7 @@ defmodule RailWeb.Live.DiffViewTest do
     end)
 
     # Rows come back unhighlighted, which the pane draws as their text.
-    stub(Git, :load_diff, fn scope, task, filter, _previous ->
+    stub(Git, :load_diff, fn scope, task, filter, _previous, _opts ->
       viewed = Git.list_viewed_files(scope, task, :diff)
 
       patch =
@@ -610,6 +610,100 @@ defmodule RailWeb.Live.DiffViewTest do
 
       assert segment |> Floki.find(".diff-line") |> List.last() |> Floki.find(".diff-num") |> Enum.map(&Floki.text/1) ==
                ["", "8"]
+    end
+  end
+
+  # A file's lines are sent, colored, once the reader comes near it: the first files with the pane, the rest as
+  # the page asks for them, and any the reader goes to straight away.
+  describe "lines sent as the reader comes near" do
+    setup %{repo: repo} do
+      patch =
+        Enum.map_join(["a", "b", "c", "d", "e"], "", fn name ->
+          """
+          diff --git a/#{name}.ex b/#{name}.ex
+          new file mode 100644
+          index 0000000..7a1c613
+          --- /dev/null
+          +++ b/#{name}.ex
+          @@ -0,0 +1 @@
+          +line of #{name}
+          """
+        end)
+
+      File.write!(Path.join(repo, "branch.diff"), patch)
+
+      stub(Git, :load_diff, fn scope, task, :branch, _previous, [highlight: false] ->
+        viewed = Git.list_viewed_files(scope, task, :diff)
+
+        {:ok,
+         for file <- parse_diff(File.read!(Path.join(task.worktree_path, "branch.diff"))) do
+           Map.merge(file, %{viewed?: viewed[file.path] == file.digest, highlighted?: false})
+         end}
+      end)
+
+      test = self()
+
+      stub(Git, :highlight_diff_files, fn _task, :branch, files ->
+        send(test, {:highlighted, Enum.map(files, & &1.path)})
+
+        for file <- files,
+            do:
+              Map.put(
+                %{file | rows: Enum.map(file.rows, &Map.put(&1, :html, "<b>lit #{file.path}</b>"))},
+                :highlighted?,
+                true
+              )
+      end)
+
+      :ok
+    end
+
+    test "the pane opens with its first files drawn and colored, and the rest standing in for theirs", %{
+      conn: conn,
+      task: task
+    } do
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert_received {:highlighted, ["a.ex", "b.ex", "c.ex"]}
+      refute_received {:highlighted, _more}
+
+      for name <- ["a", "b", "c"],
+          do: assert(has_element?(view, "#diff-file-#{name}-ex:not([data-far]) .diff-line b", "lit #{name}.ex"))
+
+      for name <- ["d", "e"], do: assert(has_element?(view, "#diff-file-#{name}-ex[data-far] [data-qa='diff_far']"))
+      refute has_element?(view, "#diff-file-d-ex .diff-line")
+    end
+
+    test "a file the page says the reader came near is drawn, and a path the pane does not have is not", %{
+      conn: conn,
+      task: task
+    } do
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert_received {:highlighted, _first}
+
+      view |> with_target("#diff-view") |> render_hook("draw_diff_files", %{"paths" => ["d.ex", "nowhere.ex"]})
+
+      assert_received {:highlighted, ["d.ex"]}
+      assert has_element?(view, "#diff-file-d-ex:not([data-far]) .diff-line b", "lit d.ex")
+      assert has_element?(view, "#diff-file-e-ex[data-far]")
+    end
+
+    test "the file the reader goes to is drawn with the reply, by the list or by reading the one before", %{
+      conn: conn,
+      task: task
+    } do
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert_received {:highlighted, _first}
+
+      view |> element("#diff-header-c-ex [data-qa='diff-viewed-checkbox']") |> render_click()
+
+      assert_received {:highlighted, ["d.ex"]}
+      assert has_element?(view, "#diff-file-d-ex:not([data-far]) .diff-line")
+
+      view |> element("[data-qa='diff-file-row'][phx-value-path='e.ex']") |> render_click()
+
+      assert_received {:highlighted, ["e.ex"]}
+      assert has_element?(view, "#diff-file-e-ex:not([data-far]) .diff-line")
     end
   end
 end

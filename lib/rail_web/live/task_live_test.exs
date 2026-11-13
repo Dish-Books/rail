@@ -329,7 +329,7 @@ defmodule RailWeb.TaskLiveTest do
       %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
     end)
 
-    stub(Git, :load_diff, fn _scope, _task, _filter, _previous -> {:ok, []} end)
+    stub(Git, :load_diff, fn _scope, _task, _filter, _previous, _opts -> {:ok, []} end)
     stub(Git, :branch_fingerprint, fn _worktree_path -> nil end)
     stub(Git, :worktree_dirty?, fn _worktree_path -> false end)
 
@@ -372,7 +372,7 @@ defmodule RailWeb.TaskLiveTest do
       %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
     end)
 
-    stub(Git, :load_diff, fn _scope, _task, _filter, _previous -> {:ok, []} end)
+    stub(Git, :load_diff, fn _scope, _task, _filter, _previous, _opts -> {:ok, []} end)
     stub(Git, :branch_fingerprint, fn _worktree_path -> nil end)
     stub(Git, :worktree_dirty?, fn _worktree_path -> false end)
 
@@ -477,7 +477,7 @@ defmodule RailWeb.TaskLiveTest do
       %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
     end)
 
-    stub(Git, :load_diff, fn _scope, _task, _filter, _previous -> {:ok, []} end)
+    stub(Git, :load_diff, fn _scope, _task, _filter, _previous, _opts -> {:ok, []} end)
     stub(Git, :branch_fingerprint, fn _worktree_path -> nil end)
     stub(Git, :worktree_dirty?, fn _worktree_path -> false end)
 
@@ -3875,7 +3875,7 @@ defmodule RailWeb.TaskLiveTest do
       end)
 
       # Rows come back unhighlighted, which the pane draws as their text.
-      stub(Git, :load_diff, fn scope, task, filter, _previous ->
+      stub(Git, :load_diff, fn scope, task, filter, _previous, _opts ->
         viewed = Git.list_viewed_files(scope, task, :diff)
 
         patch =
@@ -4532,7 +4532,7 @@ defmodule RailWeb.TaskLiveTest do
 
     test "a cleaned-up worktree has no diff left to read", %{conn: conn, task: task} do
       {:ok, _gone} = Pipeline.update_task(task, %{worktree_path: "/tmp/gone_#{System.unique_integer([:positive])}"})
-      stub(Git, :load_diff, fn _scope, _task, _filter, _previous -> {:error, :no_worktree} end)
+      stub(Git, :load_diff, fn _scope, _task, _filter, _previous, _opts -> {:error, :no_worktree} end)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5572,7 +5572,7 @@ defmodule RailWeb.TaskLiveTest do
       end
 
       stub(Git, :load_diff, fn scope, task, _filter -> read_diff.(scope, task) end)
-      stub(Git, :load_diff, fn scope, task, _filter, _previous -> read_diff.(scope, task) end)
+      stub(Git, :load_diff, fn scope, task, _filter, _previous, _opts -> read_diff.(scope, task) end)
       stub(Git, :worktree_dirty?, fn _worktree_path -> false end)
 
       {:ok, _engineer_run} =
@@ -7022,7 +7022,7 @@ defmodule RailWeb.TaskLiveTest do
               """),
             do: Map.merge(file, %{rows: Enum.map(file.rows, &Map.put(&1, :html, nil)), viewed?: false})
 
-      stub(Git, :load_diff, fn _scope, _task, _filter, _previous -> {:ok, shipped} end)
+      stub(Git, :load_diff, fn _scope, _task, _filter, _previous, _opts -> {:ok, shipped} end)
 
       stub(Git, :load_branch_history, fn _task, _rounds ->
         %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}

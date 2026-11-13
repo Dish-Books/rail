@@ -11,8 +11,42 @@ const lineOf = (button) => {
   return { kind: row.dataset.kind, oldLine: oldLine.textContent.trim(), newLine: newLine.textContent.trim() };
 };
 
+// A file is sent no lines until the reader comes within a screen of it, then asks
+// for them. One observer watches every file of a pane, and the files that
+// come near together are asked for in one event.
+const panes = new WeakMap();
+
+// Outside a scroller the page itself scrolls, so the viewport is watched instead.
+const paneFor = (scroller) => {
+  let pane = panes.get(scroller || document);
+  if (pane) return pane;
+
+  const sections = new Map();
+  const observer = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        const hook = sections.get(entry.target);
+        if (!hook) continue;
+        hook.near = entry.isIntersecting;
+        hook.askToDraw();
+      }
+    },
+    { root: scroller, rootMargin: "100% 0px" }
+  );
+
+  pane = { sections, observer, asked: new Map(), flush: null };
+  panes.set(scroller || document, pane);
+  return pane;
+};
+
 export const DiffSection = {
   mounted() {
+    this.near = false;
+    this.asked = false;
+    this.pane = paneFor(this.el.closest("#diff-scroller"));
+    this.pane.sections.set(this.el, this);
+    this.pane.observer.observe(this.el);
+
     this.el.addEventListener("click", (event) => {
       const button = event.target.closest(".diff-comment-add");
       if (!button) return;
@@ -49,5 +83,32 @@ export const DiffSection = {
 
   updated() {
     this.el.dispatchEvent(new CustomEvent("diff:section-updated", { bubbles: true }));
+
+    // Drawn, or opened while already near.
+    if (!this.el.hasAttribute("data-far")) this.asked = false;
+    this.askToDraw();
+  },
+
+  destroyed() {
+    this.pane.observer.unobserve(this.el);
+    this.pane.sections.delete(this.el);
+  },
+
+  // A folded file shows no lines, so it waits until it is opened.
+  askToDraw() {
+    if (this.asked || !this.near || !this.el.hasAttribute("data-far")) return;
+    if (!this.el.querySelector(".diff-far")) return;
+
+    this.asked = true;
+    const target = this.el.dataset.commentTarget;
+    const { asked } = this.pane;
+    if (!asked.has(target)) asked.set(target, new Set());
+    asked.get(target).add(this.el.dataset.path);
+
+    this.pane.flush ??= setTimeout(() => {
+      this.pane.flush = null;
+      for (const [to, paths] of asked) this.pushEventTo(to, "draw_diff_files", { paths: [...paths] });
+      asked.clear();
+    }, 50);
   }
 };

@@ -48,7 +48,8 @@ defmodule Rail.Git do
   defdelegate copy_env_file(project, worktree_path), to: Actions.CopyEnvFile
 
   # `filter` is `:branch`, `:uncommitted`, or `{:commit, sha}` for one commit against its first parent.
-  defdelegate load_diff(scope, task, filter \\ :branch, previous_files \\ []), to: Actions.LoadDiff
+  defdelegate load_diff(scope, task, filter \\ :branch, previous_files \\ [], opts \\ []), to: Actions.LoadDiff
+  defdelegate highlight_diff_files(task, filter, files), to: Actions.LoadDiff
   defdelegate load_diff_hunks(scope, task, ranges), to: Actions.LoadDiffHunks
   defdelegate read_diff_image(task, path, side, filter), to: Actions.ReadDiffImage
 

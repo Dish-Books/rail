@@ -92,6 +92,18 @@ defmodule RailWeb.Live.DiffFileTest do
     assert render_component(DiffFile, section) =~ ~s(aria-label="Fold lib/rail/invoices/filter.ex")
   end
 
+  # The page asks for a far file's lines as the reader nears it, so it holds their place.
+  test "a file whose lines are not sent yet stands in as tall as they will be", %{section: section} do
+    html = DiffFile |> render_component(Map.merge(section, %{segments: [], far_rows: 3})) |> Floki.parse_fragment!()
+
+    assert [_section] = Floki.find(html, "[data-qa='diff_file_section'][data-far]")
+    assert ["height: 66px;"] = Floki.attribute(html, "[data-qa='diff_far']", "style")
+    assert [] = Floki.find(html, ".diff-body")
+
+    folded = DiffFile |> render_component(Map.merge(section, %{far_rows: 3, collapsed?: true})) |> Floki.parse_fragment!()
+    assert [] = Floki.find(folded, "[data-qa='diff_far']")
+  end
+
   test "a collapsed file is only its header", %{section: section} do
     html = render_component(DiffFile, %{section | collapsed?: true})
 
