@@ -32,6 +32,27 @@ defmodule RailWeb.Components.CommentBoxTest do
     assert Floki.attribute(body, "phx-key") == ["Escape"]
     assert form |> Floki.find("[data-qa='plan_comment_cancel']") |> Floki.attribute("phx-click") == ["cancel_it"]
     assert form |> Floki.find("[data-qa='plan_comment_save']") |> Floki.text() =~ "Save comment"
+    assert Floki.attribute(form, "phx-hook") == ["CommentBox"]
+    assert Floki.attribute(form, "data-reopen") == []
+  end
+
+  # A reconnect starts the box's component over; the event named here opens it again.
+  test "names the event that opens it again, when given one" do
+    html =
+      render_component(&CommentBox.comment_box/1,
+        id: "box",
+        body_id: "box-body",
+        qa: "comment_edit",
+        label: "the comment",
+        submit: "save",
+        change: "change",
+        cancel: "cancel",
+        target: nil,
+        reopen: %{event: "edit"}
+      )
+
+    assert [reopen] = html |> Floki.parse_fragment!() |> Floki.attribute("form#box", "data-reopen")
+    assert Jason.decode!(reopen) == %{"event" => "edit"}
   end
 
   # A box in a narrow column, as the screen view's, gives its hint a line of its own rather than cut it.

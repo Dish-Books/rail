@@ -154,7 +154,14 @@ defmodule RailWeb.Live.DiffFile do
   # Named for its line, so moving it mounts a new box that takes the focus, and two
   # files patched one after the other never both hold it.
   defp comment_composer(%{draft: draft} = assigns) do
-    assigns = assign(assigns, :key, slug("#{draft.path}-#{draft.line_kind}-#{draft.line}"))
+    # Opened again as a click on its line opens it, so the numbers go as the page sends them.
+    line = to_string(draft.line)
+    reopen = %{path: draft.path, kind: to_string(draft.line_kind), old_line: line, new_line: line}
+
+    assigns =
+      assigns
+      |> assign(:key, slug("#{draft.path}-#{draft.line_kind}-#{draft.line}"))
+      |> assign(:reopen, %{event: "open_diff_comment", value: reopen})
 
     ~H"""
     <div class="diff-comment-row">
@@ -168,6 +175,7 @@ defmodule RailWeb.Live.DiffFile do
         change="change_diff_comment"
         cancel="cancel_diff_comment"
         target={@target}
+        reopen={@reopen}
       />
     </div>
     """

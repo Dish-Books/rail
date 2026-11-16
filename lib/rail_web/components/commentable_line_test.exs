@@ -335,6 +335,14 @@ defmodule RailWeb.Components.CommentableLineTest do
     assert Floki.text(Floki.find(html, "[data-qa='document_comment_line']")) =~ paragraph.label
     assert [box] = Floki.find(html, "#document-comment-form-#{paragraph.key}")
     assert Floki.text(Floki.find(box, "[data-qa='document_comment_box_line']")) =~ paragraph.label
+
+    assert [reopen] = Floki.attribute(box, "data-reopen")
+
+    assert Jason.decode!(reopen) == %{
+             "event" => "open_document_comment",
+             "value" => %{"doc" => "plan", "key" => paragraph.key}
+           }
+
     assert Floki.find(html, "#line-plan-#{paragraph.key}") == []
     assert Floki.find(html, "[data-qa='line_comment_add']") == []
   end

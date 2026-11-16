@@ -45,6 +45,7 @@ defmodule RailWeb.Live.CommentBody do
         change="change"
         cancel="cancel"
         target={@myself}
+        reopen={%{event: "edit"}}
         class="mt-1"
         narrow={@narrow}
       />
