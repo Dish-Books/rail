@@ -709,7 +709,7 @@ defmodule RailWeb.Live.PlanStage do
             data-user-id={@user_id}
             data-conversation="#conversation-tab-root"
             class={[
-              "relative w-full aspect-video overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white",
+              "relative w-full mx-auto aspect-video overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white",
               @commenting &&
                 "ring-2 ring-blue-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900 cursor-crosshair"
             ]}

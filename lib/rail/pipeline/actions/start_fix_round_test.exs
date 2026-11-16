@@ -414,6 +414,29 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
                run |> Pipeline.list_run_events() |> Enum.filter(&(&1.line =~ "[human] 2. On a screen:"))
     end
 
+    test "a comment on the running app goes as one on the running app", %{
+      task: task,
+      run: %{id: run_id} = run,
+      crash: crash,
+      nit: nit,
+      ada: ada
+    } do
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+      element = %{selector: "#total", text: "$12", tag: "span", url: "http://localhost:20650/checkout"}
+      {:ok, %{id: app_id}} = Pipeline.create_app_comment(ada, task, element, "Say the currency.")
+
+      expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "1. On the running app:\n<app_comment>\nIn the running app at /checkout"
+        assert prompt =~ "Element: `#total` \"$12\"\nSay the currency.\n</app_comment>"
+
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %Run{id: ^run_id}} = Pipeline.start_fix_round(ada, run)
+      assert %ScreenComment{status: :sent} = Repo.get!(ScreenComment, app_id)
+    end
+
     # The tray lists finding comments first among the comments, so the note numbers them the same.
     test "finding comments go after the Fix findings and before the diff's and the screens', numbered as the tray does",
          %{

@@ -29,6 +29,7 @@ defmodule RailWeb.Live.TaskDetail do
   alias Rail.Pipeline.Schemas.FindingPlace
   alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.PlanComment
+  alias Rail.Pipeline.Schemas.Preview
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.ScreenComment
@@ -50,8 +51,30 @@ defmodule RailWeb.Live.TaskDetail do
     {:ok, socket}
   end
 
+  # A comment on the running app opens the App item, where its element is.
+  def update(%{open_screen: "app"}, socket) do
+    socket = socket |> pick(:app) |> load()
+    {:ok, socket}
+  end
+
   def update(%{open_screen: key}, socket) do
     socket = socket |> pick(:screens) |> open_screen(key) |> load()
+    {:ok, socket}
+  end
+
+  # The app's tab navigated, so its address is read again.
+  def update(%{app_where: true}, socket), do: {:ok, assign_app_url(socket)}
+
+  # The task's preview started deploying a push, went live on it or went away.
+  def update(%{app_preview: preview}, socket) do
+    socket =
+      socket
+      |> assign(:app_preview, preview)
+      |> assign(:app_draft, if(Preview.live?(preview), do: socket.assigns.app_draft))
+      |> open_preview()
+      |> assign_app_url()
+      |> assign_items()
+
     {:ok, socket}
   end
 
@@ -90,6 +113,8 @@ defmodule RailWeb.Live.TaskDetail do
       |> assign_new(:reopen_comment, fn -> assigns[:url_comment] end)
       |> assign_new(:finding_url, fn -> {assigns[:url_finding], assigns[:url_comment]} end)
       |> assign_new(:fix_plan_draft, fn -> nil end)
+      |> assign_new(:app_commenting, fn -> false end)
+      |> assign_new(:app_draft, fn -> nil end)
       |> assign_new(:comment_order, fn -> "newest" end)
       |> assign_new(:reported_lifted, fn -> nil end)
       |> assign_new(:code_cache, fn -> %{fingerprint: :unread, by_key: %{}} end)
@@ -486,6 +511,20 @@ defmodule RailWeb.Live.TaskDetail do
                   target={@myself}
                 />
 
+                <.app_pane
+                  :if={@item == :app}
+                  preview={@app_preview}
+                  has_pr={is_integer(@task.pr_number)}
+                  login_url={@app_preview && Preview.login_url(@app_preview, @task.project)}
+                  url={@app_url}
+                  commenting={@app_commenting}
+                  commentable={@commentable}
+                  draft={@app_draft}
+                  comments={Enum.filter(@screen_comments, &(&1.source == :app))}
+                  error={@error}
+                  target={@myself}
+                />
+
                 <%!-- Under every other item, the comments waiting to be sent, so Send is never an item away. --%>
                 <div :if={!@beside} class="shrink-0">
                   {render_slot(@conversation)}
@@ -592,6 +631,72 @@ defmodule RailWeb.Live.TaskDetail do
 
       {:error, reason} ->
         {:noreply, assign(socket, :error, message_for(reason))}
+    end
+  end
+
+  def handle_event("app_sign_in", _params, socket) do
+    case Pipeline.open_preview_tab(socket.assigns.task) do
+      :ok ->
+        socket = socket |> assign(:error, nil) |> assign_app_url()
+
+        {:noreply, socket}
+
+      {:error, reason} ->
+        {:noreply, assign(socket, :error, app_error(reason))}
+    end
+  end
+
+  def handle_event("app_navigate", %{"to" => to}, socket) when to in ["back", "reload"] do
+    _sent = Tools.send_browser_input(socket.assigns.task, Preview.browser_name(), %{"kind" => "navigate", "to" => to})
+    {:noreply, socket}
+  end
+
+  # A click, a key or a scroll on the picture, for the tab; nothing on the page moves with it.
+  def handle_event("app_input", params, socket) do
+    _sent = Tools.send_browser_input(socket.assigns.task, Preview.browser_name(), params)
+    {:noreply, socket}
+  end
+
+  def handle_event("toggle_commenting", _params, socket) do
+    socket = socket |> assign(:app_commenting, not socket.assigns.app_commenting) |> assign(:app_draft, nil)
+    {:noreply, socket}
+  end
+
+  def handle_event("app_pick", %{"x" => x, "y" => y}, socket) when is_number(x) and is_number(y) do
+    %{task: task} = socket.assigns
+    dir = Path.join([task.scratch_path, "app", "comments"])
+
+    case Tools.inspect_browser_element(task, Preview.browser_name(), x, y, dir) do
+      {:ok, element} ->
+        socket = socket |> assign(:app_draft, %{element: element, body: ""}) |> assign(:error, nil)
+
+        {:noreply, socket}
+
+      {:error, reason} ->
+        {:noreply, assign(socket, :error, app_error(reason))}
+    end
+  end
+
+  def handle_event("app_comment_change", %{"body" => body}, socket) do
+    {:noreply, update(socket, :app_draft, &(&1 && %{&1 | body: body}))}
+  end
+
+  def handle_event("cancel_app_comment", _params, socket), do: {:noreply, assign(socket, :app_draft, nil)}
+
+  # A blank comment keeps the box open, and the comment shows once the reader's list is read again.
+  def handle_event("save_app_comment", %{"body" => body}, socket) do
+    %{current_scope: scope, task: task, app_draft: %{element: element}} = socket.assigns
+
+    case Pipeline.create_app_comment(scope, task, element, body) do
+      {:ok, _comment} ->
+        socket = socket |> assign(:app_draft, nil) |> assign(:error, nil) |> assign_screen_comments()
+        {:noreply, socket}
+
+      {:error, %Ecto.Changeset{}} ->
+        {:noreply, update(socket, :app_draft, &%{&1 | body: body})}
+
+      {:error, reason} ->
+        {:noreply, assign(socket, :error, app_error(reason))}
     end
   end
 
@@ -953,6 +1058,7 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign_branch(passes)
     |> assign_screen_comments()
     |> assign_demo_and_browsers(runs)
+    |> assign_app()
     |> assign_custom_stage()
     |> assign_items()
     |> assign_selected(selected, findings)
@@ -1050,6 +1156,8 @@ defmodule RailWeb.Live.TaskDetail do
   end
 
   # A state a retake or a cleanup took away leaves the grid open.
+  defp open_comment(socket, %{kind: :screen, comment: %ScreenComment{source: :app}}), do: socket |> pick(:app) |> load()
+
   defp open_comment(socket, %{kind: :screen, comment: %ScreenComment{key: key}}) do
     key = if Enum.any?(socket.assigns.screens, &(&1.key == key)), do: key
     socket |> pick(:screens) |> open_screen(key) |> load()
@@ -1291,7 +1399,13 @@ defmodule RailWeb.Live.TaskDetail do
 
   # The page holds the subscription a frame arrives on, so it is told which browser is being watched.
   defp watch(socket) do
-    watched = if socket.assigns.item == :browser, do: socket.assigns.browser
+    watched =
+      case socket.assigns.item do
+        :browser -> socket.assigns.browser
+        :app -> Preview.browser_name()
+        _other -> nil
+      end
+
     send(self(), {:watch_browser, watched})
     socket
   end
@@ -1400,8 +1514,20 @@ defmodule RailWeb.Live.TaskDetail do
       mark: nil
     }
 
+    app = %{
+      key: :app,
+      label: "App",
+      icon: "pi-app-window",
+      picked_icon: "pi-app-window-fill",
+      state: app_state(socket.assigns.task, socket.assigns.app_preview),
+      badge: nil,
+      dot: if(match?(%Preview{status: :deploying}, socket.assigns.app_preview), do: :running),
+      mark: nil
+    }
+
     items =
-      page_items(socket.assigns) ++ shown(socket.assigns, [findings, diff, screens, demo, browser])
+      page_items(socket.assigns) ++
+        shown(socket.assigns, [findings, diff, screens, demo, browser]) ++ List.wrap(app_shown?(socket.assigns) && app)
 
     assign(socket, :items, Enum.reject(items, &(&1 in [nil, false])))
   end
@@ -1412,6 +1538,50 @@ defmodule RailWeb.Live.TaskDetail do
       Enum.any?(sessions, &(&1.state == :driving)) -> :running
       true -> nil
     end
+  end
+
+  # Only a project that runs its app here, and only while the task has the worktree the app runs from.
+  defp app_shown?(%{task: %Task{project: project, cleaned_up_at: nil} = task}),
+    do: project.preview_enabled and task.stage not in [:plan, :custom, :split]
+
+  defp app_shown?(_assigns), do: false
+
+  defp app_state(%Task{pr_number: nil}, _preview), do: "No pull request yet"
+  defp app_state(%Task{}, %Preview{status: :live}), do: "Live"
+  defp app_state(%Task{}, %Preview{status: :gone}), do: "Gone"
+  defp app_state(%Task{}, _deploying_or_unchecked), do: "Deploying"
+
+  # Looked at again whenever the item is open and the last look is old, so it is never a minute behind a push.
+  @recheck_after_seconds 15
+
+  defp assign_app(%{assigns: %{task: task}} = socket) do
+    preview = if task.project.preview_enabled, do: Pipeline.get_preview(task)
+
+    if socket.assigns.item == :app and stale?(task, preview),
+      do: Elixir.Task.Supervisor.start_child(Rail.TaskSupervisor, fn -> Pipeline.check_preview(task) end)
+
+    socket |> assign(:app_preview, preview) |> open_preview() |> assign_app_url()
+  end
+
+  defp stale?(%Task{pr_number: number}, _preview) when not is_integer(number), do: false
+  defp stale?(%Task{}, nil), do: true
+
+  defp stale?(%Task{}, %Preview{checked_at: checked_at}),
+    do: is_nil(checked_at) or DateTime.diff(DateTime.utc_now(), checked_at) > @recheck_after_seconds
+
+  # The tab is opened only for a person looking at the item, so a preview nobody watches holds no place in Chrome.
+  defp open_preview(%{assigns: %{task: task, item: :app, app_preview: %Preview{status: :live}}} = socket) do
+    if is_nil(Tools.get_browser_session(task, Preview.browser_name())),
+      do: Elixir.Task.Supervisor.start_child(Rail.TaskSupervisor, fn -> Pipeline.open_preview_tab(task) end)
+
+    socket
+  end
+
+  defp open_preview(socket), do: socket
+
+  defp assign_app_url(%{assigns: %{task: task, item: item, app_preview: preview}} = socket) do
+    url = if item == :app and Preview.live?(preview), do: Tools.get_browser_url(task, Preview.browser_name())
+    assign(socket, :app_url, url)
   end
 
   # Each part of the work shows once there is something of it to read: the diff and the browser once the task is
@@ -1807,7 +1977,8 @@ defmodule RailWeb.Live.TaskDetail do
   defp sessions(%Task{} = task, runs, recording) do
     running = Enum.any?(Map.values(runs), &Run.running?/1)
 
-    for session <- Tools.list_browser_sessions(task) do
+    # The app's tab is the App item's, not one an agent drives.
+    for session <- Tools.list_browser_sessions(task), session.name != Preview.browser_name() do
       state =
         cond do
           recording and session.name == "demo" -> :recording
@@ -1977,6 +2148,7 @@ defmodule RailWeb.Live.TaskDetail do
   defp item("screens"), do: :screens
   defp item("demo"), do: :demo
   defp item("browser"), do: :browser
+  defp item("app"), do: :app
   defp item("findings"), do: :findings
   defp item(_unnamed), do: nil
 
@@ -2001,10 +2173,20 @@ defmodule RailWeb.Live.TaskDetail do
     do: "Answer or dismiss the #{count} open questions first. Nothing started."
 
   defp message_for({:unsent_comments, count}), do: unsent(count)
+  defp message_for(:not_live), do: "The preview does not serve this task's latest commit yet."
+  defp message_for(:no_browser), do: "The app's tab is closed. Use Sign in again to open it."
+  defp message_for(:no_element), do: "There is no element there to comment on."
   defp message_for(:no_fix_plan), do: "There is no fix plan waiting on approval."
   defp message_for({:fix_plan_not_waiting, :outdated}), do: "A ruling changed since that plan was saved. Nothing started."
   defp message_for({:fix_plan_not_waiting, :approved}), do: "That fix plan is already approved."
   defp message_for({:fix_plan_not_waiting, _writing}), do: "The lead is revising that fix plan. Nothing started."
+
+  # Rail's browser is a Chrome of its own, so what it says when it cannot do something is passed on as it said it.
+  defp app_error(reason)
+       when reason in [:not_live, :no_browser, :no_element, :cleaned_up] or
+              (is_tuple(reason) and elem(reason, 0) == :invalid_stage), do: message_for(reason)
+
+  defp app_error(reason), do: "Rail's browser could not do that: #{inspect(reason)}"
 
   defp unsent(1), do: "Send or remove your unsent comment first."
   defp unsent(count), do: "Send or remove your #{count} unsent comments first."

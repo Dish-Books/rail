@@ -103,6 +103,15 @@ Settings > Projects > New Project:
 
 Check, for a GitHub-tracked project: the repository has the nine `rail:` labels within a minute of saving, Sync on the Issues page lists the repository's open issues, and an issue edited on GitHub changes in Rail within seconds. The App's Advanced tab lists each delivery with Rail's response, which is the place to look when one does not.
 
+**Previews in Rail (optional).** For a repository whose CI deploys every pull request to an address of its own, tick "Show each pull request's preview in Rail". Each task then has an App item that shows the preview in Rail's browser, signed in, where people use it and comment on its elements for the Review lead, and an Open in new tab link. The fields:
+
+- **Preview Address**: the deployment's address with `{pr_number}`, such as `https://pr-{pr_number}.preview.example.com`. Rail polls its `/version`, which must answer `{"sha": "<commit>"}`, and shows the preview once it serves the task's head commit.
+- **Sign-in Path**: a route on the preview that signs a person straight in, such as `/dev/login?email=admin@example.com`.
+- **Preview Database**: the name the preview's database has in the Review lead's database tools, with `{pr_number}`. Register a database MCP server (Devhub QueryDesk, for one) under Settings > MCP Servers and give the Review lead role its tools; the lead sets up demo examples there when the preview first goes live, and changes data there when asked in the conversation.
+- **Access Client ID and Secret**: a Cloudflare Access service token when previews sit behind Access. Rail sends it only to the preview's address, and sets the resulting session cookie in its own browser.
+
+Check: on a task with a pull request, the App item says Deploying, then Live with the commit, and opens signed in.
+
 **A Rail on a laptop.** GitHub cannot reach `localhost`, so deliveries go through a relay. Create a channel at https://smee.io, make its URL the App's webhook URL, and run `npx smee-client --url https://smee.io/<channel> --target http://localhost:4000/webhooks/github` (with your `PORT`) while Rail runs. Signatures pass through unchanged.
 
 ## 7. Roles

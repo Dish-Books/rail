@@ -9,6 +9,7 @@ defmodule Rail.Projects.Schemas.Project do
   alias Rail.Projects.Schemas.SlackChannel
   alias Rail.Projects.Schemas.SlackWorkspace
   alias Rail.Tools
+  alias Rail.Types.EncryptedBinary
   alias Rail.Users.Schemas.User
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "prj"}
@@ -36,6 +37,17 @@ defmodule Rail.Projects.Schemas.Project do
     field :ci_reserved_cpus, :integer, default: 1
     # Run from the worktree root in each agent's sandbox that opens a browser; prints a magic link and an email.
     field :account_seed_command, :string
+    # Each pull request is deployed to an address of its own outside Rail, which the App item shows.
+    field :preview_enabled, :boolean, default: false
+    # The address of a pull request's deployment, with `{pr_number}` where its number goes.
+    field :preview_url_template, :string
+    # Where the App item lands on a preview, such as a route there that signs a person straight in.
+    field :preview_login_path, :string
+    # The name the Review lead finds a preview's database by in its database tools, with `{pr_number}`.
+    field :preview_database, :string
+    # A Cloudflare Access service token, when previews sit behind Access.
+    field :preview_access_client_id, EncryptedBinary, redact: true
+    field :preview_access_client_secret, EncryptedBinary, redact: true
     # Files nobody sees in the app: a later round that changed only these gets no QA or demo. Globs, from the root.
     field :qa_skip_paths, {:array, :string}, default: ["**/*_test.exs", "**/test/**", "**/*.test.{ts,tsx,js}", "**/*.md"]
 
@@ -71,6 +83,12 @@ defmodule Rail.Projects.Schemas.Project do
     :ci_timeout_minutes,
     :ci_reserved_cpus,
     :account_seed_command,
+    :preview_enabled,
+    :preview_url_template,
+    :preview_login_path,
+    :preview_database,
+    :preview_access_client_id,
+    :preview_access_client_secret,
     :qa_skip_paths,
     :triage_user_id,
     :learnings_slack_workspace_id,
@@ -89,7 +107,7 @@ defmodule Rail.Projects.Schemas.Project do
 
   def changeset(project, attrs) do
     project
-    |> cast(lines(attrs), @fields)
+    |> cast(attrs |> lines() |> drop_blank_secrets(), @fields)
     |> put_default_key()
     |> validate_required(@required_fields)
     |> validate_format(:key, ~r/^[a-z0-9][a-z0-9_-]*$/i, message: "use letters, digits, - and _")
@@ -101,6 +119,7 @@ defmodule Rail.Projects.Schemas.Project do
     |> validate_number(:ci_timeout_minutes, greater_than: 0, message: "must be at least a minute")
     |> validate_number(:ci_reserved_cpus, greater_than: 0, message: "must be at least 1 CPU")
     |> validate_ci_capacity()
+    |> validate_preview()
     |> foreign_key_constraint(:linear_workspace_id)
     |> foreign_key_constraint(:triage_user_id)
     |> validate_learnings_channel()
@@ -127,6 +146,13 @@ defmodule Rail.Projects.Schemas.Project do
 
   defp lines(attrs), do: attrs
 
+  # The form never shows a stored token, so a box left empty keeps it rather than clearing it.
+  defp drop_blank_secrets(attrs) when is_map(attrs) do
+    Map.reject(attrs, fn {key, value} ->
+      to_string(key) in ["preview_access_client_id", "preview_access_client_secret"] and value in ["", nil]
+    end)
+  end
+
   # As a role's is: the machine is only asked when the number changes, and one it
   # cannot be asked about is left to the line, which refuses what never fits.
   defp validate_ci_capacity(%Ecto.Changeset{valid?: true} = changeset) do
@@ -146,6 +172,21 @@ defmodule Rail.Projects.Schemas.Project do
   end
 
   defp validate_ci_capacity(changeset), do: changeset
+
+  # A preview's address is built from the template, and the login path is one of its own, so it cannot send a
+  # person anywhere else.
+  defp validate_preview(changeset) do
+    changeset =
+      if get_field(changeset, :preview_enabled),
+        do: validate_required(changeset, [:preview_url_template], message: "is needed to find a preview"),
+        else: changeset
+
+    changeset
+    |> validate_format(:preview_url_template, ~r{\Ahttps?://[^\s/]*\{pr_number\}[^\s/]*(/[^\s]*)?\z},
+      message: "must be an http(s) address with {pr_number} in its host"
+    )
+    |> validate_format(:preview_login_path, ~r{^/(?!/)}, message: "must start with a single /")
+  end
 
   # A GitHub project needs a key; the repo's name is the one people would pick anyway.
   defp put_default_key(changeset) do

@@ -22,7 +22,8 @@ defmodule Rail.Tools.BrowserSession do
   frame when the page actually changes, so a session nobody is watching costs
   almost nothing. Each click, key press, wheel scroll and main-frame navigation
   goes out on the same topic as `{:browser_action, task_id, name, kind}`, which is
-  what a voiced demo is cut by.
+  what a voiced demo is cut by, and every change of address, a page's own `pushState` included, as
+  `{:browser_moved, task_id, name, url}`.
   """
   use GenServer, restart: :temporary
 
@@ -75,6 +76,7 @@ defmodule Rail.Tools.BrowserSession do
     :debug_port,
     :frame,
     :url,
+    :main_frame_id,
     :capture,
     :account,
     signed_in?: false,
@@ -107,6 +109,12 @@ defmodule Rail.Tools.BrowserSession do
   def call(pid, method, params \\ %{}) do
     GenServer.call(pid, {:call, method, params}, 40_000)
   end
+
+  @doc """
+  Sends `method` to this session's tab without waiting for Chrome's answer, for input a person gives the tab
+  faster than each answer comes back. Sent in order with every other command of this session's.
+  """
+  def cast(pid, method, params \\ %{}), do: GenServer.cast(pid, {:cast, method, params})
 
   @doc """
   Returns what this session is holding: the context and tab in the shared
@@ -214,6 +222,12 @@ defmodule Rail.Tools.BrowserSession do
     {:reply, state.url, state}
   end
 
+  @impl true
+  def handle_cast({:cast, method, params}, %__MODULE__{} = state) do
+    Browser.cast(state.browser, method, Map.put(Map.new(params), :session, state.cdp_session_id))
+    {:noreply, state}
+  end
+
   # The connection going down means the browser did, so the session goes with it
   # rather than answering calls against a Chrome that is not there.
   @impl true
@@ -284,6 +298,19 @@ defmodule Rail.Tools.BrowserSession do
   def handle_info({:cdp_event, "Page.frameNavigated", %{"frame" => %{"url" => url} = frame}}, %__MODULE__{} = state)
       when not is_map_key(frame, "parentId") do
     acted(state, "navigate")
+    moved(state, url)
+
+    {:noreply, %{state | url: url, main_frame_id: frame["id"]}}
+  end
+
+  # A page that changes its address itself, as a LiveView or any history.pushState does, stays on its document, so
+  # only where the tab is moves: it is not an action a demo is cut by.
+  def handle_info(
+        {:cdp_event, "Page.navigatedWithinDocument", %{"frameId" => frame_id, "url" => url}},
+        %__MODULE__{main_frame_id: frame_id} = state
+      )
+      when is_binary(frame_id) do
+    moved(state, url)
 
     {:noreply, %{state | url: url}}
   end
@@ -342,6 +369,10 @@ defmodule Rail.Tools.BrowserSession do
 
   defp acted(%__MODULE__{} = state, kind) do
     Phoenix.PubSub.broadcast(Rail.PubSub, topic(state), {:browser_action, state.task_id, state.name, kind})
+  end
+
+  defp moved(%__MODULE__{} = state, url) do
+    Phoenix.PubSub.broadcast(Rail.PubSub, topic(state), {:browser_moved, state.task_id, state.name, url})
   end
 
   # Phoenix.PubSub keeps its local subscribers in a Registry of its own name.
@@ -411,8 +442,8 @@ defmodule Rail.Tools.BrowserSession do
     with {:ok, %{"sessionId" => cdp}} <-
            Browser.call(state.browser, "Target.attachToTarget", %{targetId: target, flatten: true}),
          state = %{state | cdp_session_id: cdp},
-         {:ok, %{"frameTree" => %{"frame" => %{"url" => url}}}} <- command(state, "Page.getFrameTree", %{}) do
-      {:ok, %{state | url: url}}
+         {:ok, %{"frameTree" => %{"frame" => %{"url" => url} = frame}}} <- command(state, "Page.getFrameTree", %{}) do
+      {:ok, %{state | url: url, main_frame_id: frame["id"]}}
     else
       {:error, _gone} ->
         dispose(state)

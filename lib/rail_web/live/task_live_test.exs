@@ -19,6 +19,7 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.PlanComment
+  alias Rail.Pipeline.Schemas.Preview
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
@@ -6507,6 +6508,36 @@ defmodule RailWeb.TaskLiveTest do
 
       assert_push_event(view, "browser:frame", %{data: "some-base64"})
       refute_push_event(view, "browser:frame", %{data: "somebody else's"}, 100)
+    end
+
+    # The App item shows its tab the way Browser shows an agent's, and only while it is open.
+    test "the app's tab paints to the client while the App item is open", %{conn: conn, project: project, task: task} do
+      {:ok, _project} =
+        Projects.update_project(system_scope(), project, %{
+          preview_enabled: true,
+          preview_url_template: "https://pr-{pr_number}.preview.example.com"
+        })
+
+      {:ok, _task} = Pipeline.update_task(task, %{pr_number: 7})
+
+      Repo.insert!(%Preview{
+        task_id: task.id,
+        url: "https://pr-7.preview.example.com",
+        status: :live,
+        checked_at: DateTime.utc_now()
+      })
+
+      # The tab is Rail's browser's to open, which is not run here.
+      stub(Pipeline, :open_preview_tab, fn _task -> :ok end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=findings")
+      send(view.pid, {:browser_frame, task.id, "app", "unseen"})
+      view |> element("#review-item-app") |> render_click()
+      send(view.pid, {:browser_frame, task.id, "app", "app-frame"})
+      _settled = render(view)
+
+      assert_push_event(view, "browser:frame", %{data: "app-frame"})
+      refute_push_event(view, "browser:frame", %{data: "unseen"}, 100)
     end
 
     # An animated page paints dozens of frames a second, more than the socket can

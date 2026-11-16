@@ -612,6 +612,150 @@ defmodule RailWeb.Settings.ProjectsLive do
                 </p>
               </div>
 
+              <section
+                id="project-preview"
+                data-qa="project_preview"
+                class="flex flex-col gap-3"
+              >
+                <div class="flex items-center space-x-2">
+                  <input type="hidden" name="project[preview_enabled]" value="false" />
+                  <input
+                    type="checkbox"
+                    name="project[preview_enabled]"
+                    id="project-preview-enabled-input"
+                    value="true"
+                    checked={Ecto.Changeset.get_field(@changeset, :preview_enabled)}
+                    class="h-4 w-4 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500"
+                  />
+                  <label
+                    for="project-preview-enabled-input"
+                    class="text-sm font-medium text-slate-900 dark:text-slate-100"
+                  >
+                    Show each pull request's preview in Rail
+                  </label>
+                </div>
+                <p class="-mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  For a repository whose CI deploys every pull request to an address of its own. Each task gets an App
+                  item that opens it signed in, where people use it and comment on its elements.
+                </p>
+                <div :if={Ecto.Changeset.get_field(@changeset, :preview_enabled)}>
+                  <label
+                    for="project-preview-url-input"
+                    class="block text-sm font-medium text-slate-900 dark:text-slate-100"
+                  >
+                    Preview Address
+                  </label>
+                  <input
+                    type="text"
+                    name="project[preview_url_template]"
+                    id="project-preview-url-input"
+                    value={Ecto.Changeset.get_field(@changeset, :preview_url_template)}
+                    placeholder="https://pr-{pr_number}.preview.example.com"
+                    autocomplete="off"
+                    aria-invalid={@changeset.errors[:preview_url_template] && "true"}
+                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm font-mono focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  />
+                  <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    The deployment's address, with <code>{"{pr_number}"}</code>
+                    where the pull request's number goes. Rail asks its <code>/version</code>
+                    for the commit it serves.
+                  </p>
+                  <p
+                    :if={@changeset.errors[:preview_url_template]}
+                    class="mt-1 text-xs text-red-600 dark:text-red-400"
+                  >
+                    Preview Address {elem(@changeset.errors[:preview_url_template], 0)}
+                  </p>
+                </div>
+                <div :if={Ecto.Changeset.get_field(@changeset, :preview_enabled)}>
+                  <label
+                    for="project-preview-login-path-input"
+                    class="block text-sm font-medium text-slate-900 dark:text-slate-100"
+                  >
+                    Sign-in Path
+                  </label>
+                  <input
+                    type="text"
+                    name="project[preview_login_path]"
+                    id="project-preview-login-path-input"
+                    value={Ecto.Changeset.get_field(@changeset, :preview_login_path)}
+                    placeholder="/dev/login"
+                    autocomplete="off"
+                    aria-invalid={@changeset.errors[:preview_login_path] && "true"}
+                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm font-mono focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  />
+                  <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Where the App item opens the preview: a route there that signs a person straight in. Empty opens <code>/</code>.
+                  </p>
+                  <p
+                    :if={@changeset.errors[:preview_login_path]}
+                    class="mt-1 text-xs text-red-600 dark:text-red-400"
+                  >
+                    Sign-in Path {elem(@changeset.errors[:preview_login_path], 0)}
+                  </p>
+                </div>
+                <div :if={Ecto.Changeset.get_field(@changeset, :preview_enabled)}>
+                  <label
+                    for="project-preview-database-input"
+                    class="block text-sm font-medium text-slate-900 dark:text-slate-100"
+                  >
+                    Preview Database
+                  </label>
+                  <input
+                    type="text"
+                    name="project[preview_database]"
+                    id="project-preview-database-input"
+                    value={Ecto.Changeset.get_field(@changeset, :preview_database)}
+                    placeholder="Example PR #{pr_number}"
+                    autocomplete="off"
+                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm font-mono focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  />
+                  <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    The name the Review lead finds a preview's database by in its database tools, with <code>{"{pr_number}"}</code>. Leave empty if it has none.
+                  </p>
+                </div>
+                <div :if={Ecto.Changeset.get_field(@changeset, :preview_enabled)}>
+                  <label
+                    for="project-preview-access-id-input"
+                    class="block text-sm font-medium text-slate-900 dark:text-slate-100"
+                  >
+                    Access Client ID
+                  </label>
+                  <input
+                    type="password"
+                    name="project[preview_access_client_id]"
+                    id="project-preview-access-id-input"
+                    value=""
+                    placeholder="Leave empty to keep the saved one"
+                    autocomplete="off"
+                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm font-mono focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  />
+                  <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    A Cloudflare Access service token, when previews sit behind Access. Rail sends it only to the preview's address.
+                  </p>
+                </div>
+                <div :if={Ecto.Changeset.get_field(@changeset, :preview_enabled)}>
+                  <label
+                    for="project-preview-access-secret-input"
+                    class="block text-sm font-medium text-slate-900 dark:text-slate-100"
+                  >
+                    Access Client Secret
+                  </label>
+                  <input
+                    type="password"
+                    name="project[preview_access_client_secret]"
+                    id="project-preview-access-secret-input"
+                    value=""
+                    placeholder="Leave empty to keep the saved one"
+                    autocomplete="off"
+                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm font-mono focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  />
+                  <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Never shown again once saved.
+                  </p>
+                </div>
+              </section>
+
               <div>
                 <label
                   for="project-qa-skip-paths-input"

@@ -40,7 +40,7 @@ config :posthog,
 
 config :rail, Oban,
   repo: Rail.Repo,
-  queues: [issues: 5, tools: 1, toolchains: 1, git: 1, learnings: 2, learnings_embed: 5],
+  queues: [issues: 5, tools: 1, toolchains: 1, git: 1, learnings: 2, learnings_embed: 5, previews: 1],
   # A job a restart cut off stays executing, and a unique one blocks every later job, until rescued.
   lifeline: [rescue_after: {30, :minutes}],
   plugins: [
@@ -51,6 +51,7 @@ config :rail, Oban,
        {"*/5 * * * *", Rail.Tools.Workers.RefreshUsage},
        {"*/15 * * * *", Rail.Git.Workers.FetchDefaultBranches},
        {"5-59/15 * * * *", Rail.Pipeline.Workers.CheckBases},
+       {"* * * * *", Rail.Pipeline.Workers.CheckPreviews},
        {"0 6 * * *", Rail.Learnings.Workers.ScheduleCurators},
        {"5 0 * * *", Rail.Issues.Workers.CloseCycleDay},
        {"*/5 * * * *", Rail.Issues.Workers.EmbedIssues},

@@ -61,6 +61,10 @@ defmodule Rail.Tools do
   defdelegate record_voice_over(directory, lines), to: Actions.RecordVoiceOver
   defdelegate mix_voice_over(directory, starts_ms), to: Actions.MixVoiceOver
 
+  defdelegate open_app_tab(task, name, url, cookies), to: Actions.OpenAppTab
+  defdelegate send_browser_input(task, name, event), to: Actions.SendBrowserInput
+  defdelegate inspect_browser_element(task, name, x, y, dir), to: Actions.InspectBrowserElement
+
   defdelegate build_args(opts), to: Actions.BuildArgs
   defdelegate start_os_process(run, argv), to: Actions.StartOsProcess
   defdelegate start_after_usage_reset(os_process_id), to: Actions.StartAfterUsageReset

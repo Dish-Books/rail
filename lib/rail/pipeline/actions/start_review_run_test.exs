@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Tools
@@ -189,6 +190,81 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     end)
 
     assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
+  end
+
+  # The demo data a person needs to try each criterion is the review agent's to make, in the preview's own database.
+  test "briefs the review agent of a project with previews on where its pull request runs and the data it shows", %{
+    project: project,
+    task: task,
+    run: run
+  } do
+    {:ok, _project} =
+      Projects.update_project(system_scope(), project, %{
+        preview_enabled: true,
+        preview_url_template: "https://pr-{pr_number}.preview.example.com",
+        preview_login_path: "/dev/sign-in",
+        preview_database: "Example PR {pr_number}"
+      })
+
+    {:ok, task} = Pipeline.update_task(task, %{pr_number: 42})
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "The preview people try:"
+      assert prompt =~ "Every push to this pull request is deployed to https://pr-42.preview.example.com,"
+      assert prompt =~ "signed in at https://pr-42.preview.example.com/dev/sign-in"
+      assert prompt =~ "Its data is the database `Example PR 42` in your database tools"
+      assert prompt =~ "visible to the user https://pr-42.preview.example.com/dev/sign-in signs in"
+
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_review_run(%{run | task: task})
+  end
+
+  test "a project whose previews have no database the agent reaches says so, and signs in at the root", %{
+    project: project,
+    task: task,
+    run: run
+  } do
+    {:ok, _project} =
+      Projects.update_project(system_scope(), project, %{
+        preview_enabled: true,
+        preview_url_template: "https://pr-{pr_number}.preview.example.com"
+      })
+
+    {:ok, task} = Pipeline.update_task(task, %{pr_number: 42})
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "signed in at https://pr-42.preview.example.com/,"
+      assert prompt =~ "You have no tool that reaches its database"
+      refute prompt =~ "Its data is the database"
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_review_run(%{run | task: task})
+  end
+
+  test "the preview's section is left out for a project without previews, and before the task has a pull request", %{
+    project: project,
+    task: task,
+    run: run
+  } do
+    expect(Tools, :start_os_process, 2, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      refute prompt =~ "The preview people try:"
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    {:ok, task} = Pipeline.update_task(task, %{pr_number: 42})
+    assert {:ok, %OsProcess{}} = Pipeline.start_review_run(%{run | task: task})
+
+    {:ok, _project} =
+      Projects.update_project(system_scope(), project, %{
+        preview_enabled: true,
+        preview_url_template: "https://pr-{pr_number}.preview.example.com"
+      })
+
+    {:ok, task} = Pipeline.update_task(task, %{pr_number: nil})
+    assert {:ok, %OsProcess{}} = Pipeline.start_review_run(%{run | task: task})
   end
 
   test "briefs the review agent of a task whose workflow turned the demo off to ask for none", %{

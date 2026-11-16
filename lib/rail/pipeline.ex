@@ -108,6 +108,10 @@ defmodule Rail.Pipeline do
   defdelegate save_screen(task, attrs), to: Actions.SaveScreen
   defdelegate list_screens(task), to: Actions.ListScreens
 
+  defdelegate check_preview(task), to: Actions.CheckPreview
+  defdelegate get_preview(task), to: Actions.GetPreview
+  defdelegate open_preview_tab(task), to: Actions.OpenPreviewTab
+
   defdelegate start_task(scope, issue), to: Actions.StartTask
   defdelegate adopt_pull_request(scope, issue), to: Actions.AdoptPullRequest
   defdelegate create_task(issue, stage), to: Actions.CreateTask
@@ -134,6 +138,7 @@ defmodule Rail.Pipeline do
   defdelegate update_diff_comment(scope, comment, attrs), to: Actions.UpdateDiffComment
   defdelegate set_diff_comment_resolved(scope, comment, resolved?), to: Actions.SetDiffCommentResolved
   defdelegate create_screen_comment(scope, task, attrs), to: Actions.CreateScreenComment
+  defdelegate create_app_comment(scope, task, element, body), to: Actions.CreateAppComment
   defdelegate list_screen_comments(scope, task, opts \\ []), to: Actions.ListScreenComments
   defdelegate delete_screen_comment(scope, comment), to: Actions.DeleteScreenComment
   defdelegate update_screen_comment(scope, comment, attrs), to: Actions.UpdateScreenComment

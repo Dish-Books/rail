@@ -51,6 +51,78 @@ defmodule Rail.Projects.Schemas.ProjectTest do
     assert %{ci_reserved_cpus: ["must be at least 1 CPU"]} = errors_on(changeset)
   end
 
+  test "a project that shows previews needs the address they are found at" do
+    assert %{preview_url_template: ["is needed to find a preview"]} =
+             errors_on(Project.changeset(%Project{}, %{preview_enabled: true}))
+
+    refute Map.has_key?(errors_on(Project.changeset(%Project{}, %{preview_enabled: false})), :preview_url_template)
+
+    refute Map.has_key?(
+             errors_on(
+               Project.changeset(%Project{}, %{
+                 preview_enabled: true,
+                 preview_url_template: "https://pr-{pr_number}.preview.example.com"
+               })
+             ),
+             :preview_url_template
+           )
+  end
+
+  # The token is sent to the address the template builds, so the pull request's number must pick the host.
+  test "a preview's address is http(s) with the pull request's number in its host" do
+    for template <- [
+          "https://pr-{pr_number}.preview.example.com",
+          "http://{pr_number}.localhost:4000/",
+          "https://app-pr-{pr_number}.fly.dev/base"
+        ] do
+      refute Map.has_key?(
+               errors_on(Project.changeset(%Project{}, %{preview_url_template: template})),
+               :preview_url_template
+             )
+    end
+
+    for template <- [
+          "https://preview.example.com/pr/{pr_number}",
+          "https://preview.example.com",
+          "ftp://pr-{pr_number}.example.com",
+          "pr-{pr_number}.example.com",
+          "https://pr-{pr_number}.example.com/a b"
+        ] do
+      assert %{preview_url_template: ["must be an http(s) address with {pr_number} in its host"]} =
+               errors_on(Project.changeset(%Project{}, %{preview_url_template: template}))
+    end
+  end
+
+  # The App item lands on the preview's own path, so a login path cannot send a person to another site.
+  test "the preview's login path is a path of its own, starting with a single /" do
+    for path <- ["/", "/dev/sign-in?as=ada"] do
+      refute Map.has_key?(errors_on(Project.changeset(%Project{}, %{preview_login_path: path})), :preview_login_path)
+    end
+
+    for path <- ["dev/sign-in", "//evil.example.com", "https://evil.example.com/"] do
+      assert %{preview_login_path: ["must start with a single /"]} =
+               errors_on(Project.changeset(%Project{}, %{preview_login_path: path}))
+    end
+  end
+
+  # The form never shows the stored token, so submitting it with the boxes empty must not clear it.
+  test "an empty Access token keeps the stored one, and a new one replaces it" do
+    stored = %Project{preview_access_client_id: "id.access", preview_access_client_secret: "secret"}
+
+    for blank <- ["", nil] do
+      changeset =
+        Project.changeset(stored, %{"preview_access_client_id" => blank, "preview_access_client_secret" => blank})
+
+      assert get_field(changeset, :preview_access_client_id) == "id.access"
+      assert get_field(changeset, :preview_access_client_secret) == "secret"
+    end
+
+    changeset = Project.changeset(stored, %{preview_access_client_id: "new.access", preview_access_client_secret: "new"})
+
+    assert get_field(changeset, :preview_access_client_id) == "new.access"
+    assert get_field(changeset, :preview_access_client_secret) == "new"
+  end
+
   test "a GitHub project needs no Linear team, and is keyed by its repo's name unless given one" do
     attrs = %{
       name: "Foo",

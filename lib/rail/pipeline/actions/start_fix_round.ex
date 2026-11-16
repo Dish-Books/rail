@@ -365,7 +365,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     comments =
       Enum.map(finding, &{:finding, "On a finding", "#{&1.finding.key} · #{&1.label}", &1}) ++
         Enum.map(diff, &{:diff, "On the diff", "#{Path.basename(&1.path)}:#{&1.line}", &1}) ++
-        Enum.map(screen, &{:screen, "On a screen", &1.label, &1})
+        Enum.map(screen, &{:screen, screen_on(&1), &1.label, &1})
 
     comments
     |> Enum.with_index(first)
@@ -374,6 +374,9 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
        "#{n}. #{on}:\n#{block(comment, screens, task.scratch_path)}"}
     end)
   end
+
+  defp screen_on(%ScreenComment{source: :app}), do: "On the running app"
+  defp screen_on(%ScreenComment{}), do: "On a screen"
 
   defp block(%FindingComment{} = comment, _screens, _scratch_path), do: FindingComment.calculate_block(comment)
   defp block(%DiffComment{} = comment, _screens, _scratch_path), do: DiffComment.calculate_block(comment)

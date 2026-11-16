@@ -147,6 +147,16 @@ defmodule RailWeb.Components.CommentList do
     """
   end
 
+  defp place(%{entry: %{kind: :screen, comment: %{source: :app}}} = assigns) do
+    ~H"""
+    <.on
+      icon="pi-app-window"
+      what="App"
+      detail={"#{@entry.comment.label} · #{@entry.comment.selector}"}
+    />
+    """
+  end
+
   defp place(%{entry: %{kind: :screen}} = assigns) do
     ~H"""
     <.on icon="pi-image" what="Screen" detail={@entry.comment.label} />
@@ -223,6 +233,8 @@ defmodule RailWeb.Components.CommentList do
   defp opens(%{kind: :message}, _screen_keys), do: "Open the conversation"
   defp opens(%{kind: :diff}, _screen_keys), do: "Open in Diff"
 
+  defp opens(%{kind: :screen, comment: %{source: :app}}, _screen_keys), do: "Open the app"
+
   defp opens(%{kind: :screen} = entry, screen_keys),
     do: if(shot_gone?(entry, screen_keys), do: "Open Screens", else: "Open the screen")
 
@@ -239,6 +251,8 @@ defmodule RailWeb.Components.CommentList do
   defp resolved?(%{kind: :diff, comment: %{status: :resolved}}), do: true
   defp resolved?(_entry), do: false
 
+  # A comment on the running app has its own picture, never a shot Review took.
+  defp shot_gone?(%{kind: :screen, comment: %{source: :app}}, _screen_keys), do: false
   defp shot_gone?(%{kind: :screen, comment: %{key: key}}, screen_keys), do: key not in screen_keys
   defp shot_gone?(_entry, _screen_keys), do: false
 end

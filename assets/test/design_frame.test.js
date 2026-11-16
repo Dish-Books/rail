@@ -11,10 +11,12 @@ import {
   describeElement,
   drawsHover,
   fitScale,
+  fitWidth,
   keepDraft,
   keyAction,
   LIMITS,
   markerBox,
+  MIN_FIT_HEIGHT,
   picksElement,
   previewScale,
   readDraft,
@@ -387,5 +389,25 @@ describe("picking an element", () => {
     assert.equal(drawsHover({ pointerType: "touch" }), false);
     assert.equal(drawsHover({ pointerType: "mouse" }), true);
     assert.equal(drawsHover({ pointerType: "pen" }), true);
+  });
+});
+
+describe("fitWidth", () => {
+  it("is the width beside the frame when the height below it holds a frame that wide", () => {
+    assert.equal(fitWidth(960, 1000), 960);
+  });
+
+  it("is the width that keeps the frame whole in the height below it when that runs out first", () => {
+    assert.equal(fitWidth(1920, 540), 960);
+  });
+
+  it("never draws the frame shorter than MIN_FIT_HEIGHT however little height is left", () => {
+    assert.equal(MIN_FIT_HEIGHT, 320);
+    assert.equal(fitWidth(1920, 100), (320 * 1920) / 1080);
+    assert.equal(fitWidth(1920, -50), (320 * 1920) / 1080);
+  });
+
+  it("is never negative", () => {
+    assert.equal(fitWidth(-10, 540), 0);
   });
 });

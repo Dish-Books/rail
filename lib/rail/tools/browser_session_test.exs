@@ -90,6 +90,23 @@ defmodule Rail.Tools.BrowserSessionTest do
     end)
   end
 
+  # Input a person gives the tab comes faster than Chrome answers it, so it is sent without waiting, in order.
+  test "a command cast to the tab reaches it without waiting for its answer", %{task: task, page: page} do
+    {:ok, session} = Tools.start_browser_session(task, "qa")
+    {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
+
+    eventually(fn ->
+      assert {:ok, %{"result" => %{"value" => "Bill"}}} =
+               BrowserSession.call(session, "Runtime.evaluate", %{expression: "document.title", returnByValue: true})
+    end)
+
+    assert :ok = BrowserSession.cast(session, "Page.bringToFront")
+    assert :ok = BrowserSession.cast(session, "Runtime.evaluate", %{expression: "document.title = 'Paid'"})
+
+    assert {:ok, %{"result" => %{"value" => "Paid"}}} =
+             BrowserSession.call(session, "Runtime.evaluate", %{expression: "document.title", returnByValue: true})
+  end
+
   # The tab is a fixed size, so a check written for a narrow viewport means the
   # same thing on every machine.
   test "the tab is the size Rail asked for", %{task: task, page: page} do
@@ -487,6 +504,22 @@ defmodule Rail.Tools.BrowserSessionTest do
     assert {:ok, <<0xFF, 0xD8, _rest::binary>>} = Base.decode64(data)
 
     assert Tools.get_browser_frame(task, "qa")
+  end
+
+  # A LiveView moves its address with pushState, staying on its document, and the App item's address bar follows it.
+  test "every change of the tab's address goes out, the page's own pushState included", %{task: task, page: page} do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}:qa")
+    {:ok, session} = Tools.start_browser_session(task, "qa")
+
+    {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
+    assert_receive {:browser_moved, _task_id, "qa", ^page}, 10_000
+
+    {:ok, _pushed} =
+      BrowserSession.call(session, "Runtime.evaluate", %{expression: "history.pushState(null, '', '#paid')"})
+
+    paid = page <> "#paid"
+    assert_receive {:browser_moved, _task_id, "qa", ^paid}, 10_000
+    assert Tools.get_browser_url(task, "qa") == paid
   end
 
   # The agent drives the tab over a connection of its own, so the page is what says it was acted on. A voiced demo

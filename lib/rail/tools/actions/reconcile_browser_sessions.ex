@@ -10,7 +10,8 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessions do
   it. So a tab is kept only for a run that is still running. A task that left
   Review, Finalize or the merge behind it, one that was cleaned up whatever stage it stopped at, and one
   waiting on a human between rounds or comments each have every named context closed and their rows
-  settled, whatever holds them; the next round signs in again.
+  settled, whatever holds them; the next round signs in again. The `app` tab a person tries the task's preview in
+  is kept for as long as the preview is live.
 
   A row whose context Chrome no longer has - Chrome restarted since - is settled
   as lost, so the agent that asks for it again is told so.
@@ -25,6 +26,8 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessions do
 
   import Ecto.Query
 
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Preview
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -51,8 +54,8 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessions do
 
   defp reconcile(%BrowserSession{task: %Task{} = task} = session, contexts) do
     cond do
-      not wanted?(task) ->
-        :ok = Tools.stop_browser_session(task)
+      not wanted?(task, session.name) ->
+        :ok = Tools.stop_browser_session(task, session.name)
         [Repo.get!(BrowserSession, session.id)]
 
       lost?(session, contexts) ->
@@ -68,6 +71,10 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessions do
         []
     end
   end
+
+  # The tab a person tries the preview in is wanted for as long as the preview is live, whatever the task waits on.
+  defp wanted?(%Task{} = task, "app"), do: Preview.live?(Pipeline.get_preview(task))
+  defp wanted?(%Task{} = task, _name), do: wanted?(task)
 
   defp wanted?(%Task{stage: stage, cleaned_up_at: cleaned_up_at, id: task_id}) do
     stage in @driven_stages and is_nil(cleaned_up_at) and

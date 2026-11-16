@@ -278,12 +278,12 @@ defmodule RailWeb.Components.ReviewCommentTray do
                 :if={kind == :screen}
                 class="shrink-0 font-semibold text-slate-600 dark:text-slate-300"
               >
-                Screen
+                {if comment.source == :app, do: "App", else: "Screen"}
               </span>
               <button
                 :if={kind == :screen}
                 type="button"
-                title="Open the shot"
+                title={if comment.source == :app, do: "Open the app", else: "Open the shot"}
                 data-qa="review_tray_screen"
                 phx-click="open_tray_screen"
                 phx-value-key={comment.key}

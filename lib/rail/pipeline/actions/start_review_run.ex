@@ -14,8 +14,10 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Preview
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
@@ -70,7 +72,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
     Changes to the plan:
 
-    - A ruling the human changes, or a comment they leave, arrives as one message sent from Rail: rulings tagged `<ruling_change>` with what they were and are now, findings newly ruled Fix whole, and their comments, each numbered and tagged `<diff_comment>` with its file, line and code, `<screen_comment>` with the screen state, the commit it was written on and the path of the state's picture, or `<finding_comment>` with a finding's key, title and ruling and the piece of it commented on. Save a revised plan with `save_fix_plan` covering the round as it now stands, each comment by its number, have it checked as step 6 says, and end your turn. A change asked for in the conversation is saved the same way.
+    - A ruling the human changes, or a comment they leave, arrives as one message sent from Rail: rulings tagged `<ruling_change>` with what they were and are now, findings newly ruled Fix whole, and their comments, each numbered and tagged `<diff_comment>` with its file, line and code, `<screen_comment>` with the screen state, the commit it was written on and the path of the state's picture, `<app_comment>` with the page of the running app, the element's selector and text, the commit and a picture of the element, or `<finding_comment>` with a finding's key, title and ruling and the piece of it commented on. Save a revised plan with `save_fix_plan` covering the round as it now stands, each comment by its number, have it checked as step 6 says, and end your turn. A change asked for in the conversation is saved the same way.
     - A comment is not a finding and is never saved with `save_finding`.
     - The human may ask to change the ticket, the acceptance criteria or the first plan. Only then, say so at the top of the plan under `### Changes to the plan`, each as what it was, what it becomes and who asked, and pass the whole new `title` or `description`, criteria included, with `save_fix_plan`. A change no finding or comment carries goes under `#### Changes to the plan` in What changes, and a file it touches ends its bullet with `changes to the plan`. Rail updates the ticket when the plan is approved.
     - A comment on the ticket, the design, the first plan or the next round's plan arrives as a message too, each quoting the line it is on. One on the next round's plan asks for an adjustment to it: save the revised plan with `save_fix_plan`, have it checked as step 6 says, and end your turn. One that asks to change the picked design: edit its page #{Path.join([scratch_path, "design", "<key>.html"])}, retake its screenshot with `chromium --headless --no-sandbox --disable-gpu --hide-scrollbars --virtual-time-budget=8000 --window-size=1920,1170 --screenshot=<that folder>/<key>.png file://<that folder>/<key>.html`, open the picture and check it, save it again with `save_design_option` under the same `key`, and pass `design_changed: true` with the plan. Rail puts the new picture on the ticket when the plan is approved.
@@ -97,13 +99,39 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     - A save missing a field, over a limit or holding tool-call markup is refused naming the field: fix it and save it again in the same turn.
     - A finding already on the task is saved again by its `key` with only its `status` (`fixed`, `not_fixed` or `open`), a `note` of at most 300 characters on what this round checked and saw, and any new `evidence`. What it said when raised never changes. A Fix finding still failing is carried into this round with its ruling, never raised again under a new key. One fixed before is saved `not_fixed` when its fix stopped holding, and `open` when a later decision brings it back to be ruled again, which clears its ruling. One the human ruled Don't fix or New issue is not argued again: New issue is filed as an issue of its own, outside this task.
 
-    Questions:
+    #{app_brief(task)}Questions:
 
     - Ask everything at once. Ask every question you could not close in one `ask_questions` call before you end your turn, each with its options, your recommended answer first. Leave the options out where the answer is free text. A question you can settle from the code, the ticket or the plan is not a question.
 
     #{format_stage_outputs(task, "Earlier stages of this task's workflow saved these files, each under its stage's name. Read them with the ticket and the plan:")}#{learnings_brief(run, fn -> file_queries(task) end)}
     """)
   end
+
+  # Only for a project that deploys each pull request, once the task has one.
+  defp app_brief(%Task{project: %Project{preview_enabled: true} = project, pr_number: number}) when is_integer(number) do
+    url = Preview.url(project, number)
+    login = url <> (project.preview_login_path || "/")
+
+    data =
+      case Preview.database(project, number) do
+        "" <> database ->
+          "Its data is the database `#{database}` in your database tools: read its schema there before you write to it."
+
+        nil ->
+          "You have no tool that reaches its database, so say so if the human asks you to change its data."
+      end
+
+    """
+    The preview people try:
+
+    - Every push to this pull request is deployed to #{url}, its own database kept between deploys. People use it on the task's App item in Rail, signed in at #{login}, and leave comments on its elements, which reach you as `<app_comment>`. Rail tells you once when it first goes live.
+    - #{data}
+    - Keep demo examples there that show this change: the records a person needs to see each acceptance criterion working, visible to the user #{login} signs in, with realistic names and amounts. When the human asks in the conversation to change that data, change it there, say what you changed, and tell them to reload. Never touch any other database.
+
+    """
+  end
+
+  defp app_brief(%Task{}), do: ""
 
   defp demo_brief(%Task{issue: %Issue{} = issue}) do
     if Issue.skips_step?(issue, :demo),

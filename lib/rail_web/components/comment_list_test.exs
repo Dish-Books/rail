@@ -214,6 +214,45 @@ defmodule RailWeb.Components.CommentListTest do
     assert opens.("pcm_older") == "Open its stage"
   end
 
+  test "a comment on the running app reads App with its page and element, opens the app and is never a gone shot", %{
+    entries: [%{at: at} | _rest]
+  } do
+    html =
+      render_component(&CommentList.comment_list/1,
+        comments: [
+          %{
+            kind: :screen,
+            id: "scm_app",
+            at: at,
+            user: %User{id: "usr_ada", name: "Ada", login: "ada"},
+            comment: %ScreenComment{
+              id: "scm_app",
+              key: "app",
+              source: :app,
+              label: "/tasks?tab=open",
+              selector: "#save",
+              body: "Say Saved.",
+              status: :unsent
+            }
+          }
+        ],
+        order: "newest",
+        screen_keys: [],
+        reader_id: "usr_ada",
+        target: nil
+      )
+
+    doc = Floki.parse_fragment!(html)
+
+    assert doc |> Floki.find("#comment-scm_app") |> Floki.text() |> String.split() |> Enum.join(" ") =~
+             "App /tasks?tab=open · #save"
+
+    assert doc |> Floki.find("#comment-scm_app [data-qa=comment_opens]") |> Floki.text() |> String.trim() ==
+             "Open the app"
+
+    assert [] = Floki.find(doc, "#comment-scm_app [data-qa=comment_shot_gone]")
+  end
+
   test "with no comments it says there are none yet" do
     html =
       render_component(&CommentList.comment_list/1,

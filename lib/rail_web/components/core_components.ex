@@ -13,6 +13,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate answer_field(assigns), to: Components.AnswerField
   defdelegate answers_card(assigns), to: Components.AnswersCard
   defdelegate assignee(assigns), to: Components.IssueIcons
+  defdelegate app_pane(assigns), to: Components.AppPane
   defdelegate browser_picker(assigns), to: Components.BrowserPicker
   defdelegate button(assigns), to: Components.Button
   defdelegate changed_comments(assigns), to: Components.ChangedComments

@@ -109,6 +109,28 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
     end
   end
 
+  test "a comment on the running app reads App with its page, and its button opens the app", %{gate: gate} do
+    app = %ScreenComment{id: "scm_app", key: "app", source: :app, label: "/tasks", selector: "#save", body: "Bigger."}
+
+    doc =
+      (&ReviewCommentTray.review_comment_tray/1)
+      |> render_component(
+        fix: [],
+        finding_comments: [],
+        diff_comments: [],
+        screen_comments: [app],
+        gate: gate,
+        target: nil
+      )
+      |> Floki.parse_fragment!()
+
+    [row] = Floki.find(doc, "#review-tray-screen-scm_app")
+    assert Floki.text(row) =~ ~r/1\s+App\s+\/tasks\s+Edit\s+Remove\s+Bigger./
+    assert [{"button", attrs, _label}] = Floki.find(row, "[data-qa=review_tray_screen]")
+    assert {"title", "Open the app"} in attrs
+    assert {"phx-value-key", "app"} in attrs
+  end
+
   test "the working hint pulses green" do
     gate = %{working: true, finished: false, ci_failed: false, saved: true, plan: false, emptied: false, undecided: 0}
 

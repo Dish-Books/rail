@@ -9,8 +9,10 @@ defmodule RailWeb.Live.TaskDetailTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DemoBeat
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.Preview
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Round
+  alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.StartEngineer
   alias Rail.Projects
@@ -2710,6 +2712,425 @@ defmodule RailWeb.Live.TaskDetailTest do
       _settled = render(other)
       refute has_element?(other, "#approve-fix-plan")
       assert [%Oban.Job{}] = all_enqueued(worker: StartEngineer)
+    end
+  end
+
+  describe "the App item" do
+    setup %{project: project, task: task} do
+      {:ok, project} =
+        Projects.update_project(system_scope(), project, %{
+          preview_enabled: true,
+          preview_url_template: "https://pr-{pr_number}.preview.example.com",
+          preview_login_path: "/dev/login"
+        })
+
+      {:ok, task} = Pipeline.update_task(task, %{pr_number: 7})
+
+      # Looking at the deployment and opening its tab happen beside the page, against a deployment and a Chrome
+      # that are not run here.
+      stub(Pipeline, :check_preview, fn _task -> {:error, :no_pr} end)
+      stub(Pipeline, :open_preview_tab, fn _task -> :ok end)
+
+      # What Rail's browser says of the element under a click; Chrome is not run here.
+      element = %{
+        selector: "#main > button:nth-child(2)",
+        text: "Save",
+        tag: "button",
+        html: "<button>Save</button>",
+        x: 192,
+        y: 108,
+        width: 384,
+        height: 216,
+        url: "https://pr-7.preview.example.com/tasks?tab=open",
+        picture: Path.join([task.scratch_path, "app", "comments", "elm_1.jpg"])
+      }
+
+      live = %Preview{
+        task_id: task.id,
+        url: "https://pr-7.preview.example.com",
+        status: :live,
+        live_sha: "abc1234def5678",
+        checked_at: DateTime.utc_now()
+      }
+
+      %{project: project, task: task, element: element, live: live}
+    end
+
+    test "comes last in the rail only while the project shows previews, outside Plan, and until the task is cleaned up",
+         %{conn: conn, project: project, task: task} do
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#review-item-app")
+
+      assert ["issue", "plan", "comments", "findings", "diff", "screens", "demo", "browser", "app"] =
+               view
+               |> render()
+               |> Floki.parse_document!()
+               |> Floki.find("#review-items button")
+               |> Enum.flat_map(&Floki.attribute(&1, "phx-value-item"))
+
+      {:ok, _off} = Projects.update_project(system_scope(), project, %{preview_enabled: false})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      refute has_element?(view, "#review-item-app")
+
+      {:ok, _on} = Projects.update_project(system_scope(), project, %{preview_enabled: true})
+      {:ok, cleaned} = Pipeline.update_task(task, %{cleaned_up_at: DateTime.utc_now()})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      refute has_element?(view, "#review-item-app")
+
+      {:ok, _planning} = Pipeline.update_task(cleaned, %{cleaned_up_at: nil, stage: :plan})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      refute has_element?(view, "#review-item-app")
+    end
+
+    test "the rail names the preview's state, with a dot while a push deploys", %{conn: conn, task: task, live: live} do
+      {:ok, no_pr} = Pipeline.update_task(task, %{pr_number: nil})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#review-item-app[title='App: No pull request yet']")
+      refute has_element?(view, "#review-item-app [data-qa^=review_item_]")
+
+      {:ok, _pr} = Pipeline.update_task(no_pr, %{pr_number: 7})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#review-item-app[title='App: Deploying']")
+      refute has_element?(view, "#review-item-app [data-qa^=review_item_]")
+
+      preview = Repo.insert!(live)
+
+      for {status, title, dot?} <- [{:deploying, "Deploying", true}, {:live, "Live", false}, {:gone, "Gone", false}] do
+        preview |> Repo.reload!() |> Ecto.Changeset.change(status: status) |> Repo.update!()
+        {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+        assert has_element?(view, "#review-item-app[title='App: #{title}']")
+        assert has_element?(view, "#review-item-app [data-qa=review_item_running]") == dot?
+      end
+    end
+
+    # The minute between the worker's looks is long beside a push someone is waiting on.
+    test "opening the item looks at a preview not looked at lately, beside the page", %{
+      conn: conn,
+      task: %{id: task_id} = task,
+      live: live
+    } do
+      test = self()
+
+      expect(Pipeline, :check_preview, fn %Task{id: ^task_id} ->
+        send(test, :checked)
+        {:ok, live}
+      end)
+
+      {:ok, _view, _html} = live(conn, ~p"/tasks/#{task.id}?item=app")
+      assert_receive :checked
+
+      preview = Repo.insert!(%{live | status: :deploying, checked_at: DateTime.shift(DateTime.utc_now(), minute: -1)})
+
+      expect(Pipeline, :check_preview, fn %Task{id: ^task_id} ->
+        send(test, :checked)
+        {:ok, preview}
+      end)
+
+      {:ok, _view, _html} = live(conn, ~p"/tasks/#{task.id}?item=app")
+      assert_receive :checked
+
+      preview |> Ecto.Changeset.change(checked_at: nil) |> Repo.update!()
+
+      expect(Pipeline, :check_preview, fn %Task{id: ^task_id} ->
+        send(test, :checked)
+        {:ok, preview}
+      end)
+
+      {:ok, _view, _html} = live(conn, ~p"/tasks/#{task.id}?item=app")
+      assert_receive :checked
+    end
+
+    test "a preview looked at just now, a task with no pull request, or another item open looks at nothing", %{
+      conn: conn,
+      task: task,
+      live: live
+    } do
+      test = self()
+
+      stub(Pipeline, :check_preview, fn _task ->
+        send(test, :checked)
+        {:error, :no_pr}
+      end)
+
+      {:ok, _view, _html} = live(conn, ~p"/tasks/#{task.id}?item=findings")
+      Repo.insert!(%{live | status: :deploying})
+      {:ok, _view, _html} = live(conn, ~p"/tasks/#{task.id}?item=app")
+      {:ok, _no_pr} = Pipeline.update_task(task, %{pr_number: nil})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=app")
+
+      assert has_element?(view, "[data-qa=app_no_pr]")
+      refute_receive :checked, 100
+    end
+
+    # Opened for a person looking at the item, so a preview nobody watches holds no place in Chrome.
+    test "a live preview with no tab open gets one beside the page, and one with a tab is left as it is", %{
+      conn: conn,
+      task: %{id: task_id} = task,
+      live: live
+    } do
+      Repo.insert!(live)
+      test = self()
+
+      expect(Pipeline, :open_preview_tab, fn %Task{id: ^task_id} ->
+        send(test, :opened)
+        :ok
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=app")
+      assert_receive :opened
+      assert has_element?(view, "[data-qa=app_status]", "Live")
+
+      # The test stands in for the tab's session, which says where it is.
+      {:ok, _registered} = Registry.register(Rail.Tools.BrowserRegistry, {task_id, "app"}, nil)
+      stub(Tools, :get_browser_url, fn _task, "app" -> "https://pr-7.preview.example.com/dev/login" end)
+
+      stub(Pipeline, :open_preview_tab, fn _task ->
+        send(test, :opened)
+        :ok
+      end)
+
+      {:ok, _view, _html} = live(conn, ~p"/tasks/#{task.id}?item=app")
+      refute_receive :opened, 100
+    end
+
+    test "a live preview shows its tab's address, which Sign in again, Back, Reload and the tab's own navigations move",
+         %{conn: conn, task: %{id: task_id} = task, live: live} do
+      Repo.insert!(live)
+
+      stub(Tools, :get_browser_url, fn %Task{id: ^task_id}, "app" -> "https://pr-7.preview.example.com/dev/login" end)
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=app")
+
+      assert has_element?(view, "[data-qa=app_url]", "/dev/login")
+      assert has_element?(view, "#app-open-new-tab[href='https://pr-7.preview.example.com/dev/login']")
+
+      expect(Pipeline, :open_preview_tab, fn %Task{id: ^task_id} -> :ok end)
+      stub(Tools, :get_browser_url, fn _task, "app" -> "https://pr-7.preview.example.com/" end)
+      view |> element("#app-sign-in") |> render_click()
+
+      assert has_element?(view, "[data-qa=app_url]", "/")
+      refute has_element?(view, "[data-qa=app_error]")
+
+      for to <- ["back", "reload"] do
+        expect(Tools, :send_browser_input, fn %Task{id: ^task_id}, "app", %{"kind" => "navigate", "to" => ^to} ->
+          :ok
+        end)
+
+        view |> element("[data-qa=app_#{to}]") |> render_click()
+      end
+
+      # The tab says where it went once it has gone there; another browser moving is nothing to the App item.
+      stub(Tools, :get_browser_url, fn _task, "app" -> "https://pr-7.preview.example.com/tasks?tab=open" end)
+      send(view.pid, {:browser_moved, task_id, "explorer-1", "https://pr-7.preview.example.com/other"})
+      _settled = render(view)
+      assert has_element?(view, "[data-qa=app_url]", "/")
+      refute has_element?(view, "[data-qa=app_url]", "/tasks")
+      send(view.pid, {:browser_moved, task_id, "app", "https://pr-7.preview.example.com/tasks?tab=open"})
+      _settled = render(view)
+
+      assert has_element?(view, "[data-qa=app_url]", "/tasks?tab=open")
+    end
+
+    test "a Sign in again refused says why, and what Rail's browser said is passed on", %{
+      conn: conn,
+      task: task,
+      live: live
+    } do
+      Repo.insert!(live)
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=app")
+
+      for {reason, said} <- [
+            not_live: "The preview does not serve this task's latest commit yet.",
+            no_browser: "The app's tab is closed. Use Sign in again to open it.",
+            no_access_cookie: "Rail's browser could not do that: :no_access_cookie"
+          ] do
+        expect(Pipeline, :open_preview_tab, fn _task -> {:error, reason} end)
+        view |> element("#app-sign-in") |> render_click()
+
+        assert has_element?(view, "[data-qa=app_error]", said)
+      end
+    end
+
+    test "what a person does on the picture goes to the app's tab", %{
+      conn: conn,
+      task: %{id: task_id} = task,
+      live: live
+    } do
+      Repo.insert!(live)
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=app")
+      click = %{"kind" => "mouse", "type" => "mousePressed", "button" => "left", "x" => 960, "y" => 540}
+      expect(Tools, :send_browser_input, fn %Task{id: ^task_id}, "app", ^click -> :ok end)
+
+      view |> with_target("#task-detail") |> render_hook("app_input", click)
+
+      assert has_element?(view, "#app-screen[data-commenting=false]")
+    end
+
+    test "with Comment on, a click picks the element, and its comment saves to the pane and the tray as App", %{
+      conn: conn,
+      task: %{id: task_id} = task,
+      element: element,
+      live: live
+    } do
+      Repo.insert!(live)
+
+      dir = Path.join([task.scratch_path, "app", "comments"])
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=app")
+      view |> element("#design-comment-toggle") |> render_click()
+
+      assert has_element?(view, "#app-screen[data-commenting=true]")
+
+      expect(Tools, :inspect_browser_element, 2, fn %Task{id: ^task_id}, "app", 960, 540, ^dir -> {:ok, element} end)
+      view |> with_target("#task-detail") |> render_hook("app_pick", %{"x" => 960, "y" => 540})
+
+      assert has_element?(view, "[data-qa=app_picked]")
+      assert has_element?(view, "#app-comment-form", ~s("Save"))
+      view |> form("#app-comment-form", %{"body" => "Say Saved."}) |> render_change()
+      assert has_element?(view, "[data-qa=app_comment_body]", "Say Saved.")
+
+      view |> element("#app-comment-form button", "Cancel") |> render_click()
+      refute has_element?(view, "#app-comment-form")
+
+      view |> with_target("#task-detail") |> render_hook("app_pick", %{"x" => 960, "y" => 540})
+      view |> form("#app-comment-form", %{"body" => "   "}) |> render_submit()
+      assert has_element?(view, "#app-comment-form")
+
+      view |> form("#app-comment-form", %{"body" => "Say Saved."}) |> render_submit()
+
+      refute has_element?(view, "#app-comment-form")
+      assert has_element?(view, "#app-pane [data-qa=app_comment]", "Say Saved.")
+      assert has_element?(view, "#app-pane [data-qa=app_comment]", "/tasks?tab=open")
+
+      assert %ScreenComment{source: :app, label: "/tasks?tab=open", selector: "#main > button:nth-child(2)"} =
+               Repo.get_by!(ScreenComment, task_id: task_id)
+
+      view |> element("#review-send-tray-fold") |> render_click()
+      assert has_element?(view, "#review-send-tray [data-kind=screen]", "App")
+
+      view |> element("#app-pane [data-qa=app_comment_remove]") |> render_click()
+      refute has_element?(view, "#app-pane [data-qa=app_comment]")
+
+      view |> element("#design-comment-toggle") |> render_click()
+      assert has_element?(view, "#app-screen[data-commenting=false]")
+    end
+
+    test "a pick or a save refused says why, and keeps the comment being written", %{
+      conn: conn,
+      task: task,
+      element: element,
+      live: live
+    } do
+      Repo.insert!(live)
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=app")
+      view |> element("#design-comment-toggle") |> render_click()
+
+      for {reason, said} <- [
+            no_element: "There is no element there to comment on.",
+            no_browser: "The app's tab is closed. Use Sign in again to open it."
+          ] do
+        expect(Tools, :inspect_browser_element, fn _task, "app", _x, _y, _dir -> {:error, reason} end)
+        view |> with_target("#task-detail") |> render_hook("app_pick", %{"x" => 10, "y" => 10})
+
+        assert has_element?(view, "[data-qa=app_error]", said)
+        refute has_element?(view, "#app-comment-form")
+      end
+
+      expect(Tools, :inspect_browser_element, fn _task, "app", _x, _y, _dir -> {:ok, element} end)
+      view |> with_target("#task-detail") |> render_hook("app_pick", %{"x" => 960, "y" => 540})
+      refute has_element?(view, "[data-qa=app_error]")
+
+      # A page drawn before the task moved on still offers the form, which the save refuses.
+      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
+      view |> form("#app-comment-form", %{"body" => "Bigger."}) |> render_submit()
+      assert has_element?(view, "[data-qa=app_error]", "This task is at Implement, not Review.")
+
+      {:ok, _cleaned} = Pipeline.update_task(task, %{cleaned_up_at: DateTime.utc_now()})
+      view |> form("#app-comment-form", %{"body" => "Bigger."}) |> render_submit()
+      assert has_element?(view, "[data-qa=app_error]", "This task is cleaned up, so it takes no more comments.")
+      assert has_element?(view, "#app-comment-form")
+    end
+
+    test "a push deploying or going live elsewhere shows at once, and a deploy drops the comment being written", %{
+      conn: conn,
+      task: %{id: task_id} = task,
+      element: element,
+      live: live
+    } do
+      preview = Repo.insert!(live)
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=app")
+      view |> element("#design-comment-toggle") |> render_click()
+      expect(Tools, :inspect_browser_element, fn _task, "app", _x, _y, _dir -> {:ok, element} end)
+      view |> with_target("#task-detail") |> render_hook("app_pick", %{"x" => 960, "y" => 540})
+
+      # Another task's preview is nothing to this page.
+      send(view.pid, {:preview_changed, %{preview | task_id: "tsk_somebody_else", status: :deploying}})
+      Phoenix.PubSub.broadcast(Rail.PubSub, "previews:#{task_id}", {:preview_changed, preview})
+      _settled = render(view)
+
+      assert has_element?(view, "[data-qa=app_status]", "Live")
+      assert has_element?(view, "#app-comment-form")
+
+      Phoenix.PubSub.broadcast(Rail.PubSub, "previews:#{task_id}", {:preview_changed, %{preview | status: :deploying}})
+      _settled = render(view)
+
+      assert has_element?(view, "[data-qa=app_deploying]")
+      refute has_element?(view, "#app-comment-form")
+      assert has_element?(view, "#review-item-app[title='App: Deploying'] [data-qa=review_item_running]")
+
+      # Live on the new commit, the tab is opened again for the person watching.
+      test = self()
+
+      expect(Pipeline, :open_preview_tab, fn %Task{id: ^task_id} ->
+        send(test, :opened)
+        :ok
+      end)
+
+      Phoenix.PubSub.broadcast(Rail.PubSub, "previews:#{task_id}", {:preview_changed, %{preview | live_sha: "fed9876"}})
+      _settled = render(view)
+
+      assert_receive :opened
+      assert has_element?(view, "[data-qa=app_status]", "Live")
+      assert has_element?(view, "#review-item-app[title='App: Live']")
+    end
+
+    test "a comment on the app opens the App item from the Comments item and from the tray", %{
+      conn: conn,
+      task: task,
+      user: user,
+      element: element
+    } do
+      {:ok, %{id: id}} = Pipeline.create_app_comment(user_scope(user: user), task, element, "Say Saved.")
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=comments")
+
+      assert has_element?(view, "#comment-#{id} [data-qa=comment_opens]", "Open the app")
+      refute has_element?(view, "#comment-#{id} [data-qa=comment_shot_gone]")
+      view |> element("#comment-#{id}") |> render_click()
+
+      assert has_element?(view, "#review-pane[data-item=app] [data-qa=app_deploying]")
+
+      view |> element("#review-item-findings") |> render_click()
+      view |> element("#review-send-tray-fold") |> render_click()
+      view |> element("[data-qa=review_tray_screen][title='Open the app']") |> render_click()
+      _settled = render(view)
+
+      assert has_element?(view, "#review-pane[data-item=app]")
+    end
+
+    test "the Browser item leaves out the app's tab, which is the App item's", %{conn: conn, task: task} do
+      for name <- ["explorer-1", "app"] do
+        Repo.insert!(%BrowserSession{task_id: task.id, name: name, status: :running, started_at: DateTime.utc_now()})
+      end
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=browser")
+
+      assert has_element?(view, "#review-browser-explorer-1")
+      refute has_element?(view, "#review-browser-app")
     end
   end
 end

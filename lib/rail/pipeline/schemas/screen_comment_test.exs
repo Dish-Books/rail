@@ -1,6 +1,8 @@
 defmodule Rail.Pipeline.Schemas.ScreenCommentTest do
   use ExUnit.Case, async: true
 
+  import Rail.DataCase, only: [errors_on: 1]
+
   alias Rail.Pipeline.Schemas.ScreenComment
 
   setup do
@@ -48,5 +50,87 @@ defmodule Rail.Pipeline.Schemas.ScreenCommentTest do
   test "with no picture of the state left, and no commit, the block says neither", %{comment: comment} do
     assert ScreenComment.calculate_block(%{comment | commit: nil}, nil, "/scratch/tsk_1") ==
              "<screen_comment>\nFile list after Send (file-list)\nThe count wraps at 1280px.\n</screen_comment>"
+  end
+
+  describe "on the running app" do
+    setup do
+      %{
+        comment: %ScreenComment{
+          source: :app,
+          key: "app",
+          label: "/checkout?step=2",
+          commit: "e52a0bd91",
+          selector: "#checkout > button:nth-child(2)",
+          element_text: "Pay now",
+          element_tag: "button",
+          picture_path: "/scratch/tsk_1/app/comments/elm_1.jpg",
+          body: "This should say Pay $12."
+        }
+      }
+    end
+
+    # The page and the picture are what Rail's browser saw, so they are the caller's to set, never the client's.
+    test "a comment needs text, an element and the page it is on, and is on the app whatever the client says" do
+      attrs = %{
+        "body" => "  Say the amount.\n",
+        "selector" => "#checkout > button:nth-child(2)",
+        "element_text" => "Pay now",
+        "element_tag" => "button",
+        "source" => "shot",
+        "key" => "file-list",
+        "picture_path" => "/etc/passwd"
+      }
+
+      assert %{
+               valid?: true,
+               changes:
+                 %{source: :app, key: "app", body: "Say the amount.", selector: "#checkout > button:nth-child(2)"} =
+                   changes
+             } = ScreenComment.app_changeset(%ScreenComment{label: "/checkout"}, attrs)
+
+      refute Map.has_key?(changes, :picture_path)
+
+      assert %{body: ["can't be blank"], selector: ["can't be blank"], label: ["can't be blank"]} =
+               errors_on(ScreenComment.app_changeset(%ScreenComment{}, %{"body" => " "}))
+    end
+
+    test "the selector keeps to the grammar design comments use, and each field to its length" do
+      attrs = %{"body" => "Hi.", "selector" => "div[onclick=alert(1)]"}
+
+      assert %{selector: ["has invalid format"]} =
+               errors_on(ScreenComment.app_changeset(%ScreenComment{label: "/"}, attrs))
+
+      too_long = %{
+        "body" => "Hi.",
+        "selector" => String.duplicate("a", 1001),
+        "element_text" => String.duplicate("a", 201),
+        "element_tag" => String.duplicate("a", 65)
+      }
+
+      assert %{selector: [_selector], element_text: [_text], element_tag: [_tag]} =
+               errors_on(ScreenComment.app_changeset(%ScreenComment{label: "/"}, too_long))
+    end
+
+    test "the block names the page, the commit, the element by its selector and text, and its picture", %{
+      comment: comment
+    } do
+      assert ScreenComment.calculate_block(comment, nil, "/scratch/tsk_1") ==
+               """
+               <app_comment>
+               In the running app at /checkout?step=2, commented on e52a0bd
+               Element: `#checkout > button:nth-child(2)` "Pay now"
+               Picture: /scratch/tsk_1/app/comments/elm_1.jpg
+               This should say Pay $12.
+               </app_comment>\
+               """
+    end
+
+    test "an element with no text is named by its tag, and a commit or picture it lacks is left out", %{comment: comment} do
+      comment = %{comment | commit: nil, element_text: "", picture_path: nil, element_tag: "svg"}
+
+      assert ScreenComment.calculate_block(comment, nil, "/scratch/tsk_1") ==
+               "<app_comment>\nIn the running app at /checkout?step=2\nElement: `#checkout > button:nth-child(2)` svg\n" <>
+                 "This should say Pay $12.\n</app_comment>"
+    end
   end
 end

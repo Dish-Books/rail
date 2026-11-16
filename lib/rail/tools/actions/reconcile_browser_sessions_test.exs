@@ -3,6 +3,7 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Preview
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.BrowserRegistry
@@ -245,5 +246,36 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
     reject(Tools, :stop_browser_session, 1)
 
     assert Tools.reconcile_browser_sessions() == []
+  end
+
+  # A person tries the preview between rounds, while the task waits on them, so its tab is the app's and not a run's.
+  test "keeps the tab the preview is tried in while it is live, and closes the task's other tabs", %{task: task} do
+    {:ok, _app} =
+      %BrowserSession{}
+      |> BrowserSession.changeset(%{task_id: task.id, name: "app", status: :running, target_id: "tgt"})
+      |> Repo.insert()
+
+    {:ok, %BrowserSession{id: qa}} =
+      %BrowserSession{}
+      |> BrowserSession.changeset(%{task_id: task.id, name: "qa", status: :running})
+      |> Repo.insert()
+
+    Repo.insert!(%Preview{task_id: task.id, url: "https://pr-7.preview.example.com", status: :live})
+    expect(Tools, :start_browser_session, fn %{id: id}, "app", [existing: true] when id == task.id -> {:ok, self()} end)
+
+    assert [%BrowserSession{id: ^qa, status: :finished}] = Tools.reconcile_browser_sessions()
+    assert [%BrowserSession{name: "app"}] = Repo.all(from s in BrowserSession, where: s.status == :running)
+  end
+
+  test "closes the tab the preview was tried in once it is no longer live", %{task: task} do
+    {:ok, %BrowserSession{id: app}} =
+      %BrowserSession{}
+      |> BrowserSession.changeset(%{task_id: task.id, name: "app", status: :running})
+      |> Repo.insert()
+
+    Repo.insert!(%Preview{task_id: task.id, url: "https://pr-7.preview.example.com", status: :deploying})
+    reject(Tools, :start_browser_session, 3)
+
+    assert [%BrowserSession{id: ^app, status: :finished, ended_reason: :closed}] = Tools.reconcile_browser_sessions()
   end
 end

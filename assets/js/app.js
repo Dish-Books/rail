@@ -2,6 +2,7 @@ import "phoenix_html";
 import { Socket } from "phoenix";
 import { LiveSocket } from "phoenix_live_view";
 import topbar from "../vendor/topbar";
+import { AppInput } from "./hooks/app_input";
 import { BrowserScreencast } from "./hooks/browser_screencast";
 import { ChatAutoscroll } from "./hooks/chat_autoscroll";
 import { ChatComposer } from "./hooks/chat_composer";
@@ -29,6 +30,7 @@ import { StatusMenu } from "./hooks/status_menu";
 import { Theme } from "./hooks/theme";
 
 const Hooks = {
+  AppInput,
   DesignFrame,
   ElementPreview,
   Theme,

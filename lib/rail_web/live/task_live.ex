@@ -57,7 +57,7 @@ defmodule RailWeb.TaskLive do
   @frame_interval_ms 250
 
   # The items the URL can name, and `stage-<position>` for a custom stage; any other opens what the task waits on.
-  @items ["issue", "plan", "children", "comments", "findings", "fix_plan", "diff", "screens", "demo", "browser"]
+  @items ["issue", "plan", "children", "comments", "findings", "fix_plan", "diff", "screens", "demo", "browser", "app"]
   @plan_closed "Only Plan, and then the review agent, take messages. This is a record of what this agent did."
 
   # The agents whose runs the conversation reads, in the order a task meets them.
@@ -436,6 +436,23 @@ defmodule RailWeb.TaskLive do
       do: {:noreply, show_frame(socket, data)},
       else: {:noreply, socket}
   end
+
+  # The task's preview started deploying a push, went live or went away; the App item and its place in the rail show it.
+  def handle_info({:preview_changed, %{task_id: task_id} = preview}, %{assigns: %{task_id: task_id}} = socket) do
+    send_update(TaskDetail, id: "task-detail", app_preview: preview)
+    {:noreply, socket}
+  end
+
+  def handle_info({:preview_changed, _other_task}, socket), do: {:noreply, socket}
+
+  # The app's tab went somewhere, a redirect or a LiveView's own navigation as much as Back, so the App item's
+  # address reads it again. Another browser's moves show nowhere.
+  def handle_info({:browser_moved, task_id, "app", _url}, %{assigns: %{task_id: task_id}} = socket) do
+    send_update(TaskDetail, id: "task-detail", app_where: true)
+    {:noreply, socket}
+  end
+
+  def handle_info({:browser_moved, _task_id, _name, _url}, socket), do: {:noreply, socket}
 
   # The demo recording is what reads the page's actions, and the page has no use for them.
   def handle_info({:browser_action, _task_id, _name, _kind}, socket), do: {:noreply, socket}
@@ -1362,7 +1379,7 @@ defmodule RailWeb.TaskLive do
   defp watch_browser(socket, %Task{id: task_id} = task, item) do
     watched = socket.assigns.watched_browser
     name = socket.assigns.review_browser
-    wanted = if item == :browser and is_binary(name), do: "browser:#{task_id}:#{name}"
+    wanted = if item in [:browser, :app] and is_binary(name), do: "browser:#{task_id}:#{name}"
 
     if connected?(socket) and watched != wanted do
       if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, watched)
@@ -1419,7 +1436,9 @@ defmodule RailWeb.TaskLive do
 
     if connected?(socket) and watched != task_id do
       if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "outputs:#{watched}")
+      if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "previews:#{watched}")
       Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "previews:#{task_id}")
     end
 
     assign(socket, :watched_outputs_task_id, if(connected?(socket), do: task_id, else: watched))

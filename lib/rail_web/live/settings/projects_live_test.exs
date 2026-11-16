@@ -484,6 +484,95 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     assert %Project{account_seed_command: nil} = Repo.get!(Project, project_id)
   end
 
+  test "turns on previews with their address, sign-in path and database, refusing a missing address or a path off the preview",
+       %{admin_conn: conn, admin_user: admin} do
+    assert {:ok, %Project{id: project_id}} =
+             Projects.create_project(Scope.for_user(admin), %{
+               name: "Preview App",
+               github_repo: "example/preview-#{System.unique_integer([:positive])}",
+               github_installation_id: 337,
+               key: "PRV",
+               default_branch: "main",
+               clone_path: "/tmp/preview"
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+    view |> element("#edit-project-#{project_id}") |> render_click()
+
+    assert has_element?(view, "#project-preview #project-preview-enabled-input:not([checked])")
+    refute has_element?(view, "#project-preview-url-input")
+    refute has_element?(view, "#project-preview-login-path-input")
+    refute has_element?(view, "#project-preview-database-input")
+    refute has_element?(view, "#project-preview-access-id-input")
+
+    view |> form("#project-form", %{"project" => %{"preview_enabled" => "true"}}) |> render_change()
+
+    assert has_element?(view, "#project-preview-enabled-input[checked]")
+    assert has_element?(view, "#project-preview-url-input[aria-invalid=true]")
+    assert has_element?(view, "#project-preview", "Preview Address is needed to find a preview")
+    refute has_element?(view, "#project-preview-login-path-input[aria-invalid]")
+
+    view
+    |> form("#project-form", %{
+      "project" => %{
+        "preview_enabled" => "true",
+        "preview_url_template" => "https://preview.example.com/pr/{pr_number}",
+        "preview_login_path" => "//evil"
+      }
+    })
+    |> render_submit()
+
+    assert has_element?(
+             view,
+             "#project-preview",
+             "Preview Address must be an http(s) address with {pr_number} in its host"
+           )
+
+    assert has_element?(view, "#project-preview-login-path-input[aria-invalid=true]")
+    assert has_element?(view, "#project-preview", "Sign-in Path must start with a single /")
+    assert %Project{preview_enabled: false} = Repo.get!(Project, project_id)
+
+    view
+    |> form("#project-form", %{
+      "project" => %{
+        "preview_enabled" => "true",
+        "preview_url_template" => "https://pr-{pr_number}.preview.example.com",
+        "preview_login_path" => "/dev/login",
+        "preview_database" => "Example PR {pr_number}",
+        "preview_access_client_id" => "id.access",
+        "preview_access_client_secret" => "secret"
+      }
+    })
+    |> render_submit()
+
+    assert %Project{
+             preview_enabled: true,
+             preview_url_template: "https://pr-{pr_number}.preview.example.com",
+             preview_login_path: "/dev/login",
+             preview_database: "Example PR {pr_number}",
+             preview_access_client_id: "id.access",
+             preview_access_client_secret: "secret"
+           } = Repo.get!(Project, project_id)
+
+    view |> element("#edit-project-#{project_id}") |> render_click()
+
+    assert has_element?(view, "#project-preview-enabled-input[checked]")
+    assert has_element?(view, "#project-preview-url-input[value='https://pr-{pr_number}.preview.example.com']")
+    assert has_element?(view, "#project-preview-login-path-input[value='/dev/login']")
+    assert has_element?(view, "#project-preview-database-input[value='Example PR {pr_number}']")
+    # The token is never sent back to the page, and saving with its boxes empty keeps it.
+    assert has_element?(view, "#project-preview-access-id-input[value='']")
+    assert has_element?(view, "#project-preview-access-secret-input[value='']")
+    refute render(view) =~ "id.access"
+
+    view
+    |> form("#project-form", %{"project" => %{"preview_database" => ""}})
+    |> render_submit()
+
+    assert %Project{preview_database: nil, preview_access_client_id: "id.access", preview_access_client_secret: "secret"} =
+             Repo.get!(Project, project_id)
+  end
+
   test "edits the files nobody sees one glob to a line, starting from tests and docs", %{
     admin_conn: conn,
     admin_user: admin

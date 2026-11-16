@@ -20,6 +20,27 @@ export function fitScale(available, size) {
   return available / size;
 }
 
+// Never so short that it cannot be read, however far down its pane the frame sits.
+export const MIN_FIT_HEIGHT = 320;
+
+// The widest a 1920x1080 frame can be drawn and still be whole on screen: the width beside it, or the height it has
+// below its top, whichever runs out first.
+export function fitWidth(availableWidth, availableHeight) {
+  const height = Math.max(availableHeight, MIN_FIT_HEIGHT);
+  return Math.max(0, Math.min(availableWidth, (height * VIEWPORT_WIDTH) / VIEWPORT_HEIGHT));
+}
+
+// The height from an element's top to the bottom of the pane that scrolls it, with the pane scrolled to the top, or
+// to the bottom of the window when nothing scrolls it.
+export function visibleHeight(el, gap = 16) {
+  let pane = el.parentElement;
+  while (pane && !/(auto|scroll)/.test(getComputedStyle(pane).overflowY)) pane = pane.parentElement;
+
+  if (!pane) return window.innerHeight - el.getBoundingClientRect().top - gap;
+  const top = el.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+  return pane.clientHeight - top - gap;
+}
+
 // A preview shrinks to fit the detail's width and never grows past the element's own size.
 export function previewScale(available, width) {
   return Math.min(1, available / width);
@@ -261,8 +282,8 @@ function frameState(el, scale) {
   };
 }
 
-// Shows a design mockup at its real 1920x1080 viewport, scaled down to fit the width it is given, so each option
-// reads the way its screenshot will; with comments on, it carries the mode, the clicks and the markers to the frame.
+// Shows a design mockup at its real 1920x1080 viewport, scaled down to fit the width it is given and the height on
+// screen, so each option reads whole, the way its screenshot will; with comments on, it carries the mode, the clicks and the markers to the frame.
 export const DesignFrame = {
   mounted() {
     // A new width is a new scale, which the markers are drawn for.
@@ -270,7 +291,14 @@ export const DesignFrame = {
       this.fit();
       this.postState();
     });
-    this.observer.observe(this.el);
+    // Its own width is set here, so it is its pane's size that says when to fit again.
+    this.observer.observe(this.el.parentElement);
+    // A taller or shorter window changes the height there is, which no element's own size says.
+    this.onResize = () => {
+      this.fit();
+      this.postState();
+    };
+    window.addEventListener("resize", this.onResize);
 
     this.onMessage = (event) => this.receive(event);
     window.addEventListener("message", this.onMessage);
@@ -300,6 +328,7 @@ export const DesignFrame = {
 
   destroyed() {
     this.observer?.disconnect();
+    window.removeEventListener("resize", this.onResize);
     window.removeEventListener("message", this.onMessage);
     window.removeEventListener("keydown", this.onKey);
   },
@@ -366,10 +395,12 @@ export const DesignFrame = {
   fit() {
     const frame = this.el.querySelector("iframe");
     // A hidden tab has no width, and a frame scaled to nothing is fitted again when it shows.
-    if (!frame || this.el.clientWidth === 0) return;
+    if (!frame || this.el.parentElement.clientWidth === 0) return;
 
-    const scale = fitScale(this.el.clientWidth, VIEWPORT_WIDTH);
+    const width = fitWidth(this.el.parentElement.clientWidth, visibleHeight(this.el));
+    const scale = fitScale(width, VIEWPORT_WIDTH);
     this.scale = scale;
+    this.el.style.width = `${width}px`;
     frame.style.width = `${VIEWPORT_WIDTH}px`;
     frame.style.height = `${VIEWPORT_HEIGHT}px`;
     frame.style.transformOrigin = "0 0";
