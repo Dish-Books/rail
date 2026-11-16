@@ -11,8 +11,7 @@ defmodule RailWeb.Live.DiffFile do
 
   @impl true
   def render(assigns) do
-    # Without a count of lines not yet sent, the file is drawn whole.
-    assigns = assigns |> assign(:file_name, diff_file_name(assigns.file)) |> assign_new(:far_rows, fn -> nil end)
+    assigns = assign(assigns, :file_name, diff_file_name(assigns.file))
 
     ~H"""
     <div
@@ -20,7 +19,6 @@ defmodule RailWeb.Live.DiffFile do
       data-qa="diff_file_section"
       data-path={@file.path}
       data-comment-target={@target}
-      data-far={@far_rows != nil}
       phx-hook="DiffSection"
       class="first:mt-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
     >
@@ -119,16 +117,8 @@ defmodule RailWeb.Live.DiffFile do
         />
       </div>
 
-      <%!-- Lines not sent yet, as tall as they will be in a row each. --%>
       <div
-        :if={not @collapsed? and is_nil(@image) and @far_rows != nil}
-        data-qa="diff_far"
-        class="diff-far rounded-b-xl"
-        style={"height: #{@far_rows * 22}px;"}
-      />
-
-      <div
-        :if={not @collapsed? and is_nil(@image) and is_nil(@far_rows)}
+        :if={not @collapsed? and is_nil(@image)}
         style={"content-visibility: auto; contain-intrinsic-size: auto #{intrinsic_height(@segments)}px;"}
         class="diff-body rounded-b-xl"
       >
