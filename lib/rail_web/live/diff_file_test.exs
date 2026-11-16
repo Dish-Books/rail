@@ -228,6 +228,19 @@ defmodule RailWeb.Live.DiffFileTest do
       assert html =~ "Only you see this until you send it."
       assert html =~ ~s(phx-click="cancel_diff_comment")
       assert html =~ "Save comment"
+
+      # A reconnect opens it again as a click on the line would, with the numbers as the page sends them.
+      [reopen] = html |> Floki.parse_fragment!() |> Floki.attribute("form[data-qa='diff_comment_form']", "data-reopen")
+
+      assert Jason.decode!(reopen) == %{
+               "event" => "open_diff_comment",
+               "value" => %{
+                 "path" => "lib/rail/invoices/filter.ex",
+                 "kind" => "added",
+                 "old_line" => "2",
+                 "new_line" => "2"
+               }
+             }
     end
   end
 end

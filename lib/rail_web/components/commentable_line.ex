@@ -266,6 +266,7 @@ defmodule RailWeb.Components.CommentableLine do
         change="change_plan_comment"
         cancel="cancel_plan_comment"
         target={@target}
+        reopen={%{event: "open_document_comment", value: %{doc: @draft.doc, key: @draft.key}}}
       >
         <:heading :if={@box_named}>
           <p

@@ -6,6 +6,7 @@ import { BrowserScreencast } from "./hooks/browser_screencast";
 import { ChatAutoscroll } from "./hooks/chat_autoscroll";
 import { ChatComposer } from "./hooks/chat_composer";
 import { CommandOutput } from "./hooks/command_output";
+import { CommentBox } from "./hooks/comment_box";
 import { CopyText } from "./hooks/copy_text";
 import { CurrentInView } from "./hooks/current_in_view";
 import { CycleFigures } from "./hooks/cycle_figures";
@@ -27,6 +28,7 @@ import { Shortcuts } from "./hooks/shortcuts";
 import { SidebarResize } from "./hooks/sidebar_resize";
 import { StatusMenu } from "./hooks/status_menu";
 import { Theme } from "./hooks/theme";
+import { recordDrops } from "./socket_drops";
 
 const Hooks = {
   DesignFrame,
@@ -37,6 +39,7 @@ const Hooks = {
   ChatAutoscroll,
   ChatComposer,
   CommandOutput,
+  CommentBox,
   DiffScroller,
   DiffSection,
   DiffWrap,
@@ -58,10 +61,16 @@ const Hooks = {
 };
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content");
+const drops = recordDrops(window);
+// One object, which LiveView adds each join's _mounts and _track_static to, so the server's CONNECTED line carries
+// them beside the last drop.
+const socketParams = { _csrf_token: csrfToken };
 const liveSocket = new LiveSocket("/live", Socket, {
-  params: { _csrf_token: csrfToken },
+  params: () => Object.assign(socketParams, drops.params()),
+  logger: drops.logger,
   hooks: Hooks
 });
+drops.watch(liveSocket.socket);
 
 topbar.config({ barColors: { 0: "#6366f1" }, shadowColor: "rgba(0, 0, 0, 0)" });
 window.addEventListener("phx:page-loading-start", (info) => {

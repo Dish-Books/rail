@@ -2,6 +2,9 @@ defmodule RailWeb.Components.CommentBox do
   @moduledoc """
   The box a comment is written in, on a diff line, an element of a design or a line of the ticket or plan: Cancel, Escape or Save comment
   closes it, and only its author sees what it saves until they send it.
+
+  A reconnect starts its component over, which closes the box. One given `reopen`, the event that opens it and
+  its values, is opened again on the same line with what was typed in it.
   """
   use RailWeb, :html
 
@@ -14,6 +17,11 @@ defmodule RailWeb.Components.CommentBox do
   attr :change, :string, required: true
   attr :cancel, :string, required: true
   attr :target, :any, required: true
+
+  attr :reopen, :map,
+    default: nil,
+    doc: "the event that opens this box, as `%{event: name, value: params}`, sent again after a reconnect closes it"
+
   attr :class, :any, default: "max-w-[760px] shadow-xs"
   attr :narrow, :boolean, default: false, doc: "puts the hint on a line of its own, for a box in a narrow column"
   attr :rest, :global
@@ -28,6 +36,8 @@ defmodule RailWeb.Components.CommentBox do
       phx-submit={@submit}
       phx-change={@change}
       phx-target={@target}
+      phx-hook="CommentBox"
+      data-reopen={@reopen && Jason.encode!(@reopen)}
       class={[
         "rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-2",
         @class
