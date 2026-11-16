@@ -81,8 +81,17 @@ defmodule RailWeb.IssueLive do
     """
   end
 
+  # The page stays put either way: reloaded, its Task section shows the task in place of Start.
   def handle_event(event, _params, socket) when event in ["start_task", "adopt_pull_request"] do
-    {:noreply, start_issue(socket, socket.assigns.issue.id, &load_issue(&1, &1.assigns.issue.id))}
+    %Issue{id: issue_id} = socket.assigns.issue
+
+    socket =
+      case start_issue(socket.assigns.current_scope, issue_id) do
+        {:error, message} when is_binary(message) -> socket |> put_flash(:error, message) |> load_issue(issue_id)
+        _started_or_gone -> load_issue(socket, issue_id)
+      end
+
+    {:noreply, socket}
   end
 
   def handle_event(event, params, socket) when event in @issue_events do
