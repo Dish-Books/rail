@@ -10,6 +10,7 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
+  alias Rail.Scope
   alias Rail.Users
   alias Rail.Workflows.Schemas.Workflow
   alias Rail.Workflows.Schemas.WorkflowDefinition
@@ -488,5 +489,34 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
 
     assert has_element?(view, "#workflows-empty", "No workflows yet.")
     refute has_element?(view, "#workflows-list")
+  end
+
+  test "someone without GitHub sees Run now turned off, and still pauses", %{
+    conn: conn,
+    regular: regular,
+    project: project
+  } do
+    {:ok, regular} = Users.update_user(system_scope(), regular, %{project_ids: [project.id]})
+    {:ok, regular} = Users.unlink_github(Scope.for_user(regular))
+
+    %Workflow{id: id} =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/dependency-updates.yml",
+        definition: %WorkflowDefinition{name: "Dependency updates", schedule: "0 9 * * 1", instructions: "Do the work."},
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
+
+    {:ok, view, _html} = live(log_in_user(conn, regular), ~p"/settings/workflows")
+
+    assert has_element?(view, ~s(#run-now-#{id}[disabled][title="Connect GitHub to run a workflow now"]))
+
+    view |> element("#workflow-switch-#{id}") |> render_click()
+    assert %Workflow{paused: true} = Repo.get!(Workflow, id)
+
+    assert render_click(view, "run_now", %{"id" => id}) =~
+             "Dependency updates opened nothing: connect GitHub to run a workflow now."
+
+    assert [] = Repo.all(from(i in Issue, where: i.workflow_id == ^id))
   end
 end

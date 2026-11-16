@@ -138,6 +138,18 @@ defmodule Rail.Workflows.Actions.RunWorkflowNowTest do
              Workflows.run_workflow_now(user_scope(project_ids: [project.id]), workflow)
   end
 
+  test "someone given the project but without GitHub is refused, and no issue is opened", %{
+    project: project,
+    workflow: %{id: workflow_id} = workflow
+  } do
+    no_github = user_scope(user: %{id: "usr_no_github", admin: false, project_ids: [project.id], github_id: nil})
+
+    # No tracker request is expected, so one would raise.
+    assert {:error, :github_required} = Workflows.run_workflow_now(no_github, workflow)
+    assert [] = Repo.all(from(i in Issue, where: i.workflow_id == ^workflow_id))
+    assert [] = all_enqueued(worker: StartWorkflowTask)
+  end
+
   test "someone without the project is refused as not found, and no issue is opened", %{
     github_project: github,
     workflow: %{id: workflow_id} = workflow

@@ -9,11 +9,14 @@ defmodule Rail.Workflows.Actions.RunWorkflowNow do
 
   @doc """
   Run now: opens the workflow's issue dated today, paused or not, and leaves the next scheduled start where it was.
-  Returns what `open_workflow_issue/2` did, or `{:error, :not_found}` when the scope cannot access its project.
+  Returns what `open_workflow_issue/2` did, `{:error, :not_found}` when the scope cannot access its project, or
+  `{:error, :github_required}` for someone without GitHub.
   """
   def run_workflow_now(%Scope{} = scope, %Workflow{project: %Project{}} = workflow) do
-    if Scope.can_access_project?(scope, workflow.project_id),
-      do: open_workflow_issue(workflow, :now),
-      else: {:error, :not_found}
+    cond do
+      not Scope.can_access_project?(scope, workflow.project_id) -> {:error, :not_found}
+      match?(%Scope{user: %{github_id: nil}}, scope) -> {:error, :github_required}
+      true -> open_workflow_issue(workflow, :now)
+    end
   end
 end

@@ -3,6 +3,7 @@ defmodule RailWeb.Settings.WorkflowsLive do
   use RailWeb, :live_view
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Scope
   alias Rail.Workflows
   alias Rail.Workflows.Schemas.Workflow
   alias Rail.Workflows.Schemas.WorkflowDefinition
@@ -36,6 +37,7 @@ defmodule RailWeb.Settings.WorkflowsLive do
       |> assign(:page_title, "Workflows")
       |> assign(:current_section, :workflows)
       |> assign(:example, @example)
+      |> assign(:can_run_now, not match?(%Scope{user: %{github_id: nil}}, socket.assigns.current_scope))
       |> load_workflows()
 
     {:ok, socket}
@@ -163,9 +165,12 @@ defmodule RailWeb.Settings.WorkflowsLive do
                         id={"run-now-#{workflow.id}"}
                         phx-click="run_now"
                         phx-value-id={workflow.id}
+                        disabled={not @can_run_now}
                         aria-label={"Run #{Workflow.name(workflow)} now"}
-                        title="Run now"
-                        class="inline-flex items-center justify-center h-7 w-7 shrink-0 rounded-md bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 shadow-xs ring-1 ring-inset ring-slate-300 dark:ring-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
+                        title={
+                          if @can_run_now, do: "Run now", else: "Connect GitHub to run a workflow now"
+                        }
+                        class="inline-flex items-center justify-center h-7 w-7 shrink-0 rounded-md bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 shadow-xs ring-1 ring-inset ring-slate-300 dark:ring-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
                       >
                         <.icon name="pi-play-fill" class="size-[13px]" />
                       </button>
@@ -285,5 +290,6 @@ defmodule RailWeb.Settings.WorkflowsLive do
 
   defp run_message({:error, :project_inactive}, workflow), do: "opened nothing: #{workflow.project.key} is inactive."
   defp run_message({:error, :invalid}, _workflow), do: "opened nothing: its file is invalid."
+  defp run_message({:error, :github_required}, _workflow), do: "opened nothing: connect GitHub to run a workflow now."
   defp run_message({:error, reason}, _workflow), do: "opened nothing: #{inspect(reason)}"
 end
