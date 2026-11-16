@@ -11,8 +11,9 @@ defmodule RailWeb.Endpoint do
     secure: @cookie_secure
   ]
 
+  # Compressed because a large diff is sent whole, and its markup repeats itself line after line.
   socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [session: @session_options]],
+    websocket: [connect_info: [session: @session_options], compress: true],
     longpoll: [connect_info: [session: @session_options]]
 
   # The kit is served to pages with no origin: sandboxed frames and the file:// screenshot.
