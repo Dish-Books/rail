@@ -23,8 +23,6 @@ defmodule RailWeb.Components.TaskLayout do
   # Said in place of the stage, `%{label:, icon:, class:}`, by a split parent or a child waiting on its
   # siblings, neither of which has a branch to show yet.
   attr :status, :map, default: nil
-  # Only admins can follow the workflow's name to Settings > Workflows.
-  attr :link_workflow, :boolean, default: false
 
   slot :breadcrumb
   slot :meta
@@ -146,7 +144,6 @@ defmodule RailWeb.Components.TaskLayout do
           >
             <.icon name="pi-repeat" class="size-4 shrink-0" />
             <.link
-              :if={@link_workflow}
               navigate={~p"/settings/workflows"}
               id="task-workflow-link"
               title="Settings › Workflows"
@@ -154,13 +151,6 @@ defmodule RailWeb.Components.TaskLayout do
             >
               {Workflow.name(@workflow)}
             </.link>
-            <span
-              :if={!@link_workflow}
-              id="task-workflow-name"
-              class="font-medium text-slate-700 dark:text-slate-200 wrap-break-word min-w-0"
-            >
-              {Workflow.name(@workflow)}
-            </span>
             <.stage_sequence
               id="task-stage-sequence"
               skipped={@task.issue.skipped_steps}

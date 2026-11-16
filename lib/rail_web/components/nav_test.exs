@@ -103,14 +103,14 @@ defmodule RailWeb.Components.NavTest do
     end
 
     # Test settings sub-sections highlight Settings nav
-    for sub <- [:connected_accounts, :projects, :linear_workspaces, :slack_workspaces] do
+    for sub <- [:connected_accounts, :projects, :workflows, :linear_workspaces, :slack_workspaces] do
       html =
         render_component(&Nav.nav/1,
           current_section: sub,
           attention_count: 0
         )
 
-      assert html =~ "id=\"nav-settings\""
+      assert html =~ ~r/id="nav-settings"[^>]*data-active="true"/
     end
   end
 
@@ -204,6 +204,7 @@ defmodule RailWeb.Components.NavTest do
       {:settings, "Settings"},
       {:connected_accounts, "Settings"},
       {:projects, "Settings"},
+      {:workflows, "Settings"},
       {:users, "Settings"},
       {:roles, "Settings"},
       {:tasks, "Task"},

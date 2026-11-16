@@ -53,8 +53,25 @@ defmodule Rail.Workflows.Actions.SetWorkflowPausedTest do
     assert %Workflow{paused: true} = Repo.get!(Workflow, workflow_id)
   end
 
-  test "someone who is not an admin is refused", %{workflow: %{id: workflow_id} = workflow} do
-    assert {:error, :not_authorized} = Workflows.set_workflow_paused(user_scope(), workflow, true)
+  test "someone given the project pauses a workflow, and it is announced", %{
+    project: %{id: project_id},
+    workflow: %{id: workflow_id} = workflow
+  } do
+    member = user_scope(project_ids: [project_id])
+
+    assert {:ok, %Workflow{id: ^workflow_id, paused: true}} = Workflows.set_workflow_paused(member, workflow, true)
+    assert_receive {:workflows_changed, ^project_id}
+  end
+
+  test "someone without the project is refused as not found, and nothing changes or is announced", %{
+    project: %{id: project_id},
+    github_project: github,
+    workflow: %{id: workflow_id} = workflow
+  } do
+    outsider = user_scope(project_ids: [github.id])
+
+    assert {:error, :not_found} = Workflows.set_workflow_paused(outsider, workflow, true)
     assert %Workflow{paused: false} = Repo.get!(Workflow, workflow_id)
+    refute_receive {:workflows_changed, ^project_id}, 50
   end
 end
