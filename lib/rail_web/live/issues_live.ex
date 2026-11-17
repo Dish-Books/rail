@@ -686,11 +686,14 @@ defmodule RailWeb.IssuesLive do
 
     socket =
       case result do
+        {:ok, {:ok, %Task{}}} ->
+          socket
+
+        {:ok, {:error, :not_found}} ->
+          socket
+
         {:ok, {:error, message}} when is_binary(message) ->
           put_flash(socket, :error, "#{identifier} did not start. #{message}")
-
-        {:ok, _started_or_gone} ->
-          socket
 
         {:exit, _reason} ->
           put_flash(socket, :error, "#{identifier} did not finish starting. Try again.")

@@ -23,11 +23,12 @@ defmodule RailWeb.IssueLive do
 
   def mount(_params, _session, socket) do
     # Workflows too, since the byline names the workflow that opened the issue, and Rail's cycles, which the nightly
-    # run moves issues between without a word on "issues".
+    # run moves issues between without a word on "issues". "pipeline" carries the Task section's stage and run.
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
       Phoenix.PubSub.subscribe(Rail.PubSub, "workflows")
       Phoenix.PubSub.subscribe(Rail.PubSub, "cycles")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
     end
 
     socket =
@@ -87,8 +88,9 @@ defmodule RailWeb.IssueLive do
 
     socket =
       case start_issue(socket.assigns.current_scope, issue_id) do
+        {:ok, %Task{}} -> load_issue(socket, issue_id)
+        {:error, :not_found} -> load_issue(socket, issue_id)
         {:error, message} when is_binary(message) -> socket |> put_flash(:error, message) |> load_issue(issue_id)
-        _started_or_gone -> load_issue(socket, issue_id)
       end
 
     {:noreply, socket}
@@ -110,6 +112,13 @@ defmodule RailWeb.IssueLive do
   end
 
   def handle_info({:issue_comments_changed, _other_issue_id}, socket), do: {:noreply, socket}
+
+  # A run admitted, finished or waiting on a person is said only on "pipeline", and the Task section shows it.
+  def handle_info({:pipeline_changed, task_id}, %{assigns: %{issue: %Issue{task: %Task{id: task_id}}}} = socket) do
+    {:noreply, load_issue(socket, socket.assigns.issue.id)}
+  end
+
+  def handle_info({:pipeline_changed, _other_task_id}, socket), do: {:noreply, socket}
 
   # The tracker may have closed the issue, which takes away the offer to start it, or changed its parent, a sub-issue
   # or a blocker. Linear sends nothing for a relation, so blockers are read again when this issue or one changes.

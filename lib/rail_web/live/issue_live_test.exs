@@ -445,6 +445,40 @@ defmodule RailWeb.IssueLiveTest do
     refute has_element?(view, "#issue-start")
   end
 
+  test "after Start, the issue page's Task section follows the run with no reload", %{conn: conn, project: project} do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_follow",
+        identifier: "IPG-31",
+        title: "Follow me",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    allow(Git, self(), view.pid)
+    allow(Tools, self(), view.pid)
+    render_async(view)
+    view |> element("#issue-start-plan") |> render_click()
+
+    assert %Task{id: task_id} = Repo.get_by(Task, issue_id: issue.id)
+    assert has_element?(view, "#issue-task-link", "Plan running")
+
+    send(view.pid, {:pipeline_changed, "tsk_elsewhere"})
+    assert has_element?(view, "#issue-task-link", "Plan running")
+
+    # The real writer, which says so on "pipeline".
+    assert {:ok, %Run{status: :waiting_for_resources}} =
+             Run |> Repo.get_by!(task_id: task_id) |> Pipeline.update_run(%{status: :waiting_for_resources})
+
+    assert has_element?(view, "#issue-task-link", "Plan waiting for resources")
+  end
+
   test "an in-progress issue with no task can still be started at Plan from its page", %{
     conn: conn,
     project: project

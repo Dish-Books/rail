@@ -2587,6 +2587,7 @@ defmodule RailWeb.IssuesLiveTest do
       render_async(view)
       render_async(second)
 
+      assert has_element?(view, "#issue-start-#{ready_id}[phx-hook=StartFocus][data-chip='task-link-#{ready_id}']")
       view |> element("#issue-start-#{ready_id}") |> render_click()
       assert_receive {:git, ^ready_id, git}
 

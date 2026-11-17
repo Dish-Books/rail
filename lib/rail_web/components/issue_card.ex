@@ -200,6 +200,8 @@ defmodule RailWeb.Components.IssueCard do
           :if={@show_start}
           type="button"
           id={"issue-start-#{@key}"}
+          phx-hook="StartFocus"
+          data-chip={"task-link-#{@issue.id}"}
           phx-click="start_issue"
           phx-value-issue_id={@issue.id}
           aria-label={"#{@start_label} #{@issue.identifier}"}
