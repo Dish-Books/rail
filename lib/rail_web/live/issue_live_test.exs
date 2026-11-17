@@ -413,7 +413,10 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-task-link", "Ready for tech lead")
   end
 
-  test "an issue with no task can be started from its page", %{conn: conn, project: project} do
+  test "an issue with no task can be started from its page, which stays put and shows the task", %{
+    conn: conn,
+    project: project
+  } do
     issue =
       %Issue{}
       |> Issue.tracker_changeset(%{
@@ -440,10 +443,78 @@ defmodule RailWeb.IssueLiveTest do
     refute has_element?(view, "#issue-task-link")
 
     render_async(view)
+    assert has_element?(view, "#issue-start-plan[phx-hook=StartFocus][data-chip=issue-task-link]")
     view |> element("#issue-start-plan") |> render_click()
 
     assert %Task{id: task_id, stage: :plan} = Repo.get_by(Task, issue_id: issue.id)
-    assert_redirect(view, ~p"/tasks/#{task_id}")
+    refute_redirected(view)
+    assert has_element?(view, "#issue-task-link[href='/tasks/#{task_id}']", "Plan")
+    refute has_element?(view, "#issue-start")
+  end
+
+  test "after Start, the issue page's Task section follows the run with no reload", %{conn: conn, project: project} do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_follow",
+        identifier: "IPG-31",
+        title: "Follow me",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    allow(Git, self(), view.pid)
+    allow(Tools, self(), view.pid)
+    render_async(view)
+    view |> element("#issue-start-plan") |> render_click()
+
+    assert %Task{id: task_id} = Repo.get_by(Task, issue_id: issue.id)
+    assert has_element?(view, "#issue-task-link", "Plan running")
+
+    send(view.pid, {:pipeline_changed, "tsk_elsewhere"})
+    assert has_element?(view, "#issue-task-link", "Plan running")
+
+    # The real writer, which says so on "pipeline".
+    assert {:ok, %Run{status: :waiting_for_resources}} =
+             Run |> Repo.get_by!(task_id: task_id) |> Pipeline.update_run(%{status: :waiting_for_resources})
+
+    assert has_element?(view, "#issue-task-link", "Plan waiting for resources")
+  end
+
+  test "Start on an issue closed since the page opened starts nothing and the page shows it closed", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_closed",
+        identifier: "IPG-32",
+        title: "Closed meanwhile",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    reject(&Git.get_or_create_worktree/2)
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    render_async(view)
+    assert has_element?(view, "#issue-start-plan")
+
+    # Closed in the tracker with no word to this page yet.
+    issue |> Issue.tracker_changeset(%{state: :done}) |> Repo.update!()
+    view |> element("#issue-start-plan") |> render_click()
+
+    refute Repo.get_by(Task, issue_id: issue.id)
+    refute_redirected(view)
+    refute has_element?(view, "#issue-start")
+    refute has_element?(view, "#flash-error")
   end
 
   test "an in-progress issue with no task can still be started at Plan from its page", %{
@@ -476,7 +547,9 @@ defmodule RailWeb.IssueLiveTest do
     view |> element("#issue-start-plan") |> render_click()
 
     assert %Task{id: task_id, stage: :plan} = Repo.get_by(Task, issue_id: issue.id)
-    assert_redirect(view, ~p"/tasks/#{task_id}")
+    refute_redirected(view)
+    assert has_element?(view, "#issue-task-link[href='/tasks/#{task_id}']", "Plan")
+    refute has_element?(view, "#issue-start")
   end
 
   test "a second page on an issue shows the new owner and drops Start when someone starts it", %{
@@ -545,7 +618,7 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(second, "#issue-task-link", "Implement running")
   end
 
-  test "a stale page whose issue has since started opens the task and leaves its run alone", %{
+  test "a stale page whose issue has since started shows the task, and starts nothing", %{
     conn: conn,
     project: project
   } do
@@ -569,7 +642,10 @@ defmodule RailWeb.IssueLiveTest do
 
     view |> element("#issue-start-plan") |> render_click()
 
-    assert_redirect(view, ~p"/tasks/#{task.id}")
+    refute_redirected(view)
+    assert has_element?(view, "#issue-task-link[href='/tasks/#{task.id}']")
+    refute has_element?(view, "#issue-start")
+    refute has_element?(view, "#flash-error")
   end
 
   test "an issue offers one Start at Plan button, where every task begins", %{conn: conn, project: project} do
@@ -676,10 +752,13 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-pull-request[href='https://github.com/org/app/pull/41']", "#41")
     assert has_element?(view, "#issue-pull-request", "Vendor filter")
 
+    assert has_element?(view, "#issue-start-review[phx-hook=StartFocus][data-chip=issue-task-link]")
     view |> element("#issue-start-review") |> render_click()
 
     assert %Task{id: task_id, stage: :review} = Repo.get_by(Task, issue_id: issue.id)
-    assert_redirect(view, ~p"/tasks/#{task_id}")
+    refute_redirected(view)
+    assert has_element?(view, "#issue-task-link[href='/tasks/#{task_id}']")
+    refute has_element?(view, "#issue-start-review")
   end
 
   test "an issue with a linked pull request offers Review without asking GitHub again", %{

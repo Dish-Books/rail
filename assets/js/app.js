@@ -26,6 +26,7 @@ import { MenuKeys } from "./hooks/menu_keys";
 import { ScrollSelectedTab } from "./hooks/scroll_selected_tab";
 import { Shortcuts } from "./hooks/shortcuts";
 import { SidebarResize } from "./hooks/sidebar_resize";
+import { StartFocus } from "./hooks/start_focus";
 import { StatusMenu } from "./hooks/status_menu";
 import { Theme } from "./hooks/theme";
 import { recordDrops } from "./socket_drops";
@@ -57,7 +58,8 @@ const Hooks = {
   StatusMenu,
   MenuKeys,
   IssueTitle,
-  IssueDescription
+  IssueDescription,
+  StartFocus
 };
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content");
