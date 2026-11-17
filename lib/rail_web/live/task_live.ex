@@ -7,7 +7,8 @@ defmodule RailWeb.TaskLive do
   are in the URL, so a refresh comes back to them.
 
   The conversation takes messages for Plan until its plan is approved, for a custom stage beside its file until that
-  is approved, then for the review agent; every other agent's run is read there as the record of what it did.
+  is approved, for the curator beside the Learnings item until the task merges, then for the review agent; every
+  other agent's run is read there as the record of what it did.
 
   The page owns what the components cannot: the subscriptions. A LiveComponent may not subscribe, so log lines
   arrive here and are forwarded to the conversation, and a saved output to the open item, with `send_update/2`.
@@ -59,6 +60,7 @@ defmodule RailWeb.TaskLive do
   # The items the URL can name, and `stage-<position>` for a custom stage; any other opens what the task waits on.
   @items ["issue", "plan", "children", "comments", "findings", "fix_plan", "diff", "screens", "demo", "browser"]
   @plan_closed "Only Plan, and then the review agent, take messages. This is a record of what this agent did."
+  @learnings_closed "This task is merged, so this conversation is closed."
 
   # The agents whose runs the conversation reads, in the order a task meets them.
   @agents [:plan, :engineer, :qa, :review, :demo, :review_lead]
@@ -141,6 +143,8 @@ defmodule RailWeb.TaskLive do
       Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
       # The header names the workflow, which its file renames.
       Phoenix.PubSub.subscribe(Rail.PubSub, "workflows")
+      # The Learnings item and the header's Approve and Merge read the task's proposals.
+      Phoenix.PubSub.subscribe(Rail.PubSub, "learnings")
     end
 
     {:ok, socket}
@@ -620,6 +624,15 @@ defmodule RailWeb.TaskLive do
 
   def handle_info({:workflows_changed, _project_id}, socket), do: {:noreply, socket}
 
+  # A proposal was saved or decided, here or anywhere; only the Learnings item and the header read it again.
+  def handle_info({:learnings_changed, project_id}, %{assigns: %{task: %Task{project_id: project_id} = task}} = socket) do
+    send_update(TaskDetail, id: "task-detail", reload_learnings: true)
+    send_update(TaskActions, id: "task-actions", task: task)
+    {:noreply, socket}
+  end
+
+  def handle_info({:learnings_changed, _another_project}, socket), do: {:noreply, socket}
+
   # A child's issue completing in Linear is what merges it. The open Issue tab follows its parent, sub-issues and
   # blockers, and reads blockers again when its issue or one of them changes, since Linear sends nothing for those.
   def handle_info({event, issue_id}, socket) when event in [:issue_changed, :issue_created] do
@@ -1055,12 +1068,15 @@ defmodule RailWeb.TaskLive do
         item in [:plan, :fix_plan] ->
           {picked, picked != nil and picked != chat_run, @plan_closed}
 
+        item == :learnings ->
+          {runs[:curator], task.merged_at != nil, @learnings_closed}
+
         true ->
           {chat_run, false, @plan_closed}
       end
 
     socket
-    |> assign(:beside, item in [:plan, :fix_plan] or is_binary(item))
+    |> assign(:beside, item in [:plan, :fix_plan, :learnings] or is_binary(item))
     |> assign(:sidebar_run, run)
     |> assign(:sidebar_closed, closed)
     |> assign(:sidebar_closed_reason, reason)
@@ -1183,6 +1199,13 @@ defmodule RailWeb.TaskLive do
   # The conversation was an item of its own; it is the Plan item's sidebar now.
   defp open_item("conversation", %Task{}, _parent), do: :plan
   defp open_item(item, %Task{}, _parent) when item in @items, do: String.to_existing_atom(item)
+
+  # The Learnings item is there once the curator has a run.
+  defp open_item("learnings", %Task{runs: runs} = task, parent) do
+    if Enum.any?(runs, &match?(%Run{role: %Role{stage: :curator}}, &1)),
+      do: :learnings,
+      else: open_item(nil, task, parent)
+  end
 
   defp open_item("stage-" <> _number = item, %Task{} = task, parent) do
     case custom_stage_item(task.issue, item) do

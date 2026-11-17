@@ -57,6 +57,17 @@ defmodule Rail.Pipeline.Actions.UpdateBranchTest do
     assert_received {:pipeline_changed, ^task_id}
   end
 
+  # The curator reads the task and changes nothing, so it holds no Update back.
+  test "a curator mid-turn does not hold Update back", %{project: project, task: task, ada: ada} do
+    {:ok, curator} = Roles.get_role(project_id: project.id, stage: :curator)
+
+    {:ok, _reading} =
+      Pipeline.create_run(%{task_id: task.id, role_id: curator.id, status: :running, started_at: DateTime.utc_now()})
+
+    {:ok, at_finalize} = Pipeline.update_task(task, %{stage: :finalize})
+    assert {:ok, %Round{number: 2}} = Pipeline.update_branch(ada, at_finalize)
+  end
+
   test "a branch that merges cleanly is still brought up to date, with nothing named in conflict", %{
     task: task,
     ada: ada

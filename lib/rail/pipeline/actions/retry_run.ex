@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.RetryRun do
   @moduledoc """
-  Retry on an agent run that failed: the engineer at Engineer, a custom stage's agent at its stage, or one of the
-  agents checking the round at Review.
+  Retry on an agent run that failed: the engineer at Engineer, a custom stage's agent at its stage, one of the
+  agents checking the round at Review, or the curator at Finalize.
   The engineer and the review agent pick their conversation up again where it has one; a check starts over on a
   clean one, since a check is only worth what it read of the round. Nothing else starts until a failed check runs
   again, so this is how a round stalled on one goes on. QA skipped on a round that changed nothing a person sees is
@@ -17,7 +17,7 @@ defmodule Rail.Pipeline.Actions.RetryRun do
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
 
-  @retryable %{engineer: [:engineer], review: [:qa, :review, :demo, :review_lead]}
+  @retryable %{engineer: [:engineer], review: [:qa, :review, :demo, :review_lead], finalize: [:curator]}
   @checks [:qa, :review, :demo]
 
   @doc """
@@ -28,7 +28,7 @@ defmodule Rail.Pipeline.Actions.RetryRun do
   def retry_run(%Scope{} = scope, %Run{id: run_id, task_id: task_id}) do
     # Under the task's lock, so a run Discard or Back to Plan deletes cannot be started again around it.
     with_task_lock(task_id, fn ->
-      case Run |> Repo.get(run_id) |> Repo.preload([:role, :questions, task: :runs]) do
+      case Run |> Repo.get(run_id) |> Repo.preload([:role, :questions, task: [runs: :role]]) do
         %Run{} = run -> retry(scope, run)
         nil -> {:error, :not_retryable}
       end

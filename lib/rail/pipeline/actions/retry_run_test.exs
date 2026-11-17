@@ -102,6 +102,22 @@ defmodule Rail.Pipeline.Actions.RetryRunTest do
     assert {:ok, %Run{id: ^run_id}} = Pipeline.retry_run(system_scope(), failed)
   end
 
+  test "a failed curator at Finalize starts again in its own conversation, and the review agent is left alone", %{
+    task: task,
+    run: run
+  } do
+    {:ok, _finalize} = Pipeline.update_task(task, %{stage: :finalize, marked_ready_at: DateTime.utc_now()})
+    %Run{id: lead_id} = run.(:review_lead, %{stage_outcome: :done, conversation_id: "sess_lead"})
+    %Run{id: curator_id} = curator = run.(:curator, %{error: "Exited with code 1", conversation_id: "sess_curator"})
+
+    expect(Tools, :start_os_process, fn %Run{id: ^curator_id, conversation_id: "sess_curator"} = spawned, _argv ->
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{id: ^curator_id, status: :running}} = Pipeline.retry_run(system_scope(), curator)
+    assert %Run{status: :finished, stage_outcome: :done} = Repo.get!(Run, lead_id)
+  end
+
   test "a run deleted while the retry waited on the task's lock is not retried", %{task: task, run: run} do
     %Run{id: lead_id} = lead = run.(:review_lead, %{error: "It broke.", conversation_id: "sess_lead"})
     reject(Tools, :start_os_process, 2)

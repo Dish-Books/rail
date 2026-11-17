@@ -8,6 +8,7 @@ defmodule Rail.Learnings.Schemas.LearningProposal do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Learnings.Schemas.CuratorPass
   alias Rail.Learnings.Schemas.Learning
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Users.Schemas.User
 
@@ -36,13 +37,15 @@ defmodule Rail.Learnings.Schemas.LearningProposal do
     belongs_to :issue, Issue
     belongs_to :decided_by, User
     belongs_to :curator_pass, CuratorPass
+    # The task whose curator conversation proposed it; nil for the daily pass's.
+    belongs_to :task, Task
 
     timestamps()
   end
 
   @doc """
-  Builds a changeset for a proposal. The project, its status and who decided it
-  are set by the caller.
+  Builds a changeset for a proposal. The project, its task, its status and who
+  decided it are set by the caller.
   """
   def changeset(proposal, attrs) do
     proposal

@@ -8,7 +8,7 @@ defmodule RailWeb.Live.TaskActions do
   - a branch the default branch has moved past: Update, which merges it in as a round of its own;
   - a round QA skipped as changing nothing a person sees: Run QA anyway;
   - a review with nothing left to fix: Ready for review, then a tech lead's Approve and Merge, none of them while
-    the review agent works or its fix plan waits.
+    the review agent works or its fix plan waits, and Approve and Merge not until the task's learnings are decided.
 
   A later round's plan is approved where it is read, beside it, so it is not here.
   """
@@ -209,12 +209,22 @@ defmodule RailWeb.Live.TaskActions do
         <.icon name="pi-check-circle-fill" class="size-3.5" />Approved by you
       </span>
 
+      <span
+        :if={@learnings_gate}
+        id="task-learnings-gate"
+        data-qa="task_learnings_gate"
+        class="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300"
+      >
+        <.icon name="pi-lightbulb-fill" class="size-3.5" />{@learnings_gate}
+      </span>
+
       <.button
         :if={@state in [:ready, :merging, :refused] and @tech_lead and !@own_approval}
         id="task-approve"
         phx-click="approve"
         phx-target={@myself}
-        disabled={@approving}
+        disabled={@approving or @learnings_gate != nil}
+        title={@learnings_gate}
       >
         <.icon
           name={if @approving, do: "pi-circle-notch", else: "pi-check-bold"}
@@ -229,8 +239,8 @@ defmodule RailWeb.Live.TaskActions do
         variant="primary"
         phx-click="merge"
         phx-target={@myself}
-        disabled={@state == :merging or @merging}
-        title={"Squash into #{@task.project.default_branch}"}
+        disabled={@state == :merging or @merging or @learnings_gate != nil}
+        title={@learnings_gate || "Squash into #{@task.project.default_branch}"}
       >
         <.icon
           name={if @state == :merging or @merging, do: "pi-circle-notch", else: "pi-git-merge"}
@@ -401,6 +411,7 @@ defmodule RailWeb.Live.TaskActions do
     |> assign(:plan, plan_actions(task, socket.assigns[:rounds] || Pipeline.list_rounds(task), scope, tech_lead))
     |> assign_unsent_comments()
     |> assign(:update, task.stage in [:review, :finalize] and task.base_behind and is_nil(task.cleaned_up_at))
+    |> assign(:learnings_gate, if(state in [:ready, :refused], do: gate(Pipeline.check_learnings(task))))
     |> assign(
       :tech_leads,
       if(tech_lead or state in [nil, :not_ready, :merged], do: [], else: Users.list_tech_leads(task.project_id))
@@ -519,6 +530,14 @@ defmodule RailWeb.Live.TaskActions do
     {:noreply, assign(socket, :error, message(reason))}
   end
 
+  defp gate(:ok), do: nil
+  defp gate({:error, reason}), do: learnings_message(reason)
+
+  defp learnings_message({:learnings_open, 1}), do: "Decide 1 learning to approve or merge"
+  defp learnings_message({:learnings_open, count}), do: "Decide #{count} learnings to approve or merge"
+  defp learnings_message(:curator_running), do: "The curator is reading this task"
+  defp learnings_message(:curator_failed), do: "The curator failed. Retry it in Learnings"
+
   defp unsent(1), do: "Send or remove your unsent comment first."
   defp unsent(count), do: "Send or remove your #{count} unsent comments first."
 
@@ -565,6 +584,9 @@ defmodule RailWeb.Live.TaskActions do
   defp message(reason), do: "That did not go through: #{inspect(reason)}"
   # coveralls-ignore-stop
 
+  # A page loaded before the curator saved can still click, and is told what the line beside the buttons says.
+  defp merge_message({:learnings_open, _count} = reason), do: learnings_message(reason)
+  defp merge_message(reason) when reason in [:curator_running, :curator_failed], do: learnings_message(reason)
   defp merge_message(:not_authorized), do: "Only a tech lead can merge a task."
   defp merge_message(:not_ready), do: "Mark the task ready for review before merging it."
   defp merge_message(:plan_not_approved), do: "A tech lead approves the plan before the task merges."
@@ -574,6 +596,8 @@ defmodule RailWeb.Live.TaskActions do
   defp merge_message(:no_github_token), do: "Connect GitHub in Connected accounts to merge. Nothing was sent."
   defp merge_message({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Finalize."
 
+  defp approve_message({:learnings_open, _count} = reason), do: learnings_message(reason)
+  defp approve_message(reason) when reason in [:curator_running, :curator_failed], do: learnings_message(reason)
   defp approve_message({:approve_refused, said}), do: "GitHub refused the approval: #{said}"
   defp approve_message(:no_github_token), do: "Connect GitHub in Connected accounts to approve. Nothing was sent."
   defp approve_message(:not_authorized), do: "Only a tech lead can approve a task."

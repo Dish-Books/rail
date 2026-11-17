@@ -24,6 +24,8 @@ defmodule RailWeb.Live.TaskActionsTest do
     # would spawn git: these pages see nothing on the default branch, as when there is no clone.
     stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
     stub(Git, :list_default_branch_paths, fn _project, paths -> if paths == [], do: MapSet.new() end)
+    # Marking a task ready queues its curator, whose hold on Approve and Merge is tested on its own below.
+    stub(Pipeline, :check_learnings, fn _task -> :ok end)
 
     id = System.unique_integer([:positive])
 
@@ -727,6 +729,94 @@ defmodule RailWeb.Live.TaskActionsTest do
       assert has_element?(view, "#task-actions-error", "The approval did not finish. Try again.")
       assert has_element?(view, "#task-approve:not([disabled])", "Approve")
     end)
+  end
+
+  describe "the task's learnings" do
+    setup %{project: project, task: task} do
+      stub(Pipeline, :check_learnings, &Mimic.call_original(Pipeline, :check_learnings, [&1]))
+      {:ok, task} = Pipeline.update_task(task, %{marked_ready_at: DateTime.utc_now()})
+      {:ok, curator} = Roles.get_role(project_id: project.id, stage: :curator)
+
+      {:ok, curator_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: curator.id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.utc_now()
+        })
+
+      %{task: task, curator_run: curator_run}
+    end
+
+    test "hold Approve and Merge with how many are left, and let them go without a reload once the last is decided",
+         %{conn: conn, task: task, priya: priya} do
+      {:ok, first} = Rail.Learnings.save_task_proposal(task, %{action: "add", rule: "Lock it.", kind: "qa"})
+      {:ok, second} = Rail.Learnings.save_task_proposal(task, %{action: "add", rule: "Broadcast.", kind: "qa"})
+      assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#task-learnings-gate", "Decide 2 learnings to approve or merge")
+      assert has_element?(view, "#task-approve[disabled][title='Decide 2 learnings to approve or merge']")
+      assert has_element?(view, "#task-merge[disabled][title='Decide 2 learnings to approve or merge']")
+
+      # Each decision is heard on the page, which updates the header after the next read of it.
+      {:ok, _approved} = Rail.Learnings.approve_learning_proposal(Scope.for_user(priya), first)
+      eventually(fn -> assert has_element?(view, "#task-learnings-gate", "Decide 1 learning to approve or merge") end)
+
+      {:ok, _rejected} = Rail.Learnings.reject_learning_proposal(Scope.for_user(priya), second)
+
+      eventually(fn ->
+        refute has_element?(view, "#task-learnings-gate")
+        assert has_element?(view, "#task-approve:not([disabled])", "Approve")
+        assert has_element?(view, "#task-merge:not([disabled])[title='Squash into main']", "Merge")
+      end)
+    end
+
+    test "say the curator is reading the task, or failed, and Update stays", %{
+      conn: conn,
+      task: task,
+      priya: priya,
+      curator_run: curator_run
+    } do
+      {:ok, behind} = Pipeline.update_task(task, %{base_behind: true})
+      {:ok, reading} = Pipeline.update_run(curator_run, %{status: :running, stage_outcome: :in_progress})
+      assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{behind.id}")
+      assert has_element?(view, "#task-learnings-gate", "The curator is reading this task")
+      assert has_element?(view, "#task-merge[disabled]")
+      assert has_element?(view, "#task-update:not([disabled])")
+
+      {:ok, _failed} = Pipeline.update_run(reading, %{status: :failed, error: "Exited with code 1"})
+      assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#task-learnings-gate", "The curator failed. Retry it in Learnings")
+    end
+
+    # A click sent from a page drawn before the curator saved is refused with the same words.
+    test "an Approve or Merge sent past the held buttons is refused with what is left, and nothing reaches GitHub", %{
+      conn: conn,
+      task: task,
+      priya: priya,
+      curator_run: curator_run
+    } do
+      {:ok, _proposal} = Rail.Learnings.save_task_proposal(task, %{action: "add", rule: "Lock it.", kind: "qa"})
+      assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
+
+      for event <- ["merge", "approve"] do
+        view |> with_target("#task-actions") |> render_click(event, %{})
+
+        eventually(fn ->
+          assert has_element?(view, "#task-actions-error", "Decide 1 learning to approve or merge")
+        end)
+      end
+
+      {:ok, _reading} = Pipeline.update_run(curator_run, %{status: :running, stage_outcome: :in_progress})
+
+      for event <- ["approve", "merge"] do
+        view |> with_target("#task-actions") |> render_click(event, %{})
+        eventually(fn -> assert has_element?(view, "#task-actions-error", "The curator is reading this task") end)
+      end
+
+      assert %Task{merge_started_at: nil, merged_at: nil} = Repo.reload!(task)
+    end
   end
 
   # Each is a page drawn before another tab moved the task on, or an event sent past the hidden button.

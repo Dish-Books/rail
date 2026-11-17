@@ -43,6 +43,9 @@ defmodule Rail.Mcp.Utils.McpTools do
 
   `@question_tools` are how a lead asks the human: the round it asks in a turn is shown when the turn ends.
 
+  `@learnings_tools` are the curator's on a task: `save_learning_proposal` proposes a rule change from it, or
+  revises one of its own still pending.
+
   `@knowledge_tools` are offered to every role: `knowledge_search` reads the
   rules the project has learned, which no stage should have to guess at.
 
@@ -58,6 +61,7 @@ defmodule Rail.Mcp.Utils.McpTools do
   setup between beats starts, so the voiced video leaves it out.
   """
 
+  alias Rail.Learnings.Schemas.Learning
   alias Rail.Roles.Schemas.Role
 
   @browser %{
@@ -627,6 +631,42 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   ]
 
+  @learnings_tools [
+    %{
+      "name" => "save_learning_proposal",
+      "description" =>
+        "Propose a change to the project's rules from this task: `add` a new rule, `rewrite` the active rule in " <>
+          "`target` with new wording, or `retire` the active rule in `target`. A person approves or rejects it " <>
+          "beside your conversation. Pass `proposal` with the id an earlier save returned to change that proposal " <>
+          "instead, giving only what changes; one a person already decided can no longer change.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "action" => %{"type" => "string", "enum" => ["add", "rewrite", "retire"]},
+          "proposal" => %{"type" => "string", "description" => "The id of your proposal to change, `lpr_...`."},
+          "target" => %{
+            "type" => "string",
+            "description" => "For rewrite and retire, the active rule's id from rules.md."
+          },
+          "title" => %{"type" => "string", "description" => "One line saying what this changes."},
+          "summary" => %{"type" => "string", "description" => "A few words on why, from this task."},
+          "rule" => %{"type" => "string", "description" => "For add and rewrite, the rule as one instruction."},
+          "why" => %{"type" => "string", "description" => "What breaks without it."},
+          "kind" => %{"type" => "string", "enum" => Enum.map(Learning.kinds(), &Atom.to_string/1)},
+          "roles" => %{
+            "type" => "array",
+            "items" => %{"type" => "string", "enum" => Enum.map(Learning.roles(), &Atom.to_string/1)},
+            "description" => "The roles it applies to; leave it out for every role."
+          },
+          "path_glob" => %{
+            "type" => "string",
+            "description" => "Scopes the rule to files, such as `lib/rail_web/**`."
+          }
+        }
+      }
+    }
+  ]
+
   @question_tools [
     %{
       "name" => "ask_questions",
@@ -711,7 +751,8 @@ defmodule Rail.Mcp.Utils.McpTools do
   @doc """
   The tools Rail serves this run itself: the save tools each agent hands its output over with, the browser for
   the three that drive the app, `ask_questions` for the agents a person talks to, and the knowledge base and the
-  project's tickets for all. A custom stage's role saves its file with `save_stage_output`.
+  project's tickets for all. A custom stage's role saves its file with `save_stage_output`, and the curator on a
+  task its proposals with `save_learning_proposal`.
   """
   def mcp_tools(%Role{stage: :plan}),
     do: @design_tools ++ @plan_tools ++ @question_tools ++ @knowledge_tools ++ @issue_tools
@@ -727,6 +768,8 @@ defmodule Rail.Mcp.Utils.McpTools do
 
   def mcp_tools(%Role{stage: :review_lead}),
     do: @review_lead_tools ++ @design_tools ++ @question_tools ++ @knowledge_tools ++ @issue_tools
+
+  def mcp_tools(%Role{stage: :curator}), do: @learnings_tools ++ @knowledge_tools ++ @issue_tools
 
   def mcp_tools(%Role{custom_stage: name}) when is_binary(name),
     do: @stage_output_tools ++ @question_tools ++ @knowledge_tools ++ @issue_tools

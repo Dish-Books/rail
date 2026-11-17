@@ -1129,6 +1129,28 @@ defmodule RailWeb.Live.RunConversation do
         </button>
       </div>
 
+      <!-- A failed curator holds Approve and Merge, so its Retry shows though a message would resume it too. -->
+      <div
+        :if={@can_retry and not @is_unavailable}
+        id="failed-banner"
+        data-qa="failed-banner"
+        class="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-900 text-xs text-red-700 dark:text-red-300 mb-3"
+      >
+        <.icon name="pi-warning-circle" class="mt-0.5 h-4 w-4 shrink-0" />
+        <span class="min-w-0 flex-1 break-words">{@run.error || "#{@role_name} failed."}</span>
+        <button
+          type="button"
+          id="retry-run"
+          data-qa="retry-run"
+          phx-click="retry_run"
+          phx-target={@target}
+          class="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors cursor-pointer shrink-0 focus-visible:outline-2 focus-visible:outline-blue-500"
+        >
+          <.icon name="pi-arrows-clockwise" class="h-3.5 w-3.5 shrink-0" />
+          <span>Retry</span>
+        </button>
+      </div>
+
       <!-- Input Row: Enter sends, Shift+Enter writes a newline. -->
       <form
         id="chat-composer-form"
@@ -1271,14 +1293,16 @@ defmodule RailWeb.Live.RunConversation do
 
   # With no conversation there is nothing a message could resume, so the stage is
   # entered again: the run goes back to running and its role starts on the brief.
+  # The curator works no stage, so entering it again would start the review agent; its Retry starts it instead.
   # Read again, so a task Discard or Back to Plan erased since this page drew starts nothing.
   def handle_event("retry_run", _params, socket) do
-    %{task: %{id: task_id}, selected_run: %Run{id: run_id}, roles_map: roles_map} = socket.assigns
+    %{task: %{id: task_id}, selected_run: %Run{id: run_id}, roles_map: roles_map, current_scope: scope} =
+      socket.assigns
 
     with {:ok, task} <- Pipeline.get_task(task_id),
          %Run{} = run <- Enum.find(task.runs, &(&1.id == run_id)),
-         true <- retryable?(run, task, roles_map) do
-      {:ok, %Run{} = run} = Pipeline.enter_stage(task, Task.current_stage(task))
+         true <- retryable?(run, task, roles_map),
+         {:ok, %Run{} = run} <- retry(scope, run, task, roles_map) do
       {:noreply, select(socket, run)}
     else
       _gone_or_not_retryable -> {:noreply, socket}
@@ -1899,8 +1923,19 @@ defmodule RailWeb.Live.RunConversation do
   # Only the stage the task is in can be entered again without moving the task.
   # The run belongs to the stage the task is at, Review's being the Review lead's.
   defp retryable?(%Run{role_id: role_id} = run, %Task{} = task, %{} = roles_map) do
-    not Run.running?(run) and not Run.resumable?(run) and match?(%Role{}, roles_map[role_id]) and
-      Task.works_stage?(task, roles_map[role_id])
+    if curator?(run, roles_map),
+      do: task.stage == :finalize and is_nil(task.merged_at) and Run.state(run) == :failed,
+      else:
+        not Run.running?(run) and not Run.resumable?(run) and match?(%Role{}, roles_map[role_id]) and
+          Task.works_stage?(task, roles_map[role_id])
+  end
+
+  defp curator?(%Run{role_id: role_id}, roles_map), do: match?(%Role{stage: :curator}, roles_map[role_id])
+
+  defp retry(scope, %Run{} = run, %Task{} = task, roles_map) do
+    if curator?(run, roles_map),
+      do: Pipeline.retry_run(scope, run),
+      else: Pipeline.enter_stage(task, Task.current_stage(task))
   end
 
   defp restore_draft(nil, draft), do: draft

@@ -37,6 +37,22 @@ defmodule Rail.Learnings.Actions.ApproveLearningProposalTest do
     assert_received {:learnings_changed, ^project_id}
   end
 
+  test "a task's approved proposal leaves the queue and stays on the task's list with who approved it", %{
+    project: project,
+    scope: scope,
+    user_id: user_id
+  } do
+    task = learnings_task(project, "ALP-1", :finalize)
+    {:ok, %{id: id} = proposal} = Learnings.save_task_proposal(task, %{action: "add", rule: "Lock it", kind: "qa"})
+
+    assert {:ok, %LearningProposal{status: :approved}} = Learnings.approve_learning_proposal(scope, proposal)
+    assert {:error, :already_decided} = Learnings.approve_learning_proposal(scope, proposal)
+    refute Enum.any?(Learnings.list_learning_proposals(project_id: project.id), &(&1.id == id))
+
+    assert [%LearningProposal{id: ^id, decided_by: %{id: ^user_id}, learning: %Learning{status: :active}}] =
+             Learnings.list_learning_proposals(task_id: task.id, statuses: [:pending, :approved, :rejected])
+  end
+
   test "an add on a provisional rule confirms it", %{project: project, scope: scope} do
     rule = learning(project, %{rule: "Provisional", kind: :convention}, status: :provisional)
     proposal = Repo.insert!(%LearningProposal{project_id: project.id, action: :add, learning_id: rule.id})

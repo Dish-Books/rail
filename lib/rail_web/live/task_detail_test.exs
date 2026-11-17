@@ -6,6 +6,8 @@ defmodule RailWeb.Live.TaskDetailTest do
   import Rail.Git.Utils.ParseDiff
 
   alias Rail.Git
+  alias Rail.Learnings
+  alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DemoBeat
   alias Rail.Pipeline.Schemas.Finding
@@ -1470,6 +1472,199 @@ defmodule RailWeb.Live.TaskDetailTest do
       view |> element("#send-review-tray") |> render_click()
 
       assert has_element?(view, "#review-send-tray-hint", said)
+    end
+  end
+
+  describe "the Learnings item" do
+    setup %{project: project, task: task} do
+      {:ok, task} =
+        Pipeline.update_task(task, %{stage: :finalize, pr_number: 77, marked_ready_at: DateTime.utc_now()})
+
+      {:ok, curator} = Roles.get_role(project_id: project.id, stage: :curator)
+
+      {:ok, curator_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: curator.id,
+          status: :finished,
+          stage_outcome: :done,
+          conversation_id: "sess_rst_curator",
+          started_at: DateTime.utc_now()
+        })
+
+      %{task: task, curator_run: curator_run}
+    end
+
+    test "a task with no curator run has no Learnings item, and its URL opens Findings", %{
+      conn: conn,
+      task: task,
+      curator_run: curator_run
+    } do
+      Repo.delete!(curator_run)
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
+
+      refute has_element?(view, "#review-item-learnings")
+      assert has_element?(view, "#review-pane[data-item=findings]")
+    end
+
+    test "lists each proposal as New, Rewrite or Retire with the rule it would make and the one it replaces", %{
+      conn: conn,
+      project: project,
+      task: task
+    } do
+      old = learning(project, %{rule: "Each diff comment is sent as it is written.", kind: :decision}, status: :active)
+      gone = learning(project, %{rule: "Run assets.build before QA.", kind: :environment}, status: :active)
+
+      {:ok, add} =
+        Learnings.save_task_proposal(task, %{
+          action: "add",
+          title: "Broadcast after every write",
+          rule: "Broadcast diff_comments after the transaction commits.",
+          why: "The Diff tab kept sent comments as unsent.",
+          kind: "convention",
+          roles: ["engineer", "review"],
+          path_glob: "lib/rail/pipeline/**"
+        })
+
+      {:ok, rewrite} =
+        Learnings.save_task_proposal(task, %{
+          action: "rewrite",
+          target: old.id,
+          title: "One round",
+          rule: "Diff comments go to the engineer together.",
+          kind: "decision"
+        })
+
+      {:ok, retire} =
+        Learnings.save_task_proposal(task, %{action: "retire", target: gone.id, summary: "Setup builds the assets."})
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
+
+      assert has_element?(view, "#review-item-learnings[aria-current=true][title='Learnings: 3 to decide']")
+      assert has_element?(view, "#review-item-learnings [data-qa=review_item_badge]", "3")
+      assert has_element?(view, "#plan-chat #chat-input")
+      assert has_element?(view, "#task-learnings-count", "3 proposals · 3 to decide")
+
+      assert has_element?(view, "#proposal-#{add.id}", "New")
+      assert has_element?(view, "#proposal-#{add.id} h3", "Broadcast after every write")
+
+      assert has_element?(
+               view,
+               "#proposal-#{add.id} [data-qa=proposal-draft]",
+               "Engineer, Reviewer · lib/rail/pipeline/**"
+             )
+
+      assert has_element?(view, "#proposal-#{add.id} [data-qa=proposal-draft]", "The Diff tab kept sent comments")
+      refute has_element?(view, "#proposal-#{add.id} [data-qa=proposal-removed]")
+
+      assert has_element?(view, "#proposal-#{rewrite.id}", "Rewrite")
+      assert has_element?(view, "#proposal-#{rewrite.id} [data-qa=proposal-removed]", "Each diff comment is sent")
+      assert has_element?(view, "#proposal-#{rewrite.id} [data-qa=proposal-draft]", "go to the engineer together")
+
+      assert has_element?(view, "#proposal-#{retire.id}", "Retire")
+      assert has_element?(view, "#proposal-#{retire.id} [data-qa=proposal-removed]", "Run assets.build before QA.")
+      assert has_element?(view, "#proposal-#{retire.id} [data-qa=proposal-summary]", "Setup builds the assets.")
+      refute has_element?(view, "#proposal-#{retire.id} [data-qa=proposal-draft]")
+    end
+
+    test "Approve makes the rule active and Reject changes no rule, each card then saying who decided it", %{
+      conn: conn,
+      project: project,
+      task: task
+    } do
+      {:ok, add} = Learnings.save_task_proposal(task, %{action: "add", rule: "Lock the row.", kind: "convention"})
+      old = learning(project, %{rule: "Send each comment.", kind: :decision}, status: :active)
+
+      {:ok, rewrite} =
+        Learnings.save_task_proposal(task, %{
+          action: "rewrite",
+          target: old.id,
+          rule: "Send them as one.",
+          kind: "decision"
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
+
+      view |> element("#approve-proposal-#{add.id}") |> render_click()
+      assert has_element?(view, "#proposal-#{add.id} [data-qa=proposal-approved]", "Approved by Dana")
+      refute has_element?(view, "#approve-proposal-#{add.id}")
+      assert %Learning{status: :active} = Repo.get!(Learning, add.learning_id)
+      assert has_element?(view, "#review-item-learnings [data-qa=review_item_badge]", "1")
+
+      view |> element("#reject-proposal-#{rewrite.id}") |> render_click()
+      assert has_element?(view, "#proposal-#{rewrite.id} [data-qa=proposal-rejected]", "Rejected by Dana")
+      assert %Learning{status: :active} = Repo.reload!(old)
+      assert has_element?(view, "#review-item-learnings[title='Learnings: Nothing to decide']")
+      refute has_element?(view, "#review-item-learnings [data-qa=review_item_badge]")
+    end
+
+    test "a proposal decided in another tab says so on its card and changes nothing, and another task's is left", %{
+      conn: conn,
+      project: project,
+      task: task
+    } do
+      {:ok, add} = Learnings.save_task_proposal(task, %{action: "add", rule: "Lock the row.", kind: "convention"})
+      other = learnings_task(project, "RST-2", :finalize)
+      {:ok, theirs} = Learnings.save_task_proposal(other, %{action: "add", rule: "Theirs.", kind: "qa"})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
+
+      # The other tab's broadcast redraws this card; a click sent before it landed still names the proposal.
+      {:ok, _elsewhere} = Learnings.reject_learning_proposal(system_scope(), add)
+      view |> with_target("#task-detail") |> render_click("approve_proposal", %{"id" => add.id})
+
+      assert has_element?(view, "#proposal-#{add.id} [data-qa=task-proposal-error]", "Already decided.")
+      assert has_element?(view, "#proposal-#{add.id} [data-qa=proposal-rejected]", "Rejected")
+      assert %Learning{status: :proposed} = Repo.get!(Learning, add.learning_id)
+
+      view |> with_target("#task-detail") |> render_click("approve_proposal", %{"id" => theirs.id})
+      assert {:ok, %{status: :pending}} = Learnings.get_learning_proposal(theirs.id)
+    end
+
+    test "a decision by someone with no name shows their login, and one the daily pass made shows nobody's", %{
+      conn: conn,
+      task: task
+    } do
+      {:ok, nameless} =
+        Users.register_oauth_user(%{github_id: "rst-nameless", login: "sam-ok", email: "sam-ok@rst.example"})
+
+      {:ok, first} = Learnings.save_task_proposal(task, %{action: "add", rule: "Lock the row.", kind: "qa"})
+      {:ok, second} = Learnings.save_task_proposal(task, %{action: "add", rule: "Broadcast.", kind: "qa"})
+      {:ok, _rejected} = Learnings.reject_learning_proposal(Rail.Scope.for_user(nameless), first)
+      {:ok, _approved} = Learnings.approve_learning_proposal(system_scope(), second)
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
+
+      assert has_element?(view, "#proposal-#{first.id} [data-qa=proposal-rejected]", "Rejected by sam-ok")
+      assert view |> element("#proposal-#{second.id} [data-qa=proposal-approved]") |> render() =~ ~r/>\s*Approved\s*</
+    end
+
+    test "with nothing saved the item says the curator is reading, found nothing, or failed", %{
+      conn: conn,
+      task: task,
+      curator_run: curator_run
+    } do
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
+      assert has_element?(view, "#task-learnings-empty", "No proposals")
+      assert has_element?(view, "#task-learnings-count", "0 proposals · 0 to decide")
+
+      {:ok, reading} = Pipeline.update_run(curator_run, %{status: :running, stage_outcome: :in_progress})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
+      assert has_element?(view, "#task-learnings-empty", "The curator is reading this task")
+      assert has_element?(view, "#review-item-learnings [data-qa=review_item_running]")
+
+      {:ok, _failed} = Pipeline.update_run(reading, %{status: :failed, error: "Exited with code 1"})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
+      assert has_element?(view, "#task-learnings-empty", "No proposals yet")
+      assert has_element?(view, "#review-item-learnings [data-qa=review_item_failed]")
+    end
+
+    test "a long rule with no spaces wraps inside its card", %{conn: conn, task: task} do
+      rule = String.duplicate("a", 400)
+      {:ok, add} = Learnings.save_task_proposal(task, %{action: "add", rule: rule, kind: "qa"})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
+
+      assert has_element?(view, "#proposal-#{add.id} h3.break-words", rule)
+      assert has_element?(view, "#proposal-#{add.id} [data-qa=proposal-draft] .break-words", rule)
     end
   end
 

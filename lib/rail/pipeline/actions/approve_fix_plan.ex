@@ -41,7 +41,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlan do
       Repo.transaction(fn ->
         # Of two Approves the second waits here, then finds the plan approved.
         task = Repo.one!(from t in Task, where: t.id == ^run.task_id, lock: "FOR UPDATE")
-        task = Repo.preload(task, [:issue, :project, :runs])
+        task = Repo.preload(task, [:issue, :project, runs: :role])
 
         with true <- Scope.can_access_project?(scope, task.project_id) || {:error, :not_found},
              false <- Task.running?(task) && {:error, :stage_running},

@@ -504,6 +504,8 @@ defmodule RailWeb.OverviewLiveTest do
       task_for: task_for
     } do
       task = task_for.("Merge me", %{stage: :finalize, pr_number: 151})
+      # Marking queues the task's curator, whose hold on Merge has tests of its own.
+      stub(Pipeline, :check_learnings, fn _task -> :ok end)
       {:ok, _marked} = Pipeline.mark_ready(system_scope(), task)
       row = "#review-queue-row-#{task.issue.identifier}"
 

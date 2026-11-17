@@ -1254,6 +1254,42 @@ defmodule RailWeb.Live.RunConversationTest do
     refute html =~ ~s(id="retry-run")
   end
 
+  # A failed curator holds Approve and Merge, so its Retry shows whether or not it has a conversation to resume.
+  test "a curator that failed at Finalize offers Retry with why, and one at another stage or merged does not", %{
+    project: project,
+    task: task,
+    roles_map: roles_map
+  } do
+    {:ok, curator} = Roles.get_role(project_id: project.id, stage: :curator)
+    roles_map = Map.put(roles_map, curator.id, curator)
+    {:ok, finalize} = Pipeline.update_task(task, %{stage: :finalize})
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: curator.id,
+        status: :failed,
+        error: "Curator exited with code 1: usage limit reached.",
+        conversation_id: "sess_curator",
+        started_at: DateTime.utc_now()
+      })
+
+    html = render_component(RunConversation, id: "conv", task: finalize, runs: [run], roles_map: roles_map)
+    assert html =~ ~s(id="failed-banner")
+    assert html =~ "usage limit reached."
+    assert html =~ ~s(id="retry-run")
+
+    {:ok, unexplained} = Pipeline.update_run(run, %{conversation_id: nil})
+    html = render_component(RunConversation, id: "conv", task: finalize, runs: [unexplained], roles_map: roles_map)
+    assert html =~ ~s(id="unavailable-banner")
+    assert html =~ ~s(id="retry-run")
+
+    for task <- [task, %{finalize | merged_at: DateTime.utc_now()}] do
+      html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+      refute html =~ ~s(id="retry-run")
+    end
+  end
+
   test "a run that failed says why in the conversation", %{task: task, roles: roles, roles_map: roles_map} do
     {:ok, run} =
       Pipeline.create_run(%{
