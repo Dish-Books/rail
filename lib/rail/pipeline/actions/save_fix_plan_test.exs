@@ -13,7 +13,15 @@ defmodule Rail.Pipeline.Actions.SaveFixPlanTest do
   setup do
     scratch = Path.join(System.tmp_dir!(), "save_fix_plan_#{System.unique_integer([:positive])}")
     on_exit(fn -> File.rm_rf(scratch) end)
-    task = %Task{id: "tsk_save_fix_plan", stage: :review, scratch_path: scratch, issue: %Issue{identifier: "SFP-1"}}
+    # No worktree is on disk, so the branch is not checked against the default branch.
+    task = %Task{
+      id: "tsk_save_fix_plan",
+      stage: :review,
+      scratch_path: scratch,
+      worktree_path: Path.join(scratch, "worktree"),
+      issue: %Issue{identifier: "SFP-1"}
+    }
+
     path = Path.join([scratch, "fix_plans", "SFP-1.json"])
 
     # As a Send leaves it: what it sent, and no plan yet.

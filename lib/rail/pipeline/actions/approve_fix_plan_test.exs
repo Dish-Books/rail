@@ -25,6 +25,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
     stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
     stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
     stub(Git, :branch_fingerprint, fn _worktree_path -> %{head_sha: String.duplicate("a", 40), dirty_digest: "clean"} end)
+    stub(Git, :base_status, fn _worktree_path, _base -> %{behind: false, conflicts: []} end)
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
 
@@ -126,6 +127,47 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
     assert %FixPlan{approved_by: "ada-approve-fix-plan", approved_at: %DateTime{}} = Pipeline.read_fix_plan(task)
     assert_enqueued(worker: StartEngineer, args: %{task_id: task_id})
     assert_received {:pipeline_changed, ^task_id}
+  end
+
+  # A branch that cannot merge is no branch to finish, so whatever a project's prompts have the plan say, the round
+  # merges the default branch first, in the files it conflicts in as the plan is approved.
+  test "a branch that conflicts with the default branch has the round merge it first, as the saved plan shows", %{
+    task: %{id: task_id} = task,
+    run: run,
+    ada: ada
+  } do
+    stub(Git, :base_status, fn _worktree_path, "main" -> %{behind: true, conflicts: ["lib/a.ex"]} end)
+
+    assert {:ok, %FixPlan{version: 2, base_conflicts: ["lib/a.ex"]} = saved} =
+             Pipeline.save_fix_plan(task, %{"plan" => @plan})
+
+    assert %{base_conflicts: ["lib/a.ex"]} = FixPlan.build_sheet(saved)
+    assert %FixPlan{base_conflicts: ["lib/a.ex"]} = Pipeline.read_fix_plan(task)
+
+    # The default branch moved on after the save, so the round merges what conflicts as it is approved.
+    stub(Git, :base_status, fn _worktree_path, "main" -> %{behind: true, conflicts: ["lib/a.ex", "lib/b.ex"]} end)
+    assert {:ok, %Run{}} = Pipeline.approve_fix_plan(ada, run, 2)
+
+    assert [%Round{number: 1}, %Round{number: 2, plan: plan}] = Pipeline.list_rounds(task)
+
+    # A branch far behind can conflict in a great many files, so they are counted, not listed.
+    assert plan =~ ~r/\A### Merge `main` first\n\nThe branch conflicts with `origin\/main` in 2 files, so/
+    refute plan =~ "lib/b.ex"
+
+    assert String.ends_with?(plan, "\n\n" <> @plan)
+    assert %FixPlan{base_conflicts: ["lib/a.ex", "lib/b.ex"]} = Pipeline.read_fix_plan(task)
+    assert %Task{id: ^task_id, base_conflicts: ["lib/a.ex", "lib/b.ex"]} = Repo.reload!(task)
+  end
+
+  test "a branch the default branch merges into cleanly keeps the plan as it was saved", %{
+    task: task,
+    run: run,
+    ada: ada
+  } do
+    stub(Git, :base_status, fn _worktree_path, "main" -> %{behind: true, conflicts: []} end)
+
+    assert {:ok, %Run{}} = Pipeline.approve_fix_plan(ada, run, 1)
+    assert [%Round{number: 1}, %Round{number: 2, plan: @plan}] = Pipeline.list_rounds(task)
   end
 
   # Every agent after reads the criteria as they now stand, and the tracker's ticket keeps its design.

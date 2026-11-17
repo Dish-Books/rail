@@ -3,7 +3,10 @@ defmodule Rail.Mcp.Utils.RunToolSaveFixPlan do
   Saves the Review lead's plan for the fix round a Send started, in place of the last.
   """
 
+  import Rail.Pipeline.Utils.MergeBaseSection, only: [files: 1]
+
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.Task
 
   @doc """
@@ -17,7 +20,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveFixPlan do
          ) do
       {:ok, fix_plan} ->
         {:ok,
-         "Fix plan saved as version #{fix_plan.version} of fix round #{fix_plan.round}. Change nothing and end your turn: the human approves it in Rail."}
+         "Fix plan saved as version #{fix_plan.version} of fix round #{fix_plan.round}.#{merge(fix_plan)} Change nothing and end your turn: the human approves it in Rail."}
 
       {:error, :no_fix_plan} ->
         {:refused,
@@ -34,4 +37,11 @@ defmodule Rail.Mcp.Utils.RunToolSaveFixPlan do
         {:error, changeset}
     end
   end
+
+  # Rail has the round merge the default branch first, so the plan need not, and should not plan it twice.
+  defp merge(%FixPlan{base_conflicts: []}), do: ""
+
+  defp merge(%FixPlan{base_conflicts: conflicts}),
+    do:
+      " The branch conflicts with the default branch in #{files(conflicts)}, so Rail has the round merge it in first; leave that out of the plan."
 end

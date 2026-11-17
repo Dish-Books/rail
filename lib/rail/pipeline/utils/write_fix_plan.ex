@@ -24,6 +24,7 @@ defmodule Rail.Pipeline.Utils.WriteFixPlan do
         :title,
         :description,
         :design_changed,
+        :base_conflicts,
         :version,
         :saved_at,
         :approved_by,

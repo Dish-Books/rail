@@ -59,6 +59,34 @@ defmodule RailWeb.Components.FixPlanSheetTest do
     assert Floki.find(doc, "[data-qa=fix_plan_item_changed]") == []
   end
 
+  test "a branch that conflicts with the default branch says the round merges it first, counting the files", %{
+    sheet: sheet
+  } do
+    doc = (&FixPlanSheet.fix_plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
+    assert Floki.find(doc, "[data-qa=fix_plan_merge_base]") == []
+
+    project = %Project{github_repo: "example/rail", default_branch: "main"}
+
+    doc =
+      (&FixPlanSheet.fix_plan_sheet/1)
+      |> render_component(sheet: %{sheet | base_conflicts: ["lib/a.ex", "lib/b.ex"]}, project: project)
+      |> Floki.parse_fragment!()
+
+    text = doc |> Floki.find("[data-qa=fix_plan_merge_base]") |> Floki.text() |> String.split() |> Enum.join(" ")
+    assert text =~ "Merges main first"
+    assert text =~ "The branch conflicts with main in 2 files, so the round merges it in"
+    refute text =~ "lib/a.ex"
+
+    doc =
+      (&FixPlanSheet.fix_plan_sheet/1)
+      |> render_component(sheet: %{sheet | base_conflicts: ["lib/a.ex"]})
+      |> Floki.parse_fragment!()
+
+    text = doc |> Floki.find("[data-qa=fix_plan_merge_base]") |> Floki.text() |> String.split() |> Enum.join(" ")
+    assert text =~ "Merges the default branch first"
+    assert text =~ "in 1 file, so"
+  end
+
   test "its files are the plan's cards: grouped, marked New or Changed, and their code a click away", %{sheet: sheet} do
     project = %Project{github_repo: "example/rail", default_branch: "main"}
 

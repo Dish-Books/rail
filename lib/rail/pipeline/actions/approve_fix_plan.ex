@@ -5,13 +5,16 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlan do
   committed with the move starts the engineer on it with a clean conversation. Only the version the person read,
   still waiting, is approved, and the comments left unsent on it go. Anyone who can open the project approves a
   later round's plan. A plan that changes
-  the ticket, as a person asked, puts the new ticket on its round and on the issue.
+  the ticket, as a person asked, puts the new ticket on its round and on the issue. The branch is checked against the
+  default branch once more as it is approved, and a branch that would conflict with it has the round merge it first,
+  whatever the plan says.
   """
 
   import Ecto.Query
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.BroadcastPlanComments
   import Rail.Pipeline.Utils.CheckAnswered
+  import Rail.Pipeline.Utils.MergeBaseSection
   import Rail.Pipeline.Utils.WriteFixPlan
 
   alias Rail.Issues
@@ -23,6 +26,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlan do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.StartEngineer
+  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Scope
 
@@ -80,13 +84,17 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlan do
 
   # The round, the move and the job commit together, so an approved plan always has an engineer to start.
   defp approve(%Scope{user: user}, %Task{} = task, %FixPlan{} = fix_plan) do
+    # The default branch may have moved since the plan was saved, so the round merges what conflicts now.
+    {:ok, task} = Pipeline.check_base(task)
+    fix_plan = %{fix_plan | base_conflicts: task.base_conflicts}
+    %Project{default_branch: base} = task.project
     {:ok, round} = Pipeline.create_round(task)
 
     {:ok, approved} =
       round
       |> Round.approve_changeset(user && user.id)
       |> Ecto.Changeset.change(
-        plan: fix_plan.plan,
+        plan: add_merge_base_section(fix_plan.plan, base, fix_plan.base_conflicts),
         plan_version: fix_plan.version,
         plan_saved_at: fix_plan.saved_at,
         record_demo: fix_plan.record_demo,

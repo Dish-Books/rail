@@ -1,12 +1,13 @@
 defmodule RailWeb.Components.FixPlanSheet do
   @moduledoc """
   A fix round's plan laid out for approval: the changes to the ticket or the design a person asked for, called out
-  first, its summary, What changes with an item per finding and comment the plan
+  first, then the default branch the round merges first when the branch conflicts with it, its summary, What changes with an item per finding and comment the plan
   covers, In this plan beside it, then File-level changes as the plan's cards, and Verification. While it waits on
   approval, any line of its text takes a comment through the + beside it, as the plan's do.
   """
   use RailWeb, :html
 
+  import Rail.Pipeline.Utils.MergeBaseSection, only: [files: 1]
   import RailWeb.Utils.BuildFixPlanLines
 
   attr :sheet, :map, required: true, doc: "what `FixPlan.build_sheet/1` made of the plan"
@@ -64,6 +65,19 @@ defmodule RailWeb.Components.FixPlanSheet do
               <.icon name="pi-pencil-simple-line" class="size-4" /> Changes to the plan
             </h3>
             <.lines lines={@sheet.changes_lines} {@comment_attrs} class="mt-2" />
+          </aside>
+          <aside
+            :if={@sheet.base_conflicts != []}
+            id="fix-plan-merge-base"
+            data-qa="fix_plan_merge_base"
+            class="mb-5 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950 px-4 py-3"
+          >
+            <h3 class="flex items-center gap-1.5 text-sm font-semibold text-rose-900 dark:text-rose-200">
+              <.icon name="pi-git-merge" class="size-4" /> Merges {base(@project)} first
+            </h3>
+            <p class="mt-1 text-[13.5px] text-rose-900/90 dark:text-rose-200/90">
+              The branch conflicts with {base(@project)} in {files(@sheet.base_conflicts)}, so the round merges it in and resolves them before anything else. Rail adds this whatever the plan says.
+            </p>
           </aside>
           <.lines lines={@sheet.summary_lines} {@comment_attrs} />
           <div class="mt-5 mb-1">
@@ -289,6 +303,9 @@ defmodule RailWeb.Components.FixPlanSheet do
   defp comments([]), do: nil
   defp comments([one]), do: "comment #{one}"
   defp comments(numbers), do: "comments #{Enum.join(Enum.drop(numbers, -1), ", ")} and #{List.last(numbers)}"
+
+  defp base(%{default_branch: branch}) when is_binary(branch), do: branch
+  defp base(_no_project), do: "the default branch"
 
   defp now(:skip), do: "Don't fix"
   defp now(:new_issue), do: "New issue"

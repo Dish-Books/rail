@@ -28,6 +28,7 @@ defmodule Rail.Pipeline.Actions.SaveFixPlan do
          %FixPlan{} = fix_plan <- due(task),
          :ok <- something(fix_plan, attrs),
          {:ok, saved} <- fix_plan |> FixPlan.save_changeset(attrs) |> apply_action(:update) do
+      saved = %{saved | base_conflicts: base_conflicts(task)}
       write_fix_plan(task, saved)
       Pipeline.broadcast_output_saved(task)
       {:ok, saved}
@@ -37,6 +38,13 @@ defmodule Rail.Pipeline.Actions.SaveFixPlan do
       true -> {:error, {:step_off, :demo}}
       _none_due -> {:error, :no_fix_plan}
     end
+  end
+
+  # Whatever the review agent planned, a branch that conflicts with the default branch merges it first, so the plan
+  # says so where the person reads it.
+  defp base_conflicts(%Task{} = task) do
+    {:ok, %Task{base_conflicts: conflicts}} = Pipeline.check_base(task)
+    conflicts
   end
 
   defp something(%FixPlan{findings: [], comments: []}, attrs) do

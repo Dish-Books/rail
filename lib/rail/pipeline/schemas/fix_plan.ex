@@ -35,6 +35,9 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
     field :description, :string
     # Whether the review agent saved the picked design again, as a person asked.
     field :design_changed, :boolean, default: false
+    # The files a merge of the default branch would conflict in as the plan was last saved or approved, which Rail
+    # has the round merge first.
+    field :base_conflicts, {:array, :string}, default: []
     field :version, :integer, default: 0
     field :saved_at, :utc_datetime_usec
     field :approved_by, :string
@@ -69,6 +72,7 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
       :title,
       :description,
       :design_changed,
+      :base_conflicts,
       :version,
       :saved_at,
       :approved_by,
@@ -140,7 +144,8 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
   end
 
   @doc """
-  Lays the plan out for the Review tab: its round, its summary, the changes to the ticket or the design a person asked for, an
+  Lays the plan out for the Review tab: its round, its summary, the changes to the ticket or the design a person asked for,
+  the files the branch conflicts with the default branch in, which the round merges first, an
   item per finding and comment it covers, each with the paths of the files that name it, a card per file, as a plan's
   `### Changes` has, Verification, the counts and whether it covers the round as sent. `nil` before a plan is saved.
   """
@@ -190,6 +195,7 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
       files: files,
       verification: if(verification != "", do: verification),
       changes: changes,
+      base_conflicts: fix_plan.base_conflicts,
       counts: %{findings: length(findings), comments: length(comments), files: length(files)},
       covers_round:
         MapSet.new(fix_plan.covered_keys) == MapSet.new(fix_plan.findings, & &1.key) and
