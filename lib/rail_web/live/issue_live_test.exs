@@ -437,6 +437,7 @@ defmodule RailWeb.IssueLiveTest do
     refute has_element?(view, "#issue-task-link")
 
     render_async(view)
+    assert has_element?(view, "#issue-start-plan[phx-hook=StartFocus][data-chip=issue-task-link]")
     view |> element("#issue-start-plan") |> render_click()
 
     assert %Task{id: task_id, stage: :plan} = Repo.get_by(Task, issue_id: issue.id)
@@ -745,6 +746,7 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-pull-request[href='https://github.com/org/app/pull/41']", "#41")
     assert has_element?(view, "#issue-pull-request", "Vendor filter")
 
+    assert has_element?(view, "#issue-start-review[phx-hook=StartFocus][data-chip=issue-task-link]")
     view |> element("#issue-start-review") |> render_click()
 
     assert %Task{id: task_id, stage: :review} = Repo.get_by(Task, issue_id: issue.id)
