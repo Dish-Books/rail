@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
-import { calculateFocusTarget, handFocus } from "../js/hooks/start_focus.js";
+import { calculateFocusTarget, handFocus, holdsPlace, restoreFocus } from "../js/hooks/start_focus.js";
 
 let doc;
 let fire;
 let chip;
 let chips;
+let control;
+let rowOf;
 let focusCalls;
 // #main-content, under the 44px app bar.
 const viewport = () => ({ top: 44, bottom: 1080 });
@@ -37,6 +39,13 @@ beforeEach(() => {
       if (entry.type === type && !entry.signal.aborted) entry.listener();
     }
   };
+  // A control in a row: whether the browser shows its focus ring, and whether it sits in the status picker.
+  control = (name, { visible = true, picker = false } = {}) => ({
+    name,
+    matches: (selector) => selector === ":focus-visible" && visible,
+    closest: (selector) => (picker && selector === "[id^='status-picker-']" ? { name: "status picker" } : null)
+  });
+  rowOf = (...members) => ({ contains: (target) => members.includes(target) });
 });
 
 test("a chip on screen takes focus, leaving the scroll alone", () => {
@@ -131,5 +140,72 @@ test("no chip, such as leaving the page, does nothing and watches nothing", () =
   handFocus(doc, true, "task-link-iss_gone", ["issue-start-iss_2"], viewport);
   chips["task-link-iss_gone"] = chip("late chip");
   fire("phx:update");
+  assert.deepEqual(focusCalls, []);
+});
+
+test("a Start focused by a mouse click is not the person's place, on either page", () => {
+  const start = control("start", { visible: false });
+  assert.equal(holdsPlace(start, start, rowOf(start)), false);
+  assert.equal(holdsPlace(start, start, null), false);
+});
+
+test("keyboard focus on the row's Start or link holds the place, not its status picker", () => {
+  const start = control("start");
+  const link = control("open in new");
+  const picker = control("status", { picker: true });
+  const row = rowOf(start, link, picker);
+  assert.equal(holdsPlace(start, start, row), true);
+  assert.equal(holdsPlace(link, start, row), true);
+  assert.equal(holdsPlace(picker, start, row), false);
+  assert.equal(holdsPlace(control("search"), start, row), false);
+});
+
+test("on the issue page only the button holds the place", () => {
+  const start = control("start");
+  assert.equal(holdsPlace(start, start, null), true);
+  assert.equal(holdsPlace(control("title"), start, null), false);
+});
+
+test("nothing focused holds no place", () => {
+  assert.equal(holdsPlace(null, control("start"), null), false);
+});
+
+test("a patch that drops focus to the body gives it back to the control the person was on", () => {
+  const start = chip("start");
+  start.isConnected = true;
+  const link = chip("open in new");
+  link.isConnected = true;
+  restoreFocus(doc, true, link, start);
+  assert.deepEqual(focusCalls, [{ name: "open in new", preventScroll: true }]);
+});
+
+test("a control the patch rebuilt gives focus to the row's Start instead", () => {
+  const start = chip("start");
+  start.isConnected = true;
+  const link = chip("open in new");
+  link.isConnected = false;
+  restoreFocus(doc, true, link, start);
+  assert.deepEqual(focusCalls, [{ name: "start", preventScroll: true }]);
+});
+
+test("a Start already removed leaves focus to handFocus, even with its link still in the page", () => {
+  const start = chip("start");
+  start.isConnected = false;
+  const link = chip("open in new");
+  link.isConnected = true;
+  restoreFocus(doc, true, link, start);
+  assert.deepEqual(focusCalls, []);
+});
+
+// A guard beside the two tests above: it fails if restoreFocus stops checking where focus is or whose row it was.
+test("focus still on something, or a row the person left, is not touched", () => {
+  const start = chip("start");
+  start.isConnected = true;
+  const link = chip("open in new");
+  link.isConnected = true;
+  doc.activeElement = { name: "search" };
+  restoreFocus(doc, true, link, start);
+  doc.activeElement = doc.body;
+  restoreFocus(doc, false, link, start);
   assert.deepEqual(focusCalls, []);
 });
