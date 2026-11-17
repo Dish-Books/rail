@@ -479,6 +479,37 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-task-link", "Plan waiting for resources")
   end
 
+  test "Start on an issue closed since the page opened starts nothing and the page shows it closed", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_closed",
+        identifier: "IPG-32",
+        title: "Closed meanwhile",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    reject(&Git.get_or_create_worktree/2)
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    render_async(view)
+    assert has_element?(view, "#issue-start-plan")
+
+    # Closed in the tracker with no word to this page yet.
+    issue |> Issue.tracker_changeset(%{state: :done}) |> Repo.update!()
+    view |> element("#issue-start-plan") |> render_click()
+
+    refute Repo.get_by(Task, issue_id: issue.id)
+    refute_redirected(view)
+    refute has_element?(view, "#issue-start")
+    refute has_element?(view, "#flash-error")
+  end
+
   test "an in-progress issue with no task can still be started at Plan from its page", %{
     conn: conn,
     project: project
