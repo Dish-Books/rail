@@ -554,6 +554,9 @@ defmodule Rail.Issues.Workers.MoveToLocalTracker do
 
   defp calculate_failure(step, {:file, _identifier, _url, reason}), do: calculate_failure(step, reason)
 
+  defp calculate_failure(step, {:linear_api_error, status, %{"errors" => [%{"message" => message} | _rest]}}),
+    do: "Linear answered #{status} while #{step} (#{message}), so nothing was written."
+
   defp calculate_failure(step, {:linear_api_error, status, _body}),
     do: "Linear answered #{status} while #{step}, so nothing was written."
 
