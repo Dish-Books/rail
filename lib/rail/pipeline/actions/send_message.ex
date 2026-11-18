@@ -13,8 +13,12 @@ defmodule Rail.Pipeline.Actions.SendMessage do
   The engineer's own conversation closes once the task leaves Engineer: Review's
   fixes are the Review lead's to hand its engineer, so a message there would
   change the branch behind Review's back. A custom stage's closes once it is approved, so its file stays as approved.
+
+  A person's message to the Review lead of a task a teammate marked ready takes the mark off, as a Send in the Review
+  tray does, since changes are coming: the task leaves the review queue until someone marks it again.
   """
 
+  import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.DispatchMessage
   import Rail.Pipeline.Utils.WriteScratchFile
 
@@ -105,6 +109,7 @@ defmodule Rail.Pipeline.Actions.SendMessage do
 
   defp deliver(scope, %Run{} = run, text, images, from) do
     record_transcript(scope, run, text, images, from)
+    unmark_ready(run, from)
 
     message =
       [text | Enum.map(images, &"[Attached image, open it with Read: #{&1.path}]")] |> Enum.join("\n") |> String.trim()
@@ -132,6 +137,15 @@ defmodule Rail.Pipeline.Actions.SendMessage do
     text_lines = if text == "", do: [], else: text |> String.split("\n") |> Enum.map(&"#{tag} #{&1}")
     Pipeline.append_run_events(run.id, nil, text_lines ++ Enum.map(images, &"#{image_tag} #{&1.file}"))
   end
+
+  # Rail answering out of past answers changes nothing the person asked for, so the mark stays.
+  defp unmark_ready(%Run{role: %Role{stage: :review_lead}, task: %Task{marked_ready_at: %DateTime{}} = task}, from)
+       when from != :past_answers do
+    {:ok, task} = task |> Task.changeset(%{marked_ready_at: nil, marked_ready_by_id: nil}) |> Repo.update()
+    broadcast_pipeline_changed(task)
+  end
+
+  defp unmark_ready(%Run{}, _from), do: :ok
 
   defp append(nil, text), do: text
   defp append(existing, text), do: "#{existing}\n\n#{text}"

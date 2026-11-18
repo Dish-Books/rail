@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
@@ -256,5 +257,51 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
 
     {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
     assert {:error, {:invalid_stage, :review}} = Pipeline.send_message(system_scope(), run, "One more thing")
+  end
+
+  test "a person's message to the Review lead takes a teammate's ready mark off, so the task leaves the review queue", %{
+    project: project,
+    task: task
+  } do
+    {:ok, %Task{id: task_id} = task} =
+      Pipeline.update_task(task, %{stage: :finalize, marked_ready_at: DateTime.utc_now()})
+
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task_id,
+        role_id: role.id,
+        status: :running,
+        conversation_id: "sess_send_review_lead",
+        started_at: DateTime.utc_now()
+      })
+
+    assert [%Task{id: ^task_id}] = Pipeline.list_tasks(ready: true)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+
+    assert {:ok, :queued, %Run{}} = Pipeline.send_message(user_scope(), run, "Keep the edit through the patch back.")
+    assert %Task{marked_ready_at: nil} = Repo.reload!(task)
+    assert_receive {:pipeline_changed, ^task_id}
+    assert [] = Pipeline.list_tasks(ready: true)
+  end
+
+  test "Rail answering the Review lead out of past answers leaves the ready mark on", %{project: project, task: task} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :finalize, marked_ready_at: DateTime.utc_now()})
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :running,
+        conversation_id: "sess_send_review_lead_past",
+        started_at: DateTime.utc_now()
+      })
+
+    assert {:ok, :queued, %Run{}} =
+             Pipeline.send_message(system_scope(), run, "Yes, as last time.", from: :past_answers)
+
+    assert %Task{marked_ready_at: %DateTime{}} = Repo.reload!(task)
   end
 end
