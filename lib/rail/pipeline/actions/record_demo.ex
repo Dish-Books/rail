@@ -18,7 +18,7 @@ defmodule Rail.Pipeline.Actions.RecordDemo do
   workflow turned the demo off, or a project with no demo role.
   """
   def record_demo(%Scope{} = scope, %Task{} = task) do
-    task = Task |> Repo.get!(task.id) |> Repo.preload([:runs, :issue])
+    task = Task |> Repo.get!(task.id) |> Repo.preload([:issue, runs: :role])
 
     with true <- Scope.can_access_project?(scope, task.project_id) || {:error, :not_found},
          :ok <- recordable(task),

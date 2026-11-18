@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Actions.ApproveTaskTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Roles
   alias Rail.Scope
   alias Rail.Users
   alias Rail.Users.Schemas.User
@@ -66,6 +67,16 @@ defmodule Rail.Pipeline.Actions.ApproveTaskTest do
     end
 
     %{task: task, lead: priya, scope: Scope.for_user(priya), github: github}
+  end
+
+  # No GitHub stub is set, so a request to post the review would raise.
+  test "a curator still reading the task holds the approval, and nothing reaches GitHub", %{task: task, scope: scope} do
+    {:ok, curator} = Roles.get_role(project_id: task.project_id, stage: :curator)
+
+    {:ok, _run} =
+      Pipeline.create_run(%{task_id: task.id, role_id: curator.id, status: :running, started_at: DateTime.utc_now()})
+
+    assert {:error, :curator_running} = Pipeline.approve_task(scope, task)
   end
 
   test "a tech lead's approval goes to GitHub as the lead, comes back in the approvals and is heard by every page", %{

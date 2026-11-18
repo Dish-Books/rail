@@ -1,13 +1,15 @@
 defmodule Rail.Pipeline.Actions.MarkReady do
   @moduledoc """
-  A teammate marks a task at Finalize ready for a tech lead, which puts it in the review queue. The mark is
-  taken with a conditional update, so a second one from another tab keeps the first. There is no unmark.
+  A teammate marks a task at Finalize ready for a tech lead, which puts it in the review queue and queues a curator
+  pass on it. The mark is taken with a conditional update, so a second one from another tab keeps the first and
+  queues nothing. There is no unmark.
   """
 
   import Ecto.Query
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
 
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.StartCurator
   alias Rail.Repo
   alias Rail.Scope
 
@@ -20,15 +22,22 @@ defmodule Rail.Pipeline.Actions.MarkReady do
 
     with true <- Scope.can_access_project?(scope, task.project_id) || {:error, :not_found},
          :ok <- markable(task) do
-      {_marked, _rows} =
-        Repo.update_all(
-          from(t in Task,
-            where:
-              t.id == ^task.id and t.project_id == ^task.project_id and t.stage == :finalize and
-                is_nil(t.marked_ready_at)
-          ),
-          set: [marked_ready_at: DateTime.utc_now(), marked_ready_by_id: scope.user && scope.user.id]
-        )
+      {:ok, _marked} =
+        Repo.transaction(fn ->
+          {marked, _rows} =
+            Repo.update_all(
+              from(t in Task,
+                where:
+                  t.id == ^task.id and t.project_id == ^task.project_id and t.stage == :finalize and
+                    is_nil(t.marked_ready_at)
+              ),
+              set: [marked_ready_at: DateTime.utc_now(), marked_ready_by_id: scope.user && scope.user.id]
+            )
+
+          # Each time the task goes to the tech leads, the curator reads it again.
+          if marked == 1, do: {:ok, _job} = %{task_id: task.id} |> StartCurator.new() |> Oban.insert()
+          marked
+        end)
 
       marked = task |> Repo.reload!() |> Repo.preload(:marked_ready_by) |> broadcast_pipeline_changed()
       {:ok, marked}

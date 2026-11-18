@@ -61,6 +61,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   # queued: the setup's finish drains it.
   defp execute(%Run{} = run, opts) do
     with %Run{task: %Task{}, role: %Role{}} = run <- run |> reload() |> reopen(),
+         true <- open?(run),
          {:ok, role} <- Roles.get_role(id: run.role_id),
          %Project{} = project <- Repo.get(Project, run.task.project_id),
          {:ok, task, worktree_path} <- worktree(project, run.task) do
@@ -78,9 +79,14 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
       end
     else
       nil -> {:error, :invalid_state}
+      false -> {:error, :invalid_state}
       {:error, reason} -> fail(run, reason)
     end
   end
+
+  # The curator's conversation closes with the merge, before cleanup takes its worktree.
+  defp open?(%Run{role: %Role{stage: :curator}, task: %Task{merged_at: %DateTime{}}}), do: false
+  defp open?(%Run{}), do: true
 
   defp reload(%Run{id: id}), do: Run |> Repo.get(id) |> Repo.preload([:task, :role])
 

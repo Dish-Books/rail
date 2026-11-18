@@ -8,7 +8,8 @@ defmodule RailWeb.Live.TaskDetail do
   for the conversation's tray. Diff is the branch, or one commit of it, which a finding's commits open. Screens is
   each screen state's one shot, opened over the page to step through and comment on, Demo plays the latest
   recording with its walkthrough and says when the branch has moved past it, and Browser watches QA's browser.
-  Comments lists every comment on the task, and each opens where it was left.
+  Comments lists every comment on the task, and each opens where it was left. Learnings is the curator's proposals
+  for the task, each approved or rejected beside its conversation.
   """
   use RailWeb, :live_component
 
@@ -21,6 +22,7 @@ defmodule RailWeb.Live.TaskDetail do
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Learnings
+  alias Rail.Learnings.Schemas.LearningProposal
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Finding
@@ -57,6 +59,12 @@ defmodule RailWeb.Live.TaskDetail do
   # Something the page heard moved what the stage shows; it reads it again off the task it holds.
   def update(%{reload: true}, socket), do: {:ok, load(socket)}
 
+  # A proposal of this task's changed somewhere; only the item reads it again.
+  def update(%{reload_learnings: true}, socket) do
+    socket = socket |> assign_proposals() |> assign_items()
+    {:ok, socket}
+  end
+
   # A comment in the Comments item opens the Plan item. Round 1 is the Plan stage, whose round the URL keeps.
   def update(%{open_plan: nil}, socket) do
     socket = socket |> pick(:plan) |> assign(:plan_round, nil) |> load()
@@ -92,6 +100,7 @@ defmodule RailWeb.Live.TaskDetail do
       |> assign_new(:comment_order, fn -> "newest" end)
       |> assign_new(:reported_lifted, fn -> nil end)
       |> assign_new(:code_cache, fn -> %{fingerprint: :unread, by_key: %{}} end)
+      |> assign_new(:proposal_errors, fn -> %{} end)
       |> load()
 
     {:ok, socket}
@@ -475,6 +484,14 @@ defmodule RailWeb.Live.TaskDetail do
                   target={@myself}
                 />
 
+                <.task_learnings
+                  :if={@item == :learnings}
+                  proposals={@proposals}
+                  run_state={Run.state(@curator_run)}
+                  errors={@proposal_errors}
+                  target={@myself}
+                />
+
                 <.browser_picker
                   :if={@item == :browser}
                   sessions={@sessions}
@@ -735,6 +752,12 @@ defmodule RailWeb.Live.TaskDetail do
     {:noreply, socket}
   end
 
+  def handle_event("approve_proposal", %{"id" => id}, socket),
+    do: {:noreply, decide_proposal(socket, id, &Learnings.approve_learning_proposal/2)}
+
+  def handle_event("reject_proposal", %{"id" => id}, socket),
+    do: {:noreply, decide_proposal(socket, id, &Learnings.reject_learning_proposal/2)}
+
   # Approve moves the task on, so the page opens on the stage it moved to.
   def handle_event("approve_stage_output", _params, socket) do
     %{current_scope: scope, task: task} = socket.assigns
@@ -951,6 +974,7 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign_branch(passes)
     |> assign_screen_comments()
     |> assign_demo_and_browsers(runs)
+    |> assign_proposals()
     |> assign_custom_stage()
     |> assign_items()
     |> assign_selected(selected, findings)
@@ -1027,12 +1051,46 @@ defmodule RailWeb.Live.TaskDetail do
 
     socket
     |> assign(:custom_item, open)
-    |> assign(:beside, item in [:plan, :fix_plan] or open != nil)
+    |> assign(:beside, item in [:plan, :fix_plan, :learnings] or open != nil)
     |> assign(:stage_approvable, approvable)
     |> assign(:stage_unsent, if(approvable, do: length(Pipeline.list_plan_comments(scope, task)), else: 0))
   end
 
   defp custom_run(%Task{runs: runs}, name), do: Enum.find(runs, &match?(%Run{role: %Role{custom_stage: ^name}}, &1))
+
+  # The curator's proposals for the task, read once it has a curator run to show beside them.
+  defp assign_proposals(%{assigns: %{task: task}} = socket) do
+    curator = curator_run(task)
+
+    proposals =
+      if curator,
+        do:
+          Learnings.list_learning_proposals(
+            task_id: task.id,
+            project_id: task.project_id,
+            statuses: [:pending, :approved, :rejected],
+            targets: true
+          ),
+        else: []
+
+    socket |> assign(:curator_run, curator) |> assign(:proposals, proposals)
+  end
+
+  defp curator_run(%Task{runs: runs}), do: Enum.find(runs, &match?(%Run{role: %Role{stage: :curator}}, &1))
+
+  # Only this task's proposal is decided here; one decided elsewhere first says so on its card.
+  defp decide_proposal(%{assigns: %{task: %Task{id: task_id}, current_scope: scope}} = socket, id, action) do
+    with {:ok, %LearningProposal{task_id: ^task_id} = proposal} <- Learnings.get_learning_proposal(id),
+         {:ok, _decided} <- action.(scope, proposal) do
+      socket |> update(:proposal_errors, &Map.delete(&1, id)) |> assign_proposals() |> assign_items()
+    else
+      {:error, :already_decided} ->
+        socket |> update(:proposal_errors, &Map.put(&1, id, "Already decided.")) |> assign_proposals() |> assign_items()
+
+      _another_tasks_or_gone ->
+        socket |> assign_proposals() |> assign_items()
+    end
+  end
 
   # Each comment opens where it was left, as the tray and the rail open the same places.
   defp open_comment(socket, %{kind: :diff, comment: comment}) do
@@ -1506,8 +1564,42 @@ defmodule RailWeb.Live.TaskDetail do
           badge: nil,
           dot: nil,
           mark: nil
-        }
+        },
+        learnings_item(assigns)
       ]
+  end
+
+  # The curator's item shows once it has a run, counting the proposals still to decide as Findings counts its own.
+  defp learnings_item(%{curator_run: nil}), do: nil
+
+  defp learnings_item(%{curator_run: %Run{} = run, proposals: proposals}) do
+    pending = Enum.count(proposals, &(&1.status == :pending))
+
+    # The badge takes the dot's and the mark's place, so the label says what the curator is doing too.
+    {curator, dot, mark} =
+      case Run.state(run) do
+        :running -> {"Curator reading", :running, nil}
+        :waiting -> {"Curator waiting", :running, nil}
+        :failed -> {"Curator failed", nil, :failed}
+        _ended -> {nil, nil, nil}
+      end
+
+    state =
+      case Enum.filter([curator, pending > 0 and "#{pending} to decide"], & &1) do
+        [] -> "Nothing to decide"
+        parts -> Enum.join(parts, ", ")
+      end
+
+    %{
+      key: :learnings,
+      label: "Learnings",
+      icon: "pi-lightbulb",
+      picked_icon: "pi-lightbulb-fill",
+      state: state,
+      badge: if(pending > 0, do: pending),
+      dot: dot,
+      mark: mark
+    }
   end
 
   # A custom stage shows once it has a run, saying what it waits on: an answer, its file, or the reader's Approve.
@@ -1962,6 +2054,9 @@ defmodule RailWeb.Live.TaskDetail do
       nil -> nil
     end
   end
+
+  # A task with no curator run has no Learnings item, so its URL opens the task's default item.
+  defp item("learnings", %Task{} = task), do: if(curator_run(task), do: :learnings)
 
   defp item(item, %Task{}), do: item(item)
 

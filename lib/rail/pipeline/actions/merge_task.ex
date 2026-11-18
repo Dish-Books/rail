@@ -35,6 +35,7 @@ defmodule Rail.Pipeline.Actions.MergeTask do
 
     with true <- Scope.can_access_project?(scope, task.project_id) || {:error, :not_found},
          :ok <- plan_approved(task),
+         :ok <- Pipeline.check_learnings(task),
          :ok <- claim(task) do
       # As claimed, so clearing the claim afterwards is a change the update writes.
       task = %{Repo.reload!(task) | project: task.project}

@@ -12,8 +12,10 @@ defmodule Rail.Pipeline.Utils.SetupRunFinished do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
 
   @doc "Finishes `run` after its worktree setup script exited."
   def setup_run_finished(%Run{exit_code: 0, task: %Task{} = task, role: %Role{} = role} = run, _opts) do
@@ -35,6 +37,15 @@ defmodule Rail.Pipeline.Utils.SetupRunFinished do
           task.stage == :review and role.stage in Task.check_stages() ->
             :ok = start_checks(task)
             %{Repo.get!(Run, run.id) | task: task, role: role}
+
+          # The curator works no stage, so it starts here as a stage's agent does.
+          role.stage == :curator ->
+            {:ok, curator} = Roles.get_role(id: role.id)
+
+            {:ok, %OsProcess{run: started}} =
+              Pipeline.start_curator_run(%{Repo.get!(Run, run.id) | task: task, role: curator})
+
+            started
 
           Task.works_stage?(task, role) ->
             {:ok, %Run{} = entered} = Pipeline.enter_stage(task, Task.current_stage(task))

@@ -188,6 +188,25 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
     # Product, design and architect run inside Plan, on its tools; no run holds those roles now.
   end
 
+  # The one-shot curator passes reach no MCP tools, so only the curator's run on a task can save a proposal.
+  test "only the curator is offered save_learning_proposal, which takes a rule's own fields", %{names: names} do
+    assert %Role{stage: :curator} |> mcp_tools() |> Enum.map(& &1["name"]) ==
+             ["save_learning_proposal", "knowledge_search", "search_issues", "get_issue"]
+
+    for {_stage, offered} <- names, do: refute("save_learning_proposal" in offered)
+
+    %{"inputSchema" => %{"properties" => properties}} =
+      %Role{stage: :curator} |> mcp_tools() |> Enum.find(&(&1["name"] == "save_learning_proposal"))
+
+    assert %{
+             "action" => %{"enum" => ["add", "rewrite", "retire"]},
+             "kind" => %{"enum" => ["convention" | _kinds]},
+             "roles" => %{"type" => "array", "items" => %{"enum" => ["plan" | _roles]}}
+           } = properties
+
+    refute "curator" in properties["roles"]["items"]["enum"]
+  end
+
   test "save_plan takes the ticket, the plan and the design option it is written for, none of them required" do
     schema = %Role{stage: :plan} |> mcp_tools() |> Enum.find(&(&1["name"] == "save_plan")) |> Map.fetch!("inputSchema")
 

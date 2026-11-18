@@ -25,8 +25,9 @@ defmodule Rail.Pipeline do
   until the last child merges.
 
   A finished review moves the task on to Finalize, which has no run of its own: a teammate marks it ready
-  for a tech lead, a tech lead's Approve approves its pull request on GitHub as that lead, and a tech lead's
-  Merge squash-merges it and enters Merged.
+  for a tech lead, which starts the project's curator on it, a tech lead's Approve approves its pull request on
+  GitHub as that lead, and a tech lead's Merge squash-merges it and enters Merged. Both wait until the curator's
+  proposals for the task are decided.
   """
 
   use Rail.PermissionsDecorator
@@ -83,6 +84,9 @@ defmodule Rail.Pipeline do
   defdelegate save_round_plan(round, attrs), to: Actions.SaveRoundPlan
 
   defdelegate mark_ready(scope, task), to: Actions.MarkReady
+  defdelegate start_curator(task), to: Actions.StartCurator
+  defdelegate start_curator_run(run, opts \\ []), to: Actions.StartCuratorRun
+  defdelegate check_learnings(task), to: Actions.CheckLearnings
 
   @decorate can?(resource: :tasks, action: :merge)
   defdelegate merge_task(scope, task), to: Actions.MergeTask

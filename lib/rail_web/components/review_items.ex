@@ -1,8 +1,8 @@
 defmodule RailWeb.Components.ReviewItems do
   @moduledoc """
-  Review's slim rail: Findings, a fix round's Fix plan, Diff, Screens, Demo and Browser, each an icon over a short
-  label, the picked one filled blue. Each item's state is its hover title and its screen-reader text; Findings
-  carries the amber count still to rule, a dot marks anything running, red while recording, a raised hand a plan
+  Review's slim rail: Findings, a fix round's Fix plan, Diff, Screens, Demo, Browser and Learnings, each an icon over
+  a short label, the picked one filled blue. Each item's state is its hover title and its screen-reader text; Findings
+  carries the amber count still to rule and Learnings the count of proposals still to decide, a dot marks anything running, red while recording, a raised hand a plan
   waiting on the reader, a clock marks a demo the branch has moved past, and a dimmed minus marks a step the task's
   workflow turned off. Under 576px of main column it is one
   row across the top.

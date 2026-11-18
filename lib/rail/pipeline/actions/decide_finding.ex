@@ -23,7 +23,7 @@ defmodule Rail.Pipeline.Actions.DecideFinding do
   arrives while a Send files it waits for the filing and is refused then.
   """
   def decide_finding(%Scope{} = scope, %Finding{} = finding, decision) when decision in [:fix, :skip, :new_issue] do
-    task = Task |> Repo.get!(finding.task_id) |> Repo.preload([:issue, :runs])
+    task = Task |> Repo.get!(finding.task_id) |> Repo.preload([:issue, runs: :role])
 
     transaction =
       Repo.transaction(fn ->
