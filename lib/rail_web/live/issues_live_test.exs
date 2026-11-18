@@ -2547,6 +2547,25 @@ defmodule RailWeb.IssuesLiveTest do
       assert %Issue{state: ^state, owner_user_id: ^owner_user_id} = Repo.get!(Issue, ready_id)
     end
 
+    test "a Start for an issue gone since the page read it says nothing and starts nothing", %{
+      conn: conn,
+      ready: ready
+    } do
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+
+      stub(Issues, :get_issue, fn _id, _opts -> {:error, :not_found} end)
+      reject(&Pipeline.start_task/2)
+      allow(Issues, self(), view.pid)
+      allow(Pipeline, self(), view.pid)
+
+      render_click(view, "start_issue", %{"issue_id" => ready.id})
+      render_async(view)
+
+      refute has_element?(view, "#flash-error")
+      refute Repo.get_by(Task, issue_id: ready.id)
+    end
+
     test "a Start clicked on a row that has not caught up with In Progress still starts the issue", %{
       conn: conn,
       ready: ready

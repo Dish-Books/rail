@@ -63,22 +63,35 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   # Read again under the lock, so a run Discard or Back to Plan deleted meanwhile pushes and starts nothing.
   defp finish_run(%OsProcess{} = os_process, outcome, opts) do
     case Repo.preload(os_process, [run: [:task, :role]], force: true) do
-      %OsProcess{run: %Run{task: %Task{}}} = os_process ->
-        run =
-          os_process
-          |> settle_run(outcome)
-          |> end_turn(os_process)
-          |> finish(os_process, opts)
-          |> notify_owner(os_process)
-          |> drain_queued_message(os_process, opts)
-          |> send_rail_answers(os_process)
-          |> broadcast_pipeline_changed()
-
-        {:ok, run}
+      %OsProcess{run: %Run{task: %Task{}} = run} = os_process ->
+        if OsProcess.beside_agent?(os_process),
+          do: {:ok, finish_beside(run, os_process, outcome)},
+          else: {:ok, finish_settled(os_process, outcome, opts)}
 
       _unresolved ->
         {:error, :invalid_state}
     end
+  end
+
+  # A setup beside Plan's agent says nothing about the run, which is the agent's: it only sets the worktree up, so
+  # nothing a run's exit does - its turn's end, its stage's finish, its queue - follows it.
+  defp finish_beside(%Run{} = run, %OsProcess{} = os_process, outcome) do
+    os_process |> OsProcess.changeset(%{status: :finished}) |> Repo.update!()
+
+    run
+    |> setup_beside_finished(exit_code(outcome, %Run{}), error(outcome, %Run{}))
+    |> broadcast_pipeline_changed()
+  end
+
+  defp finish_settled(%OsProcess{} = os_process, outcome, opts) do
+    os_process
+    |> settle_run(outcome)
+    |> end_turn(os_process)
+    |> finish(os_process, opts)
+    |> notify_owner(os_process)
+    |> drain_queued_message(os_process, opts)
+    |> send_rail_answers(os_process)
+    |> broadcast_pipeline_changed()
   end
 
   # Bookkeeping only: the process is marked finished and the run keeps what the
@@ -134,7 +147,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   # A turn that is over drives no browser, and the next one signs in again, so the one it left open is
   # closed rather than kept in the shared Chrome.
   defp end_turn(%Run{role: %Role{stage: stage}, task: %Task{} = task} = run, %OsProcess{kind: :agent})
-       when stage in [:qa, :demo] do
+       when stage in [:plan, :qa, :demo] do
     :ok = Tools.stop_browser_session(task, to_string(stage))
     run
   end

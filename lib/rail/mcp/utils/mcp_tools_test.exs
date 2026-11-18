@@ -13,6 +13,9 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
   # The engineer commits with git itself, and its turn ending is what hands the commits over.
   test "each stage that writes something is offered exactly its own save tool", %{names: names} do
     assert names[:plan] == [
+             "browser_connect",
+             "browser_problems",
+             "browser_close",
              "save_design_option",
              "save_plan",
              "ask_questions",
@@ -67,12 +70,14 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
     end
   end
 
-  # The engineer drives it only to retake the screenshots the repository commits, such as a help center's.
-  test "each agent that checks a round is offered its own tools, and the three that drive the app a browser",
+  # The engineer drives it only to retake the screenshots the repository commits, such as a help center's, and Plan
+  # only to see the screens it designs for as they render.
+  test "each agent that checks a round is offered its own tools, and the four that drive the app a browser",
        %{names: names} do
     browser = ["browser_connect", "browser_problems", "browser_close"]
 
-    assert Enum.sort(for({stage, tools} <- names, "browser_connect" in tools, do: stage)) == [:demo, :engineer, :qa]
+    assert Enum.sort(for({stage, tools} <- names, "browser_connect" in tools, do: stage)) ==
+             [:demo, :engineer, :plan, :qa]
 
     assert names[:qa] ==
              browser ++

@@ -369,29 +369,75 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     assert {:error, :nothing_queued} = dispatch_message(drained, async: false)
   end
 
-  test "a worktree that still needs setting up gets that first, with the message left queued", %{
-    project: project,
-    run: run
-  } do
-    {:ok, _project} = Projects.update_project(system_scope(), project, %{worktree_setup_script: "bin/setup"})
+  describe "a worktree that still needs setting up" do
+    setup %{project: project, task: task} do
+      {:ok, _project} = Projects.update_project(system_scope(), project, %{worktree_setup_script: "bin/setup"})
+      {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
 
-    reject(Tools, :start_os_process, 2)
+      {:ok, engineer_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: engineer.id,
+          status: :finished,
+          conversation_id: "sess_dispatch_engineer",
+          pending_chat: "Please also add a test",
+          started_at: DateTime.utc_now()
+        })
 
-    expect(Tools, :start_command_process, fn spawned, :setup, "./bin/setup", _opts ->
-      {:ok, %OsProcess{kind: :setup, run: spawned}}
-    end)
+      %{engineer_run: engineer_run}
+    end
 
-    assert {:ok, %OsProcess{kind: :setup}} = dispatch_message(run, async: false)
-    assert %Run{pending_chat: "Please also add a test", status: :running} = Repo.reload!(run)
-  end
+    test "gets that first, with the message left queued", %{engineer_run: run} do
+      reject(Tools, :start_os_process, 2)
 
-  test "a setup that cannot start leaves the message queued and the run failed", %{project: project, run: run} do
-    {:ok, _project} = Projects.update_project(system_scope(), project, %{worktree_setup_script: "bin/setup"})
+      expect(Tools, :start_command_process, fn spawned, :setup, "./bin/setup", _opts ->
+        {:ok, %OsProcess{kind: :setup, run: spawned}}
+      end)
 
-    expect(Tools, :start_command_process, fn _run, :setup, _command, _opts -> {:error, :enoent} end)
+      assert {:ok, %OsProcess{kind: :setup}} = dispatch_message(run, async: false)
+      assert %Run{pending_chat: "Please also add a test", status: :running} = Repo.reload!(run)
+    end
 
-    assert {:error, :worktree_setup_failed} = dispatch_message(run, async: false)
-    assert %Run{pending_chat: "Please also add a test", status: :failed} = Repo.reload!(run)
+    test "with a setup that cannot start leaves the message queued and the run failed", %{engineer_run: run} do
+      expect(Tools, :start_command_process, fn _run, :setup, _command, _opts -> {:error, :enoent} end)
+
+      assert {:error, :worktree_setup_failed} = dispatch_message(run, async: false)
+      assert %Run{pending_chat: "Please also add a test", status: :failed} = Repo.reload!(run)
+    end
+
+    # Plan reads and writes before it needs the app, so its turn goes out at once and the setup joins the line after.
+    test "sends Plan's message at once and starts the setup beside it", %{run: %Run{id: run_id} = run} do
+      test_pid = self()
+
+      expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, _argv ->
+        send(test_pid, :agent)
+        {:ok, %OsProcess{kind: :agent, run: spawned}}
+      end)
+
+      expect(Tools, :start_command_process, fn %Run{id: ^run_id} = spawned, :setup, "./bin/setup", _opts ->
+        assert_received :agent
+        {:ok, %OsProcess{kind: :setup, run: spawned}}
+      end)
+
+      assert {:ok, %OsProcess{kind: :agent}} = dispatch_message(run, async: false)
+      assert %Run{pending_chat: nil, status: :running} = Repo.reload!(run)
+    end
+
+    test "sends Plan's message without a second setup while one is already on its way", %{task: task, run: run} do
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
+        task_id: task.id,
+        kind: :setup,
+        stream_path: "/tmp/dispatch_message/#{run.id}.log",
+        status: :waiting_for_resources,
+        started_at: DateTime.utc_now()
+      })
+
+      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{kind: :agent, run: spawned}} end)
+      reject(Tools, :start_command_process, 4)
+
+      assert {:ok, %OsProcess{kind: :agent}} = dispatch_message(run, async: false)
+    end
   end
 
   describe "a message to a Review lead whose round waits on a person" do

@@ -5,6 +5,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveDesignOptionTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Tools.Schemas.BrowserSession
 
   setup %{project: project} do
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -48,5 +49,31 @@ defmodule Rail.Mcp.Utils.RunToolSaveDesignOptionTest do
              run_tool_save_design_option(%{task | issue: issue}, option, [])
 
     assert Pipeline.read_design(task) == nil
+  end
+
+  # Plan draws from the running app, never from the code alone; the review agent revises what Plan drew.
+  test "at Plan an option is refused until a browser of the task's has opened on the app", %{task: task} do
+    option = %{"key" => "round-bar", "title" => "Round bar", "summary" => "A bar."}
+
+    assert {:refused, "Nothing saved: no browser has opened on the running app" <> _rest} =
+             run_tool_save_design_option(task, option, stage: :plan)
+
+    Repo.insert!(%BrowserSession{task_id: task.id, name: "plan", status: :finished, started_at: DateTime.utc_now()})
+
+    assert {:refused, "Nothing saved: no browser" <> _rest} = run_tool_save_design_option(task, option, stage: :plan)
+    assert Pipeline.read_design(task) == nil
+
+    assert {:ok, "Saved option round-bar" <> _rest} =
+             run_tool_save_design_option(task, option, stage: :review_lead)
+
+    Repo.insert!(%BrowserSession{
+      task_id: task.id,
+      name: "plan",
+      status: :finished,
+      started_at: DateTime.utc_now(),
+      signed_in_at: DateTime.utc_now()
+    })
+
+    assert {:ok, "Saved option round-bar" <> _rest} = run_tool_save_design_option(task, option, stage: :plan)
   end
 end

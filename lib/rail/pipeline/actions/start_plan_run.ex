@@ -15,6 +15,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
   import Rail.Pipeline.Utils.FormatTicket
   import Rail.Pipeline.Utils.LearningsBrief
   import Rail.Pipeline.Utils.MakeIssueWorktree
+  import Rail.Pipeline.Utils.StartWorktreeSetup
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
@@ -34,7 +35,9 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
 
   A checkout no worktree can be made in leaves the issue without a task or an owner, so it can be
   started again; a run that is recorded but fails to spawn keeps its task, with the failure on the
-  run. Returns whatever `Tools.start_os_process/2` does, or `{:error, :task_exists}` for an issue with a live task.
+  run. A worktree that still needs the project's setup script gets it beside the agent rather than ahead of it, so
+  planning starts at once and the browser waits for the app. Returns whatever `Tools.start_os_process/2` does, or
+  `{:error, :task_exists}` for an issue with a live task.
   """
   def start_plan_run(%Scope{} = scope, %Issue{} = issue) do
     %Issue{project: %Project{} = project} = issue = Repo.preload(issue, :project)
@@ -108,7 +111,11 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
         work_dir: worktree_path
       )
 
-    Tools.start_os_process(run, args)
+    # The agent joins the line first, so a setup waiting for room never holds up the plan.
+    with {:ok, os_process} <- Tools.start_os_process(run, args) do
+      _setup = start_worktree_setup_beside(%{run | task: task})
+      {:ok, os_process}
+    end
   end
 
   defp brief(%Task{issue: %Issue{} = issue} = task, %Run{} = run) do
@@ -127,7 +134,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     Saving:
 
     #{Enum.join(saving(on?), "\n")}
-    #{if on?.(:design), do: design_brief(dir, kit, on?), else: ""}
+    #{if on?.(:design), do: design_brief(task, kit, on?), else: ""}
     Keeping the #{if issue.skipped_steps == [], do: "three", else: "parts"} in step:
 
     #{keeping(dir, on?)}
@@ -151,7 +158,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
       on?.(:product) &&
         "The ticket first. Save it with `save_plan`, giving its `title` and `description`, as soon as you have a draft, so the human can read it while you work.",
       on?.(:design) &&
-        "Then the design, only when the change has a screen: three options, each saved with `save_design_option`. When nothing anyone sees changes there are no options: skip them and say so in one line.",
+        "Then the design, only when the change has a screen: look at the app as it is in your browser first, then three options, each saved with `save_design_option`. When nothing anyone sees changes there are no options: skip them and say so in one line.",
       (on?.(:architect) and on?.(:design)) &&
         "Then the implementation plan, saved with `save_plan` as `plan`. Write everything that does not hang on the screen first. Once the options are saved, either write the screen-specific details for the option you recommend, naming it as `design` when you save, or leave them until the pick. Never plan for all of them.",
       (on?.(:architect) and not on?.(:design)) &&
@@ -239,8 +246,28 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     end
   end
 
-  defp design_brief(dir, kit, on?) do
+  # Bash has no background tasks here, and a server run in the foreground holds the command until its timeout.
+  defp design_brief(%Task{scratch_path: scratch_path}, kit, on?) do
+    dir = Path.join(scratch_path, "design")
+    reference = Path.join(dir, "reference")
+
     """
+
+    The app as it is, before the first option:
+
+    - Rail may still be running the worktree's setup script when your turn starts, and the app cannot run until it has finished. Plan in the meantime: the ticket and reading the code need no browser. If `browser_connect` says the setup is still running, carry on with those and call it again in a few minutes.
+    - Design from the running app, not from what you remember of its code. Call `browser_connect`: yours is named `plan`, signed in as its own fresh account, and is the one every browser tool uses when you name none. Check whether the worktree's app already answers at its address, and if not start its server from the worktree detached from your shell, in a foreground command such as `nohup pnpm dev > #{Path.join(scratch_path, "server.log")} 2>&1 &`, so the command returns while it keeps running. Running the app changes no code, so it is allowed; leave the server running.
+    - Go to every screen the change touches and the screens a person reaches it from, in the states the change cares about, seeding what you need through the app as a person would. Save a picture of each with the driver's `shot(path)` under #{reference}/, named for the screen and the state, at 1920 wide and, where the screen is used narrow, at that width too. Open each picture and check it shows that screen in that state.
+    - Read the page itself with `evaluate`: the shell around the screen, the type scale and fonts, colors, spacing, borders, radii and shadows as computed, and the markup of the components the app already has for what the change needs.
+    - Call `browser_problems` after each script and `browser_close` once you have what you need. Rail closes it anyway when your turn ends, and a later turn's `browser_connect` opens a new one signed in as a new account.
+    - Never draw an option from the code alone: `save_design_option` refuses one until your browser has opened on the running app. If the browser cannot start, Rail fails the plan and `browser_connect` says why. Then save no option, and end your turn saying what stopped it. If the app runs but will not serve a screen the change touches, or that screen needs data you cannot make through the app, do the same.
+
+    Fidelity:
+
+    - Each option is the real screen with the change in it, as faithful as a screenshot of the app: the app's own shell, navigation and headers around it, its fonts, colors, spacing and components, and the copy and data a real account would show. Where the app has a component for something, draw that component as it renders, and draw a new one only where the change needs it, saying so in `assumptions`. No wireframes, lorem ipsum, placeholder boxes or grey bars standing in for content.
+    - Take the values from the reference pictures and the computed styles, and set them in the page's own Tailwind config or inline CSS. Copy the values, never the app's whole stylesheet, so the page stays small.
+    - Draw every state the change brings, each labelled: empty, loading, error, long content, a narrow width where the screen is used narrow, and hover or focus where the change depends on them.
+    - Before saving an option, open its screenshot beside the reference picture of the screen it changes and fix every difference that is not the change itself, such as a wrong font, color or spacing or a missing part of the shell. What differs is only what the option is about.
 
     The design options:
 

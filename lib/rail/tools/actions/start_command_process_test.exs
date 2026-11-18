@@ -174,4 +174,58 @@ defmodule Rail.Tools.Actions.StartCommandProcessTest do
                "It is 2nd in line and starts on its own as soon as enough is free."
            ] = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
   end
+
+  # Plan's setup runs beside its agent, so its place in the line is its own and the run stays the agent's.
+  describe "a setup beside Plan's agent" do
+    setup %{run: run} do
+      task = Repo.get!(Task, run.task_id)
+
+      {:ok, plan} =
+        Roles.create_role(system_scope(), Repo.get!(Project, task.project_id), %{
+          cli: :claude,
+          stage: :plan,
+          name: "plan role",
+          model: "claude-opus-5-5",
+          system_prompt: "You are the planner."
+        })
+
+      %{plan: plan, task: task}
+    end
+
+    test "that starts at once leaves the run waiting for its agent's turn", %{plan: plan, task: task} do
+      {:ok, plan_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: plan.id,
+          status: :waiting_for_resources,
+          started_at: DateTime.utc_now()
+        })
+
+      expect(FollowerSupervisor, :start_follower, fn _os_process, [port: _port] -> {:ok, self()} end)
+
+      assert {:ok, %OsProcess{kind: :setup, status: :running}} = Tools.start_command_process(plan_run, :setup, "true")
+      assert {:ok, %{status: :waiting_for_resources}} = Pipeline.get_run(plan_run.id)
+    end
+
+    test "that waits in line leaves a run whose turn is over as it was", %{plan: plan, task: task} do
+      {:ok, plan_run} =
+        Pipeline.create_run(%{task_id: task.id, role_id: plan.id, status: :finished, started_at: DateTime.utc_now()})
+
+      Repo.insert!(%OsProcess{
+        run_id: plan_run.id,
+        task_id: task.id,
+        stream_path: "/dev/null",
+        status: :running,
+        started_at: DateTime.utc_now(),
+        reserved_cpus: 4
+      })
+
+      reject(Tools, :spawn_os_process, 3)
+
+      assert {:ok, %OsProcess{kind: :setup, status: :waiting_for_resources}} =
+               Tools.start_command_process(plan_run, :setup, "./setup")
+
+      assert {:ok, %{status: :finished}} = Pipeline.get_run(plan_run.id)
+    end
+  end
 end

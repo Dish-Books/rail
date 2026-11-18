@@ -7,6 +7,7 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.BrowserSession
@@ -339,6 +340,10 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
 
     assert {:error, {:browser_unavailable, :enoent}} = run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
     assert {:error, {:browser_unavailable, :enoent}} = run_tool_browser_connect(task, %{"browser" => "explorer 2"}, opts)
+
+    # Plan cannot design without it, so there it fails the plan too.
+    assert {:refused, "Plan's browser could not start ({:browser_unavailable, :enoent})." <> _rest} =
+             run_tool_browser_connect(task, %{"browser" => "explorer 1"}, Keyword.put(opts, :stage, :plan))
   end
 
   test "a seed that prints no link signs nobody in and says what it printed", %{task: task, project: project, opts: opts} do
@@ -386,5 +391,61 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
 
     assert {:refused, "`browser` is a name" <> _rest} = run_tool_browser_connect(task, %{"browser" => ""}, opts)
     assert Repo.all(from s in Session, where: s.task_id == ^task.id) == []
+  end
+
+  # Plan starts while its worktree is set up beside it, and until then there is no app to sign in to.
+  test "Plan is told to carry on without a browser while its worktree is still being set up", %{
+    task: task,
+    project: project,
+    opts: opts
+  } do
+    task = %{task | project: %{project | worktree_setup_script: "bin/setup"}, worktree_setup_at: nil}
+    plan = Keyword.put(opts, :stage, :plan)
+
+    setup_process =
+      Repo.insert!(%OsProcess{
+        run_id: opts[:os_process].run_id,
+        task_id: task.id,
+        kind: :setup,
+        stream_path: Path.join(task.scratch_path, "setup.log"),
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    assert {:refused, "The worktree's setup script is still running" <> _rest} =
+             run_tool_browser_connect(task, %{}, plan)
+
+    setup_process |> OsProcess.changeset(%{status: :finished}) |> Repo.update!()
+
+    assert {:refused, "The worktree's setup script did not finish" <> refused} =
+             run_tool_browser_connect(task, %{}, plan)
+
+    assert refused =~ "never from the code alone, so the plan failed"
+    assert refused =~ "Save no design option."
+    assert Repo.all(from s in Session, where: s.task_id == ^task.id) == []
+
+    assert %Run{error: "The worktree's setup script did not finish" <> _rest} =
+             Repo.get!(Run, opts[:os_process].run_id)
+  end
+
+  # Plan draws its options from the app, so a browser it cannot sign in is the plan failing, not a thing to work around.
+  test "a browser that cannot start at Plan fails the plan, while elsewhere it is only said", %{
+    task: task,
+    project: project,
+    opts: opts
+  } do
+    project |> Ecto.Changeset.change(account_seed_command: "sh scripts/broken.sh") |> Repo.update!()
+    {:ok, task} = Pipeline.get_task(task.id)
+
+    assert {:refused, "The account seed" <> _rest} = run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
+    assert %Run{error: nil} = Repo.get!(Run, opts[:os_process].run_id)
+
+    assert {:refused, "Plan's browser could not start: The account seed `sh scripts/broken.sh` exited with 3" <> rest} =
+             run_tool_browser_connect(task, %{"browser" => "explorer 2"}, Keyword.put(opts, :stage, :plan))
+
+    assert rest =~ "Save no design option."
+
+    assert %Run{error: "Plan's browser could not start: The account seed" <> _rest} =
+             Repo.get!(Run, opts[:os_process].run_id)
   end
 end

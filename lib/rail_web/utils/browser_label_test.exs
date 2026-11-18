@@ -8,6 +8,10 @@ defmodule RailWeb.Utils.BrowserLabelTest do
     assert browser_label("demo") == "Demo recorder"
   end
 
+  test "the Plan step's browser is the Plan designer's" do
+    assert browser_label("plan") == "Plan designer"
+  end
+
   test "any other browser keeps the name it was given" do
     assert browser_label("explorer-x") == "explorer-x"
     assert browser_label("qa") == "qa"

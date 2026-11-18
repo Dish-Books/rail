@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Utils.SetupRunFinished do
   waiting for it, or failed on what the script said.
   """
 
+  import Rail.Pipeline.Utils.FailPlanWithoutApp
   import Rail.Pipeline.Utils.StartChecks
 
   alias Rail.Git
@@ -71,6 +72,52 @@ defmodule Rail.Pipeline.Utils.SetupRunFinished do
     why = run.error || "exit #{run.exit_code}"
     fail(run, "The worktree setup script failed (#{why}). Its output is above; once what it reports is fixed, retry.")
   end
+
+  @doc """
+  Finishes a setup that ran beside `run`'s agent, Plan's, against how it exited. A setup that worked marks the
+  worktree set up and says so in the run's log, leaving the run as the agent has it. One that failed fails the plan,
+  since Plan never designs from the code alone, and the message that carries on starts it again. One that was
+  stopped only says so: whoever stopped it stopped the run too.
+  """
+  def setup_beside_finished(%Run{task: %Task{} = task} = run, 0, _error) do
+    {:ok, task} = task |> Task.changeset(%{worktree_setup_at: DateTime.utc_now()}) |> Repo.update()
+    %Task{project: %Project{} = project} = Repo.preload(task, :project)
+
+    case Git.copy_env_file(project, task.worktree_path) do
+      :ok ->
+        beside_said(run, "[rail] The worktree is set up, so the app can run and `browser_connect` opens a browser.")
+
+      {:error, message} ->
+        {:ok, _task} = task |> Task.changeset(%{worktree_setup_at: nil}) |> Repo.update()
+        _error = fail_plan_without_app(run, "Rail could not write the project's .env into the worktree (#{message}).")
+        reloaded(run)
+    end
+  end
+
+  def setup_beside_finished(%Run{} = run, -1, _error) do
+    beside_said(
+      run,
+      "[rail] The worktree setup was stopped before it finished, so the app cannot run yet. The next turn sets it up again."
+    )
+  end
+
+  def setup_beside_finished(%Run{} = run, exit_code, error) do
+    _error =
+      fail_plan_without_app(
+        run,
+        "The worktree setup script failed (#{error || "exit #{exit_code}"}); its output is above."
+      )
+
+    reloaded(run)
+  end
+
+  defp beside_said(%Run{} = run, line) do
+    Pipeline.append_run_events(run.id, nil, [line])
+    Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:run_changed, run.id})
+    reloaded(run)
+  end
+
+  defp reloaded(%Run{} = run), do: %{Repo.get!(Run, run.id) | task: Repo.get!(Task, run.task_id), role: run.role}
 
   defp resuming_chat?(%Run{pending_chat: queued}) when queued in [nil, ""], do: false
   defp resuming_chat?(%Run{id: run_id}), do: Tools.list_os_processes(run_id: run_id, kind: :agent) != []
