@@ -3,6 +3,7 @@ defmodule RailWeb.TestingLive do
   use RailWeb, :live_view
 
   import RailWeb.Utils.IssueRelative
+  import RailWeb.Utils.RefuseImages
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
@@ -21,6 +22,7 @@ defmodule RailWeb.TestingLive do
 
   # The usual longest gap between a double click's two clicks, so the second lands on the loading screen.
   @advance_ms 500
+  @linear_uploads "https://uploads.linear.app/"
 
   def mount(_params, _session, socket) do
     if connected?(socket) do
@@ -39,6 +41,14 @@ defmodule RailWeb.TestingLive do
       |> assign(:notice, nil)
       |> assign(:advancing, nil)
       |> assign(:notes_rev, 0)
+      |> assign(:image_error, nil)
+      |> allow_upload(:testing_images,
+        accept: [".png", ".jpg", ".jpeg", ".gif", ".webp"],
+        max_entries: 10,
+        max_file_size: 10_000_000,
+        auto_upload: true,
+        progress: &handle_progress/3
+      )
 
     {:ok, socket}
   end
@@ -156,26 +166,79 @@ defmodule RailWeb.TestingLive do
                     >
                       <.icon name="pi-lock-simple" class="size-3" />{@lock_label}
                     </span>
+                    <label
+                      :if={@in_queue}
+                      id="testing-attach-image"
+                      title="Attach pictures"
+                      class="ml-auto inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-within:ring-2 focus-within:ring-blue-500"
+                    >
+                      <.live_file_input upload={@uploads.testing_images} class="sr-only" />
+                      <.icon name="pi-image" class="size-4" />Attach pictures
+                    </label>
                   </div>
-                  <textarea
-                    id={"testing-notes-#{@issue.id}"}
-                    name="notes"
-                    phx-debounce="500"
-                    phx-blur="notes_blurred"
-                    data-rev={@notes_rev}
-                    readonly={!@in_queue}
-                    placeholder="What you tried, what worked, what did not..."
+                  <div
+                    id={"testing-notes-box-#{@issue.id}"}
+                    phx-drop-target={@in_queue && @uploads.testing_images.ref}
                     class={[
-                      "block w-full min-h-32 resize-y rounded-xl border-0 px-4 py-3 text-[13.5px] leading-relaxed text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none break-words",
+                      "rounded-xl",
                       @in_queue &&
-                        "bg-white dark:bg-slate-900 ring-1 ring-slate-300 dark:ring-slate-600 focus:ring-2 focus:ring-blue-500",
+                        "bg-white dark:bg-slate-900 ring-1 ring-slate-300 dark:ring-slate-600 focus-within:ring-2 focus-within:ring-blue-500",
                       !@in_queue &&
                         "bg-slate-50 dark:bg-slate-800/40 ring-1 ring-slate-200 dark:ring-slate-700"
                     ]}
-                  >{@issue.testing_notes}</textarea>
+                  >
+                    <div
+                      :if={@issue.testing_images != [] or @uploads.testing_images.entries != []}
+                      id="testing-images"
+                      class="flex flex-wrap gap-2 px-3 pt-3"
+                    >
+                      <.image_chip
+                        :for={{image, index} <- Enum.with_index(@issue.testing_images)}
+                        id={"testing-image-#{index}"}
+                        name={image.name}
+                        src={image_src(@issue, image)}
+                        removable={@in_queue}
+                        phx-click="remove_testing_image"
+                        phx-value-issue_id={@issue.id}
+                        phx-value-url={image.url}
+                      />
+                      <.image_chip
+                        :for={entry <- @uploads.testing_images.entries}
+                        id={"testing-upload-#{entry.ref}"}
+                        name={entry.client_name}
+                        entry={entry}
+                        busy
+                        removable={false}
+                      />
+                    </div>
+                    <textarea
+                      id={"testing-notes-#{@issue.id}"}
+                      name="notes"
+                      phx-debounce="500"
+                      phx-blur="notes_blurred"
+                      phx-hook="ImagePaste"
+                      data-upload-name="testing_images"
+                      data-rev={@notes_rev}
+                      readonly={!@in_queue}
+                      placeholder="What you tried, what worked, what did not... Paste or drop pictures here."
+                      class="block w-full min-h-32 resize-y rounded-xl border-0 bg-transparent px-4 py-3 text-[13.5px] leading-relaxed text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-0 break-words"
+                    >{@issue.testing_notes}</textarea>
+                  </div>
+                  <p
+                    :if={@image_error}
+                    id="testing-image-error"
+                    role="alert"
+                    class="flex items-start gap-2 text-xs text-red-700 dark:text-red-300"
+                  >
+                    <.icon
+                      name="pi-warning-circle"
+                      class="size-4 shrink-0 text-red-600 dark:text-red-400"
+                    />
+                    <span class="min-w-0 break-words">{@image_error}</span>
+                  </p>
                 </form>
                 <p :if={@in_queue} class="text-xs text-slate-500 dark:text-slate-400">
-                  Send to triage opens a new ticket in Triage with these notes and a link to {@issue.identifier}.
+                  Send to triage opens a new ticket in Triage with these notes, their pictures and a link to {@issue.identifier}.
                 </p>
               </section>
 
@@ -196,6 +259,12 @@ defmodule RailWeb.TestingLive do
       </div>
     </Layouts.app>
     """
+  end
+
+  # Picking or pasting pictures changes the form too; a picture it cannot take comes straight back out, with why.
+  def handle_event("save_notes", %{"_target" => ["testing_images"]}, socket) do
+    {socket, error} = refuse_images(socket, :testing_images)
+    {:noreply, assign(socket, :image_error, error)}
   end
 
   def handle_event("save_notes", %{"issue_id" => issue_id, "notes" => notes}, socket) do
@@ -261,6 +330,27 @@ defmodule RailWeb.TestingLive do
     {:noreply, socket}
   end
 
+  def handle_event(
+        "remove_testing_image",
+        %{"issue_id" => issue_id, "url" => url},
+        %{assigns: %{issue: %Issue{id: issue_id} = issue}} = socket
+      ) do
+    socket =
+      case Issues.remove_testing_image(socket.assigns.current_scope, issue, url) do
+        {:ok, saved} ->
+          socket |> assign(:issue, %{issue | testing_images: saved.testing_images}) |> assign(:image_error, nil)
+
+        {:error, reason} ->
+          socket
+          |> assign(:notice, %{for: socket.assigns.selected_id, reason: reason, identifier: issue.identifier})
+          |> load()
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("remove_testing_image", _params, socket), do: {:noreply, socket}
+
   # Leaving the field shows the notes saved last, which another tester's save may have replaced.
   def handle_event("notes_blurred", _params, socket), do: {:noreply, update(socket, :notes_rev, &(&1 + 1))}
 
@@ -325,6 +415,43 @@ defmodule RailWeb.TestingLive do
 
   def handle_async(:blockers, _stale_or_failed, socket), do: {:noreply, socket}
 
+  # The picture shows from the browser's copy until the tracker holds it, then from the ticket.
+  def handle_async({:testing_image, ref, name}, result, socket) do
+    socket = cancel_upload(socket, :testing_images, ref)
+
+    # A stored picture's ticket is read again on the broadcast its save sent, so only a refusal is this clause's.
+    socket =
+      case result do
+        {:ok, {:ok, _saved}} ->
+          socket
+
+        {:ok, {:error, :unsupported}} ->
+          assign(socket, :image_error, "#{name} was not added: this ticket's tracker cannot hold pictures.")
+
+        {:ok, {:error, :testing_finished}} ->
+          assign(socket, :image_error, "#{name} was not added: testing on this ticket has finished.")
+
+        _failed ->
+          assign(socket, :image_error, "Couldn't add #{name}. Try adding it again.")
+      end
+
+    {:noreply, socket}
+  end
+
+  # Kept until the tracker has it, so its preview stays in the box meanwhile.
+  def handle_progress(:testing_images, %{done?: true} = entry, socket) do
+    %{issue: issue, current_scope: scope} = socket.assigns
+    data = consume_uploaded_entry(socket, entry, fn %{path: path} -> {:postpone, File.read!(path)} end)
+    name = entry.client_name
+
+    {:noreply,
+     start_async(socket, {:testing_image, entry.ref, name}, fn ->
+       Issues.add_testing_image(scope, issue, name, data)
+     end)}
+  end
+
+  def handle_progress(:testing_images, _entry, socket), do: {:noreply, socket}
+
   attr :notice, :map, required: true
   attr :issue, :any, required: true
 
@@ -386,6 +513,9 @@ defmodule RailWeb.TestingLive do
   defp finished_label(%Issue{state: :done, testing_state: :tested}), do: "was already marked tested"
   defp finished_label(%Issue{state: :done, testing_state: :sent_to_triage}), do: "was already sent to triage"
   defp finished_label(_moved_or_gone), do: "is no longer in Done"
+
+  # Linear serves its uploads only to a token, so a Linear picture is read through the ticket's own asset route.
+  defp image_src(%Issue{id: id}, %{url: url}), do: String.replace_prefix(url, @linear_uploads, "/issues/#{id}/assets/")
 
   # Shown only out of the queue, where a Done ticket is Tested or Sent to triage.
   defp lock_label(%Issue{state: :done}), do: "Testing finished"

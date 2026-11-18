@@ -5532,6 +5532,130 @@ defmodule RailWeb.TaskLiveTest do
       assert %Run{pending_chat: "Please add a test"} = Repo.reload!(run)
     end
 
+    test "pictures sit in the box until sent, can be taken out, and show in the message once sent", %{
+      conn: conn,
+      task: task,
+      run: run
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+      view
+      |> file_input("#chat-composer-form", :images, [
+        %{name: "header.png", content: "PNG_BYTES", type: "image/png"},
+        %{name: "footer.png", content: "OTHER_BYTES", type: "image/png"}
+      ])
+      |> preflight_upload()
+
+      view |> element("#chat-composer-form") |> render_change(%{"_target" => ["images"]})
+      assert has_element?(view, "#chat-attachments [data-qa='image-chip'][title='header.png']")
+      assert has_element?(view, "#chat-attachments [data-qa='image-chip'][title='footer.png']")
+
+      view |> element("[data-qa='image-chip'][title='header.png'] [data-qa='image-chip-remove']") |> render_click()
+      view |> element("[data-qa='image-chip'][title='footer.png'] [data-qa='image-chip-remove']") |> render_click()
+      refute has_element?(view, "#chat-attachments")
+
+      pictures =
+        file_input(view, "#chat-composer-form", :images, [
+          %{name: "header.png", content: "PNG_BYTES", type: "image/png"},
+          %{name: "footer.png", content: "FOOTER_BYTES", type: "image/png"}
+        ])
+
+      render_upload(pictures, "header.png")
+      render_upload(pictures, "footer.png")
+      view |> element("#chat-composer-form") |> render_submit(%{"message" => ""})
+
+      refute has_element?(view, "#chat-attachments")
+      assert has_element?(view, "#queued-banner", "Queued: 2 pictures (sends when")
+      %Run{pending_chat: pending} = Repo.reload!(run)
+
+      # In the order they sat in the box, in the message and in the bubble alike.
+      [header, footer] =
+        for "[Attached image, open it with Read: " <> path <- String.split(pending, "\n"),
+            do: String.trim_trailing(path, "]")
+
+      assert File.read!(header) == "PNG_BYTES"
+      assert File.read!(footer) == "FOOTER_BYTES"
+      bubble = "[data-qa='human-bubble-images']"
+      assert has_element?(view, "#{bubble} a:first-child[href='/tasks/#{task.id}/attachments/#{Path.basename(header)}']")
+      assert has_element?(view, "#{bubble} a:last-child[href='/tasks/#{task.id}/attachments/#{Path.basename(footer)}']")
+    end
+
+    test "a file that is not a picture is taken back out of the box, saying why", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+      form = "#chat-composer-form"
+
+      view |> file_input(form, :images, [%{name: "notes.txt", content: "text", type: "text/plain"}]) |> preflight_upload()
+      view |> element(form) |> render_change(%{"_target" => ["images"]})
+
+      refute has_element?(view, "[data-qa='image-chip']")
+      assert has_element?(view, "#chat-image-error", "notes.txt is not a PNG, JPEG, GIF or WebP picture.")
+
+      view
+      |> file_input(form, :images, [%{name: "huge.png", content: :binary.copy("P", 10_000_001), type: "image/png"}])
+      |> preflight_upload()
+
+      view |> element(form) |> render_change(%{"_target" => ["images"]})
+      assert has_element?(view, "#chat-image-error", "huge.png is over 10 MB, so it was not added.")
+
+      view |> file_input(form, :images, [%{name: "ok.png", content: "PNG", type: "image/png"}]) |> preflight_upload()
+      view |> element(form) |> render_change(%{"_target" => ["images"]})
+
+      refute has_element?(view, "#chat-image-error")
+      assert has_element?(view, "[data-qa='image-chip'][title='ok.png']")
+      view |> element("[data-qa='image-chip'][title='ok.png'] [data-qa='image-chip-remove']") |> render_click()
+
+      eleven = for n <- 1..11, do: %{name: "shot#{n}.png", content: "PNG", type: "image/png"}
+      view |> file_input(form, :images, eleven) |> preflight_upload()
+      view |> element(form) |> render_change(%{"_target" => ["images"]})
+      assert has_element?(view, "#chat-image-error", "Up to 10 pictures go at a time, so shot11.png was not added.")
+      assert has_element?(view, "[data-qa='image-chip'][title='shot10.png']")
+    end
+
+    test "a queued message's pictures read as a count beside its words", %{conn: conn, task: task, run: run} do
+      {:ok, _queued} =
+        Pipeline.update_run(run, %{
+          pending_chat: "Look\n[Attached image, open it with Read: /a.png]\n[Attached image, open it with Read: /b.png]"
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+      assert has_element?(view, "#queued-banner", ~s(Queued: "Look" + 2 pictures))
+    end
+
+    test "stopping hands a queued message's pictures back as pictures, to remove or send again", %{
+      conn: conn,
+      task: task,
+      run: run
+    } do
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+      images = [%{name: "a.png", data: "A"}, %{name: "b.png", data: "B"}]
+      {:ok, :queued, queued} = Pipeline.send_message(system_scope(), run, "Look", images: images)
+      {"Look", [kept, dropped]} = Pipeline.split_message_images(queued.pending_chat)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+      view
+      |> file_input("#chat-composer-form", :images, [%{name: "notes.txt", content: "text", type: "text/plain"}])
+      |> preflight_upload()
+
+      view |> element("#chat-composer-form") |> render_change(%{"_target" => ["images"]})
+      assert has_element?(view, "#chat-image-error")
+      view |> element("#cancel-queued-message") |> render_click()
+
+      refute has_element?(view, "#chat-image-error")
+      assert has_element?(view, "#chat-input", "Look")
+      refute render(view) =~ "Attached image, open it with Read"
+      assert has_element?(view, "[id='chat-held-#{kept}'] img[src='/tasks/#{task.id}/attachments/#{kept}']")
+
+      view |> element("[id='chat-held-#{dropped}'] [data-qa='image-chip-remove']") |> render_click()
+      refute has_element?(view, "[id='chat-held-#{dropped}']")
+
+      {:ok, _running} = Pipeline.update_run(Repo.reload!(run), %{status: :running})
+      view |> element("#chat-composer-form") |> render_submit(%{"message" => ""})
+
+      refute has_element?(view, "#chat-attachments")
+      assert {"", [^kept]} = Pipeline.split_message_images(Repo.reload!(run).pending_chat)
+    end
+
     test "stopping hands the undelivered message back to the composer", %{conn: conn, task: task, run: run} do
       {:ok, _queued} = Pipeline.update_run(run, %{pending_chat: "Please add a test"})
 

@@ -12,8 +12,8 @@ defmodule Rail.Issues.Actions.SendIssueToTriage do
   alias Rail.Scope
 
   @doc """
-  Opens a ticket in Triage in the tested ticket's project, holding its notes and a link to it, and returns the new
-  ticket. The tested ticket stays in Done as Sent to triage. Refuses with `:no_notes` when the notes are blank, and
+  Opens a ticket in Triage in the tested ticket's project, holding its notes, their pictures and a link to it, and
+  returns the new ticket. The tested ticket stays in Done as Sent to triage. Refuses with `:no_notes` when the notes are blank, and
   with `:testing_finished` when the ticket is out of the queue.
   """
   def send_issue_to_triage(%Scope{} = scope, %Issue{id: id, project_id: project_id}) do
@@ -38,7 +38,11 @@ defmodule Rail.Issues.Actions.SendIssueToTriage do
            Issues.create_issue(scope, locked.project, %{
              title: "Follow-up to #{locked.identifier}: #{locked.title}",
              description:
-               "#{String.trim(locked.testing_notes)}\n\nFound while testing [#{locked.identifier}](#{locked.url})."
+               Enum.join(
+                 [String.trim(locked.testing_notes) | Enum.map(locked.testing_images, &"![#{alt(&1.name)}](#{&1.url})")] ++
+                   ["Found while testing [#{locked.identifier}](#{locked.url})."],
+                 "\n\n"
+               )
            }) do
       locked |> Ecto.Changeset.change(testing_state: :sent_to_triage) |> Repo.update!()
       created
@@ -47,4 +51,7 @@ defmodule Rail.Issues.Actions.SendIssueToTriage do
       refusal when refusal in [:not_found, :testing_finished, :no_notes] -> Repo.rollback(refusal)
     end
   end
+
+  # A bracket in the name would end the picture's markdown early.
+  defp alt(name), do: String.replace(name, ["[", "]"], "")
 end

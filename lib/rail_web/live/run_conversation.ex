@@ -10,6 +10,7 @@ defmodule RailWeb.Live.RunConversation do
   use RailWeb, :live_component
 
   import Rail.Pipeline.Utils.DrivingLine
+  import RailWeb.Utils.RefuseImages
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -40,6 +41,20 @@ defmodule RailWeb.Live.RunConversation do
   subscriptions, tagged with the run they belong to, in which case only the log
   of that run is extended, and only if it is the one being read.
   """
+  @impl true
+  def mount(socket) do
+    socket =
+      socket
+      |> assign(:image_error, nil)
+      |> allow_upload(:images,
+        accept: [".png", ".jpg", ".jpeg", ".gif", ".webp"],
+        max_entries: 10,
+        max_file_size: 10_000_000
+      )
+
+    {:ok, socket}
+  end
+
   # A send reloads the log from the database, and the broadcast for the lines it
   # just wrote can land after that, so lines already held are dropped.
   @impl true
@@ -324,6 +339,9 @@ defmodule RailWeb.Live.RunConversation do
               role={selected_role(@selected_run, @roles_map)}
               chat_input={@chat_input}
               chat_sending={@chat_sending}
+              upload={@uploads.images}
+              held_images={@held_images}
+              image_error={@image_error}
               can_retry={retryable?(@selected_run, @task, @roles_map)}
               line={@line}
               usage_wait={@usage_wait}
@@ -390,6 +408,7 @@ defmodule RailWeb.Live.RunConversation do
               roles_map={@roles_map}
               expanded_activities={@expanded_activities}
               worktree_path={@task.worktree_path}
+              task_id={@task.id}
               identifier={@identifier}
               usage_wait={@usage_wait}
               questions={@questions}
@@ -412,6 +431,7 @@ defmodule RailWeb.Live.RunConversation do
   attr :roles_map, :map, default: %{}
   attr :expanded_activities, MapSet, required: true
   attr :worktree_path, :string, required: true
+  attr :task_id, :string, default: nil, doc: "the task whose attachments a message's pictures are"
   attr :identifier, :string, default: nil, doc: "the issue's identifier, which a round's ticket section shows"
   attr :usage_wait, :map, default: nil
   attr :questions, :list, default: []
@@ -512,9 +532,30 @@ defmodule RailWeb.Live.RunConversation do
           </div>
           <%!-- Kept on one line: pre-wrap would render the template's own indentation. --%>
           <div
+            :if={String.trim(@text) != ""}
             phx-no-format
             class="text-[13px] whitespace-pre-wrap wrap-break-word select-text leading-relaxed"
           >{String.trim(@text)}</div>
+          <%!-- Below the words, as a send writes them, so pictures sent after them read after them. --%>
+          <div
+            :if={@msg.images != [] and @task_id}
+            data-qa="human-bubble-images"
+            class="flex flex-wrap gap-2 pt-1"
+          >
+            <a
+              :for={file <- @msg.images}
+              href={~p"/tasks/#{@task_id}/attachments/#{file}"}
+              target="_blank"
+              rel="noopener"
+              class="block rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus-visible:outline-2 focus-visible:outline-blue-500"
+            >
+              <img
+                src={~p"/tasks/#{@task_id}/attachments/#{file}"}
+                alt="Attached picture"
+                class="h-32 w-auto max-w-60 object-cover"
+              />
+            </a>
+          </div>
         </div>
       <% :reminder -> %>
         <.answers_card :if={@answers} id={"msg-#{@idx}"} sender="Rail" from={:rail} items={@answers} />
@@ -936,6 +977,9 @@ defmodule RailWeb.Live.RunConversation do
   attr :role, :any, required: true
   attr :chat_input, :string, default: ""
   attr :chat_sending, :boolean, default: false
+  attr :upload, :any, required: true, doc: "the pictures going with the message"
+  attr :held_images, :list, default: [], doc: "pictures a stopped message handed back, already kept, going again"
+  attr :image_error, :string, default: nil, doc: "why a picture was not added"
   attr :can_retry, :boolean, default: false
   attr :line, :map, default: nil, doc: "where a waiting run stands in the line for its sandbox"
   attr :usage_wait, :map, default: nil, doc: "what a run waiting for usage waits on"
@@ -952,6 +996,7 @@ defmodule RailWeb.Live.RunConversation do
     is_queued = run != nil and is_binary(run.pending_chat) and run.pending_chat != ""
     is_unavailable = run == nil or not Run.can_chat?(run)
     sends_when = if Run.state(run) == :failed, do: "runs again", else: "is done"
+    queued_text = if is_queued, do: queued_label(run.pending_chat)
     # A failed run says why beside its Retry, whether or not it has a conversation yet.
     failed = assigns.can_retry and Run.state(run) == :failed
 
@@ -972,6 +1017,7 @@ defmodule RailWeb.Live.RunConversation do
       |> assign(:is_unavailable, is_unavailable)
       |> assign(:failed, failed)
       |> assign(:sends_when, sends_when)
+      |> assign(:queued_text, queued_text)
       |> assign(:hint_text, hint_text)
 
     ~H"""
@@ -1080,7 +1126,7 @@ defmodule RailWeb.Live.RunConversation do
         <div class="flex items-center gap-2 text-xs text-slate-900 dark:text-slate-100 truncate">
           <.icon name="pi-clock" class="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
           <span class="truncate">
-            {"Queued: \"#{@run.pending_chat}\" (sends when #{@role_name} #{@sends_when})"}
+            {"Queued: #{@queued_text} (sends when #{@role_name} #{@sends_when})"}
           </span>
         </div>
 
@@ -1154,7 +1200,7 @@ defmodule RailWeb.Live.RunConversation do
         </button>
       </div>
 
-      <!-- Input Row: Enter sends, Shift+Enter writes a newline. -->
+      <!-- Input Row: Enter sends, Shift+Enter writes a newline. Pictures pasted, dropped or attached sit in the box above the text. -->
       <form
         id="chat-composer-form"
         phx-submit="send_chat"
@@ -1163,21 +1209,74 @@ defmodule RailWeb.Live.RunConversation do
         class="flex items-end gap-2"
       >
         <input type="hidden" name="role_id" value={@role_id} />
-        <%!-- Kept on one line: a textarea renders the template's own indentation. --%>
-        <textarea
-          id="chat-input"
-          name="message"
-          data-qa="chat-input"
-          rows="1"
-          placeholder={@hint_text}
-          disabled={@is_unavailable or @chat_sending}
-          autocomplete="off"
-          phx-hook="ChatComposer"
-          data-draft-key={"rail:draft:#{@run && @run.id}"}
-          phx-debounce="300"
-          phx-no-format
-          class="flex-1 resize-none px-3 py-2 text-xs sm:text-sm rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-        >{@chat_input}</textarea>
+        <div
+          id="chat-input-box"
+          phx-drop-target={@upload.ref}
+          class="flex-1 min-w-0 rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 focus-within:ring-1 focus-within:ring-blue-600 dark:focus-within:ring-blue-500 has-[textarea:disabled]:opacity-50"
+        >
+          <div
+            :if={@upload.entries != [] or @held_images != []}
+            id="chat-attachments"
+            data-qa="chat-attachments"
+            class="flex flex-wrap gap-2 px-2 pt-2"
+          >
+            <.image_chip
+              :for={file <- @held_images}
+              id={"chat-held-#{file}"}
+              name="Picture from the stopped message"
+              src={~p"/tasks/#{@task.id}/attachments/#{file}"}
+              phx-click="remove_held_image"
+              phx-value-file={file}
+              phx-target={@target}
+            />
+            <.image_chip
+              :for={entry <- @upload.entries}
+              id={"chat-attachment-#{entry.ref}"}
+              name={entry.client_name}
+              entry={entry}
+              busy={entry.progress > 0 and not entry.done?}
+              phx-click="remove_chat_image"
+              phx-value-ref={entry.ref}
+              phx-target={@target}
+            />
+          </div>
+          <%!-- Kept on one line: a textarea renders the template's own indentation. --%>
+          <textarea
+            id="chat-input"
+            name="message"
+            data-qa="chat-input"
+            rows="1"
+            placeholder={@hint_text}
+            disabled={@is_unavailable or @chat_sending}
+            autocomplete="off"
+            phx-hook="ChatComposer"
+            data-draft-key={"rail:draft:#{@run && @run.id}"}
+            data-upload-name="images"
+            phx-debounce="300"
+            phx-no-format
+            class="block w-full resize-none border-0 px-3 py-2 text-xs sm:text-sm rounded-lg bg-transparent text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none disabled:opacity-100 disabled:cursor-not-allowed"
+          >{@chat_input}</textarea>
+        </div>
+
+        <label
+          id="chat-attach-image"
+          data-qa="chat-attach-image"
+          title="Attach pictures"
+          class={[
+            "inline-flex items-center justify-center h-9 w-9 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 shrink-0 transition-colors focus-within:ring-1 focus-within:ring-blue-600",
+            (@is_unavailable or @chat_sending) && "opacity-50 cursor-not-allowed",
+            not (@is_unavailable or @chat_sending) &&
+              "cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+          ]}
+        >
+          <.live_file_input
+            upload={@upload}
+            disabled={@is_unavailable or @chat_sending}
+            class="sr-only"
+          />
+          <span class="sr-only">Attach pictures</span>
+          <.icon name="pi-image" class="h-4 w-4 shrink-0" />
+        </label>
 
         <button
           type="submit"
@@ -1203,6 +1302,16 @@ defmodule RailWeb.Live.RunConversation do
           <% end %>
         </button>
       </form>
+
+      <p
+        :if={@image_error}
+        id="chat-image-error"
+        role="alert"
+        class="mt-2 flex items-start gap-2 text-xs text-red-700 dark:text-red-300"
+      >
+        <.icon name="pi-warning-circle" class="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
+        <span class="min-w-0 wrap-break-word">{@image_error}</span>
+      </p>
     </div>
     """
   end
@@ -1271,7 +1380,27 @@ defmodule RailWeb.Live.RunConversation do
   end
 
   def handle_event("chat_input_change", params, socket) do
-    {:noreply, assign(socket, :chat_input, Map.get(params, "message") || "")}
+    socket = assign(socket, :chat_input, Map.get(params, "message") || "")
+
+    # A picture the box cannot take comes straight back out, with why, so what is left is what sends.
+    socket =
+      if params["_target"] == ["images"] do
+        {socket, error} = refuse_images(socket, :images)
+        assign(socket, :image_error, error)
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("remove_held_image", %{"file" => file}, socket) do
+    {:noreply, update(socket, :held_images, &List.delete(&1, file))}
+  end
+
+  def handle_event("remove_chat_image", %{"ref" => ref}, socket) do
+    socket = socket |> cancel_upload(:images, ref) |> assign(:image_error, nil)
+    {:noreply, socket}
   end
 
   def handle_event("send_chat", params, socket) do
@@ -1284,10 +1413,14 @@ defmodule RailWeb.Live.RunConversation do
   # it belongs: still the human's to edit, re-send or throw away.
   def handle_event("stop_run", _params, socket) do
     {:ok, run, queued} = Pipeline.stop_run(socket.assigns.current_scope, socket.assigns.selected_run)
+    # Its pictures come back as pictures, already kept, to go again with whatever is sent next.
+    {words, files} = if queued, do: Pipeline.split_message_images(queued), else: {"", []}
 
     socket =
       socket
-      |> assign(:chat_input, restore_draft(queued, socket.assigns.chat_input))
+      |> assign(:chat_input, restore_draft(words, socket.assigns.chat_input))
+      |> update(:held_images, &(&1 ++ files))
+      |> assign(:image_error, nil)
       |> select(run)
       |> assign_plan_comments()
 
@@ -1447,12 +1580,30 @@ defmodule RailWeb.Live.RunConversation do
   defp asked_tone, do: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
 
   defp send_chat(socket, %Run{} = run, message) do
-    if String.trim(message) == "" or socket.assigns.chat_sending do
+    {uploaded, _in_flight} = uploaded_entries(socket, :images)
+
+    held = socket.assigns.held_images
+
+    if (String.trim(message) == "" and uploaded == [] and held == []) or socket.assigns.chat_sending do
       socket
     else
-      case Pipeline.send_message(socket.assigns.current_scope, run, message) do
-        {:ok, _delivery, run} -> socket |> assign(:chat_input, "") |> select(run)
-        {:error, _reason} -> socket
+      # Consumed last-added first, so they are put back in the order they sat in the box.
+      order = socket.assigns.uploads.images.entries |> Enum.with_index() |> Map.new(fn {entry, i} -> {entry.ref, i} end)
+
+      images =
+        socket
+        |> consume_uploaded_entries(:images, fn %{path: path}, entry ->
+          {:ok, {order[entry.ref], %{name: entry.client_name, data: File.read!(path)}}}
+        end)
+        |> Enum.sort_by(&elem(&1, 0))
+        |> Enum.map(&elem(&1, 1))
+
+      case Pipeline.send_message(socket.assigns.current_scope, run, message, images: images, attachments: held) do
+        {:ok, _delivery, run} ->
+          socket |> assign(:chat_input, "") |> assign(:held_images, []) |> assign(:image_error, nil) |> select(run)
+
+        {:error, _reason} ->
+          socket
       end
     end
   end
@@ -1477,6 +1628,7 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:show_raw_log, fn -> false end)
     |> assign_new(:expanded_activities, fn -> MapSet.new() end)
     |> assign_new(:chat_input, fn -> "" end)
+    |> assign_new(:held_images, fn -> [] end)
     |> assign_new(:chat_sending, fn -> false end)
     |> assign_new(:run_events, fn -> [] end)
     |> assign_new(:read_turns, fn -> %{} end)
@@ -1941,7 +2093,21 @@ defmodule RailWeb.Live.RunConversation do
       else: Pipeline.enter_stage(task, Task.current_stage(task))
   end
 
-  defp restore_draft(nil, draft), do: draft
+  # A queued picture reads as a count, not as the path the agent is told to open.
+  defp queued_label(pending) do
+    {words, files} = Pipeline.split_message_images(pending)
+
+    case {words, length(files)} do
+      {words, 0} -> "\"#{words}\""
+      {"", count} -> picture_count(count)
+      {words, count} -> "\"#{words}\" + #{picture_count(count)}"
+    end
+  end
+
+  defp picture_count(1), do: "1 picture"
+  defp picture_count(count), do: "#{count} pictures"
+
+  defp restore_draft("", draft), do: draft
   defp restore_draft(queued, draft) when draft in [nil, ""], do: queued
   defp restore_draft(queued, draft), do: "#{queued}\n\n#{draft}"
 

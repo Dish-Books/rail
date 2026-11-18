@@ -123,6 +123,71 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
     assert ["[human] One line"] = Enum.map(Pipeline.list_run_events(run), & &1.line)
   end
 
+  test "pictures sent with a message are kept in scratch, logged under who sent them and pointed at in the message", %{
+    task: task,
+    idle: idle
+  } do
+    {:ok, run} = idle.() |> Run.changeset(%{status: :running}) |> Repo.update()
+    %{user: %{id: user_id}} = scope = user_scope()
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+    images = [%{name: "Screenshot.PNG", data: "PNG_BYTES"}, %{name: "photo.jpeg", data: "JPEG_BYTES"}]
+    assert {:ok, :queued, %Run{} = queued} = Pipeline.send_message(scope, run, "Look at this", images: images)
+
+    image_tag = "[human-image:#{user_id}] "
+    [text, png_line, jpeg_line] = Enum.map(Pipeline.list_run_events(run), & &1.line)
+
+    assert text == "[human:#{user_id}] Look at this"
+    png = String.replace_prefix(png_line, image_tag, "")
+    jpeg = String.replace_prefix(jpeg_line, image_tag, "")
+    assert png =~ ~r/\A[0-9a-f-]{36}\.png\z/
+    assert jpeg =~ ~r/\A[0-9a-f-]{36}\.jpeg\z/
+    png_path = Path.join([task.scratch_path, "attachments", png])
+    jpeg_path = Path.join([task.scratch_path, "attachments", jpeg])
+    assert File.read!(png_path) == "PNG_BYTES"
+    assert File.read!(jpeg_path) == "JPEG_BYTES"
+
+    pending =
+      "Look at this\n[Attached image, open it with Read: #{png_path}]\n[Attached image, open it with Read: #{jpeg_path}]"
+
+    assert %Run{pending_chat: ^pending} = queued
+  end
+
+  test "a message can be pictures alone, but not a file that is not a picture", %{task: task, idle: idle} do
+    {:ok, run} = idle.() |> Run.changeset(%{status: :running}) |> Repo.update()
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+    assert {:ok, :queued, %Run{pending_chat: "[Attached image, open it with Read: " <> _path}} =
+             Pipeline.send_message(system_scope(), run, "  ", images: [%{name: "shot.webp", data: "WEBP"}])
+
+    assert ["[human-image] " <> _file] = Enum.map(Pipeline.list_run_events(run), & &1.line)
+
+    assert {:error, :not_an_image} =
+             Pipeline.send_message(system_scope(), run, "Notes", images: [%{name: "notes.pdf", data: "PDF"}])
+  end
+
+  test "pictures an earlier send kept go again first, and a name it never kept is refused", %{task: task, idle: idle} do
+    {:ok, run} = idle.() |> Run.changeset(%{status: :running}) |> Repo.update()
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+    {:ok, :queued, first} = Pipeline.send_message(system_scope(), run, "", images: [%{name: "a.png", data: "A"}])
+    {"", [kept]} = Pipeline.split_message_images(first.pending_chat)
+    {:ok, _stopped} = first |> Run.changeset(%{pending_chat: nil}) |> Repo.update()
+
+    assert {:ok, :queued, %Run{pending_chat: pending}} =
+             Pipeline.send_message(system_scope(), run, "Again",
+               images: [%{name: "b.png", data: "B"}],
+               attachments: [kept]
+             )
+
+    assert {"Again", [^kept, new]} = Pipeline.split_message_images(pending)
+    assert File.read!(Path.join([task.scratch_path, "attachments", new])) == "B"
+
+    for name <- ["../../etc/passwd", "#{Ecto.UUID.generate()}.png"] do
+      assert {:error, :attachment_not_found} = Pipeline.send_message(system_scope(), run, "", attachments: [name])
+    end
+  end
+
   test "a working run that has not recorded its conversation yet still queues", %{task: task, role: role} do
     {:ok, run} =
       Pipeline.create_run(%{

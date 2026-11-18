@@ -59,7 +59,16 @@ defmodule Rail.Issues.Actions.CreateIssue do
       |> Repo.insert(
         on_conflict:
           {:replace_all_except,
-           [:id, :branch_name, :inserted_at, :cycle_external_id, :parent_external_id, :testing_state, :testing_notes]},
+           [
+             :id,
+             :branch_name,
+             :inserted_at,
+             :cycle_external_id,
+             :parent_external_id,
+             :testing_state,
+             :testing_notes,
+             :testing_images
+           ]},
         conflict_target: :external_id,
         returning: true
       )
