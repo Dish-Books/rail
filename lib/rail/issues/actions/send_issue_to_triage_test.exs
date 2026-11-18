@@ -3,6 +3,7 @@ defmodule Rail.Issues.Actions.SendIssueToTriageTest do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.TestingImage
   alias Rail.Projects
 
   setup do
@@ -44,6 +45,27 @@ defmodule Rail.Issues.Actions.SendIssueToTriageTest do
     assert_received {:issue_changed, ^issue_id}
     assert_received {:issue_created, ^created_id}
     assert %{issues: []} = Issues.list_issues(project_id: project_id, testing: true)
+  end
+
+  test "the notes' pictures go into the new ticket after the notes, a bracket in a name kept out of its markdown", %{
+    issue: %Issue{identifier: identifier, url: url} = issue,
+    scope: scope
+  } do
+    {:ok, noted} = Issues.save_testing_notes(scope, issue, "The row is cut off")
+
+    {:ok, _pictured} =
+      noted
+      |> Issue.testing_images_changeset([
+        %TestingImage{url: "https://x/a.png", name: "row [cut].png"},
+        %TestingImage{url: "https://x/b.png", name: "b.png"}
+      ])
+      |> Repo.update()
+
+    description =
+      "The row is cut off\n\n![row cut.png](https://x/a.png)\n\n![b.png](https://x/b.png)\n\n" <>
+        "Found while testing [#{identifier}](#{url})."
+
+    assert {:ok, %Issue{description: ^description}} = Issues.send_issue_to_triage(scope, issue)
   end
 
   test "blank notes refuse and leave the ticket in the queue", %{issue: %Issue{id: issue_id} = issue, scope: scope} do

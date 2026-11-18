@@ -33,6 +33,8 @@ defmodule Rail.Issues do
   defdelegate reset_issue_state(issue, state), to: Actions.ResetIssueState
   defdelegate set_issue_status(scope, issue, status), to: Actions.SetIssueStatus
   defdelegate save_testing_notes(scope, issue, notes), to: Actions.SaveTestingNotes
+  defdelegate add_testing_image(scope, issue, filename, data), to: Actions.AddTestingImage
+  defdelegate remove_testing_image(scope, issue, url), to: Actions.RemoveTestingImage
   defdelegate mark_issue_tested(scope, issue), to: Actions.MarkIssueTested
   defdelegate send_issue_to_triage(scope, issue), to: Actions.SendIssueToTriage
   defdelegate edit_issue(scope, issue, attrs), to: Actions.EditIssue

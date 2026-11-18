@@ -17,6 +17,7 @@ import { DiffSection } from "./hooks/diff_section";
 import { DiffWrap } from "./hooks/diff_wrap";
 import { Elapsed } from "./hooks/elapsed";
 import { ImageFallback } from "./hooks/image_fallback";
+import { ImagePaste } from "./hooks/image_paste";
 import { IssueDescription } from "./hooks/issue_description";
 import { IssueTitle } from "./hooks/issue_title";
 import { JumpToLine } from "./hooks/jump_to_line";
@@ -58,6 +59,7 @@ const Hooks = {
   StatusMenu,
   MenuKeys,
   IssueTitle,
+  ImagePaste,
   IssueDescription,
   StartFocus
 };

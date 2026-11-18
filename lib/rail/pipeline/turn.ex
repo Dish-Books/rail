@@ -26,7 +26,8 @@ defmodule Rail.Pipeline.Turn do
   back for evidence or a round it answered from past answers. `label` says which, as in "reminder 1 of 2".
 
   A `:human` turn carries the `sender_id` of the person who sent it, or `nil` for
-  lines logged before senders were recorded and for those Rail wrote for a human.
+  lines logged before senders were recorded and for those Rail wrote for a human. Its `images` are the names of the
+  pictures sent with it, in the task's scratch `attachments` folder.
 
   `:subagent` is a helper the role handed work to: `label` is its type, `content` the description it was
   given, `turns` its own transcript and `status` whether it is `:running`, `:done` or `:failed`.
@@ -39,7 +40,8 @@ defmodule Rail.Pipeline.Turn do
             process: nil,
             sender_id: nil,
             turns: [],
-            status: nil
+            status: nil,
+            images: []
 
   @type t :: %__MODULE__{
           author: :human | :role | :activity | :driving | :event | :turn_start | :command | :reminder | :subagent,
@@ -50,6 +52,7 @@ defmodule Rail.Pipeline.Turn do
           process: struct() | nil,
           sender_id: String.t() | nil,
           turns: [t()],
-          status: :running | :done | :failed | nil
+          status: :running | :done | :failed | nil,
+          images: [String.t()]
         }
 end

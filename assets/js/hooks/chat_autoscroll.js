@@ -70,6 +70,13 @@ export const ChatAutoscroll = {
 
     this.resized = new ResizeObserver(() => this.restore());
     this.resized.observe(this.el);
+
+    // A picture grows the conversation when it loads, after the scroll that followed it was taken.
+    this.onLoad = (event) => {
+      if (event.target instanceof HTMLImageElement) this.restore();
+    };
+
+    this.el.addEventListener("load", this.onLoad, true);
   },
 
   // The same scroller serves every stage tab, and another run opens at its end.
@@ -93,6 +100,7 @@ export const ChatAutoscroll = {
       this.el.removeEventListener(type, this.onRead);
     }
 
+    this.el.removeEventListener("load", this.onLoad, true);
     this.el.removeEventListener("pointerdown", this.onPress);
     window.removeEventListener("pointerup", this.onRelease);
     window.removeEventListener("pointercancel", this.onRelease);

@@ -44,6 +44,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate finding_list(assigns), to: Components.FindingList
   defdelegate fix_plan_sheet(assigns), to: Components.FixPlanSheet
   defdelegate icon(assigns), to: Components.Icon
+  defdelegate image_chip(assigns), to: Components.ImageChip
   defdelegate in_progress_tasks(assigns), to: Components.InProgressTasks
   defdelegate input(assigns), to: Components.Input
   defdelegate issue_card(assigns), to: Components.IssueCard

@@ -5,6 +5,7 @@ defmodule Rail.Issues.Schemas.Issue do
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.IssueLink
   alias Rail.Issues.Schemas.IssueStage
+  alias Rail.Issues.Schemas.TestingImage
   alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline.Schemas.Task
@@ -54,6 +55,7 @@ defmodule Rail.Issues.Schemas.Issue do
     # Every ticket starts Waiting, is queued only while in Done, and keeps its testing when it leaves.
     field :testing_state, Ecto.Enum, values: @testing_states, default: :waiting
     field :testing_notes, :string
+    embeds_many :testing_images, TestingImage, on_replace: :delete
     # Its cycle's id, Linear's or a Rail cycle's for a Rail-tracked issue, which Rail sets itself.
     field :cycle_external_id, :string
     # The state and status name a cycle's listing reads the issue in; set only by `list_issues/1` with `:cycle_id`.
@@ -158,6 +160,15 @@ defmodule Rail.Issues.Schemas.Issue do
     changeset = cast(issue, attrs, [:testing_notes], empty_values: [])
 
     if issue.testing_state == :waiting and String.trim(get_field(changeset, :testing_notes) || "") != "",
+      do: put_change(changeset, :testing_state, :testing),
+      else: changeset
+  end
+
+  @doc "Puts the testing pictures, and moves a Waiting ticket to In testing once it has one."
+  def testing_images_changeset(%__MODULE__{} = issue, images) when is_list(images) do
+    changeset = put_embed(change(issue), :testing_images, images)
+
+    if issue.testing_state == :waiting and images != [],
       do: put_change(changeset, :testing_state, :testing),
       else: changeset
   end

@@ -66,6 +66,29 @@ defmodule Rail.Pipeline.Actions.ParseTranscriptTest do
   end
 
   # Everyone on a task reads the same conversation, so each message says whose it is.
+  test "a picture line joins its sender's message, words after pictures are the next message, and pictures alone are one of their own" do
+    turns =
+      Pipeline.parse_transcript([
+        "[human:usr_dana] See the header",
+        "[human-image:usr_dana] a.png",
+        "[human-image:usr_dana] b.jpg",
+        "[human:usr_dana] And one more thing",
+        "[human-image:usr_omar] c.png",
+        "[human-image] d.gif",
+        "[run] claude",
+        "Looking at them now."
+      ])
+
+    assert [
+             %Turn{author: :human, sender_id: "usr_dana", content: "See the header", images: ["a.png", "b.jpg"]},
+             %Turn{author: :human, sender_id: "usr_dana", content: "And one more thing", images: []},
+             %Turn{author: :human, sender_id: "usr_omar", content: "", images: ["c.png"]},
+             %Turn{author: :human, sender_id: nil, content: "", images: ["d.gif"]},
+             %Turn{author: :event, content: "[run] claude"},
+             %Turn{author: :role, content: "Looking at them now.", images: []}
+           ] = turns
+  end
+
   test "a human's lines carry who sent them, and two people's messages are two turns" do
     logs = [
       "[human:usr_dana] Please look again",

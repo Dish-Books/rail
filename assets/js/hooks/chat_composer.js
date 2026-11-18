@@ -5,7 +5,9 @@
 // A textarea does not submit its form on Enter the way a single-line input does,
 // so sending is done here. Everything the agent is told is written in this box,
 // including the multi-line notes a finding or a plan needs, which is why it is a
-// textarea at all.
+// textarea at all. Pictures pasted into it go with the message.
+import { listenForPastedImages } from "./image_paste.js";
+
 const MAX_HEIGHT = 160;
 
 // Storage can be full, or refused in a private window; the draft is a nicety, so
@@ -28,6 +30,11 @@ export const draftStore = {
   }
 };
 
+// A message can be pictures alone, which the box shows as chips while they wait to send.
+export function hasPictures(form) {
+  return form?.querySelector("[data-qa='image-chip']") != null;
+}
+
 export const ChatComposer = {
   mounted() {
     this.key = this.el.dataset.draftKey;
@@ -42,10 +49,12 @@ export const ChatComposer = {
 
       event.preventDefault();
 
-      if (!this.el.disabled && this.el.value.trim() !== "") {
+      if (!this.el.disabled && (this.el.value.trim() !== "" || hasPictures(this.el.form))) {
         this.el.form?.requestSubmit();
       }
     });
+
+    listenForPastedImages(this);
 
     this.el.addEventListener("input", () => {
       this.fit();

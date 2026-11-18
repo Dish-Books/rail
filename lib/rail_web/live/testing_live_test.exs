@@ -5,7 +5,9 @@ defmodule RailWeb.TestingLiveTest do
   import Phoenix.LiveViewTest
 
   alias Rail.Issues
+  alias Rail.Issues.Clients.R2
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.TestingImage
   alias Rail.Issues.Workers.LinkTrackerUrl
   alias Rail.Projects
   alias Rail.Repo
@@ -228,6 +230,166 @@ defmodule RailWeb.TestingLiveTest do
     {:ok, again, _html} = live(conn, ~p"/testing/#{issue.id}")
     assert has_element?(again, "#testing-notes-#{issue.id}", "Six icons fit on the row")
     assert %Issue{testing_state: :waiting} = Repo.get!(Issue, other.id)
+  end
+
+  test "a picture added to the notes shows in their box once stored, and comes out again on remove", %{
+    conn: conn,
+    done: done,
+    here: here
+  } do
+    issue = done.(here, "Pictured")
+    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+    form = "#testing-notes-form-#{issue.id}"
+
+    Req.Test.expect(R2, fn r2 ->
+      assert ["image/png"] = Plug.Conn.get_req_header(r2, "content-type")
+      Plug.Conn.send_resp(r2, 200, "")
+    end)
+
+    shot =
+      file_input(view, form, :testing_images, [%{name: "row.png", content: :binary.copy("P", 1000), type: "image/png"}])
+
+    render_upload(shot, "row.png", 50)
+    assert has_element?(view, "#testing-images [id^='testing-upload-'][title='row.png']")
+    render_upload(shot, "row.png", 50)
+    render_async(view)
+
+    assert %Issue{testing_state: :testing, testing_images: [%TestingImage{name: "row.png", url: url}]} =
+             Repo.get!(Issue, issue.id)
+
+    assert has_element?(view, "#testing-image-0[title='row.png'] img[src='#{url}']")
+    assert has_element?(view, "#testing-bar-state[data-testing-state='testing']")
+    refute has_element?(view, "[id^='testing-upload-']")
+
+    view |> element("#testing-image-0 [data-qa='image-chip-remove']") |> render_click()
+
+    refute has_element?(view, "#testing-images")
+    assert %Issue{testing_images: []} = Repo.get!(Issue, issue.id)
+  end
+
+  test "a picture the box cannot take, or the tracker cannot hold, says why and is not kept", %{
+    conn: conn,
+    done: done,
+    here: here
+  } do
+    issue = done.(here, "Refused")
+    # A tracker that holds no files, as GitHub's does not.
+    {:ok, _github} = issue |> Ecto.Changeset.change(tracker: :github) |> Repo.update()
+    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+    form = "#testing-notes-form-#{issue.id}"
+
+    view
+    |> file_input(form, :testing_images, [%{name: "notes.txt", content: "text", type: "text/plain"}])
+    |> preflight_upload()
+
+    view |> element(form) |> render_change(%{"_target" => ["testing_images"]})
+
+    assert has_element?(view, "#testing-image-error", "notes.txt is not a PNG, JPEG, GIF or WebP picture.")
+    refute has_element?(view, "#testing-images")
+
+    shot = file_input(view, form, :testing_images, [%{name: "row.png", content: "PNG_BYTES", type: "image/png"}])
+    render_upload(shot, "row.png")
+    render_async(view)
+
+    assert has_element?(
+             view,
+             "#testing-image-error",
+             "row.png was not added: this ticket's tracker cannot hold pictures."
+           )
+
+    refute has_element?(view, "#testing-images")
+  end
+
+  test "a picture over 10 MB, or past the tenth, is not added", %{conn: conn, done: done, here: here} do
+    issue = done.(here, "Too many")
+    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+    form = "#testing-notes-form-#{issue.id}"
+
+    view
+    |> file_input(form, :testing_images, [%{name: "huge.png", content: :binary.copy("P", 10_000_001), type: "image/png"}])
+    |> preflight_upload()
+
+    view |> element(form) |> render_change(%{"_target" => ["testing_images"]})
+    assert has_element?(view, "#testing-image-error", "huge.png is over 10 MB, so it was not added.")
+
+    eleven = for n <- 1..11, do: %{name: "shot#{n}.png", content: "PNG", type: "image/png"}
+    view |> file_input(form, :testing_images, eleven) |> preflight_upload()
+    view |> element(form) |> render_change(%{"_target" => ["testing_images"]})
+    assert has_element?(view, "#testing-image-error", "Up to 10 pictures go at a time, so shot11.png was not added.")
+  end
+
+  test "a picture the tracker fails to store, or one for a ticket finished meanwhile, says so", %{
+    conn: conn,
+    done: done,
+    here: here
+  } do
+    issue = done.(here, "Failing")
+    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+    form = "#testing-notes-form-#{issue.id}"
+
+    Req.Test.expect(R2, &Plug.Conn.send_resp(&1, 500, "down"))
+
+    view
+    |> file_input(form, :testing_images, [%{name: "a.png", content: "PNG", type: "image/png"}])
+    |> render_upload("a.png")
+
+    render_async(view)
+    assert has_element?(view, "#testing-image-error", "Couldn't add a.png. Try adding it again.")
+
+    Req.Test.expect(R2, fn r2 ->
+      {:ok, _tested} = Issues.mark_issue_tested(system_scope(), issue)
+      Plug.Conn.send_resp(r2, 200, "")
+    end)
+
+    view
+    |> file_input(form, :testing_images, [%{name: "b.png", content: "PNG", type: "image/png"}])
+    |> render_upload("b.png")
+
+    render_async(view)
+    assert has_element?(view, "#testing-image-error", "b.png was not added: testing on this ticket has finished.")
+  end
+
+  test "removing a picture from a ticket finished in another tab says so", %{conn: conn, done: done, here: here} do
+    issue = done.(here, "Finished elsewhere")
+
+    {:ok, _pictured} =
+      issue
+      |> Issue.testing_images_changeset([%TestingImage{url: "https://x/a.png", name: "a.png"}])
+      |> Repo.update()
+
+    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+    {:ok, _tested} = Issues.mark_issue_tested(system_scope(), issue)
+
+    # The finished ticket's page drops the button, so this is a click sent before it did.
+    render_click(view, "remove_testing_image", %{"issue_id" => issue.id, "url" => "https://x/a.png"})
+
+    assert has_element?(view, "#testing-notice", "was already marked tested")
+    assert %Issue{testing_images: [%TestingImage{name: "a.png"}]} = Repo.get!(Issue, issue.id)
+  end
+
+  test "a Linear picture is read through the ticket's asset route, and a finished ticket's cannot be removed", %{
+    conn: conn,
+    done: done,
+    here: here
+  } do
+    issue = done.(here, "Linear pictured")
+
+    {:ok, _pictured} =
+      issue
+      |> Issue.testing_images_changeset([%TestingImage{url: "https://uploads.linear.app/a/b/shot.png", name: "shot.png"}])
+      |> Repo.update()
+
+    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+    assert has_element?(view, "#testing-image-0 img[src='/issues/#{issue.id}/assets/a/b/shot.png']")
+    assert has_element?(view, "#testing-image-0 [data-qa='image-chip-remove']")
+
+    {:ok, _tested} = Issues.mark_issue_tested(system_scope(), issue)
+    {:ok, finished, _html} = live(conn, ~p"/testing/#{issue.id}")
+
+    assert has_element?(finished, "#testing-image-0")
+    refute has_element?(finished, "#testing-image-0 [data-qa='image-chip-remove']")
+    refute has_element?(finished, "#testing-attach-image")
+    assert render_click(finished, "remove_testing_image", %{"issue_id" => "iss_other", "url" => "x"})
   end
 
   test "opening a ticket without typing leaves it Waiting", %{conn: conn, done: done, here: here} do

@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
   alias Rail.Pipeline.Turn
 
   @human_prefix ~r/^\[human(?::([^\]\s]+))?\]\s*/
+  @human_image ~r/^\[human-image(?::([^\]\s]+))?\] (\S+)$/
   @reminder_prefix ~r/^\[(reminder \d+ of \d+|answered from past answers)\]\s*/
   @subagent_call ~r/^\[subagent ([^\]\s]+)\] ([^·]*?)\s*·\s?(.*)$/
   @subagent_end ~r/^\[subagent end ([^\]\s]+)\]\s?(.*)$/
@@ -62,6 +63,7 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
 
     initial_state = %{
       human_lines: nil,
+      human_images: [],
       sender_id: nil,
       reminder: nil,
       activity_lines: [],
@@ -124,14 +126,11 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
       state.reminder != nil ->
         process_log_line(line, flush_reminder(state))
 
-      Regex.match?(@human_prefix, line) ->
-        sender_id = @human_prefix |> Regex.run(line) |> Enum.at(1)
-        state = state |> flush_activity() |> flush_role()
-        # Two people's messages one after the other are two turns, each theirs.
-        state = if sender_id == state.sender_id, do: state, else: flush_human(state)
+      Regex.match?(@human_image, line) ->
+        append_human_image(state, line)
 
-        stripped = Regex.replace(@human_prefix, line, "")
-        %{state | human_lines: [stripped | state.human_lines || []], sender_id: sender_id}
+      Regex.match?(@human_prefix, line) ->
+        append_human_line(state, line)
 
       # Only the harness ends what a human was saying: a plain line after a
       # comment is the rest of that comment, however it is indented or wrapped.
@@ -145,6 +144,25 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
       true ->
         process_non_human_line(state, line)
     end
+  end
+
+  # Two people's messages one after the other are two turns, each theirs. A send writes its pictures after its words,
+  # so words after pictures are the next message.
+  defp append_human_line(state, line) do
+    sender_id = @human_prefix |> Regex.run(line) |> Enum.at(1)
+    state = state |> flush_activity() |> flush_role()
+    state = if sender_id == state.sender_id and state.human_images == [], do: state, else: flush_human(state)
+    stripped = Regex.replace(@human_prefix, line, "")
+    %{state | human_lines: [stripped | state.human_lines || []], sender_id: sender_id}
+  end
+
+  # A picture belongs to its sender's message, and is one of its own when no words came with it.
+  defp append_human_image(state, line) do
+    [_line, sender_id, file] = Regex.run(@human_image, line)
+    sender_id = if sender_id == "", do: nil, else: sender_id
+    state = state |> flush_activity() |> flush_role()
+    state = if sender_id == state.sender_id and state.human_lines != nil, do: state, else: flush_human(state)
+    %{state | human_lines: state.human_lines || [], human_images: [file | state.human_images], sender_id: sender_id}
   end
 
   defp process_non_human_line(state, line) do
@@ -219,8 +237,14 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
   defp flush_human(%{human_lines: nil} = state), do: state
 
   defp flush_human(%{human_lines: lines} = state) do
-    turn = %Turn{author: :human, content: joined(lines), sender_id: state.sender_id}
-    %{state | human_lines: nil, sender_id: nil, turns: [turn | state.turns]}
+    turn = %Turn{
+      author: :human,
+      content: joined(lines),
+      sender_id: state.sender_id,
+      images: Enum.reverse(state.human_images)
+    }
+
+    %{state | human_lines: nil, human_images: [], sender_id: nil, turns: [turn | state.turns]}
   end
 
   defp flush_activity(%{activity_lines: []} = state), do: state
