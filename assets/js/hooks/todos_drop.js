@@ -43,6 +43,10 @@ export const keyBefore = (ids, id, key) => {
   return null;
 };
 
+// The second click of a double click on a to-do's checkbox. The first click moved its row, so this one would
+// land on whichever row slid under the pointer.
+export const repeatCheck = (event) => event.detail > 1 && Boolean(event.target?.closest?.("[data-todo-check]"));
+
 const types = (event) => Array.from(event.dataTransfer?.types || []);
 const droppable = (event) => ["text/uri-list", "text/plain", TODO_TYPE].some((type) => types(event).includes(type));
 
@@ -129,6 +133,13 @@ export const TodosDrop = {
       const dropped = readDrop(event.dataTransfer, window.location.origin, htmlText);
       if (dropped?.url) this.pushEventTo(this.el, "drop_link", { ...dropped, before_id });
       else if (dropped) this.pushEventTo(this.el, "drop_text", { ...dropped, before_id });
+    });
+
+    // LiveView reads clicks on the window, so stopping one here keeps it from being pushed.
+    this.el.addEventListener("click", (event) => {
+      if (!repeatCheck(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
     });
 
     // Redrawing the list can move the focused row, which takes the focus off its handle.

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { dropBefore, keyBefore, readDrop } from "../js/hooks/todos_drop.js";
+import { dropBefore, keyBefore, readDrop, repeatCheck } from "../js/hooks/todos_drop.js";
 
 const transfer = (entries) => ({ getData: (type) => entries[type] ?? "" });
 const htmlText = (html) => html.replace(/<[^>]*>/g, "");
@@ -94,5 +94,22 @@ describe("keyBefore", () => {
     assert.equal(keyBefore(ids, "c", "ArrowDown"), null);
     assert.equal(keyBefore(ids, "b", "Enter"), null);
     assert.equal(keyBefore(ids, "z", "ArrowDown"), null);
+  });
+});
+
+describe("repeatCheck", () => {
+  const on = (selector) => ({ closest: (wanted) => (wanted === selector ? {} : null) });
+
+  it("stops the second click of a double click on a checkbox", () => {
+    assert.equal(repeatCheck({ detail: 2, target: on("[data-todo-check]") }), true);
+  });
+
+  it("lets a single click or a key press on a checkbox through", () => {
+    assert.equal(repeatCheck({ detail: 1, target: on("[data-todo-check]") }), false);
+    assert.equal(repeatCheck({ detail: 0, target: on("[data-todo-check]") }), false);
+  });
+
+  it("lets a double click anywhere else through", () => {
+    assert.equal(repeatCheck({ detail: 2, target: on("[data-todo-handle]") }), false);
   });
 });

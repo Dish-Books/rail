@@ -950,7 +950,9 @@ defmodule RailWeb.TaskLive do
       item: socket.assigns.item,
       agent: socket.assigns.agent,
       round: socket.assigns.round,
-      file: socket.assigns.focus_file
+      file: socket.assigns.focus_file,
+      finding: socket.assigns.finding,
+      comment: socket.assigns.comment
     ]
 
     params = Enum.reject(params, fn {_key, value} -> is_nil(value) end)

@@ -350,6 +350,7 @@ defmodule RailWeb.Components.TodosPanel do
         aria-checked={to_string(@done)}
         aria-label={if @done, do: "Uncheck: #{@todo.body}", else: "Check off: #{@todo.body}"}
         data-qa="todo_check"
+        data-todo-check={@todo.id}
         phx-click={if @done, do: "uncheck", else: "check"}
         phx-value-todo_id={@todo.id}
         phx-target={@target}
