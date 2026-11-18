@@ -64,6 +64,7 @@ defmodule RailWeb.Live.DiffView do
       |> assign_new(:auto_collapsed, fn -> MapSet.new() end)
       |> assign_new(:selected_file, fn -> nil end)
       |> assign_new(:expanded_gaps, fn -> %{} end)
+      |> assign_new(:loaded, fn -> [] end)
       |> assign_new(:highlighted, fn -> %{} end)
       |> assign_new(:files, fn -> [] end)
       |> assign_new(:history, fn -> nil end)
@@ -188,6 +189,13 @@ defmodule RailWeb.Live.DiffView do
     collapsed = toggle(socket.assigns.collapsed, path, path not in socket.assigns.collapsed)
 
     socket = socket |> assign(:collapsed, collapsed) |> sync_pane()
+
+    {:noreply, socket}
+  end
+
+  # Only that file's part is told, so the rows reach it without the pane being drawn again.
+  def handle_event("load_large_diff", %{"path" => path}, socket) do
+    socket = socket |> assign(:loaded, toggle(socket.assigns.loaded, path, true)) |> sync_pane()
 
     {:noreply, socket}
   end
@@ -419,6 +427,7 @@ defmodule RailWeb.Live.DiffView do
     socket
     |> assign(:view, view)
     |> assign(:expanded_gaps, %{})
+    |> assign(:loaded, [])
     |> assign(:collapsed, [])
     |> assign(:auto_collapsed, MapSet.new())
     |> assign(:selected_file, socket.assigns.focus_file)
@@ -558,6 +567,8 @@ defmodule RailWeb.Live.DiffView do
       show_file_tree: assigns.show_files,
       collapsed: assigns.collapsed,
       expanded_gaps: assigns.expanded_gaps,
+      # The file a link was followed for is the one the reader came to read, however large.
+      loaded: [assigns.focus_file | assigns.loaded],
       selected_file: assigns.selected_file,
       scroll_to: assigns.focus_file,
       target: assigns.myself,

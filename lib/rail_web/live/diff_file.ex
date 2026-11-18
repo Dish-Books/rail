@@ -118,7 +118,26 @@ defmodule RailWeb.Live.DiffFile do
       </div>
 
       <div
-        :if={not @collapsed? and is_nil(@image)}
+        :if={not @collapsed? and @held_back?}
+        data-qa="diff_held_back"
+        class="px-4 py-6 flex flex-col items-center gap-3 text-center rounded-b-xl"
+      >
+        <p class="text-[13px] text-slate-500 dark:text-slate-400">
+          Large diffs are not rendered by default.
+        </p>
+        <.button
+          size="sm"
+          phx-click="load_large_diff"
+          phx-target={@target}
+          phx-value-path={@file.path}
+          data-qa="diff_load_large"
+        >
+          Load diff
+        </.button>
+      </div>
+
+      <div
+        :if={not @collapsed? and is_nil(@image) and not @held_back?}
         style={"content-visibility: auto; contain-intrinsic-size: auto #{intrinsic_height(@segments)}px;"}
         class="diff-body rounded-b-xl"
       >

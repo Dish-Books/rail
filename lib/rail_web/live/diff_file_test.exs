@@ -37,6 +37,7 @@ defmodule RailWeb.Live.DiffFileTest do
         viewed?: false,
         collapsed?: false,
         expanded_gaps: %{},
+        held_back?: false,
         image: nil
       }
     }
@@ -86,6 +87,16 @@ defmodule RailWeb.Live.DiffFileTest do
     html = render_component(DiffFile, %{section | image: %{old: nil, new: "/x"}, collapsed?: true})
 
     refute html =~ "diff_image"
+  end
+
+  test "a large file held back offers to load it in place of its lines", %{section: section} do
+    html = DiffFile |> render_component(%{section | held_back?: true, segments: []}) |> Floki.parse_fragment!()
+
+    assert html |> Floki.find("[data-qa='diff_load_large']") |> Floki.attribute("phx-value-path") ==
+             ["lib/rail/invoices/filter.ex"]
+
+    assert Floki.find(html, ".diff-body") == []
+    refute render_component(DiffFile, %{section | held_back?: true, collapsed?: true}) =~ "diff_load_large"
   end
 
   test "the caret that folds it says which file", %{section: section} do

@@ -560,6 +560,33 @@ defmodule RailWeb.Live.DiffViewTest do
     assert has_element?(view, section)
   end
 
+  test "a large file shows Load diff in place of its lines, which draws them without drawing the pane again", %{
+    conn: conn,
+    task: task,
+    repo: repo
+  } do
+    File.write!(Path.join(repo, "branch.diff"), """
+    diff --git a/big.ex b/big.ex
+    new file mode 100644
+    index 0000000..9f8e7d6
+    --- /dev/null
+    +++ b/big.ex
+    @@ -0,0 +1,401 @@
+    #{Enum.map_join(1..401, "\n", &"+big #{&1}")}
+    """)
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    section = "[data-qa='diff_file_section'][data-path='big.ex']"
+
+    assert has_element?(view, "#{section} [data-qa='diff_load_large']", "Load diff")
+    refute has_element?(view, "#{section} .diff-line")
+
+    view |> element("#{section} [data-qa='diff_load_large']") |> render_click()
+
+    refute has_element?(view, "#{section} [data-qa='diff_load_large']")
+    assert has_element?(view, "#{section} .diff-line[data-kind='added']", "big 401")
+  end
+
   describe "long lines" do
     test "scroll until the reader picks Wrap, which redraws no line and does not reach another reading the same task",
          %{conn: conn, task: task} do
