@@ -27,6 +27,8 @@ defmodule Rail.Learnings do
   defdelegate match_past_answer(task, question), to: Actions.MatchPastAnswer
   defdelegate handle_issue_finished(issue), to: Actions.HandleIssueFinished
   defdelegate extract_task_learnings(task), to: Actions.ExtractTaskLearnings
+  defdelegate write_task_files(task, dir), to: Actions.WriteTaskFiles
+  defdelegate save_task_proposal(task, attrs), to: Actions.SaveTaskProposal
   defdelegate curate_learnings(project), to: Actions.CurateLearnings
   defdelegate get_latest_curator_pass(project), to: Actions.GetLatestCuratorPass
   defdelegate backfill_learnings(project), to: Actions.BackfillLearnings

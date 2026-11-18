@@ -28,7 +28,7 @@ defmodule Rail.Pipeline.Actions.UpdateBranch do
       Repo.transaction(fn ->
         # Of two clicks the second waits here, then finds the task back at Engineer.
         task = Repo.one!(from t in Task, where: t.id == ^task.id, lock: "FOR UPDATE")
-        task = Repo.preload(task, [:project, :runs])
+        task = Repo.preload(task, [:project, runs: :role])
 
         with true <- Scope.can_access_project?(scope, task.project_id) || {:error, :not_found},
              :ok <- updatable(task),

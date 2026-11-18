@@ -311,6 +311,52 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     assert {:error, :invalid_state} = dispatch_message(run, async: false)
   end
 
+  # Cleanup takes the worktree once the task merges, so the curator's conversation closes with the merge.
+  test "a message to the curator after the task merged stays queued and spawns nothing", %{
+    project: project,
+    task: task
+  } do
+    {:ok, curator} = Roles.get_role(project_id: project.id, stage: :curator)
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: curator.id,
+        status: :finished,
+        stage_outcome: :done,
+        conversation_id: "sess_curator",
+        pending_chat: "Narrow the broadcast rule",
+        started_at: DateTime.utc_now()
+      })
+
+    {:ok, _merged} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
+    reject(&Tools.start_os_process/2)
+
+    assert {:error, :invalid_state} = dispatch_message(run, async: false)
+    assert %Run{pending_chat: "Narrow the broadcast rule"} = Repo.reload!(run)
+  end
+
+  test "a message to the curator before the merge resumes it", %{project: project, task: task} do
+    {:ok, curator} = Roles.get_role(project_id: project.id, stage: :curator)
+
+    {:ok, %Run{id: run_id} = run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: curator.id,
+        status: :finished,
+        stage_outcome: :done,
+        conversation_id: "sess_curator",
+        pending_chat: "Narrow the broadcast rule",
+        started_at: DateTime.utc_now()
+      })
+
+    expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, ["-p", "Narrow the broadcast rule" | _rest] ->
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+  end
+
   # Two dispatches can reach one queued message - the human sending it now and
   # the exit of the turn they interrupted - and the one that arrives second finds
   # the row empty. Spawning an agent with no prompt is an error the run then

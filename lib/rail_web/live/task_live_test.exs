@@ -15,6 +15,7 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueStage
+  alias Rail.Learnings
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Finding
@@ -2350,6 +2351,121 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "#review-item-diff")
       assert has_element?(view, "#review-item-issue[aria-current='true']")
+    end
+  end
+
+  describe "the Learnings item" do
+    setup %{project: project, task: task} do
+      {:ok, task} =
+        Pipeline.update_task(task, %{stage: :finalize, pr_number: 88, marked_ready_at: DateTime.utc_now()})
+
+      {:ok, curator} = Roles.get_role(project_id: project.id, stage: :curator)
+
+      {:ok, curator_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: curator.id,
+          status: :running,
+          conversation_id: "sess_tlv_curator",
+          started_at: DateTime.utc_now()
+        })
+
+      %{task: task, curator: curator, curator_run: curator_run}
+    end
+
+    test "the curator's conversation sits beside it and takes a message, which waits while it works", %{
+      conn: conn,
+      task: task,
+      curator: curator,
+      curator_run: curator_run
+    } do
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
+
+      assert has_element?(view, "#plan-chat #conversation-role-#{curator.id}")
+      refute has_element?(view, "#plan-chat #conversation-closed")
+
+      view |> element("#chat-composer-form") |> render_submit(%{"message" => "Narrow the broadcast rule"})
+      assert %Run{pending_chat: "Narrow the broadcast rule"} = Repo.reload!(curator_run)
+    end
+
+    test "a proposal the curator saves shows without a reload, and another project's change reads nothing", %{
+      conn: conn,
+      task: task
+    } do
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
+      assert has_element?(view, "#task-learnings-empty", "The curator is reading this task")
+
+      # The broadcast has the page update the item, which lands after the next read of the page.
+      {:ok, proposal} = Learnings.save_task_proposal(task, %{action: "add", rule: "Lock the row.", kind: "qa"})
+
+      eventually(fn ->
+        assert has_element?(view, "#proposal-#{proposal.id}", "Lock the row.")
+        assert has_element?(view, "#review-item-learnings [data-qa=review_item_badge]", "1")
+      end)
+
+      reject(Learnings, :list_learning_proposals, 1)
+      send(view.pid, {:learnings_changed, "prj_another"})
+      assert has_element?(view, "#proposal-#{proposal.id}")
+    end
+
+    test "once the task merges the conversation reads closed, and its proposals stay with their decisions", %{
+      conn: conn,
+      task: task,
+      curator_run: curator_run
+    } do
+      {:ok, proposal} = Learnings.save_task_proposal(task, %{action: "add", rule: "Lock the row.", kind: "qa"})
+      {:ok, _approved} = Learnings.approve_learning_proposal(system_scope(), proposal)
+      {:ok, _done} = Pipeline.update_run(curator_run, %{status: :finished, stage_outcome: :done})
+      {:ok, _merged} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
+
+      assert has_element?(view, "#plan-chat #conversation-closed", "This task is merged, so this conversation is closed.")
+      refute has_element?(view, "#plan-chat #chat-input")
+      assert has_element?(view, "#proposal-#{proposal.id} [data-qa=proposal-approved]", "Approved")
+    end
+
+    test "Retry on a curator that failed starts the curator again and leaves the review agent alone", %{
+      conn: conn,
+      project: project,
+      task: task,
+      curator_run: %Run{id: curator_id} = curator_run
+    } do
+      {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
+
+      {:ok, lead_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: lead.id,
+          status: :finished,
+          stage_outcome: :done,
+          conversation_id: "sess_tlv_lead",
+          started_at: DateTime.utc_now()
+        })
+
+      {:ok, _failed} = Pipeline.update_run(curator_run, %{status: :failed, error: "Exited with code 1"})
+      stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+      stub(Git, :branch_fingerprint, fn _path -> nil end)
+
+      expect(Tools, :start_os_process, fn %Run{id: ^curator_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
+      view |> element("#plan-chat #retry-run") |> render_click()
+
+      assert %Run{status: :running, error: nil} = Repo.reload!(curator_run)
+      assert %Run{status: :finished, stage_outcome: :done} = Repo.reload!(lead_run)
+    end
+
+    test "a link to the item on a task with no curator run opens what the task waits on", %{
+      conn: conn,
+      task: task,
+      curator_run: curator_run
+    } do
+      Repo.delete!(curator_run)
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
+
+      refute has_element?(view, "#review-item-learnings")
+      assert has_element?(view, "#review-pane[data-item=findings]")
     end
   end
 
@@ -6894,7 +7010,7 @@ defmodule RailWeb.TaskLiveTest do
         answered_by_id: dana.id
       }
 
-      {:ok, [rule]} = Rail.Learnings.record_corrections(earlier, [past])
+      {:ok, [rule]} = Learnings.record_corrections(earlier, [past])
 
       {:ok, blocked} =
         Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress, conversation_id: "sess_gate"})
@@ -6974,7 +7090,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "a rule a person reworded is offered as it reads now", %{conn: conn, task: task, rule: rule} do
-      {:ok, _edited} = Rail.Learnings.update_learning(system_scope(), rule, %{rule: "Blue, as the review tab is."})
+      {:ok, _edited} = Learnings.update_learning(system_scope(), rule, %{rule: "Blue, as the review tab is."})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
       view |> element("#question-tab-1") |> render_click()

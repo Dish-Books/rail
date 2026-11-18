@@ -183,13 +183,12 @@ defmodule Rail.Pipeline.Schemas.Task do
   end
 
   @doc """
-  True when any run on this task is executing.
-
-  A task has no state of its own, so this is the whole of what "busy" can mean:
-  not the one run something guessed was active, but every run there is. Requires
-  `runs` to be preloaded.
+  True when any run on this task is executing, the curator's aside when roles are loaded: it changes nothing, so it
+  holds nothing back. Requires `runs` preloaded; without their `role` the curator's counts too.
   """
-  def running?(%__MODULE__{runs: runs}) when is_list(runs), do: Enum.any?(runs, &Run.running?/1)
+  def running?(%__MODULE__{runs: runs}) when is_list(runs),
+    do: Enum.any?(runs, &(Run.running?(&1) and not match?(%Run{role: %Role{stage: :curator}}, &1)))
+
   def running?(%__MODULE__{}), do: false
 
   @doc """

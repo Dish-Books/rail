@@ -317,9 +317,9 @@ defmodule Rail.Linear.ClientTest do
                  Jason.decode!(body)
 
         assert query =~ "issues(first: $first, after: $after, includeArchived: true, orderBy: createdAt)"
-        assert query =~ ~r/relations\(first: 100\) \{\s+nodes \{\s+type\s+relatedIssue/
-        assert query =~ ~r/inverseRelations\(first: 100\) \{\s+nodes \{\s+type\s+issue/
-        assert query =~ ~r/attachments\(first: 100\) \{\s+nodes \{\s+title\s+url/
+        assert query =~ ~r/relations\(first: 50\) \{\s+nodes \{\s+type\s+relatedIssue/
+        assert query =~ ~r/inverseRelations\(first: 50\) \{\s+nodes \{\s+type\s+issue/
+        assert query =~ ~r/attachments\(first: 50\) \{\s+nodes \{\s+title\s+url/
         Req.Test.json(conn, %{"data" => page})
       end)
 

@@ -27,8 +27,11 @@ defmodule Rail.Linear.Client do
   @default_scope "read,write,issues:create,comments:create"
   @page_size 50
   @comments_per_issue 50
-  # Smaller pages than a sync's, since each export node nests up to hundreds more and Linear caps a query's complexity.
+  # Smaller pages than a sync's, since each export node nests up to hundreds more and Linear refuses any query over
+  # 10,000 complexity points (0.1 a field, 1 an object, a connection's children times its `first`). A ticket with 50
+  # relations each way and 50 attachments is about 310 points, so 25 of them come to about 7,700.
   @export_issues_page 25
+  @export_issue_links 50
   @export_comments_page 100
   @export_cycles_page 20
 
@@ -205,7 +208,7 @@ defmodule Rail.Linear.Client do
 
   @doc """
   Fetches one page of the project's team by its id: its key, and its issues oldest first, archived ones included, each
-  with up to 100 relations each way and 100 attachments. Pass `after:` the previous page's `endCursor` to continue.
+  with up to 50 relations each way and 50 attachments. Pass `after:` the previous page's `endCursor` to continue.
   """
   def export_issues(%Project{} = project, opts \\ []) do
     query = """
@@ -215,7 +218,7 @@ defmodule Rail.Linear.Client do
         issues(first: $first, after: $after, includeArchived: true, orderBy: createdAt) {
           nodes {
             #{@issue_fields}
-            relations(first: 100) {
+            relations(first: #{@export_issue_links}) {
               nodes {
                 type
                 relatedIssue {
@@ -225,7 +228,7 @@ defmodule Rail.Linear.Client do
                 }
               }
             }
-            inverseRelations(first: 100) {
+            inverseRelations(first: #{@export_issue_links}) {
               nodes {
                 type
                 issue {
@@ -235,7 +238,7 @@ defmodule Rail.Linear.Client do
                 }
               }
             }
-            attachments(first: 100) {
+            attachments(first: #{@export_issue_links}) {
               nodes {
                 title
                 url

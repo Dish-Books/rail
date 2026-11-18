@@ -23,6 +23,7 @@ defmodule Rail.Pipeline.Actions.ApproveTask do
 
     with true <- Scope.can_access_project?(scope, task.project_id) || {:error, :not_found},
          :ok <- approvable(task),
+         :ok <- Pipeline.check_learnings(task),
          {:ok, %User{login: login} = user, token} <- lead(scope),
          # Held per lead, so a second click or tab waits for the first and finds its approval rather than posting another.
          :ok <-
