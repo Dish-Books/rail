@@ -1276,6 +1276,8 @@ defmodule RailWeb.IssueLiveTest do
       |> Repo.insert!()
 
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    # The pull request lookup reloads the issue when it answers, which must not be what reads the new title.
+    render_async(view)
 
     issue |> Ecto.Changeset.change(title: "After sync") |> Repo.update!()
 
