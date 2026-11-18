@@ -43,11 +43,12 @@ defmodule Rail.Pipeline.Actions.StartCuratorTest do
     assert {:ok, %Run{task_id: ^task_id, role_id: ^curator_id, status: :running}} = Pipeline.start_curator(task)
   end
 
-  test "a second pass while the curator is mid-turn starts no second process", %{task: task} do
+  test "a second pass while the curator is mid-turn starts no second process and leaves its files alone", %{task: task} do
     expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
     {:ok, %Run{id: run_id}} = Pipeline.start_curator(task)
 
     reject(Tools, :start_os_process, 2)
+    reject(Learnings, :write_task_files, 2)
     assert {:error, :curator_running} = Pipeline.start_curator(task)
     assert [%Run{id: ^run_id}] = Pipeline.list_runs(task_id: task.id)
   end
@@ -72,15 +73,23 @@ defmodule Rail.Pipeline.Actions.StartCuratorTest do
     {:ok, %LearningProposal{id: pending_id}} =
       Learnings.save_task_proposal(task, %{action: "add", rule: "Broadcast after commit", kind: "convention"})
 
-    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
+    test = self()
+
+    expect(Tools, :start_os_process, 2, fn %Run{} = spawned, ["-p", prompt | _rest] = argv ->
       assert "sess_curator" in argv
       proposals = File.read!(Path.join(dir, "proposals.md"))
       assert proposals =~ "## #{rejected_id} · Add · rejected"
       assert proposals =~ "## #{pending_id} · Add · pending\n\n\n\nBroadcast after commit"
+      send(test, {:spawned, prompt})
       {:ok, %OsProcess{run: spawned}}
     end)
 
-    assert {:ok, %Run{id: ^run_id, conversation_id: "sess_curator", status: :running}} = Pipeline.start_curator(task)
+    assert {:ok, %Run{id: ^run_id, conversation_id: "sess_curator", status: :running} = started} =
+             Pipeline.start_curator(task)
+
+    assert_received {:spawned, pass}
+    {:ok, _again} = started |> Repo.preload([:task, :role], force: true) |> Pipeline.start_curator_run(new_pass: true)
+    assert_received {:spawned, ^pass}
   end
 
   test "a task not marked ready, a merged one, and one in a project with no curator start nothing", %{task: task} do
@@ -110,5 +119,28 @@ defmodule Rail.Pipeline.Actions.StartCuratorTest do
 
     assert :ok = Pipeline.start_curator(task)
     assert [] = Pipeline.list_runs(task_id: task.id)
+  end
+
+  test "a curator turn that starts while the files are written is not started twice", %{task: task, curator: curator} do
+    {:ok, %Run{id: run_id} = run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: curator.id,
+        status: :finished,
+        stage_outcome: :done,
+        conversation_id: "sess_curator",
+        started_at: DateTime.utc_now()
+      })
+
+    reject(Tools, :start_os_process, 2)
+
+    # A chat message can start a turn between the first check and the lock, which the check under the lock refuses.
+    expect(Learnings, :write_task_files, fn written, dir ->
+      {:ok, _chatting} = Pipeline.update_run(run, %{status: :running})
+      Mimic.call_original(Learnings, :write_task_files, [written, dir])
+    end)
+
+    assert {:error, :curator_running} = Pipeline.start_curator(task)
+    assert [%Run{id: ^run_id}] = Pipeline.list_runs(task_id: task.id)
   end
 end

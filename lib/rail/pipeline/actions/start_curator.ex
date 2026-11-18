@@ -19,10 +19,12 @@ defmodule Rail.Pipeline.Actions.StartCurator do
   or `:ok` when there is nothing to start.
   """
   def start_curator(%Task{id: task_id}) do
-    task = Task |> Repo.get!(task_id) |> Repo.preload([:project, :issue])
+    task = Task |> Repo.get!(task_id) |> Repo.preload([:project, :issue, :runs])
 
     with %Task{stage: :finalize, marked_ready_at: %DateTime{}, merged_at: nil} <- task,
-         {:ok, %Role{} = role} <- Roles.get_role(project_id: task.project_id, stage: :curator) do
+         {:ok, %Role{} = role} <- Roles.get_role(project_id: task.project_id, stage: :curator),
+         # Before the files: a turn mid-read keeps them, and the job waits without calling GitHub.
+         false <- curator_running?(task, role) && {:error, :curator_running} do
       # Outside the lock: transcripts and GitHub would hold up every run finishing on the task.
       dir = Path.join(task.scratch_path, "learnings")
       :ok = Learnings.write_task_files(task, dir)
@@ -30,6 +32,7 @@ defmodule Rail.Pipeline.Actions.StartCurator do
 
       with_task_lock(task_id, fn -> start(task_id, role) end)
     else
+      {:error, :curator_running} = running -> running
       _moved_on_or_unconfigured -> :ok
     end
   end
@@ -38,13 +41,17 @@ defmodule Rail.Pipeline.Actions.StartCurator do
     task = Task |> Repo.get!(task_id) |> Repo.preload(runs: :role)
 
     with %Task{stage: :finalize, marked_ready_at: %DateTime{}, merged_at: nil} <- task,
-         false <- Enum.any?(task.runs, &(&1.role_id == role.id and Run.running?(&1))) && {:error, :curator_running} do
-      start_role_run(task, role)
+         false <- curator_running?(task, role) && {:error, :curator_running} do
+      # The task was marked ready, so a conversation it resumes is told the task came back.
+      start_role_run(task, role, new_pass: true)
     else
       {:error, :curator_running} = running -> running
       _moved_on -> :ok
     end
   end
+
+  defp curator_running?(%Task{runs: runs}, %Role{id: role_id}),
+    do: Enum.any?(runs, &(&1.role_id == role_id and Run.running?(&1)))
 
   defp proposals_file(%Task{} = task) do
     proposals =

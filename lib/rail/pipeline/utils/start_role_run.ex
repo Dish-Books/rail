@@ -17,8 +17,8 @@ defmodule Rail.Pipeline.Utils.StartRoleRun do
   alias Rail.Roles.Schemas.Role
 
   @doc """
-  Starts `role`'s run on `task` and returns `{:ok, run}` as it now stands, running or failed on why it could not
-  start. `fresh: true` starts a new conversation rather than resuming the run's last, as each round does.
+  Starts `role`'s run on `task` and returns `{:ok, run}`, running or failed. `fresh: true` starts a new conversation,
+  as each round does, and `new_pass: true` tells the curator its task was marked ready again.
   """
   def start_role_run(%Task{} = task, %Role{} = role, opts \\ []) do
     # The run is started before the spawn is attempted, since starting it is what unlatches it, and every way
@@ -30,7 +30,7 @@ defmodule Rail.Pipeline.Utils.StartRoleRun do
       if worktree_path do
         case start_worktree_setup(run) do
           # The run's own role is the stored row; this one carries the prompt the repo merged.
-          :not_needed -> start_agent(%{run | role: role})
+          :not_needed -> start_agent(%{run | role: role}, opts)
           {:ok, os_process} -> {:ok, os_process.run}
           {:error, %Run{} = failed} -> {:ok, failed}
         end
@@ -41,8 +41,8 @@ defmodule Rail.Pipeline.Utils.StartRoleRun do
     {:ok, broadcast_pipeline_changed(settled)}
   end
 
-  defp start_agent(%Run{} = run) do
-    case start_process(run) do
+  defp start_agent(%Run{} = run, opts) do
+    case start_process(run, opts) do
       {:ok, os_process} -> {:ok, os_process.run}
       {:error, {:spawn_failed, _reason, %Run{} = failed}} -> {:ok, failed}
       {:error, :dispatch_disabled} -> {:ok, fail(run, "Dispatch is off, so no agent was started for this stage.")}
@@ -63,6 +63,10 @@ defmodule Rail.Pipeline.Utils.StartRoleRun do
     run
   end
 
+  # Only the curator's brief depends on why it starts.
+  defp start_process(%Run{role: %Role{stage: :curator}} = run, opts), do: Pipeline.start_curator_run(run, opts)
+  defp start_process(%Run{} = run, _opts), do: start_process(run)
+
   # Each stage spawns itself on a brief of its own.
   # The run carries its task and its role, so it is the whole of what a spawn needs.
   defp start_process(%Run{role: %Role{stage: :plan}} = run), do: Pipeline.start_plan_run(run)
@@ -71,8 +75,6 @@ defmodule Rail.Pipeline.Utils.StartRoleRun do
 
   defp start_process(%Run{role: %Role{stage: stage}} = run) when stage in [:qa, :review, :demo],
     do: Pipeline.start_check_run(run)
-
-  defp start_process(%Run{role: %Role{stage: :curator}} = run), do: Pipeline.start_curator_run(run)
 
   defp start_process(%Run{role: %Role{custom_stage: name}} = run) when is_binary(name),
     do: Pipeline.start_custom_stage_run(run)

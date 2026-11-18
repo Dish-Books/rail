@@ -110,11 +110,24 @@ defmodule Rail.Pipeline.Actions.RetryRunTest do
     %Run{id: lead_id} = run.(:review_lead, %{stage_outcome: :done, conversation_id: "sess_lead"})
     %Run{id: curator_id} = curator = run.(:curator, %{error: "Exited with code 1", conversation_id: "sess_curator"})
 
-    expect(Tools, :start_os_process, fn %Run{id: ^curator_id, conversation_id: "sess_curator"} = spawned, _argv ->
+    test = self()
+
+    expect(Tools, :start_os_process, 3, fn %Run{id: ^curator_id, conversation_id: "sess_curator"} = spawned,
+                                           ["-p", prompt | _rest] ->
+      send(test, {:spawned, prompt})
       {:ok, %OsProcess{run: spawned}}
     end)
 
-    assert {:ok, %Run{id: ^curator_id, status: :running}} = Pipeline.retry_run(system_scope(), curator)
+    assert {:ok, %Run{id: ^curator_id, status: :running} = retried} = Pipeline.retry_run(system_scope(), curator)
+    assert_received {:spawned, retry_prompt}
+
+    # A Retry finishes the pass it failed on, so it gets the brief a first pass does.
+    retried = Repo.preload(retried, [:task, :role], force: true)
+    {:ok, _first} = Pipeline.start_curator_run(retried)
+    assert_received {:spawned, ^retry_prompt}
+    {:ok, _again} = Pipeline.start_curator_run(retried, new_pass: true)
+    assert_received {:spawned, again_prompt}
+    assert again_prompt != retry_prompt
     assert %Run{status: :finished, stage_outcome: :done} = Repo.get!(Run, lead_id)
   end
 

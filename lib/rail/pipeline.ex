@@ -85,7 +85,7 @@ defmodule Rail.Pipeline do
 
   defdelegate mark_ready(scope, task), to: Actions.MarkReady
   defdelegate start_curator(task), to: Actions.StartCurator
-  defdelegate start_curator_run(run), to: Actions.StartCuratorRun
+  defdelegate start_curator_run(run, opts \\ []), to: Actions.StartCuratorRun
   defdelegate check_learnings(task), to: Actions.CheckLearnings
 
   @decorate can?(resource: :tasks, action: :merge)

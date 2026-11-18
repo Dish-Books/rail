@@ -952,6 +952,8 @@ defmodule RailWeb.Live.RunConversation do
     is_queued = run != nil and is_binary(run.pending_chat) and run.pending_chat != ""
     is_unavailable = run == nil or not Run.can_chat?(run)
     sends_when = if Run.state(run) == :failed, do: "runs again", else: "is done"
+    # A failed run says why beside its Retry, whether or not it has a conversation yet.
+    failed = assigns.can_retry and Run.state(run) == :failed
 
     hint_text =
       cond do
@@ -968,6 +970,7 @@ defmodule RailWeb.Live.RunConversation do
       |> assign(:is_thinking, is_thinking)
       |> assign(:is_queued, is_queued)
       |> assign(:is_unavailable, is_unavailable)
+      |> assign(:failed, failed)
       |> assign(:sends_when, sends_when)
       |> assign(:hint_text, hint_text)
 
@@ -1108,7 +1111,7 @@ defmodule RailWeb.Live.RunConversation do
       </div>
 
       <div
-        :if={@is_unavailable}
+        :if={@is_unavailable and not @failed}
         id="unavailable-banner"
         data-qa="unavailable-banner"
         class="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-200 dark:bg-slate-600 text-xs text-slate-500 dark:text-slate-400 mb-3"
@@ -1129,9 +1132,9 @@ defmodule RailWeb.Live.RunConversation do
         </button>
       </div>
 
-      <!-- A failed curator holds Approve and Merge, so its Retry shows though a message would resume it too. -->
+      <!-- A failed run holds what waits on it, so it says why beside its Retry, with or without a conversation. -->
       <div
-        :if={@can_retry and not @is_unavailable}
+        :if={@failed}
         id="failed-banner"
         data-qa="failed-banner"
         class="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-900 text-xs text-red-700 dark:text-red-300 mb-3"

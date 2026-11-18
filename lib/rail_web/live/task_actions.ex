@@ -330,14 +330,15 @@ defmodule RailWeb.Live.TaskActions do
     send(self(), :task_changed)
     send_update(DiffView, id: "diff-view", merging: false)
 
-    error =
+    socket = assign(socket, :merging, false)
+
+    socket =
       case result do
-        {:ok, _merged} -> nil
-        {:error, {:merge_refused, _message}} -> nil
-        {:error, reason} -> merge_message(reason)
+        {:ok, _merged} -> assign(socket, :error, nil)
+        {:error, {:merge_refused, _message}} -> assign(socket, :error, nil)
+        {:error, reason} -> refused(socket, reason, &merge_message/1)
       end
 
-    socket = socket |> assign(:merging, false) |> assign(:error, error)
     {:noreply, socket}
   end
 
@@ -362,7 +363,7 @@ defmodule RailWeb.Live.TaskActions do
   end
 
   def handle_async(:approve, {:ok, {_task_id, {:ok, {:error, reason}}}}, socket) do
-    socket = socket |> assign(:approving, false) |> assign(:error, approve_message(reason))
+    socket = socket |> assign(:approving, false) |> refused(reason, &approve_message/1)
     {:noreply, socket}
   end
 
@@ -584,9 +585,14 @@ defmodule RailWeb.Live.TaskActions do
   defp message(reason), do: "That did not go through: #{inspect(reason)}"
   # coveralls-ignore-stop
 
-  # A page loaded before the curator saved can still click, and is told what the line beside the buttons says.
-  defp merge_message({:learnings_open, _count} = reason), do: learnings_message(reason)
-  defp merge_message(reason) when reason in [:curator_running, :curator_failed], do: learnings_message(reason)
+  # A learnings refusal is said once by the amber line beside the buttons, which goes when the gate opens.
+  defp refused(socket, {:learnings_open, _count}, _message), do: socket |> assign(:error, nil) |> load()
+
+  defp refused(socket, reason, _message) when reason in [:curator_running, :curator_failed],
+    do: socket |> assign(:error, nil) |> load()
+
+  defp refused(socket, reason, message), do: assign(socket, :error, message.(reason))
+
   defp merge_message(:not_authorized), do: "Only a tech lead can merge a task."
   defp merge_message(:not_ready), do: "Mark the task ready for review before merging it."
   defp merge_message(:plan_not_approved), do: "A tech lead approves the plan before the task merges."
@@ -596,8 +602,6 @@ defmodule RailWeb.Live.TaskActions do
   defp merge_message(:no_github_token), do: "Connect GitHub in Connected accounts to merge. Nothing was sent."
   defp merge_message({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Finalize."
 
-  defp approve_message({:learnings_open, _count} = reason), do: learnings_message(reason)
-  defp approve_message(reason) when reason in [:curator_running, :curator_failed], do: learnings_message(reason)
   defp approve_message({:approve_refused, said}), do: "GitHub refused the approval: #{said}"
   defp approve_message(:no_github_token), do: "Connect GitHub in Connected accounts to approve. Nothing was sent."
   defp approve_message(:not_authorized), do: "Only a tech lead can approve a task."

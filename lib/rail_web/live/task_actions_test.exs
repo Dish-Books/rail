@@ -790,30 +790,44 @@ defmodule RailWeb.Live.TaskActionsTest do
       assert has_element?(view, "#task-learnings-gate", "The curator failed. Retry it in Learnings")
     end
 
-    # A click sent from a page drawn before the curator saved is refused with the same words.
+    # A click sent past the held buttons is refused; the amber line says why, and goes when the gate opens.
     test "an Approve or Merge sent past the held buttons is refused with what is left, and nothing reaches GitHub", %{
       conn: conn,
       task: task,
       priya: priya,
       curator_run: curator_run
     } do
-      {:ok, _proposal} = Rail.Learnings.save_task_proposal(task, %{action: "add", rule: "Lock it.", kind: "qa"})
+      {:ok, proposal} = Rail.Learnings.save_task_proposal(task, %{action: "add", rule: "Lock it.", kind: "qa"})
       assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
 
       for event <- ["merge", "approve"] do
         view |> with_target("#task-actions") |> render_click(event, %{})
-
-        eventually(fn ->
-          assert has_element?(view, "#task-actions-error", "Decide 1 learning to approve or merge")
-        end)
+        render_async(view)
+        assert has_element?(view, "#task-learnings-gate", "Decide 1 learning to approve or merge")
+        refute has_element?(view, "#task-actions-error")
       end
 
-      {:ok, _reading} = Pipeline.update_run(curator_run, %{status: :running, stage_outcome: :in_progress})
+      {:ok, _rejected} = Rail.Learnings.reject_learning_proposal(Scope.for_user(priya), proposal)
+      {:ok, reading} = Pipeline.update_run(curator_run, %{status: :running, stage_outcome: :in_progress})
 
       for event <- ["approve", "merge"] do
         view |> with_target("#task-actions") |> render_click(event, %{})
-        eventually(fn -> assert has_element?(view, "#task-actions-error", "The curator is reading this task") end)
+        render_async(view)
+
+        eventually(fn ->
+          assert has_element?(view, "#task-learnings-gate", "The curator is reading this task")
+          refute has_element?(view, "#task-actions-error")
+        end)
       end
+
+      # The turn ends: the page hears it and nothing stale stays beside the buttons.
+      {:ok, _done} = Pipeline.update_run(reading, %{status: :finished, stage_outcome: :done})
+
+      eventually(fn ->
+        refute has_element?(view, "#task-learnings-gate")
+        refute has_element?(view, "#task-actions-error")
+        assert has_element?(view, "#task-merge:not([disabled])", "Merge")
+      end)
 
       assert %Task{merge_started_at: nil, merged_at: nil} = Repo.reload!(task)
     end

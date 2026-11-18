@@ -11,15 +11,20 @@ defmodule Rail.Pipeline.Actions.StartCuratorRun do
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools
 
-  @doc "Spawns `run`'s curator on its task. Returns whatever `Tools.start_os_process/2` does."
-  def start_curator_run(%Run{task: %Task{} = task, role: %Role{stage: :curator} = role} = run) do
+  @doc """
+  Spawns `run`'s curator. A resumed conversation is told the task came back only with `new_pass: true`, not on Retry.
+  Returns whatever `Tools.start_os_process/2` does.
+  """
+  def start_curator_run(%Run{task: %Task{} = task, role: %Role{stage: :curator} = role} = run, opts \\ []) do
     task = Repo.preload(task, [:project, :issue], force: true)
     dir = Path.join(task.scratch_path, "learnings")
+    # A Retry resumes a pass that never finished, so it is not told the task came back.
+    again? = Keyword.get(opts, :new_pass, false) and Run.resumable?(run)
 
     prompt =
       Pipeline.build_prompt(
         task: task,
-        context_snippet: if(Run.resumable?(run), do: again(task, dir), else: brief(task, dir)),
+        context_snippet: if(again?, do: again(task, dir), else: brief(task, dir)),
         pending_answer: run.pending_answer,
         conversation_id: run.conversation_id
       )

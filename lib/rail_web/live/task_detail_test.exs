@@ -1646,16 +1646,40 @@ defmodule RailWeb.Live.TaskDetailTest do
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
       assert has_element?(view, "#task-learnings-empty", "No proposals")
       assert has_element?(view, "#task-learnings-count", "0 proposals · 0 to decide")
+      assert has_element?(view, "#review-item-learnings[title='Learnings: Nothing to decide']")
 
       {:ok, reading} = Pipeline.update_run(curator_run, %{status: :running, stage_outcome: :in_progress})
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
       assert has_element?(view, "#task-learnings-empty", "The curator is reading this task")
       assert has_element?(view, "#review-item-learnings [data-qa=review_item_running]")
+      assert has_element?(view, "#review-item-learnings[title='Learnings: Curator reading']")
 
-      {:ok, _failed} = Pipeline.update_run(reading, %{status: :failed, error: "Exited with code 1"})
+      {:ok, waiting} = Pipeline.update_run(reading, %{status: :waiting_for_usage})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
+      assert has_element?(view, "#review-item-learnings [data-qa=review_item_running]")
+      assert has_element?(view, "#review-item-learnings[title='Learnings: Curator waiting']")
+
+      {:ok, _failed} = Pipeline.update_run(waiting, %{status: :failed, error: "Exited with code 1"})
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
       assert has_element?(view, "#task-learnings-empty", "No proposals yet")
       assert has_element?(view, "#review-item-learnings [data-qa=review_item_failed]")
+      assert has_element?(view, "#review-item-learnings[title='Learnings: Curator failed']")
+    end
+
+    # The amber count takes the failed mark's place, so the label says both.
+    test "a failed curator with a proposal still to decide says both on its item", %{
+      conn: conn,
+      task: task,
+      curator_run: curator_run
+    } do
+      {:ok, _failed} =
+        Pipeline.update_run(curator_run, %{status: :failed, stage_outcome: :in_progress, error: "Exited with code 1"})
+
+      {:ok, _proposal} = Learnings.save_task_proposal(task, %{action: "add", rule: "Lock it.", kind: "qa"})
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
+      assert has_element?(view, "#review-item-learnings[title='Learnings: Curator failed, 1 to decide']")
+      assert has_element?(view, "#review-item-learnings [data-qa=review_item_badge]", "1")
     end
 
     test "a long rule with no spaces wraps inside its card", %{conn: conn, task: task} do

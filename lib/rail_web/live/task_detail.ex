@@ -752,13 +752,13 @@ defmodule RailWeb.Live.TaskDetail do
     {:noreply, socket}
   end
 
-  # Approve moves the task on, so the page opens on the stage it moved to.
   def handle_event("approve_proposal", %{"id" => id}, socket),
     do: {:noreply, decide_proposal(socket, id, &Learnings.approve_learning_proposal/2)}
 
   def handle_event("reject_proposal", %{"id" => id}, socket),
     do: {:noreply, decide_proposal(socket, id, &Learnings.reject_learning_proposal/2)}
 
+  # Approve moves the task on, so the page opens on the stage it moved to.
   def handle_event("approve_stage_output", _params, socket) do
     %{current_scope: scope, task: task} = socket.assigns
 
@@ -1575,15 +1575,30 @@ defmodule RailWeb.Live.TaskDetail do
   defp learnings_item(%{curator_run: %Run{} = run, proposals: proposals}) do
     pending = Enum.count(proposals, &(&1.status == :pending))
 
+    # The badge takes the dot's and the mark's place, so the label says what the curator is doing too.
+    {curator, dot, mark} =
+      case Run.state(run) do
+        :running -> {"Curator reading", :running, nil}
+        :waiting -> {"Curator waiting", :running, nil}
+        :failed -> {"Curator failed", nil, :failed}
+        _ended -> {nil, nil, nil}
+      end
+
+    state =
+      case Enum.filter([curator, pending > 0 and "#{pending} to decide"], & &1) do
+        [] -> "Nothing to decide"
+        parts -> Enum.join(parts, ", ")
+      end
+
     %{
       key: :learnings,
       label: "Learnings",
       icon: "pi-lightbulb",
       picked_icon: "pi-lightbulb-fill",
-      state: if(pending > 0, do: "#{pending} to decide", else: "Nothing to decide"),
+      state: state,
       badge: if(pending > 0, do: pending),
-      dot: if(Run.running?(run), do: :running),
-      mark: if(Run.state(run) == :failed, do: :failed)
+      dot: dot,
+      mark: mark
     }
   end
 

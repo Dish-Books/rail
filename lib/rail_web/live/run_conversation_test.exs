@@ -1281,7 +1281,8 @@ defmodule RailWeb.Live.RunConversationTest do
 
     {:ok, unexplained} = Pipeline.update_run(run, %{conversation_id: nil})
     html = render_component(RunConversation, id: "conv", task: finalize, runs: [unexplained], roles_map: roles_map)
-    assert html =~ ~s(id="unavailable-banner")
+    assert html =~ ~r/id="failed-banner".*usage limit reached\./s
+    refute html =~ ~s(id="unavailable-banner")
     assert html =~ ~s(id="retry-run")
 
     for task <- [task, %{finalize | merged_at: DateTime.utc_now()}] do

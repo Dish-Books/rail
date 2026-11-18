@@ -41,10 +41,27 @@ defmodule Rail.Pipeline.Actions.StartCuratorRunTest do
     end)
 
     {:ok, _first} = Pipeline.start_curator_run(run)
-    {:ok, _again} = Pipeline.start_curator_run(%{resumed | task: run.task, role: run.role})
+    {:ok, _again} = Pipeline.start_curator_run(%{resumed | task: run.task, role: run.role}, new_pass: true)
     assert_received {:spawned, first, _first_rest}
     assert_received {:spawned, again, ["--model", _model | again_rest]}
     assert ["--resume", "sess_curator"] = Enum.take(again_rest, -2)
     assert again != first
+  end
+
+  test "a Retry resumes the conversation on the first pass's brief", %{run: run} do
+    {:ok, resumed} = Pipeline.update_run(run, %{conversation_id: "sess_curator"})
+    test = self()
+
+    expect(Tools, :start_os_process, 2, fn %Run{} = spawned, ["-p", prompt | rest] ->
+      send(test, {:spawned, prompt, rest})
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    {:ok, _first} = Pipeline.start_curator_run(run)
+    {:ok, _retried} = Pipeline.start_curator_run(%{resumed | task: run.task, role: run.role}, fresh: false)
+    assert_received {:spawned, first, _first_rest}
+    assert_received {:spawned, retried, ["--model", _model | retried_rest]}
+    assert ["--resume", "sess_curator"] = Enum.take(retried_rest, -2)
+    assert retried == first
   end
 end
