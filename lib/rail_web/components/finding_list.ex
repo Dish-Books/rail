@@ -10,6 +10,7 @@ defmodule RailWeb.Components.FindingList do
   alias Rail.Pipeline.Schemas.FindingNote
 
   attr :findings, :list, required: true, doc: "in `Rail.Pipeline.list_findings/1`'s order"
+  attr :task_id, :string, required: true, doc: "the task the findings belong to, for each row's dragged link"
   attr :selected_key, :string, default: nil
   attr :running, :boolean, required: true
   attr :tally, :string, required: true
@@ -45,6 +46,9 @@ defmodule RailWeb.Components.FindingList do
             phx-click="select_finding"
             phx-target={@target}
             phx-value-key={finding.key}
+            draggable="true"
+            data-drag-href={~p"/tasks/#{@task_id}?#{[item: "findings", finding: finding.key]}"}
+            data-drag-text={finding.title}
             aria-current={to_string(@selected_key == finding.key)}
             class={[
               "w-full flex gap-2.5 px-3 py-2.5 rounded-lg text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500",

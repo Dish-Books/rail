@@ -14,6 +14,7 @@ defmodule Rail.Pipeline.Actions.ListTasks do
   `:project_id` takes one id or a list, where an empty list matches nothing.
   `:owner_user_id` keeps the tasks whose issue that user owns, so an unowned issue's tasks drop out.
   `:issue_id` keeps one issue's tasks.
+  `:pr_url` keeps the tasks whose pull request is at that address.
   `:parent_task_id` keeps one split's children, in their order unless `:order_by` says otherwise, and
   `split_child: true` every child of every split.
   `ready: true` keeps the review queue: tasks at Finalize marked ready and not merged, whose issue Linear has
@@ -30,6 +31,7 @@ defmodule Rail.Pipeline.Actions.ListTasks do
     |> filter_project(opts[:project_id])
     |> filter_owner(opts[:owner_user_id])
     |> filter_issue(opts[:issue_id])
+    |> filter_pr_url(opts[:pr_url])
     |> filter_parent(opts[:parent_task_id])
     |> filter_split_child(opts[:split_child])
     |> filter_stage(opts[:stage])
@@ -72,6 +74,9 @@ defmodule Rail.Pipeline.Actions.ListTasks do
 
   defp filter_issue(query, issue_id) when is_binary(issue_id), do: where(query, [task: t], t.issue_id == ^issue_id)
   defp filter_issue(query, nil), do: query
+
+  defp filter_pr_url(query, pr_url) when is_binary(pr_url), do: where(query, [task: t], t.pr_url == ^pr_url)
+  defp filter_pr_url(query, nil), do: query
 
   defp filter_parent(query, parent_task_id) when is_binary(parent_task_id),
     do: where(query, [task: t], t.parent_task_id == ^parent_task_id)

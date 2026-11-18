@@ -7283,6 +7283,17 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#diff-scroller[data-scroll-to='shipped.ex']")
     end
 
+    test "a link to a finding on a child's own path keeps the finding and comment on the way to its parent's", %{
+      conn: conn,
+      parent: parent,
+      first: first
+    } do
+      to = ~p"/tasks/#{parent.id}?child=TLV-11&item=findings&finding=f3&comment=c1"
+
+      assert {:error, {:live_redirect, %{to: ^to}}} =
+               live(conn, ~p"/tasks/#{first.id}?item=findings&finding=f3&comment=c1")
+    end
+
     test "a child's Review item is in its parent's URL, its own path keeps it, and a sibling opens on Findings", %{
       conn: conn,
       project: project,

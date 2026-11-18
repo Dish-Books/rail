@@ -70,6 +70,9 @@ defmodule RailWeb.Components.IssueCard do
         @dimmed && "opacity-60"
       ]}
       phx-click={JS.navigate(@path)}
+      draggable="true"
+      data-drag-href={@path}
+      data-drag-text={"#{@issue.identifier} #{@issue.title}"}
     >
       <span :if={@nested} class="relative w-5 shrink-0 self-stretch" aria-hidden="true">
         <span class="absolute left-1.5 top-0 bottom-1/2 w-3 border-l border-b border-slate-300 dark:border-slate-600 rounded-bl-md"></span>
