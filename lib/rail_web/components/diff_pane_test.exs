@@ -31,6 +31,7 @@ defmodule RailWeb.Components.DiffPaneTest do
       target: nil,
       collapsed: [],
       expanded_gaps: %{},
+      loaded: [],
       show_file_tree: true,
       filter: :branch,
       wrap: :scroll,
