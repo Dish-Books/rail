@@ -299,4 +299,195 @@ defmodule RailWeb.Components.TodosPanelTest do
     refute has_element?(view, "#todos-list")
     assert has_element?(view, "#todo-body-0[value='   ']")
   end
+
+  test "an edit replaces a row's text in its place, and Cancel or Escape saves nothing", %{conn: conn, scope: scope} do
+    {:ok, %Todo{id: first_id}} = Todos.create_todo(scope, %{"body" => "First"}, :last)
+    {:ok, %Todo{id: typo_id} = typo} = Todos.create_todo(scope, %{"body" => "Uplaod the bills"}, :last)
+    {:ok, %Todo{id: last_id}} = Todos.create_todo(scope, %{"body" => "Last"}, :last)
+
+    conn = put_connect_params(conn, %{"todos_open" => true, "time_zone" => "Etc/UTC"})
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    assert has_element?(view, "#todo-edit-button-#{typo_id}[aria-label='Edit: Uplaod the bills']")
+    assert has_element?(view, "#todo-delete-#{typo_id}[aria-label='Delete: Uplaod the bills']")
+
+    view |> element("#todo-edit-button-#{typo_id}") |> render_click()
+    assert has_element?(view, "#todo-edit-#{typo_id}[phx-mounted][data-todo-edit]", "Uplaod the bills")
+    refute has_element?(view, "#todo-#{typo_id} [data-qa=todo_body_text]")
+    refute has_element?(view, "#todo-edit-button-#{typo_id}")
+    assert has_element?(view, "#todo-handle-#{typo_id}")
+    assert has_element?(view, "#todo-check-#{typo_id}")
+
+    view |> form("#todo-edit-form-#{typo_id}", todo: %{body: "Never saved"}) |> render_change()
+    view |> element("#todo-#{typo_id} [data-qa=todo_edit_cancel]") |> render_click()
+    assert_push_event(view, "todos-focus", %{id: "todo-edit-button-" <> ^typo_id})
+    refute has_element?(view, "#todo-edit-form-#{typo_id}")
+    assert has_element?(view, "#todo-#{typo_id} [data-qa=todo_body_text]", "Uplaod the bills")
+
+    view |> element("#todo-edit-button-#{typo_id}") |> render_click()
+    view |> element("#todo-edit-#{typo_id}") |> render_keydown(%{"key" => "Escape"})
+    assert_push_event(view, "todos-focus", %{id: "todo-edit-button-" <> ^typo_id})
+    refute has_element?(view, "#todo-edit-form-#{typo_id}")
+    assert %Todo{body: "Uplaod the bills"} = Repo.reload!(typo)
+
+    view |> element("#todo-edit-button-#{typo_id}") |> render_click()
+    view |> form("#todo-edit-form-#{typo_id}", todo: %{body: "Upload the bills"}) |> render_submit()
+    assert_push_event(view, "todos-focus", %{id: "todo-edit-button-" <> ^typo_id})
+
+    doc = view |> render() |> Floki.parse_document!()
+    assert [^first_id, ^typo_id, ^last_id] = Floki.attribute(doc, "#todos-list [data-todo-row]", "data-todo-row")
+    assert doc |> Floki.find("#todo-#{typo_id} [data-qa=todo_body_text]") |> Floki.text() =~ "Upload the bills"
+    refute has_element?(view, "#todo-edit-form-#{typo_id}")
+    assert %Todo{body: "Upload the bills"} = Repo.reload!(typo)
+  end
+
+  test "an edit renames a checked-off link, which keeps its address and stays struck through in its place",
+       %{conn: conn, scope: scope} do
+    {:ok, %Todo{id: open_id}} = Todos.create_todo(scope, %{"body" => "Open"}, :last)
+    {:ok, link} = Todos.add_link_todo(scope, "/sandboxes", "Demo video won't play", :last)
+    {:ok, %Todo{id: link_id, completed_at: completed_at}} = Todos.complete_todo(scope, link)
+
+    conn = put_connect_params(conn, %{"todos_open" => true, "time_zone" => "Etc/UTC"})
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    view |> element("#todo-edit-button-#{link_id}") |> render_click()
+    refute has_element?(view, "#todo-#{link_id} a[data-qa=todo_link]")
+    assert has_element?(view, "#todo-#{link_id} [data-qa=todo_edit_address]", "/sandboxes")
+
+    view |> form("#todo-edit-form-#{link_id}", todo: %{body: "Safari: demo video won't play"}) |> render_submit()
+
+    doc = view |> render() |> Floki.parse_document!()
+    assert [^open_id, ^link_id] = Floki.attribute(doc, "#todos-list [data-todo-row]", "data-todo-row")
+    assert ["/sandboxes"] = Floki.attribute(doc, "#todo-#{link_id} a[data-qa=todo_link]", "href")
+    assert doc |> Floki.find("#todo-#{link_id} a.line-through") |> Floki.text() =~ "Safari: demo video won't play"
+    assert has_element?(view, "#todo-check-#{link_id}[aria-checked=true]")
+    assert %Todo{completed_at: ^completed_at, url: "/sandboxes"} = Repo.get!(Todo, link_id)
+  end
+
+  test "saving blank text keeps the editor open with its error, and the to-do its text", %{conn: conn, scope: scope} do
+    {:ok, %Todo{id: todo_id} = todo} = Todos.create_todo(scope, %{"body" => "Keep me"}, :last)
+
+    {:ok, view, _html} = live(put_connect_params(conn, %{"todos_open" => true}), ~p"/")
+    view |> element("#todo-edit-button-#{todo_id}") |> render_click()
+    refute has_element?(view, "#todo-edit-#{todo_id}-error")
+
+    view |> form("#todo-edit-form-#{todo_id}", todo: %{body: "   "}) |> render_submit()
+
+    assert has_element?(view, "#todo-edit-#{todo_id}-error[role=alert]", "A to-do needs some text.")
+    assert has_element?(view, "#todo-edit-#{todo_id}[aria-invalid=true][aria-describedby='todo-edit-#{todo_id}-error']")
+    assert %Todo{body: "Keep me"} = Repo.reload!(todo)
+    refute_push_event(view, "todos-focus", %{})
+  end
+
+  test "a long new text wraps inside the editor", %{conn: conn, scope: scope} do
+    {:ok, %Todo{id: todo_id}} = Todos.create_todo(scope, %{"body" => String.duplicate("unbroken", 60)}, :last)
+
+    {:ok, view, _html} = live(put_connect_params(conn, %{"todos_open" => true}), ~p"/")
+    view |> element("#todo-edit-button-#{todo_id}") |> render_click()
+
+    assert [class] =
+             view
+             |> render()
+             |> Floki.parse_document!()
+             |> Floki.attribute("#todo-edit-#{todo_id}", "class")
+
+    assert ["field-sizing-content", "[overflow-wrap:anywhere]"] --
+             String.split(class) == []
+  end
+
+  test "deleting an open row takes it off and lowers the count, and focus moves to the next row's Delete",
+       %{conn: conn, scope: scope} do
+    {:ok, %Todo{id: first_id}} = Todos.create_todo(scope, %{"body" => "First"}, :last)
+    {:ok, %Todo{id: second_id}} = Todos.create_todo(scope, %{"body" => "Second"}, :last)
+
+    {:ok, view, _html} = live(put_connect_params(conn, %{"todos_open" => true, "time_zone" => "Etc/UTC"}), ~p"/")
+    assert view |> element("#todos-count") |> render() =~ "2"
+
+    view |> element("#todo-delete-#{first_id}") |> render_click()
+
+    assert_push_event(view, "todos-focus", %{id: "todo-delete-" <> ^second_id})
+    refute has_element?(view, "#todo-#{first_id}")
+    assert view |> element("#todos-count") |> render() =~ "1"
+    assert view |> element("#todos-sheet-count") |> render() =~ "1 to-do"
+    assert [%Todo{id: ^second_id}] = Todos.list_todos(scope)
+
+    view |> element("#todo-delete-#{second_id}") |> render_click()
+
+    assert_push_event(view, "todos-focus", %{id: "todo-body-0"})
+    refute has_element?(view, "#todos-count")
+    assert has_element?(view, "#todos-empty")
+  end
+
+  test "deleting the only checked-off row empties the footer and the export", %{conn: conn, scope: scope} do
+    {:ok, done} = Todos.create_todo(scope, %{"body" => "Done"}, :last)
+    {:ok, %Todo{id: done_id}} = Todos.complete_todo(scope, done)
+
+    {:ok, view, _html} = live(put_connect_params(conn, %{"todos_open" => true, "time_zone" => "Etc/UTC"}), ~p"/")
+    assert view |> element("#todos-done-today") |> render() =~ ~r/1<\/span>\s*checked off today/
+
+    view |> element("#todo-delete-#{done_id}") |> render_click()
+
+    refute has_element?(view, "#todo-#{done_id}")
+    assert view |> element("#todos-done-today") |> render() =~ "Nothing checked off today"
+    refute has_element?(view, "#todos-export")
+    assert [] = Todos.list_todos(scope, checked_off_today: "Etc/UTC")
+  end
+
+  test "an edit, a delete or a save for a row that is not there changes nothing", %{conn: conn, scope: scope} do
+    {:ok, %Todo{id: kept_id}} = Todos.create_todo(scope, %{"body" => "Kept"}, :last)
+    {:ok, %Todo{id: gone_id} = gone} = Todos.create_todo(scope, %{"body" => "Gone"}, :last)
+
+    {:ok, view, _html} = live(put_connect_params(conn, %{"todos_open" => true}), ~p"/")
+    panel = with_target(view, "#todos-panel")
+
+    render_click(panel, "edit", %{"todo_id" => "tdo_missing"})
+    render_click(panel, "delete", %{"todo_id" => "tdo_missing"})
+    render_click(panel, "cancel_edit", %{})
+    render_change(panel, "edit_draft", %{"todo" => %{"body" => "Late draft"}})
+    render_submit(panel, "save_edit", %{"todo" => %{"body" => "Late save"}})
+    refute has_element?(view, "[data-qa=todo_edit_form]")
+    refute_push_event(view, "todos-focus", %{})
+
+    view |> element("#todo-edit-button-#{gone_id}") |> render_click()
+    {:ok, _deleted} = Todos.delete_todo(scope, gone)
+    eventually(fn -> refute has_element?(view, "#todo-#{gone_id}") end)
+
+    render_submit(panel, "save_edit", %{"todo" => %{"body" => "Too late"}})
+    render_click(panel, "delete", %{"todo_id" => kept_id})
+    render_click(panel, "delete", %{"todo_id" => kept_id})
+
+    refute has_element?(view, "[data-qa=todo_edit_form]")
+    assert [] = Todos.list_todos(scope)
+  end
+
+  test "an edit and a delete in one tab reach the other, which keeps a draft through a change to another row",
+       %{conn: conn, scope: scope} do
+    {:ok, %Todo{id: first_id}} = Todos.create_todo(scope, %{"body" => "First"}, :last)
+    {:ok, %Todo{id: second_id}} = Todos.create_todo(scope, %{"body" => "Second"}, :last)
+
+    conn = put_connect_params(conn, %{"todos_open" => true, "time_zone" => "Etc/UTC"})
+    {:ok, one, _html} = live(conn, ~p"/")
+    {:ok, two, _html} = live(conn, ~p"/")
+
+    two |> element("#todo-edit-button-#{second_id}") |> render_click()
+    two |> form("#todo-edit-form-#{second_id}", todo: %{body: "Second, then ping Ma"}) |> render_change()
+
+    {:ok, %Todo{id: added_id}} = Todos.create_todo(scope, %{"body" => "Added elsewhere"}, :after_open)
+    one |> element("#todo-edit-button-#{first_id}") |> render_click()
+    one |> form("#todo-edit-form-#{first_id}", todo: %{body: "First, renamed"}) |> render_submit()
+
+    eventually(fn ->
+      assert has_element?(two, "#todo-#{added_id}")
+      assert has_element?(two, "#todo-#{first_id} [data-qa=todo_body_text]", "First, renamed")
+      assert has_element?(two, "#todo-edit-#{second_id}", "Second, then ping Ma")
+    end)
+
+    one |> element("#todo-delete-#{second_id}") |> render_click()
+
+    eventually(fn ->
+      refute has_element?(two, "#todo-#{second_id}")
+      refute has_element?(two, "[data-qa=todo_edit_form]")
+      assert two |> element("#todos-count") |> render() =~ "2"
+    end)
+  end
 end

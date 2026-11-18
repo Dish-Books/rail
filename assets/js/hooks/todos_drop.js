@@ -47,6 +47,14 @@ export const keyBefore = (ids, id, key) => {
 // land on whichever row slid under the pointer.
 export const repeatCheck = (event) => event.detail > 1 && Boolean(event.target?.closest?.("[data-todo-check]"));
 
+// Enter in a to-do's editor saves it, since a text box that grows would take it as a new line.
+// An IME's Enter accepts a candidate instead.
+export const submitsEdit = (event) =>
+  event.key === "Enter" &&
+  !event.isComposing &&
+  event.keyCode !== 229 &&
+  Boolean(event.target?.closest?.("[data-todo-edit]"));
+
 const types = (event) => Array.from(event.dataTransfer?.types || []);
 const droppable = (event) => ["text/uri-list", "text/plain", TODO_TYPE].some((type) => types(event).includes(type));
 
@@ -81,6 +89,9 @@ export const TodosDrop = {
       if (target && before) target.dataset.dropBefore = "true";
       else if (target) target.dataset.dropEnd = "true";
     };
+
+    // The panel names the control to take the focus after a save, a cancel or a delete, once the patch is in.
+    this.handleEvent("todos-focus", ({ id }) => document.getElementById(id)?.focus());
 
     const disarm = (event) => event.target.closest?.("[data-todo-row]")?.removeAttribute("draggable");
 
@@ -144,6 +155,12 @@ export const TodosDrop = {
 
     // Redrawing the list can move the focused row, which takes the focus off its handle.
     this.el.addEventListener("keydown", (event) => {
+      if (submitsEdit(event)) {
+        event.preventDefault();
+        event.target.form?.requestSubmit();
+        return;
+      }
+
       const handle = event.target.closest?.("[data-todo-handle]");
       if (!handle) return;
       const id = handle.dataset.todoHandle;

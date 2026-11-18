@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { dropBefore, keyBefore, readDrop, repeatCheck } from "../js/hooks/todos_drop.js";
+import { dropBefore, keyBefore, readDrop, repeatCheck, submitsEdit } from "../js/hooks/todos_drop.js";
 
 const transfer = (entries) => ({ getData: (type) => entries[type] ?? "" });
 const htmlText = (html) => html.replace(/<[^>]*>/g, "");
@@ -111,5 +111,23 @@ describe("repeatCheck", () => {
 
   it("lets a double click anywhere else through", () => {
     assert.equal(repeatCheck({ detail: 2, target: on("[data-todo-handle]") }), false);
+  });
+});
+
+describe("submitsEdit", () => {
+  const on = (selector) => ({ closest: (wanted) => (wanted === selector ? {} : null) });
+
+  it("saves on Enter in a to-do's editor", () => {
+    assert.equal(submitsEdit({ key: "Enter", isComposing: false, keyCode: 13, target: on("[data-todo-edit]") }), true);
+  });
+
+  it("lets an IME's Enter pick its candidate", () => {
+    assert.equal(submitsEdit({ key: "Enter", isComposing: true, keyCode: 13, target: on("[data-todo-edit]") }), false);
+    assert.equal(submitsEdit({ key: "Enter", isComposing: false, keyCode: 229, target: on("[data-todo-edit]") }), false);
+  });
+
+  it("leaves Enter anywhere else, and other keys in the editor, alone", () => {
+    assert.equal(submitsEdit({ key: "Enter", isComposing: false, keyCode: 13, target: on("[data-todo-handle]") }), false);
+    assert.equal(submitsEdit({ key: "a", isComposing: false, keyCode: 65, target: on("[data-todo-edit]") }), false);
   });
 });

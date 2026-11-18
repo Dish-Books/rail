@@ -1,7 +1,7 @@
 defmodule Rail.Todos do
   @moduledoc """
-  Each person's own to-do list in their own order: lines they type or links they drop, checked off to the
-  bottom until their day ends, and the day's checked-off ones as a CSV. Nobody else sees them.
+  Each person's own to-do list in their own order: lines they type or links they drop, edited or deleted as they
+  like, checked off to the bottom until their day ends, and the day's checked-off ones as a CSV. Nobody else sees them.
   """
 
   alias Rail.Todos.Actions
@@ -12,5 +12,7 @@ defmodule Rail.Todos do
   defdelegate move_todo(scope, todo, place), to: Actions.MoveTodo
   defdelegate complete_todo(scope, todo), to: Actions.CompleteTodo
   defdelegate reopen_todo(scope, todo), to: Actions.ReopenTodo
+  defdelegate update_todo(scope, todo, attrs), to: Actions.UpdateTodo
+  defdelegate delete_todo(scope, todo), to: Actions.DeleteTodo
   defdelegate build_todos_csv(scope, time_zone, base_url), to: Actions.BuildTodosCsv
 end
