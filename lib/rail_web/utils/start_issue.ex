@@ -1,15 +1,8 @@
 defmodule RailWeb.Utils.StartIssue do
   @moduledoc """
-  Starts an issue from any page: the one place that decides between opening the task it has, adopting its pull
-  request and starting at its first stage. The page passes how it reloads afterwards.
-
-  Only a pull request already linked is adopted. GitHub is not asked here, as its answer held every start up; the
-  issue page links one as it opens.
+  Finds, adopts or starts an issue's task off any page's process, and leaves what follows to the page. Only a pull
+  request already linked is adopted, as asking GitHub here held every start up; the issue page links one as it opens.
   """
-  use RailWeb, :verified_routes
-
-  import Phoenix.LiveView, only: [push_navigate: 2, put_flash: 3]
-
   alias Ecto.Changeset
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
@@ -19,32 +12,25 @@ defmodule RailWeb.Utils.StartIssue do
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
-  # Read again rather than trusted from the page: the id comes from the browser, and a start from a stale page opens
-  # the task it finds.
-  def start_issue(socket, issue_id, reload) do
-    scope = socket.assigns.current_scope
-
+  # Read again rather than trusted from the page: the id comes from the browser, and a start from a stale page finds
+  # the task another tab made.
+  def start_issue(%Scope{} = scope, issue_id) do
     with {:ok, %User{github_id: github_id}} when is_binary(github_id) <- Users.get_user(id: scope.user.id),
          {:ok, %Issue{} = issue} <- Issues.get_issue(issue_id, preload: [:project, :task]),
          true <- Scope.can_access_project?(scope, issue.project_id) and not Issue.finished_state?(issue.state) do
       cond do
-        match?(%Task{}, issue.task) ->
-          push_navigate(socket, to: ~p"/tasks/#{issue.task.id}")
-
-        is_integer(issue.pr_number) ->
-          scope |> Pipeline.adopt_pull_request(issue) |> finish(socket, reload, &adopt_error/1)
-
-        true ->
-          scope |> Pipeline.start_task(issue) |> finish(socket, reload, &start_error/1)
+        match?(%Task{}, issue.task) -> {:ok, issue.task}
+        is_integer(issue.pr_number) -> scope |> Pipeline.adopt_pull_request(issue) |> explain(&adopt_error/1)
+        true -> scope |> Pipeline.start_task(issue) |> explain(&start_error/1)
       end
     else
-      {:ok, %User{}} -> put_flash(socket, :error, "Connect GitHub in Connected accounts before you start an issue.")
-      _gone_or_refused -> reload.(socket)
+      {:ok, %User{}} -> {:error, "Connect GitHub in Connected accounts before you start an issue."}
+      _gone_or_refused -> {:error, :not_found}
     end
   end
 
-  defp finish({:ok, %Task{} = task}, socket, _reload, _error), do: push_navigate(socket, to: ~p"/tasks/#{task.id}")
-  defp finish({:error, reason}, socket, reload, error), do: socket |> put_flash(:error, error.(reason)) |> reload.()
+  defp explain({:ok, %Task{}} = started, _error), do: started
+  defp explain({:error, reason}, error), do: {:error, error.(reason)}
 
   defp start_error(%Changeset{errors: [issue_id: _taken]}), do: someone_else()
   defp start_error(:task_exists), do: someone_else()

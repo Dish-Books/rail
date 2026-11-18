@@ -62,7 +62,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   nobody has ruled, the tracker refused a new issue, or the task is cleaned up or not yet at Review.
   """
   def start_fix_round(%Scope{} = scope, %Run{} = run) do
-    run = Run |> Repo.get!(run.id) |> Repo.preload([task: [:issue, :project, :runs]], force: true)
+    run = Run |> Repo.get!(run.id) |> Repo.preload([task: [:issue, :project, runs: :role]], force: true)
     findings = Pipeline.list_findings(run.task)
     passes = Pipeline.read_review(run.task)
     # Past Review the review is over whatever its last pass says, so only comments resume the review agent there.

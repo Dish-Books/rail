@@ -2534,8 +2534,15 @@ defmodule RailWeb.IssuesLiveTest do
       {:ok, _viewer} = Users.unlink_github(Scope.for_user(viewer))
 
       view |> element("#issue-start-#{ready_id}") |> render_click()
+      render_async(view)
 
-      assert has_element?(view, "#flash-error", "Connect GitHub in Connected accounts before you start an issue.")
+      assert has_element?(
+               view,
+               "#flash-error",
+               "CYC-3 did not start. Connect GitHub in Connected accounts before you start an issue."
+             )
+
+      assert has_element?(view, "#issue-start-#{ready_id}", "Start")
       refute Repo.get_by(Task, issue_id: ready_id)
       assert %Issue{state: ^state, owner_user_id: ^owner_user_id} = Repo.get!(Issue, ready_id)
     end
@@ -2556,29 +2563,191 @@ defmodule RailWeb.IssuesLiveTest do
       ready |> Issue.tracker_changeset(%{state: :in_progress, state_name: "In Progress"}) |> Repo.update!()
       # Sent as the event, since any other test's broadcast may have refreshed the row by now.
       render_click(view, "start_issue", %{"issue_id" => ready.id})
+      render_async(view)
 
       assert %Task{id: task_id, stage: :plan} = Repo.get_by(Task, issue_id: ready.id)
-      assert_redirect(view, ~p"/tasks/#{task_id}")
+      refute_redirected(view)
+      assert has_element?(view, "#task-link-#{ready.id}[href='/tasks/#{task_id}']")
     end
 
-    test "Start starts the issue and opens the task, without asking GitHub for a pull request", %{
+    test "Start stays on the page and reads Starting while git works, then the Plan chip, in every tab", %{
       conn: conn,
-      ready: ready
+      ready: %Issue{id: ready_id} = ready
     } do
       reject(&Issues.link_pull_request/2)
-      expect(Rail.Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+      test_pid = self()
+
+      stub(Rail.Git, :get_or_create_worktree, fn _project, task ->
+        send(test_pid, {:git, task.issue_id, self()})
+        receive do: (:release -> {:ok, task.worktree_path})
+      end)
+
       expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
 
       {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
-      allow(Issues, self(), view.pid)
-      allow(Rail.Git, self(), view.pid)
+      {:ok, second, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+      render_async(second)
+
+      assert has_element?(view, "#issue-start-#{ready_id}[phx-hook=StartFocus][data-chip='task-link-#{ready_id}']")
+      view |> element("#issue-start-#{ready_id}") |> render_click()
+      assert_receive {:git, ^ready_id, git}
+
+      refute_redirected(view)
+      starting = "#issue-start-#{ready_id}[aria-disabled='true'][aria-label='Starting #{ready.identifier}']"
+      assert has_element?(view, starting, "Starting")
+      assert has_element?(view, "#issue-start-#{ready_id}.cursor-wait .animate-spin")
+      refute has_element?(view, "#issue-start-#{ready_id} .pi-play")
+      assert has_element?(second, "#issue-start-#{ready_id}:not([aria-disabled])", "Start")
+
+      send(git, :release)
+      render_async(view)
+
+      assert %Task{id: task_id, stage: :plan} = Repo.get_by(Task, issue_id: ready_id)
+      refute_redirected(view)
+      refute has_element?(view, "#issue-start-#{ready_id}")
+      refute has_element?(view, "#flash-error")
+      assert has_element?(view, "#task-link-#{ready_id}[href='/tasks/#{task_id}']", "Plan")
+      refute has_element?(second, "#issue-start-#{ready_id}")
+      assert has_element?(second, "#task-link-#{ready_id}[href='/tasks/#{task_id}']", "Plan")
+    end
+
+    test "Starts on several rows run together, and a second click on one starts nothing more", %{
+      conn: conn,
+      ready: %Issue{id: ready_id},
+      insert: insert
+    } do
+      %Issue{id: other_id} = insert.("ROW-2", %{state: :todo, state_name: "Todo", cycle_external_id: "cyc_12"})
+      test_pid = self()
+
+      stub(Rail.Git, :get_or_create_worktree, fn _project, task ->
+        send(test_pid, {:git, task.issue_id, self()})
+        receive do: (:release -> {:ok, task.worktree_path})
+      end)
+
+      expect(Tools, :start_os_process, 2, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+
+      view |> element("#issue-start-#{ready_id}") |> render_click()
+      view |> element("#issue-start-#{other_id}") |> render_click()
+      # The two reach git in no fixed order.
+      assert_receive {:git, ^ready_id, ready_git}
+      assert_receive {:git, ^other_id, other_git}
+
+      assert has_element?(view, "#issue-start-#{ready_id}[aria-disabled='true']", "Starting")
+      assert has_element?(view, "#issue-start-#{other_id}[aria-disabled='true']", "Starting")
+
+      view |> element("#issue-start-#{ready_id}") |> render_click()
+      render_click(view, "start_issue", %{"issue_id" => ready_id})
+      refute_receive {:git, ^ready_id, _again}
+
+      send(ready_git, :release)
+      send(other_git, :release)
+      render_async(view)
+
+      assert [_one] = Repo.all(from t in Task, where: t.issue_id == ^ready_id)
+      assert [_one] = Repo.all(from t in Task, where: t.issue_id == ^other_id)
+      assert has_element?(view, "#task-link-#{ready_id}", "Plan")
+      assert has_element?(view, "#task-link-#{other_id}", "Plan")
+    end
+
+    test "a cycle step or a filter while a start is under way keeps its row at Starting", %{
+      conn: conn,
+      ready: %Issue{id: ready_id}
+    } do
+      test_pid = self()
+
+      stub(Rail.Git, :get_or_create_worktree, fn _project, task ->
+        send(test_pid, {:git, task.issue_id, self()})
+        receive do: (:release -> {:error, "no checkout"})
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+
+      view |> element("#issue-start-#{ready_id}") |> render_click()
+      assert_receive {:git, ^ready_id, git}
+
+      view |> element("#cycle-next") |> render_click()
+      assert_patched(view, ~p"/issues?cycle=13")
+      refute has_element?(view, "#issue-card-#{ready_id}")
+      view |> element("#cycle-previous") |> render_click()
+      assert has_element?(view, "#issue-start-#{ready_id}[aria-disabled='true']", "Starting")
+
+      view |> element("#issues-show-finished") |> render_click()
+      assert has_element?(view, "#issue-start-#{ready_id}[aria-disabled='true']", "Starting")
+
+      send(git, :release)
+      render_async(view)
+
+      assert has_element?(view, "#issue-start-#{ready_id}:not([aria-disabled])", "Start")
+    end
+
+    test "a row whose issue another tab starts meanwhile shows that task's chip, not Starting", %{
+      conn: conn,
+      ready: %Issue{id: ready_id} = ready,
+      open_task: open_task
+    } do
+      test_pid = self()
+
+      stub(Rail.Git, :get_or_create_worktree, fn _project, task ->
+        send(test_pid, {:git, task.issue_id, self()})
+        receive do: (:release -> {:ok, task.worktree_path})
+      end)
+
+      reject(&Tools.start_os_process/2)
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
       allow(Tools, self(), view.pid)
       render_async(view)
 
-      view |> element("#issue-start-#{ready.id}") |> render_click()
+      view |> element("#issue-start-#{ready_id}") |> render_click()
+      assert_receive {:git, ^ready_id, git}
 
-      assert %Task{id: task_id, stage: :plan} = Repo.get_by(Task, issue_id: ready.id)
-      assert_redirect(view, ~p"/tasks/#{task_id}")
+      {task, _run} = open_task.(ready, :plan, %{status: :running})
+      Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, ready_id})
+
+      refute has_element?(view, "#issue-start-#{ready_id}")
+      assert has_element?(view, "#task-link-#{ready_id}[href='/tasks/#{task.id}']", "Plan running")
+
+      send(git, :release)
+      render_async(view)
+
+      assert has_element?(view, "#flash-error", "CYC-3 did not start. Someone else just started this issue.")
+      assert [_one] = Repo.all(from t in Task, where: t.issue_id == ^ready_id)
+    end
+
+    test "a start keeps going after the page that started it is killed", %{conn: conn, ready: %Issue{id: ready_id}} do
+      # The page's proxy is linked to this test and goes down with the page.
+      Process.flag(:trap_exit, true)
+      test_pid = self()
+
+      stub(Rail.Git, :get_or_create_worktree, fn _project, task ->
+        send(test_pid, {:git, task.issue_id, self()})
+        receive do: (:release -> {:ok, task.worktree_path})
+      end)
+
+      expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+
+      view |> element("#issue-start-#{ready_id}") |> render_click()
+      assert_receive {:git, ^ready_id, git}
+
+      # Killed rather than stopped: a page stopped normally would not take its start with it anyway.
+      page = Process.monitor(view.pid)
+      Process.exit(view.pid, :kill)
+      assert_receive {:DOWN, ^page, :process, _pid, :killed}
+
+      starting = Process.monitor(git)
+      send(git, :release)
+      assert_receive {:DOWN, ^starting, :process, _pid, :normal}
+
+      assert %Task{id: task_id, stage: :plan} = Repo.get_by(Task, issue_id: ready_id)
+      assert [%Run{}] = Repo.all(from r in Run, where: r.task_id == ^task_id)
     end
 
     test "Start makes a linked person the owner of an unassigned issue and queues its ticket's assignee", %{
@@ -2604,12 +2773,13 @@ defmodule RailWeb.IssuesLiveTest do
       render_async(view)
 
       view |> element("#issue-start-#{issue_id}") |> render_click()
+      render_async(view)
 
       assert %Issue{owner_user_id: ^starter_id} = Repo.reload!(issue)
       assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id, fields: ["owner_user_id"]})
     end
 
-    test "a stale row whose issue has since started opens the task and leaves its run alone", %{
+    test "a stale row whose issue has since started shows its task and leaves its run alone", %{
       conn: conn,
       ready: ready,
       open_task: open_task
@@ -2626,8 +2796,11 @@ defmodule RailWeb.IssuesLiveTest do
       allow(Tools, self(), view.pid)
 
       render_click(view, "start_issue", %{"issue_id" => ready.id})
+      render_async(view)
 
-      assert_redirect(view, ~p"/tasks/#{task.id}")
+      refute_redirected(view)
+      refute has_element?(view, "#flash-error")
+      assert has_element?(view, "#task-link-#{ready.id}[href='/tasks/#{task.id}']", "Plan running")
       assert Repo.reload!(run).started_at == run.started_at
       assert [_one] = Repo.all(from t in Task, where: t.issue_id == ^ready.id)
     end
@@ -2635,6 +2808,7 @@ defmodule RailWeb.IssuesLiveTest do
     test "a start for an issue the person cannot reach, or a finished one, starts nothing", %{
       conn: conn,
       project: project,
+      ready: ready,
       insert: insert
     } do
       {:ok, granted} =
@@ -2667,10 +2841,16 @@ defmodule RailWeb.IssuesLiveTest do
         assert render_click(view, "start_issue", %{"issue_id" => id}) =~ "cycle-issues"
       end
 
-      assert [] = Repo.all(from t in Task, where: t.issue_id in ^[hidden.id, finished.id])
+      # One on show that has since finished is read again, and refused there.
+      ready |> Issue.tracker_changeset(%{state: :done, state_name: "Done"}) |> Repo.update!()
+      render_click(view, "start_issue", %{"issue_id" => ready.id})
+      render_async(view)
+
+      refute has_element?(view, "#flash-error")
+      assert [] = Repo.all(from t in Task, where: t.issue_id in ^[hidden.id, finished.id, ready.id])
     end
 
-    test "a start that fails says why, and only a row with no task can start again", %{
+    test "a start that fails says which issue and why, and only a row with no task can start again", %{
       conn: conn,
       ready: ready,
       insert: insert
@@ -2691,18 +2871,87 @@ defmodule RailWeb.IssuesLiveTest do
       render_async(view)
 
       view |> element("#issue-start-#{ready.id}") |> render_click()
-      assert has_element?(view, "#flash-error", "Could not create the worktree: no checkout")
-      assert has_element?(view, "#issue-start-#{ready.id}")
+      render_async(view)
+      assert has_element?(view, "#flash-error", "CYC-3 did not start. Could not create the worktree: no checkout")
+      assert has_element?(view, "#issue-start-#{ready.id}:not([aria-disabled])", "Start")
       refute has_element?(view, "#issue-no-task-#{ready.id}")
       refute Repo.get_by(Task, issue_id: ready.id)
       assert %Issue{state: :backlog, state_name: "Ready for Dev"} = Repo.reload!(ready)
 
       view |> element("#issue-start-#{spawning.id}") |> render_click()
-      assert has_element?(view, "#flash-error", "Could not start the agent: :enoent")
+      render_async(view)
+      assert has_element?(view, "#flash-error", "ROW-SP did not start. Could not start the agent: :enoent")
       assert %Task{} = Repo.get_by(Task, issue_id: spawning.id)
       refute has_element?(view, "#issue-start-#{spawning.id}")
       refute has_element?(view, "#issue-no-task-#{spawning.id}")
       assert has_element?(view, "#issue-card-#{spawning.id}.border-l-red-500", "Plan failed")
+    end
+
+    test "a start whose worktree fails leaves the other rows' starts to finish", %{
+      conn: conn,
+      ready: %Issue{id: ready_id},
+      insert: insert
+    } do
+      %Issue{id: other_id} = insert.("ROW-OK", %{state: :todo, state_name: "Todo", cycle_external_id: "cyc_12"})
+      test_pid = self()
+
+      stub(Rail.Git, :get_or_create_worktree, fn _project, task ->
+        send(test_pid, {:git, task.issue_id, self()})
+
+        receive do
+          :release when task.issue_id == ready_id -> {:error, "fatal: invalid reference: origin/main"}
+          :release -> {:ok, task.worktree_path}
+        end
+      end)
+
+      expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+
+      view |> element("#issue-start-#{ready_id}") |> render_click()
+      view |> element("#issue-start-#{other_id}") |> render_click()
+      assert_receive {:git, ^ready_id, ready_git}
+      assert_receive {:git, ^other_id, other_git}
+
+      send(ready_git, :release)
+
+      # Not render_async, which would wait on the start still held in git.
+      eventually(fn ->
+        assert has_element?(
+                 view,
+                 "#flash-error",
+                 "CYC-3 did not start. Could not create the worktree: fatal: invalid reference: origin/main"
+               )
+      end)
+
+      assert has_element?(view, "#issue-start-#{ready_id}:not([aria-disabled])", "Start")
+      assert has_element?(view, "#issue-start-#{other_id}[aria-disabled='true']", "Starting")
+
+      send(other_git, :release)
+      render_async(view)
+
+      assert %Task{} = Repo.get_by(Task, issue_id: other_id)
+      assert has_element?(view, "#task-link-#{other_id}", "Plan")
+    end
+
+    test "a start that crashes says it did not finish and offers Start again", %{
+      conn: conn,
+      ready: %Issue{id: ready_id}
+    } do
+      expect(Pipeline, :start_task, fn _scope, _issue -> raise "lost the connection" end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      allow(Pipeline, self(), view.pid)
+      render_async(view)
+
+      ExUnit.CaptureLog.capture_log(fn ->
+        view |> element("#issue-start-#{ready_id}") |> render_click()
+        render_async(view)
+      end)
+
+      assert has_element?(view, "#flash-error", "CYC-3 did not finish starting. Try again.")
+      assert has_element?(view, "#issue-start-#{ready_id}:not([aria-disabled])", "Start")
     end
 
     test "a second tab's insert the index refuses says someone else started it, and spawns nothing", %{
@@ -2722,8 +2971,9 @@ defmodule RailWeb.IssuesLiveTest do
       allow(Pipeline, self(), view.pid)
 
       render_click(view, "start_issue", %{"issue_id" => ready.id})
+      render_async(view)
 
-      assert has_element?(view, "#flash-error", "Someone else just started this issue.")
+      assert has_element?(view, "#flash-error", "CYC-3 did not start. Someone else just started this issue.")
     end
 
     test "a start whose re-read missed a task another tab committed stops at the task, with no spawn", %{
@@ -2745,8 +2995,9 @@ defmodule RailWeb.IssuesLiveTest do
       allow(Tools, self(), view.pid)
 
       render_click(view, "start_issue", %{"issue_id" => ready.id})
+      render_async(view)
 
-      assert has_element?(view, "#flash-error", "Someone else just started this issue.")
+      assert has_element?(view, "#flash-error", "CYC-3 did not start. Someone else just started this issue.")
       assert Repo.reload!(run).started_at == run.started_at
       assert [_one] = Repo.all(from t in Task, where: t.issue_id == ^ready.id)
     end
@@ -2791,14 +3042,23 @@ defmodule RailWeb.IssuesLiveTest do
       render_async(view)
 
       view |> element("#issue-start-#{ready.id}") |> render_click()
-      assert has_element?(view, "#flash-error", "That pull request comes from a fork, which Rail cannot push fixes to.")
+      render_async(view)
+
+      assert has_element?(
+               view,
+               "#flash-error",
+               "CYC-3 did not start. That pull request comes from a fork, which Rail cannot push fixes to."
+             )
 
       view |> element("#issue-start-#{refused_row.id}") |> render_click()
-      assert has_element?(view, "#flash-error", "Someone else just started this issue.")
+      render_async(view)
+      assert has_element?(view, "#flash-error", "ROW-PR1 did not start. Someone else just started this issue.")
 
       view |> element("#issue-start-#{adopted_row.id}") |> render_click()
+      render_async(view)
       assert %Task{id: task_id, stage: :review} = Repo.get_by(Task, issue_id: adopted_row.id)
-      assert_redirect(view, ~p"/tasks/#{task_id}")
+      refute_redirected(view)
+      assert has_element?(view, "#task-link-#{adopted_row.id}[href='/tasks/#{task_id}']")
     end
 
     test "the plain list keeps its rows: no Start, its chip, and a click on the issue page", %{

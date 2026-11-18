@@ -572,6 +572,11 @@ defmodule Rail.Issues.Workers.MoveToLocalTrackerTest do
            Req.Test.json(conn, %{"errors" => [%{"message" => "Entity not found"}]})
        end, R2, nil, "Linear refused the request while reading tickets (Entity not found), so nothing was written."},
       {fn %Plug.Conn{host: "api.linear.app"} = conn ->
+         conn
+         |> Plug.Conn.put_status(400)
+         |> Req.Test.json(%{"errors" => [%{"message" => "Query too complex"}]})
+       end, R2, nil, "Linear answered 400 while reading tickets (Query too complex), so nothing was written."},
+      {fn %Plug.Conn{host: "api.linear.app"} = conn ->
          {:ok, body, conn} = Plug.Conn.read_body(conn)
 
          case Jason.decode!(body) do

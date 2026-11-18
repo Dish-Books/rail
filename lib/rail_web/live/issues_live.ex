@@ -58,6 +58,8 @@ defmodule RailWeb.IssuesLive do
       |> assign(:blockers, %{})
       |> assign(:blockers_for, [])
       |> assign(:cycle_dates, nil)
+      # Issue id to identifier, for each start under way, so its row reads Starting and its error names it.
+      |> assign(:starting, %{})
       |> load_cycles(cycle_projects)
 
     {:ok, socket}
@@ -374,6 +376,7 @@ defmodule RailWeb.IssuesLive do
                       current_scope={@current_scope}
                       cycles={@cycles_by_id}
                       cycles_on_view={@cycles_on_view}
+                      starting={@starting}
                       actionable
                     />
                   </div>
@@ -518,8 +521,26 @@ defmodule RailWeb.IssuesLive do
     {:noreply, save_and_patch(socket, changes)}
   end
 
+  # A second click on a row already starting, or one for an issue not on show, starts nothing.
   def handle_event("start_issue", %{"issue_id" => issue_id}, socket) do
-    {:noreply, start_issue(socket, issue_id, &reload_data/1)}
+    %{current_scope: scope, starting: starting} = socket.assigns
+    issue = Enum.find(shown_issues(socket.assigns), &(&1.id == issue_id))
+
+    if is_map_key(starting, issue_id) or is_nil(issue) do
+      {:noreply, socket}
+    else
+      socket =
+        socket
+        |> assign(:starting, Map.put(starting, issue_id, issue.identifier))
+        |> start_async({:start, issue_id}, fn ->
+          # Unlinked, so leaving the page does not cut a start off between its worktree and its agent.
+          Rail.TaskSupervisor
+          |> Elixir.Task.Supervisor.async_nolink(fn -> start_issue(scope, issue_id) end)
+          |> Elixir.Task.await(:infinity)
+        end)
+
+      {:noreply, socket}
+    end
   end
 
   # Only a cycle of the project on show that has not ended, as the panel offers.
@@ -659,6 +680,29 @@ defmodule RailWeb.IssuesLive do
     end
   end
 
+  # Every finished start reloads, so a row whose issue another tab started shows that task's chip.
+  def handle_async({:start, issue_id}, result, socket) do
+    {identifier, starting} = Map.pop(socket.assigns.starting, issue_id)
+
+    socket =
+      case result do
+        {:ok, {:ok, %Task{}}} ->
+          socket
+
+        {:ok, {:error, :not_found}} ->
+          socket
+
+        {:ok, {:error, message}} when is_binary(message) ->
+          put_flash(socket, :error, "#{identifier} did not start. #{message}")
+
+        {:exit, _reason} ->
+          put_flash(socket, :error, "#{identifier} did not finish starting. Try again.")
+      end
+
+    socket = socket |> assign(:starting, starting) |> reload_data()
+    {:noreply, socket}
+  end
+
   # An answer for issues the page no longer shows is dropped: a newer read is under way.
   def handle_async(:blockers, {:ok, {external_ids, blockers}}, socket) do
     if external_ids == socket.assigns.blockers_for,
@@ -704,6 +748,7 @@ defmodule RailWeb.IssuesLive do
   # Every cycle the page read, by id, and those on view, whose rows need not name them.
   attr :cycles, :map, required: true
   attr :cycles_on_view, :list, default: []
+  attr :starting, :map, default: %{}
 
   # A dimmed copy is context for its children, so it carries no stage chip, though an actionable one opens its task.
   defp issue_rows(assigns) do
@@ -719,6 +764,7 @@ defmodule RailWeb.IssuesLive do
         run={if(row.dimmed, do: nil, else: stage_run(row.issue.task))}
         open_blockers={open_blockers(@blockers, row.issue)}
         cycle={row_cycle(@cycles, @cycles_on_view, row.issue)}
+        starting={is_map_key(@starting, row.issue.id)}
       />
       <.issue_card
         :for={sub <- row.sub_issues}
@@ -731,6 +777,7 @@ defmodule RailWeb.IssuesLive do
         run={stage_run(sub.issue.task)}
         open_blockers={open_blockers(@blockers, sub.issue)}
         cycle={row_cycle(@cycles, @cycles_on_view, sub.issue)}
+        starting={is_map_key(@starting, sub.issue.id)}
       />
     <% end %>
     """

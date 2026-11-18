@@ -27,6 +27,7 @@ defmodule RailWeb.Components.IssueCard do
   attr :actionable, :boolean, default: false
   # The cycle the issue is in, as `Rail.Issues.get_cycles/1` reads it, when the row names it.
   attr :cycle, :map, default: nil
+  attr :starting, :boolean, default: false
 
   def issue_card(%{issue: issue, task: task, actionable: actionable} = assigns) do
     {done, total} = Issue.calculate_sub_issue_count(issue)
@@ -37,6 +38,8 @@ defmodule RailWeb.Components.IssueCard do
     # A reopened issue's merged task is history, so with no task of its own the row is Start or No task by its status.
     started = Enum.find([issue.task, finished && issue.merged_task], &match?(%Task{}, &1))
     no_task = actionable and not assigns.dimmed and is_nil(issue.task) and not finished
+    show_start = no_task and not Issue.started_state?(issue.state)
+    show_starting = show_start and assigns.starting
 
     assigns =
       assigns
@@ -45,7 +48,9 @@ defmodule RailWeb.Components.IssueCard do
       |> assign(:flag, row_flag(actionable, needs, run))
       |> assign(:flagged, needs)
       |> assign(:style, if(actionable and task != nil, do: run_state_style(run, task)))
-      |> assign(:show_start, no_task and not Issue.started_state?(issue.state))
+      |> assign(:show_start, show_start)
+      |> assign(:show_starting, show_starting)
+      |> assign(:start_label, start_label(show_starting))
       |> assign(:show_no_task, no_task and Issue.started_state?(issue.state))
       |> assign(:sub_issues_done, done)
       |> assign(:sub_issues, total)
@@ -193,16 +198,31 @@ defmodule RailWeb.Components.IssueCard do
           <span>{stage_label(@task, @run)}</span>
         </.link>
 
+        <%!-- Starting stays enabled, since LiveView passes a disabled button's click up to the row, which opens the issue. --%>
         <button
           :if={@show_start}
           type="button"
           id={"issue-start-#{@key}"}
+          phx-hook="StartFocus"
+          data-chip={"task-link-#{@issue.id}"}
           phx-click="start_issue"
           phx-value-issue_id={@issue.id}
-          aria-label={"Start #{@issue.identifier}"}
-          class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+          aria-label={"#{@start_label} #{@issue.identifier}"}
+          aria-disabled={@show_starting && "true"}
+          class={[
+            "inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500",
+            if(@show_starting,
+              do:
+                "border border-blue-600/60 dark:border-blue-500/60 bg-blue-50 dark:bg-blue-950/50 text-blue-800 dark:text-blue-200 cursor-wait",
+              else: "bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer"
+            )
+          ]}
         >
-          <.icon name="pi-play" class="h-3.5 w-3.5" /> Start
+          <span
+            :if={@show_starting}
+            class="inline-block animate-spin h-3 w-3 border-2 border-current border-t-transparent rounded-full"
+          ></span>
+          <.icon :if={not @show_starting} name="pi-play" class="h-3.5 w-3.5" /> {@start_label}
         </button>
 
         <.link
@@ -261,6 +281,9 @@ defmodule RailWeb.Components.IssueCard do
       do: "border-l-red-500 bg-red-50 dark:bg-red-950/20",
       else: "border-l-amber-400 bg-amber-50 dark:bg-amber-950/20"
   end
+
+  defp start_label(true = _starting), do: "Starting"
+  defp start_label(false = _starting), do: "Start"
 
   defp cycle_label(nil), do: nil
   defp cycle_label(cycle), do: cycle.name || "Cycle #{cycle.number}"

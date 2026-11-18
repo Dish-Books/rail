@@ -12,6 +12,9 @@ defmodule RailWeb.Utils.CalculateDiffPane do
 
   import RailWeb.Utils.TestFile
 
+  # Changed lines past which a file's rows are not sent until the reader asks for them.
+  @large_diff 400
+
   @doc """
   The pane's `frame`, which only changes when files come or go or a comment's
   file leaves the view (`stray`), then the assigns of its `toolbar`, its file
@@ -23,7 +26,9 @@ defmodule RailWeb.Utils.CalculateDiffPane do
   `hide_tests` leaves test files out as the query does, and `no_match` says why nothing is left.
   `filter` is the view: `:branch`, `:uncommitted` or `{:commit, sha}`. A picture's
   section carries the `image` addresses of its `old` and `new` sides, each `nil`
-  where the file has no such side; any other file's is `nil`.
+  where the file has no such side; any other file's is `nil`. A file changing more
+  than #{@large_diff} lines is `held_back?` with no segments until its path is `loaded`,
+  unless it has comments on it.
   """
   def calculate_diff_pane(assigns) do
     %{files: files, query: query, hide_tests: hide_tests} = assigns
@@ -152,10 +157,15 @@ defmodule RailWeb.Utils.CalculateDiffPane do
     {placed, lifted} = Enum.split_with(comments, &(anchor(&1, file.rows, assigns.filter) != nil))
     lifted = Enum.map(lifted, &{&1, changed?(&1, file.rows, assigns.filter)})
 
+    # A file with comments is drawn whole, since they are on lines the reader has to see.
+    held_back? =
+      file.additions + file.deletions > @large_diff and file.path not in assigns.loaded and comments == []
+
     %{
       target: assigns.target,
       file: Map.drop(file, [:rows, :viewed?]),
-      segments: segments(file.rows, placed, draft, assigns.filter),
+      segments: if(held_back?, do: [], else: segments(file.rows, placed, draft, assigns.filter)),
+      held_back?: held_back?,
       lifted: lifted,
       changed_count: Enum.count(lifted, fn {comment, changed?} -> changed? and comment.status == :unsent end),
       unsent: unsent(comments),

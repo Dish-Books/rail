@@ -102,6 +102,35 @@ defmodule Rail.Pipeline.Actions.RetryRunTest do
     assert {:ok, %Run{id: ^run_id}} = Pipeline.retry_run(system_scope(), failed)
   end
 
+  test "a failed curator at Finalize starts again in its own conversation, and the review agent is left alone", %{
+    task: task,
+    run: run
+  } do
+    {:ok, _finalize} = Pipeline.update_task(task, %{stage: :finalize, marked_ready_at: DateTime.utc_now()})
+    %Run{id: lead_id} = run.(:review_lead, %{stage_outcome: :done, conversation_id: "sess_lead"})
+    %Run{id: curator_id} = curator = run.(:curator, %{error: "Exited with code 1", conversation_id: "sess_curator"})
+
+    test = self()
+
+    expect(Tools, :start_os_process, 3, fn %Run{id: ^curator_id, conversation_id: "sess_curator"} = spawned,
+                                           ["-p", prompt | _rest] ->
+      send(test, {:spawned, prompt})
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{id: ^curator_id, status: :running} = retried} = Pipeline.retry_run(system_scope(), curator)
+    assert_received {:spawned, retry_prompt}
+
+    # A Retry finishes the pass it failed on, so it gets the brief a first pass does.
+    retried = Repo.preload(retried, [:task, :role], force: true)
+    {:ok, _first} = Pipeline.start_curator_run(retried)
+    assert_received {:spawned, ^retry_prompt}
+    {:ok, _again} = Pipeline.start_curator_run(retried, new_pass: true)
+    assert_received {:spawned, again_prompt}
+    assert again_prompt != retry_prompt
+    assert %Run{status: :finished, stage_outcome: :done} = Repo.get!(Run, lead_id)
+  end
+
   test "a run deleted while the retry waited on the task's lock is not retried", %{task: task, run: run} do
     %Run{id: lead_id} = lead = run.(:review_lead, %{error: "It broke.", conversation_id: "sess_lead"})
     reject(Tools, :start_os_process, 2)

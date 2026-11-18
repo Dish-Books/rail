@@ -291,6 +291,8 @@ defmodule RailWeb.Components.IssueView do
                   type="button"
                   id="issue-start-plan"
                   data-qa="issue-start-plan"
+                  phx-hook="StartFocus"
+                  data-chip="issue-task-link"
                   phx-click="start_task"
                   class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 cursor-pointer"
                 >
@@ -302,6 +304,8 @@ defmodule RailWeb.Components.IssueView do
                   type="button"
                   id="issue-start-review"
                   data-qa="issue-start-review"
+                  phx-hook="StartFocus"
+                  data-chip="issue-task-link"
                   phx-click="adopt_pull_request"
                   class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 cursor-pointer"
                 >

@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Workers.AdvanceTrackerState
+  alias Rail.Learnings
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
@@ -15,6 +16,8 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   alias Rail.Pipeline.Workers.CleanupMergedTask
   alias Rail.Pipeline.Workers.NotifyOwner
   alias Rail.Pipeline.Workers.RecheckBase
+  alias Rail.Pipeline.Workers.StartCurator
+  alias Rail.Roles
   alias Rail.Scope
   alias Rail.Users
 
@@ -62,6 +65,44 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     Repo.insert!(%Round{task_id: task.id, number: 1, plan: "## Implementation plan", ready_at: DateTime.utc_now()})
 
     assert {:error, :plan_not_approved} = Pipeline.merge_task(scope, task)
+    assert %Task{stage: :finalize, merge_started_at: nil} = Repo.reload!(task)
+  end
+
+  # No GitHub mock is queued until the proposal is decided, so a merge request before it would raise.
+  test "a proposal of the task's still pending holds the merge unclaimed, and it merges once that is rejected", %{
+    task: task,
+    scope: scope
+  } do
+    {:ok, curator} = Roles.get_role(project_id: task.project_id, stage: :curator)
+
+    {:ok, _run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: curator.id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: DateTime.utc_now()
+      })
+
+    {:ok, proposal} = Learnings.save_task_proposal(task, %{action: "add", rule: "Lock the row", kind: "convention"})
+
+    assert {:error, {:learnings_open, 1}} = Pipeline.merge_task(scope, task)
+    assert %Task{stage: :finalize, merge_started_at: nil, merge_error: nil} = Repo.reload!(task)
+
+    {:ok, _rejected} = Learnings.reject_learning_proposal(scope, proposal)
+    Req.Test.expect(Client, &Req.Test.json(&1, %{"merged" => true, "sha" => "3c9a1f0e2b"}))
+    assert {:ok, %Task{stage: :merged}} = Pipeline.merge_task(scope, task)
+  end
+
+  test "a merge right after the task is marked ready waits for the curator pass it queued", %{
+    task: task,
+    scope: scope
+  } do
+    {:ok, unmarked} = Pipeline.update_task(task, %{marked_ready_at: nil})
+    {:ok, marked} = Pipeline.mark_ready(scope, unmarked)
+    assert_enqueued(worker: StartCurator, args: %{task_id: task.id})
+
+    assert {:error, :curator_running} = Pipeline.merge_task(scope, marked)
     assert %Task{stage: :finalize, merge_started_at: nil} = Repo.reload!(task)
   end
 

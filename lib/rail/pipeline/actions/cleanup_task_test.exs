@@ -60,6 +60,17 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     assert {:error, :task_busy} = Pipeline.cleanup_task(task)
   end
 
+  # The curator reads the worktree and the scratch folder this deletes, so a merged task's cleanup waits for its turn.
+  test "refuses to clean up while the curator is mid-turn", %{project: project, task: task} do
+    {:ok, curator} = Roles.get_role(project_id: project.id, stage: :curator)
+    {:ok, task} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
+
+    {:ok, _reading} =
+      Pipeline.create_run(%{task_id: task.id, role_id: curator.id, status: :running, started_at: DateTime.utc_now()})
+
+    assert {:error, :task_busy} = Pipeline.cleanup_task(task)
+  end
+
   describe "a split parent" do
     setup %{project: project} do
       for {identifier, title} <- [{"CLT-10", "Work on CLT-10"}, {"CLT-11", "Child CLT-11"}, {"CLT-12", "Child CLT-12"}] do

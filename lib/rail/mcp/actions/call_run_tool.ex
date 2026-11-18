@@ -47,6 +47,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   import Rail.Mcp.Utils.RunToolSaveDesignOption
   import Rail.Mcp.Utils.RunToolSaveFinding
   import Rail.Mcp.Utils.RunToolSaveFixPlan
+  import Rail.Mcp.Utils.RunToolSaveLearningProposal
   import Rail.Mcp.Utils.RunToolSavePlan
   import Rail.Mcp.Utils.RunToolSaveReport
   import Rail.Mcp.Utils.RunToolSaveReview
@@ -74,7 +75,8 @@ defmodule Rail.Mcp.Actions.CallRunTool do
     "save_demo",
     "save_screen",
     "carry_screen",
-    "save_stage_output"
+    "save_stage_output",
+    "save_learning_proposal"
   ]
 
   @doc """
@@ -274,6 +276,8 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp run("save_report", task, arguments, opts), do: run_tool_save_report(task, arguments, opts)
 
   defp run("save_stage_output", task, arguments, opts), do: run_tool_save_stage_output(task, arguments, opts)
+  defp run("save_learning_proposal", task, arguments, opts), do: run_tool_save_learning_proposal(task, arguments, opts)
+
   defp run("save_demo", task, arguments, opts), do: run_tool_save_demo(task, arguments, opts)
   defp run("ask_questions", task, arguments, opts), do: run_tool_ask_questions(task, arguments, opts)
 

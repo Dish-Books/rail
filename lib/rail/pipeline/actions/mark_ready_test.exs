@@ -1,9 +1,11 @@
 defmodule Rail.Pipeline.Actions.MarkReadyTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.StartCurator
   alias Rail.Scope
   alias Rail.Users
   alias Rail.Users.Schemas.User
@@ -54,6 +56,22 @@ defmodule Rail.Pipeline.Actions.MarkReadyTest do
 
     assert {:ok, %Task{marked_ready_by_id: ^dan_id, marked_ready_at: ^first_at}} =
              Pipeline.mark_ready(Scope.for_user(sam), task)
+
+    assert [%Oban.Job{}] = all_enqueued(worker: StartCurator, args: %{task_id: task.id})
+  end
+
+  test "marking queues the task's curator pass, and marking again after a fix round queues another", %{
+    task: %Task{id: task_id} = task,
+    dan: dan
+  } do
+    {:ok, _marked} = Pipeline.mark_ready(Scope.for_user(dan), task)
+    assert [%Oban.Job{args: %{"task_id" => ^task_id}}] = all_enqueued(worker: StartCurator)
+
+    # The first pass ran, and a fix round took the mark off, so the next Ready for review is the task coming back.
+    Repo.update_all(Oban.Job, set: [state: "completed", completed_at: DateTime.utc_now()])
+    {:ok, unmarked} = task |> Repo.reload!() |> Pipeline.update_task(%{marked_ready_at: nil})
+    {:ok, _marked} = Pipeline.mark_ready(Scope.for_user(dan), unmarked)
+    assert [%Oban.Job{args: %{"task_id" => ^task_id}}] = all_enqueued(worker: StartCurator)
   end
 
   test "a task outside Finalize, one without a pull request, and another project's task are refused", %{
@@ -69,5 +87,6 @@ defmodule Rail.Pipeline.Actions.MarkReadyTest do
     {:ok, _with_pr} = Pipeline.update_task(no_pr, %{pr_number: 151})
     assert {:error, :not_found} = Pipeline.mark_ready(Scope.for_user(%{dan | project_ids: []}), task)
     assert %Task{marked_ready_at: nil} = Repo.reload!(task)
+    assert [] = all_enqueued(worker: StartCurator)
   end
 end

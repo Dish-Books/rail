@@ -672,6 +672,35 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert %Task{worktree_setup_at: %DateTime{}} = Repo.reload!(task)
   end
 
+  test "a curator whose worktree needed setting up first starts once the setup finishes", %{
+    project: project,
+    task: task,
+    worktree: worktree
+  } do
+    {:ok, curator} = Roles.get_role(project_id: project.id, stage: :curator)
+    {:ok, task} = Pipeline.update_task(task, %{stage: :finalize, worktree_path: worktree})
+
+    {:ok, %Run{id: run_id} = run} =
+      Pipeline.create_run(%{task_id: task.id, role_id: curator.id, status: :running, started_at: DateTime.utc_now()})
+
+    os_process =
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
+        task_id: task.id,
+        kind: :setup,
+        stream_path: "/tmp/run_finished/#{run.id}.ndjson",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, ["-p", _prompt, "--model", _model | rest] ->
+      assert "You are the curator agent." in rest
+      {:ok, %OsProcess{run: %{spawned | status: :running}}}
+    end)
+
+    assert {:ok, %Run{id: ^run_id, status: :running}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+  end
+
   test "a worktree setup that failed says so on the run and starts nothing", %{task: task, exited: exited} do
     {:ok, task} = Pipeline.update_task(task, %{stage: :plan})
     {_run, os_process} = exited.(:plan, %{})

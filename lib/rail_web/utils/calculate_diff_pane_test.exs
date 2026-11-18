@@ -26,6 +26,7 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
         target: nil,
         collapsed: [],
         expanded_gaps: %{},
+        loaded: [],
         show_file_tree: true,
         filter: :branch,
         wrap: :scroll,
@@ -68,6 +69,25 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
              calculate_diff_pane(%{assigns | collapsed: [diff.path], expanded_gaps: gaps})
 
     assert Map.keys(expanded) == ["lib/filter.ex:0"]
+  end
+
+  test "a file changing more than 400 lines sends no rows until it is loaded", %{assigns: assigns, diff: diff} do
+    large = %{diff | additions: 300, deletions: 101}
+
+    assert %{sections: [{_id, %{held_back?: true, segments: []}}]} = calculate_diff_pane(%{assigns | files: [large]})
+
+    assert %{sections: [{_id, %{held_back?: false, segments: [_rows]}}]} =
+             calculate_diff_pane(%{assigns | files: [large], loaded: [diff.path]})
+
+    assert %{sections: [{_id, %{held_back?: false}}]} =
+             calculate_diff_pane(%{assigns | files: [%{large | deletions: 100}]})
+  end
+
+  test "a large file with a comment on it is drawn whole", %{assigns: assigns, diff: diff} do
+    comment = %DiffComment{id: "dcm_1", path: diff.path, status: :sent, line_kind: :added, line: 1, line_text: "x"}
+
+    assert %{sections: [{_id, %{held_back?: false, segments: [_rows]}}]} =
+             calculate_diff_pane(%{assigns | files: [%{diff | additions: 401}], comments: [comment]})
   end
 
   test "a file that is not a picture has no image", %{assigns: assigns} do

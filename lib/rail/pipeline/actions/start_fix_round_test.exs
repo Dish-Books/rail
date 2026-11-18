@@ -687,6 +687,12 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       {:ok, _marked} =
         Pipeline.update_task(task, %{marked_ready_at: DateTime.utc_now(), marked_ready_by_id: grace.user.id})
 
+      # The curator the mark started reads the task and changes nothing, so it holds no Send back.
+      {:ok, curator} = Roles.get_role(project_id: task.project_id, stage: :curator)
+
+      {:ok, _reading} =
+        Pipeline.create_run(%{task_id: task.id, role_id: curator.id, status: :running, started_at: DateTime.utc_now()})
+
       assert {:ok, %Run{status: :running, completed_at: nil}} = Pipeline.start_fix_round(ada, run)
       assert [%{finished_at: %DateTime{}}] = Pipeline.read_review(task)
       # Changes are coming, so the teammate's mark no longer holds.

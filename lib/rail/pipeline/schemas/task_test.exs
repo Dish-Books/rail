@@ -146,6 +146,16 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     assert Task.running?(%{task | runs: [idle, busy]})
   end
 
+  test "running?/1 leaves out a curator mid-turn when its role is loaded, and counts it when not", %{task: task} do
+    {:ok, curator} = Roles.get_role(project_id: task.project_id, stage: :curator)
+
+    {:ok, reading} =
+      Pipeline.create_run(%{task_id: task.id, role_id: curator.id, status: :running, started_at: DateTime.utc_now()})
+
+    refute Task.running?(%{task | runs: [%{reading | role: curator}]})
+    assert Task.running?(%{task | runs: [reading]})
+  end
+
   test "plan_sent?/1 is true only at Plan with the first round sent and not approved, and false without rounds" do
     now = DateTime.utc_now()
     sent = %Round{number: 1, ready_at: now}

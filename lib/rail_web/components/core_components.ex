@@ -68,6 +68,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate project_badge(assigns), to: Components.ProjectBadge
   defdelegate review_comment_tray(assigns), to: Components.ReviewCommentTray
   defdelegate review_items(assigns), to: Components.ReviewItems
+  defdelegate task_learnings(assigns), to: Components.TaskLearnings
   defdelegate plan_queue(assigns), to: Components.PlanQueue
   defdelegate review_queue(assigns), to: Components.ReviewQueue
   defdelegate round_plan(assigns), to: Components.RoundPlan
