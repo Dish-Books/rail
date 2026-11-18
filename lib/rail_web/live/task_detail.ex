@@ -288,6 +288,7 @@ defmodule RailWeb.Live.TaskDetail do
                   <div class="h-full flex flex-col @2xl:flex-row min-h-0">
                     <.finding_list
                       findings={@findings}
+                      task_id={@task.id}
                       selected_key={@selected_key}
                       running={@phase == :round}
                       tally={@tally}

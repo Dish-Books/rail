@@ -131,6 +131,7 @@ defmodule RailWeb.Router do
     get "/tasks/:task_id/findings/:key/evidence/:index", EvidenceController, :show
     get "/tasks/:task_id/screens/:key", ScreenController, :show
     get "/tasks/:task_id/diff/:side", DiffImageController, :show
+    get "/todos/export", TodoExportController, :export
 
     live_session :require_authenticated_user,
       on_mount: [

@@ -2,6 +2,7 @@ import "phoenix_html";
 import { Socket } from "phoenix";
 import { LiveSocket } from "phoenix_live_view";
 import topbar from "../vendor/topbar";
+import { listenForDragLinks } from "./drag_link";
 import { BrowserScreencast } from "./hooks/browser_screencast";
 import { ChatAutoscroll } from "./hooks/chat_autoscroll";
 import { ChatComposer } from "./hooks/chat_composer";
@@ -28,6 +29,8 @@ import { Shortcuts } from "./hooks/shortcuts";
 import { SidebarResize } from "./hooks/sidebar_resize";
 import { StatusMenu } from "./hooks/status_menu";
 import { Theme } from "./hooks/theme";
+import { TodosDrop } from "./hooks/todos_drop";
+import { readOpen, TodosOpen } from "./hooks/todos_open";
 import { recordDrops } from "./socket_drops";
 
 const Hooks = {
@@ -57,7 +60,9 @@ const Hooks = {
   StatusMenu,
   MenuKeys,
   IssueTitle,
-  IssueDescription
+  IssueDescription,
+  TodosDrop,
+  TodosOpen
 };
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content");
@@ -66,11 +71,17 @@ const drops = recordDrops(window);
 // them beside the last drop.
 const socketParams = { _csrf_token: csrfToken };
 const liveSocket = new LiveSocket("/live", Socket, {
-  params: () => Object.assign(socketParams, drops.params()),
+  // Read on every join, so a reconnect and the next page both show the panel as this browser left it.
+  params: () =>
+    Object.assign(socketParams, drops.params(), {
+      todos_open: readOpen(window.localStorage),
+      time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone
+    }),
   logger: drops.logger,
   hooks: Hooks
 });
 drops.watch(liveSocket.socket);
+listenForDragLinks(document, window.location.origin);
 
 topbar.config({ barColors: { 0: "#6366f1" }, shadowColor: "rgba(0, 0, 0, 0)" });
 window.addEventListener("phx:page-loading-start", (info) => {

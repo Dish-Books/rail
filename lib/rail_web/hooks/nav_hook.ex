@@ -7,12 +7,24 @@ defmodule RailWeb.Hooks.NavHook do
   alias Rail.Scope
   alias Rail.Tools
   alias Rail.Triage
+  alias RailWeb.Components.TodosPanel
 
   def on_mount(:default, _params, session, socket) do
     scope = socket.assigns.current_scope
     projects = Projects.list_projects(scope)
     # A lost project stays in the session, so it comes back selected if access is granted again.
     current_project_id = Enum.find_value(projects, &(&1.id == session["selected_project_id"] && &1.id))
+
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "todos:#{scope.user.id}")
+      params = get_connect_params(socket)
+
+      # Handled once this mount has rendered, when the panel exists; a reconnect joins again and sends it again.
+      send_update(TodosPanel,
+        id: TodosPanel.id(),
+        browser: %{open: params["todos_open"] == true, time_zone: params["time_zone"] || "Etc/UTC"}
+      )
+    end
 
     socket =
       socket
@@ -32,6 +44,7 @@ defmodule RailWeb.Hooks.NavHook do
       |> assign(:lost_backends, Enum.filter(Tools.list_backends(), & &1.session_lost_at))
       |> attach_hook(:nav_handle_params, :handle_params, &handle_nav_params/3)
       |> attach_hook(:nav_handle_events, :handle_event, &handle_nav_events/3)
+      |> attach_hook(:nav_todos, :handle_info, &handle_todos_info/2)
 
     {:cont, socket}
   end
@@ -74,4 +87,12 @@ defmodule RailWeb.Hooks.NavHook do
   defp handle_nav_events(_event, _params, socket) do
     {:cont, socket}
   end
+
+  # A live component cannot subscribe, so the page hands each change on to the panel.
+  defp handle_todos_info({:todos_changed, _user_id}, socket) do
+    send_update(TodosPanel, id: TodosPanel.id(), refresh: true)
+    {:halt, socket}
+  end
+
+  defp handle_todos_info(_message, socket), do: {:cont, socket}
 end

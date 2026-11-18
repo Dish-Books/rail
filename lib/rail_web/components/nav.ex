@@ -5,6 +5,7 @@ defmodule RailWeb.Components.Nav do
   use RailWeb, :html
 
   alias RailWeb.Components.CaptureIssueModal
+  alias RailWeb.Components.TodosPanel
 
   attr :current_section, :atom, required: true
   attr :attention_count, :integer, default: 0
@@ -199,7 +200,7 @@ defmodule RailWeb.Components.Nav do
       id="top-app-bar"
       data-qa="top_app_bar"
       phx-hook="Shortcuts"
-      class="h-11 px-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shrink-0 z-20"
+      class="h-11 px-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shrink-0"
     >
       <!-- Left Group: Section Title & Project Filter -->
       <div class="flex items-center space-x-4">
@@ -324,8 +325,10 @@ defmodule RailWeb.Components.Nav do
         </div>
       </div>
 
-      <!-- Right Group: New Issue & Theme Toggle -->
+      <!-- Right Group: To-dos, New Issue & Theme Toggle -->
       <div class="flex items-center space-x-2">
+        <.live_component module={TodosPanel} id={TodosPanel.id()} current_scope={@current_scope} />
+
         <!-- New Issue Button -->
         <button
           type="button"

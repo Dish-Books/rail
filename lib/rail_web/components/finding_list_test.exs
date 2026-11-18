@@ -36,7 +36,7 @@ defmodule RailWeb.Components.FindingListTest do
 
     doc =
       (&FindingList.finding_list/1)
-      |> render_component(findings: findings, running: false, tally: "3 findings", target: nil)
+      |> render_component(findings: findings, task_id: "tsk_list", running: false, tally: "3 findings", target: nil)
       |> Floki.parse_fragment!()
 
     assert ["Suppressed", "Fix", "Fix · still failing"] =
@@ -86,7 +86,14 @@ defmodule RailWeb.Components.FindingListTest do
 
     doc =
       (&FindingList.finding_list/1)
-      |> render_component(findings: findings, running: false, tally: "", changed: %{"tray" => :new_issue}, target: nil)
+      |> render_component(
+        findings: findings,
+        task_id: "tsk_list",
+        running: false,
+        tally: "",
+        changed: %{"tray" => :new_issue},
+        target: nil
+      )
       |> Floki.parse_fragment!()
 
     assert ["New issue · filed on Send", "New issue · RAIL-152", "New issue · changed since the plan"] =
@@ -107,7 +114,13 @@ defmodule RailWeb.Components.FindingListTest do
   test "the footer reads the tally and holds no button" do
     doc =
       (&FindingList.finding_list/1)
-      |> render_component(findings: [], running: false, tally: "1 to fix · 2 not fixing", target: nil)
+      |> render_component(
+        findings: [],
+        task_id: "tsk_list",
+        running: false,
+        tally: "1 to fix · 2 not fixing",
+        target: nil
+      )
       |> Floki.parse_fragment!()
 
     assert doc |> Floki.find("#review-finding-footer") |> Floki.text() =~ "1 to fix · 2 not fixing"
@@ -122,7 +135,14 @@ defmodule RailWeb.Components.FindingListTest do
 
     doc =
       (&FindingList.finding_list/1)
-      |> render_component(findings: findings, running: false, tally: "", changed: %{"count" => :skip}, target: nil)
+      |> render_component(
+        findings: findings,
+        task_id: "tsk_list",
+        running: false,
+        tally: "",
+        changed: %{"count" => :skip},
+        target: nil
+      )
       |> Floki.parse_fragment!()
 
     assert doc |> Floki.find("#finding-count [data-qa=review_finding_state]") |> Floki.text() =~
@@ -132,10 +152,37 @@ defmodule RailWeb.Components.FindingListTest do
 
     doc =
       (&FindingList.finding_list/1)
-      |> render_component(findings: findings, running: false, tally: "", changed: %{"send" => :fix}, target: nil)
+      |> render_component(
+        findings: findings,
+        task_id: "tsk_list",
+        running: false,
+        tally: "",
+        changed: %{"send" => :fix},
+        target: nil
+      )
       |> Floki.parse_fragment!()
 
     assert doc |> Floki.find("#finding-send [data-qa=review_finding_state]") |> Floki.text() =~
              "Fix · changed since the plan"
+  end
+
+  # A finding row selects in place on a click, so a drag onto the to-dos panel needs its address on the row.
+  test "each finding row drags as a link to its task with the finding open, named by its title" do
+    findings = [
+      %Finding{key: "F3", kind: :screen, round: 1, title: "Ruling Fix scrolls the list", screen: "Tray", severity: :major}
+    ]
+
+    doc =
+      (&FindingList.finding_list/1)
+      |> render_component(findings: findings, task_id: "tsk_drag", running: false, tally: "", target: nil)
+      |> Floki.parse_fragment!()
+
+    assert [{"button", attrs, _children}] = Floki.find(doc, "#finding-F3")
+
+    assert %{
+             "draggable" => "true",
+             "data-drag-href" => "/tasks/tsk_drag?item=findings&finding=F3",
+             "data-drag-text" => "Ruling Fix scrolls the list"
+           } = Map.new(attrs)
   end
 end

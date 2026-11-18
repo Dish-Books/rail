@@ -194,8 +194,10 @@ defmodule RailWeb.IssuesLiveTest do
     # Starting work happens on the issue's page, not from the list.
     refute has_element?(view, "#issue-card-#{issue.id} button", "Plan")
 
-    # Clicking the row opens the issue's page.
+    # Clicking the row opens the issue's page, and dragging it onto the to-dos panel adds a link there.
     issue_path = ~p"/issues/#{issue.identifier}"
+    assert has_element?(view, ~s(#issue-card-#{issue.id}[draggable=true][data-drag-href="#{issue_path}"]))
+    assert has_element?(view, ~s(#issue-card-#{issue.id}[data-drag-text="DEMO-101 Demo title"]))
     assert {:error, {:live_redirect, %{to: ^issue_path}}} = view |> element("#issue-card-#{issue.id}") |> render_click()
   end
 
