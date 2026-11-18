@@ -20,17 +20,28 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnect do
   A name whose browser went with a Chrome that restarted gets a new one, and is
   told so: its tab, its account and whatever it had not saved are gone.
 
+  Plan's agent starts while the worktree's setup script still runs beside it, and
+  until it has finished there is no app to sign in to, so Plan is told to carry on
+  without the browser and ask again rather than handed a tab. Plan draws its
+  designs from the running app, never from the code alone, so at Plan a browser
+  that cannot start - a setup that did not finish, a seed that failed, a tab that
+  would not open - fails the plan, and Plan is told to save no option and stop.
+
   The driver is copied into the task's scratch directory on every call, because
   that is a path both Rail and the agent's sandbox can see, and a release's
   `priv` is not.
   """
 
   import Rail.Mcp.Utils.BrowserName
+  import Rail.Pipeline.Utils.FailPlanWithoutApp
+  import Rail.Pipeline.Utils.StartWorktreeSetup, only: [setup_live?: 1]
 
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Tools
   alias Rail.Tools.BrowserSession
+  alias Rail.Tools.Schemas.OsProcess
 
   @slot_poll_ms 1_000
 
@@ -39,9 +50,20 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnect do
   one in as `arguments["account"]` asks, and says how to reach it.
   """
   def run_tool_browser_connect(%Task{} = task, arguments, opts) do
+    stage = Keyword.fetch!(opts, :stage)
+
     with {:ok, name} <- browser_name(arguments, opts),
          {:ok, account} <- account(arguments),
-         {:ok, session, signed_in} <- opened(task, name, account, opts) do
+         :ok <- set_up(task, stage) do
+      task |> connect(name, account, opts) |> failing_plan(stage, opts)
+    else
+      {:no_app, why} -> fail_plan(why, opts)
+      refused -> refused
+    end
+  end
+
+  defp connect(%Task{} = task, name, account, opts) do
+    with {:ok, session, signed_in} <- opened(task, name, account, opts) do
       %{page_url: page_url} = BrowserSession.details(session)
       driver = Path.join([task.scratch_path, "browser", "driver.mjs"])
       File.mkdir_p!(Path.dirname(driver))
@@ -67,6 +89,39 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnect do
        The driver's header lists everything it does. The tab stays where a script leaves it, signed in, for the next script. If the address stops answering, call browser_connect again with the same `browser`.
        """}
     end
+  end
+
+  # Every other stage's agent starts once the setup has finished, so only Plan's can ask before it has.
+  defp set_up(%Task{project: %Project{worktree_setup_script: script}} = task, :plan)
+       when script not in [nil, ""] and is_nil(task.worktree_setup_at) do
+    if setup_live?(task) do
+      {:refused,
+       "The worktree's setup script is still running, so the app cannot run yet. Nothing was opened. Carry on " <>
+         "with what needs no browser, such as the ticket and reading the code, and call browser_connect again " <>
+         "in a few minutes."}
+    else
+      {:no_app, "The worktree's setup script did not finish, so the app cannot run; the run's log says why."}
+    end
+  end
+
+  defp set_up(%Task{}, _stage), do: :ok
+
+  # Only Plan's browser is the whole of what it works from; another stage's failure is said as it always was.
+  defp failing_plan({:refused, why}, :plan, opts), do: fail_plan("Plan's browser could not start: #{why}", opts)
+
+  defp failing_plan({:error, reason}, :plan, opts),
+    do: fail_plan("Plan's browser could not start (#{inspect(reason)}).", opts)
+
+  defp failing_plan(result, _stage, _opts), do: result
+
+  defp fail_plan(why, opts) do
+    %OsProcess{run_id: run_id} = Keyword.fetch!(opts, :os_process)
+    error = fail_plan_without_app(%Run{id: run_id}, why)
+
+    {:refused,
+     error <>
+       " Save no design option. Save anything else you were part way through, then end your turn saying " <>
+       "what stopped the browser."}
   end
 
   # Said outright rather than left to the absence of an account, which also means a

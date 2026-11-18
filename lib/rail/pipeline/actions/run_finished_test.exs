@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  import Rail.Pipeline.Utils.FailPlanWithoutApp
   import Rail.Pipeline.Utils.QuestionQueue
   import Rail.Pipeline.Utils.WithTaskLock
 
@@ -348,6 +349,19 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
            ] = Repo.all(from s in BrowserSession, where: s.task_id == ^task.id, order_by: s.name)
   end
 
+  test "a Plan turn that ends closes the browser it looked at the app in", %{task: task, exited: exited} do
+    %BrowserSession{}
+    |> BrowserSession.changeset(%{task_id: task.id, name: "plan", status: :running})
+    |> Repo.insert!()
+
+    {_run, os_process} = exited.(:plan, %{})
+
+    assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+
+    assert [%BrowserSession{name: "plan", status: :finished, ended_reason: :closed}] =
+             Repo.all(from s in BrowserSession, where: s.task_id == ^task.id)
+  end
+
   test "an engineer turn that ends closes the browser it retook screenshots in", %{
     task: task,
     worktree: worktree,
@@ -659,14 +673,14 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     roles: roles,
     exited: exited
   } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :plan, worktree_path: worktree})
-    {_run, os_process} = exited.(:plan, %{})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
+    {_run, os_process} = exited.(:engineer, %{})
     os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
-    %{id: plan_role_id} = roles[:plan]
+    %{id: engineer_role_id} = roles[:engineer]
 
     expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
-    assert {:ok, %Run{role_id: ^plan_role_id, status: :running}} =
+    assert {:ok, %Run{role_id: ^engineer_role_id, status: :running}} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
 
     assert %Task{worktree_setup_at: %DateTime{}} = Repo.reload!(task)
@@ -702,8 +716,8 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   test "a worktree setup that failed says so on the run and starts nothing", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :plan})
-    {_run, os_process} = exited.(:plan, %{})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
+    {_run, os_process} = exited.(:engineer, %{})
     os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
 
     reject(Tools, :start_os_process, 2)
@@ -719,8 +733,8 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     worktree: worktree,
     exited: exited
   } do
-    {:ok, _task} = Pipeline.update_task(task, %{stage: :plan, worktree_path: worktree})
-    {run, _agent_process} = exited.(:plan, %{status: :finished, pending_chat: "Keep going"})
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
+    {run, _agent_process} = exited.(:engineer, %{status: :finished, pending_chat: "Keep going"})
 
     setup_process =
       %OsProcess{}
@@ -751,8 +765,8 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     worktree: worktree,
     exited: exited
   } do
-    {:ok, _task} = Pipeline.update_task(task, %{stage: :plan, worktree_path: worktree})
-    {run, os_process} = exited.(:plan, %{pending_chat: "Also check the logs"})
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
+    {run, os_process} = exited.(:engineer, %{pending_chat: "Also check the logs"})
     os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
 
     expect(Tools, :start_os_process, fn spawned, argv ->
@@ -766,7 +780,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   test "a worktree set up for a stage the task has since left enters nothing", %{task: task, exited: exited} do
     {:ok, task} = Pipeline.update_task(task, %{stage: :review})
-    {_run, os_process} = exited.(:plan, %{})
+    {_run, os_process} = exited.(:engineer, %{})
     os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
 
     reject(Tools, :start_os_process, 2)
@@ -802,7 +816,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     end
 
     test "that succeeded leaves the clone's lines in the worktree's .env", %{worktree: worktree, exited: exited} do
-      {_run, os_process} = exited.(:plan, %{})
+      {_run, os_process} = exited.(:engineer, %{})
       os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
 
       assert {:ok, %Run{status: :finished, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
@@ -810,7 +824,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     end
 
     test "that failed leaves the worktree with no .env", %{worktree: worktree, exited: exited} do
-      {_run, os_process} = exited.(:plan, %{})
+      {_run, os_process} = exited.(:engineer, %{})
       os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
 
       assert {:ok, %Run{error: "The worktree setup script failed" <> _rest}} =
@@ -870,6 +884,111 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
       assert %Run{pending_chat: "Also check the logs"} = Repo.reload!(run)
       assert_enqueued(worker: NotifyOwner, args: %{run_id: run.id})
+    end
+  end
+
+  # The browser's failure is what the person has to fix first, so the turn it stopped short keeps saying so.
+  test "a Plan turn that failed for want of its browser keeps that error over what it left unsaved", %{
+    task: task,
+    exited: exited
+  } do
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: nil])
+    {run, os_process} = exited.(:plan, %{})
+    _error = fail_plan_without_app(run, "Plan's browser could not start.")
+
+    assert {:ok, %Run{error: "Plan's browser could not start. Plan designs from the running app" <> _rest}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+  end
+
+  # Plan plans while its worktree is set up, so the setup beside it says nothing about the run, which is the agent's.
+  describe "a worktree setup beside Plan's agent" do
+    setup %{task: task, worktree: worktree, exited: exited} do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :plan, worktree_path: worktree})
+      {run, _agent} = exited.(:plan, %{})
+
+      setup_process =
+        Repo.insert!(%OsProcess{
+          run_id: run.id,
+          task_id: task.id,
+          kind: :setup,
+          stream_path: "/tmp/run_finished/#{run.id}.log",
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
+
+      reject(Tools, :start_os_process, 2)
+      reject(Tools, :start_command_process, 4)
+
+      %{task: task, run: run, setup_process: setup_process}
+    end
+
+    test "that succeeded marks the worktree set up, says so, and leaves the agent's run as it was", %{
+      task: task,
+      run: run,
+      setup_process: setup_process
+    } do
+      assert {:ok, %Run{status: :running, error: nil, exit_code: nil}} =
+               Pipeline.run_finished(setup_process, %{exit_code: 0}, async: false)
+
+      assert %Task{stage: :plan, worktree_setup_at: %DateTime{}} = Repo.reload!(task)
+      assert %Run{status: :running, completed_at: nil, stage_outcome: :in_progress} = Repo.reload!(run)
+      assert %OsProcess{status: :finished} = Repo.reload!(setup_process)
+      assert Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "The worktree is set up"))
+    end
+
+    # Plan never designs from the code alone, so a worktree with no app fails the plan, whose turn keeps working.
+    test "that failed fails the plan and is not set up", %{task: task, run: run, setup_process: setup_process} do
+      assert {:ok, %Run{status: :running, error: "The worktree setup script failed (Exited with code 1)" <> rest}} =
+               Pipeline.run_finished(setup_process, %{exit_code: 1, error: "Exited with code 1"}, async: false)
+
+      assert rest =~ "never from the code alone, so the plan failed"
+      assert %Task{worktree_setup_at: nil} = Repo.reload!(task)
+      assert %Run{status: :running, error: "The worktree setup script failed" <> _rest} = Repo.reload!(run)
+    end
+
+    test "that was stopped says so, after the agent's own turn ended", %{
+      task: task,
+      run: run,
+      setup_process: setup_process
+    } do
+      {:ok, _finished} = Pipeline.update_run(run, %{status: :finished})
+
+      assert {:ok, %Run{status: :finished}} = Pipeline.run_finished(setup_process, %{exit_code: -1}, async: false)
+      assert %Task{worktree_setup_at: nil} = Repo.reload!(task)
+      assert Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "The worktree setup was stopped"))
+    end
+
+    # A project of its own, as the .env cases above have, so no other test's worktree sees its clone's .env.
+    test "whose .env cannot be written is not set up, and fails the plan", %{
+      task: task,
+      worktree: worktree,
+      run: run,
+      setup_process: setup_process
+    } do
+      clone = Path.join(task.scratch_path, "clone")
+      File.mkdir_p!(clone)
+      File.write!(Path.join(clone, ".env"), "FOO=bar\n")
+      File.mkdir_p!(Path.join(worktree, ".env"))
+      unique = System.unique_integer([:positive])
+
+      {:ok, %Project{id: project_id}} =
+        Projects.create_project(system_scope(), %{
+          name: "Setup Env Beside",
+          github_repo: "example/setup-env-beside-#{unique}",
+          github_installation_id: 1,
+          key: "senvb#{unique}",
+          default_branch: "main",
+          clone_path: clone,
+          worktree_setup_script: "scripts/setup.sh"
+        })
+
+      Repo.update_all(from(t in Task, where: t.id == ^task.id), set: [project_id: project_id])
+
+      assert {:ok, %Run{status: :running, error: "Rail could not write the project's .env into the worktree" <> _rest}} =
+               Pipeline.run_finished(setup_process, %{exit_code: 0}, async: false)
+
+      assert %Task{worktree_setup_at: nil} = Repo.reload!(task)
+      assert %Run{error: "Rail could not write the project's .env" <> _rest} = Repo.reload!(run)
     end
   end
 

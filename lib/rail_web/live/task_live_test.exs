@@ -151,6 +151,19 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "#task-status-chip", "Ready for tech lead")
   end
 
+  # Nothing is built at Plan, so the Browser item waits for the browser Plan opens to look at the app.
+  test "at Plan the Browser item shows only once the Plan designer's browser is open", %{conn: conn, task: task} do
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    refute has_element?(view, "#review-item-browser")
+
+    Repo.insert!(%BrowserSession{task_id: task.id, name: "plan", status: :running, started_at: DateTime.utc_now()})
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=browser")
+    assert has_element?(view, "#review-item-browser[title='Browser: 1 browser · idle']")
+    assert has_element?(view, "#review-browser-plan", "Plan designer")
+    refute has_element?(view, "#review-item-diff")
+  end
+
   test "the header names the issue, its branch and what the run is doing", %{conn: conn, task: task} do
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 

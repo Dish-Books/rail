@@ -194,6 +194,27 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     assert_received {:pipeline_changed, ^task_id}
   end
 
+  # Plan draws its options from the running app at the app's own fidelity, never from the code alone.
+  test "the brief has Plan look at the running app first and draw each option as the real screen", %{issue: issue} do
+    expect(Tools, :start_os_process, fn %Run{} = run, ["-p", prompt | _rest] ->
+      %Task{scratch_path: scratch} = Repo.get!(Task, run.task_id)
+
+      assert prompt =~ "look at the app as it is in your browser first, then three options"
+      assert prompt =~ "Call `browser_connect`: yours is named `plan`"
+      assert prompt =~ "Running the app changes no code, so it is allowed"
+      assert prompt =~ "with the driver's `shot(path)` under #{scratch}/design/reference/"
+      assert prompt =~ "Each option is the real screen with the change in it, as faithful as a screenshot of the app"
+      assert prompt =~ "No wireframes, lorem ipsum, placeholder boxes or grey bars"
+      assert prompt =~ "open its screenshot beside the reference picture of the screen it changes"
+      assert prompt =~ "Never draw an option from the code alone"
+      assert prompt =~ "If the browser cannot start, Rail fails the plan"
+      refute prompt =~ "design from the code's templates"
+      {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_plan_run(system_scope(), issue)
+  end
+
   test "a worktree that cannot be made leaves no task, no owner and broadcasts nothing", %{issue: %{id: issue_id} = issue} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
     Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
@@ -230,6 +251,50 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     assert %Issue{owner_user_id: nil} = Repo.reload!(issue)
     refute_enqueued(worker: AdvanceTrackerState)
     refute_enqueued(worker: SyncIssue)
+  end
+
+  # Plan reads and writes before it needs the app, so it starts at once and the setup joins the line behind it.
+  test "a project with a worktree setup script starts the Plan agent at once, with the setup beside it", %{
+    project: project,
+    roles: %{plan: %Role{id: role_id}},
+    issue: issue
+  } do
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{worktree_setup_script: "bin/setup"})
+    test_pid = self()
+
+    expect(Tools, :start_os_process, fn %Run{role_id: ^role_id} = run, ["-p", prompt | _rest] ->
+      assert prompt =~ "Rail may still be running the worktree's setup script when your turn starts"
+      send(test_pid, :agent)
+      {:ok, %OsProcess{kind: :agent, task_id: run.task_id, run: run, task: run.task}}
+    end)
+
+    expect(Tools, :start_command_process, fn %Run{role_id: ^role_id} = run, :setup, "./bin/setup", _opts ->
+      assert_received :agent
+      {:ok, %OsProcess{kind: :setup, task_id: run.task_id, run: run}}
+    end)
+
+    assert {:ok, %OsProcess{kind: :agent, task_id: task_id}} = Pipeline.start_plan_run(system_scope(), issue)
+    assert [%Run{role_id: ^role_id, status: :running}] = Repo.all(from r in Run, where: r.task_id == ^task_id)
+  end
+
+  test "a setup script that cannot start fails the plan, whose agent keeps working", %{
+    project: project,
+    issue: issue
+  } do
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{worktree_setup_script: "bin/setup"})
+
+    expect(Tools, :start_os_process, fn run, _argv ->
+      {:ok, %OsProcess{kind: :agent, task_id: run.task_id, run: run, task: run.task}}
+    end)
+
+    expect(Tools, :start_command_process, fn _run, :setup, _command, _opts -> {:error, :enoent} end)
+
+    assert {:ok, %OsProcess{kind: :agent, task_id: task_id}} = Pipeline.start_plan_run(system_scope(), issue)
+
+    assert [%Run{status: :running, error: "The worktree setup script could not start (:enoent)." <> rest}] =
+             Repo.all(from r in Run, where: r.task_id == ^task_id)
+
+    assert rest =~ "never from the code alone, so the plan failed"
   end
 
   test "an issue that already has its task and Plan run is refused, and nothing is spawned or resumed", %{

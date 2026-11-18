@@ -121,11 +121,14 @@ defmodule Rail.Mcp.Actions.ListRunToolsTest do
   end
 
   # The subagents carry no tool list, so this is every tool they inherit.
-  test "a Plan run lists Rail's save tools and the proxied tools its role allows", %{user: user} do
+  test "a Plan run lists its browser, Rail's save tools and the proxied tools its role allows", %{user: user} do
     context = %RunContext{role: %Role{stage: :plan, mcp_tools: ["lrt_linear__get_issue"]}, user: user}
 
     assert {:ok,
             [
+              %{"name" => "browser_connect"},
+              %{"name" => "browser_problems"},
+              %{"name" => "browser_close"},
               %{"name" => "save_design_option"},
               %{"name" => "save_plan"},
               %{"name" => "ask_questions"},

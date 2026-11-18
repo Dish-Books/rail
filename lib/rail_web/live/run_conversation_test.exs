@@ -572,6 +572,53 @@ defmodule RailWeb.Live.RunConversationTest do
     assert html =~ ~s(data-qa="rail-event")
   end
 
+  # Plan's worktree setup writes beside its agent, so their lines arrive mixed; each still reads as one piece.
+  test "a setup's lines landing between a Plan turn's leave that turn whole, and the setup one block", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:plan].id,
+        status: :running,
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
+      })
+
+    [agent, setup] =
+      for {kind, command} <- [agent: nil, setup: "./scripts/setup-worktree.sh"] do
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: task.id,
+          kind: kind,
+          command: command,
+          stream_path: "/tmp/#{run.id}-#{kind}.log",
+          status: :running,
+          started_at: ~U[2026-09-09 10:00:00.000000Z]
+        })
+        |> Repo.insert!()
+      end
+
+    text = &~s({"type":"assistant","message":{"content":[{"type":"text","text":"#{&1}"}]}})
+
+    Pipeline.append_run_events(run.id, agent.id, [text.("Reading the ticket first.")])
+    Pipeline.append_run_events(run.id, setup.id, ["Worktree slot 3"])
+    Pipeline.append_run_events(run.id, agent.id, [text.("The ticket is saved.")])
+    Pipeline.append_run_events(run.id, setup.id, ["Copied rail_dev"])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    assert [_one] = Regex.scan(~r/data-qa="turn-start"/, html)
+    assert html =~ "Turn 1"
+    refute html =~ "Turn 2"
+    assert [_one] = Regex.scan(~r/data-qa="command-block"/, html)
+    assert html =~ "Worktree slot 3\nCopied rail_dev"
+    assert html =~ "Reading the ticket first."
+    assert html =~ "The ticket is saved."
+  end
+
   test "a CI run reads as CI", %{task: task, roles: roles, roles_map: roles_map} do
     {:ok, run} =
       Pipeline.create_run(%{

@@ -1472,14 +1472,17 @@ defmodule RailWeb.Live.TaskDetail do
 
   # Each part of the work shows once there is something of it to read: the diff and the browser once the task is
   # built, the rest once it is reviewed.
-  defp shown(%{task: task, passes: passes}, [findings, diff, screens, demo, browser]) do
+  defp shown(%{task: task, passes: passes, sessions: sessions}, [findings, diff, screens, demo, browser]) do
     reviewed? = task.stage in [:review, :finalize, :merged] or passes != []
     # A custom stage can run before the engineer has built anything, or after.
     built? =
       task.stage not in [:plan, :custom] or
         (task.stage == :custom and Enum.any?(task.runs, &match?(%Run{role: %Role{stage: :engineer}}, &1)))
 
-    [reviewed? && findings, built? && diff, reviewed? && screens, reviewed? && demo, built? && browser]
+    # Plan drives a browser of its own to look at the app before it designs, so one open is shown before the build.
+    browsing? = built? or sessions != []
+
+    [reviewed? && findings, built? && diff, reviewed? && screens, reviewed? && demo, browsing? && browser]
   end
 
   # The rounds the Plan item reads: each one approved, and the next one's while it waits. A round's plan reads as

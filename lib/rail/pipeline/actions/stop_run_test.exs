@@ -97,6 +97,47 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
     assert ["[rail] Stopped by user."] = Enum.map(Pipeline.list_run_events(run), & &1.line)
   end
 
+  # Plan's worktree setup runs beside its agent on the same run, so stopping the run stops both.
+  test "stopping a Plan run stops its agent's turn and the worktree setup beside it", %{
+    project: project,
+    working: working
+  } do
+    {:ok, plan} = Roles.get_role(project_id: project.id, stage: :plan)
+    run = working.(%{role_id: plan.id, status: :waiting_for_resources})
+    launch = Jason.encode!(%{"executable" => "/bin/true", "args" => [], "env" => %{}, "cwd" => "/tmp"})
+
+    # Holds every CPU, so neither stop lets the other into a sandbox meanwhile.
+    Repo.insert!(%OsProcess{
+      run_id: working.(%{}).id,
+      task_id: run.task_id,
+      stream_path: "/dev/null",
+      status: :running,
+      started_at: DateTime.utc_now(),
+      reserved_cpus: 4
+    })
+
+    [agent_id, setup_id] =
+      for {kind, offset} <- [agent: 0, setup: 1] do
+        Repo.insert!(%OsProcess{
+          run_id: run.id,
+          task_id: run.task_id,
+          kind: kind,
+          stream_path: "/dev/null",
+          status: :waiting_for_resources,
+          started_at: DateTime.utc_now(),
+          queued_at: DateTime.shift(DateTime.utc_now(), second: offset),
+          reserved_cpus: 1,
+          launch: launch
+        }).id
+      end
+
+    assert {:ok, %Run{status: :finished}, nil} = Pipeline.stop_run(system_scope(), run)
+
+    for id <- [agent_id, setup_id] do
+      assert {:ok, %OsProcess{status: :finished, ended_reason: :stopped}} = Tools.get_os_process(id)
+    end
+  end
+
   # A run that never got a sandbox has no process to settle, so the stop is all there is to announce.
   test "stopping a run waiting in line tells whoever is watching the pipeline", %{task: %{id: task_id}, working: working} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")

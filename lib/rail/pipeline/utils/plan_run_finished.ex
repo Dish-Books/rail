@@ -39,8 +39,9 @@ defmodule Rail.Pipeline.Utils.PlanRunFinished do
           nil
       end
 
-    # A clean check leaves the run as the exit settled it, error and all.
-    if is_binary(error) do
+    # A clean check leaves the run as the exit settled it, error and all, and so does a failed one whose turn already
+    # failed for a reason of its own, such as a browser that could not start: that is the one to fix first.
+    if is_binary(error) and is_nil(run.error) do
       {:ok, failed} = run |> Run.changeset(%{error: error}) |> Repo.update()
       %{failed | task: run.task, role: run.role}
     else

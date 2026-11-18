@@ -1796,9 +1796,28 @@ defmodule RailWeb.Live.RunConversation do
       end
     )
     |> Enum.reject(&(&1 == []))
+    |> merge_turns()
   end
 
   defp finish_turn({id, events}), do: {id, Enum.reverse(events)}
+
+  # Plan's worktree setup writes beside its agent, so one process's lines can come back after another's: they are
+  # still the one turn, read where it first appeared, so the agent's stream is parsed whole.
+  defp merge_turns(turns) do
+    {order, merged} =
+      turns
+      |> Enum.with_index()
+      |> Enum.reduce({[], %{}}, fn {{id, events}, index}, {order, merged} ->
+        key = id || {:rail, index}
+
+        case merged do
+          %{^key => {^id, earlier}} -> {order, Map.put(merged, key, {id, earlier ++ events})}
+          %{} -> {[key | order], Map.put(merged, key, {id, events})}
+        end
+      end)
+
+    order |> Enum.reverse() |> Enum.map(&Map.fetch!(merged, &1))
+  end
 
   # Lines broadcast to an open conversation are whatever the writer sent, which
   # is not always a full row, so the turn is read off the event rather than

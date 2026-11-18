@@ -154,6 +154,8 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
 
     case Tools.start_os_process(run, argv) do
       {:ok, %OsProcess{} = os_process} ->
+        # Plan's setup runs beside its turns, so one that failed or never ran is tried again with the next.
+        if role.stage == :plan, do: start_worktree_setup_beside(%{run | task: task})
         {:ok, os_process}
 
       {:error, {:spawn_failed, reason, _run}} ->

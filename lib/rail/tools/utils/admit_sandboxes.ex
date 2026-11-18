@@ -53,7 +53,7 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
 
       {:error, reason} ->
         Logger.warning("No sandbox was started, because the machine's capacity could not be read: #{inspect(reason)}")
-        if own, do: OsProcess |> Repo.get(own) |> Repo.preload(:run) |> mark_waiting(%{})
+        if own, do: OsProcess |> Repo.get(own) |> Repo.preload(run: :role) |> mark_waiting(%{})
         %{}
     end
   end
@@ -78,15 +78,23 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
   defp held?(%OsProcess{kind: :agent, backend: %Backend{status: :signed_out}}), do: true
   defp held?(_os_process), do: false
 
-  defp mark_waiting(%OsProcess{id: id, status: :waiting_for_resources, run: %Run{} = run}, results)
+  # A setup beside Plan's agent waits on its own: the run is the agent's, working or not.
+  defp mark_waiting(%OsProcess{id: id, status: :waiting_for_resources, run: %Run{} = run} = os_process, results)
        when not is_map_key(results, id) do
-    {:ok, _waiting} = Pipeline.update_run(run, %{status: :waiting_for_resources})
+    if OsProcess.beside_agent?(os_process),
+      do: :ok,
+      else: {:ok, _waiting} = Pipeline.update_run(run, %{status: :waiting_for_resources})
   end
 
   defp mark_waiting(_started_or_none, _results), do: :ok
 
   defp launch(%OsProcess{} = os_process, capacity, own) do
+    beside? = OsProcess.beside_agent?(os_process)
+
     case launch_sandbox(os_process, capacity) do
+      {:ok, _started} = launched when beside? ->
+        launched
+
       {:ok, %OsProcess{run: %Run{status: :waiting_for_resources} = run}} = launched ->
         {:ok, _running} = Pipeline.update_run(run, %{status: :running})
         Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:run_changed, run.id})

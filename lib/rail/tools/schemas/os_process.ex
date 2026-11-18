@@ -10,6 +10,7 @@ defmodule Rail.Tools.Schemas.OsProcess do
 
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Roles.Schemas.Role
   alias Rail.Tools.Schemas.Backend
   alias Rail.Types.EncryptedBinary
   alias Rail.Users.Schemas.User
@@ -123,6 +124,14 @@ defmodule Rail.Tools.Schemas.OsProcess do
   @doc "True for a process running a shell command rather than an agent."
   def command?(%__MODULE__{kind: :agent}), do: false
   def command?(%__MODULE__{}), do: true
+
+  @doc """
+  True for a worktree setup that runs beside its run's agent rather than ahead of it: Plan's, which plans while the
+  app is set up and drives it once it is. Such a setup is the run's only in name, so neither its place in the line nor
+  its exit says anything about the run. Takes the process with its run and the run's role loaded.
+  """
+  def beside_agent?(%__MODULE__{kind: :setup, run: %Run{role: %Role{stage: :plan}}}), do: true
+  def beside_agent?(%__MODULE__{}), do: false
 
   @doc "Where a command process records the status it exited with."
   def exit_path(%__MODULE__{stream_path: stream_path}), do: "#{stream_path}.exit"

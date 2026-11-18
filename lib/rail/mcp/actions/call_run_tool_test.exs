@@ -12,6 +12,7 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
+  alias Rail.Tools.Schemas.BrowserSession
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
@@ -171,6 +172,15 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
       {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Call Run Save"})
       {:ok, task} = Pipeline.create_task(issue, :review)
       on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+      # Plan saves an option only once a browser has opened on the app, so these reach the save as one would.
+      Repo.insert!(%BrowserSession{
+        task_id: task.id,
+        name: "plan",
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        signed_in_at: DateTime.utc_now()
+      })
 
       {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
 
