@@ -10,6 +10,7 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Learnings
   alias Rail.Learnings.Schemas.Learning
+  alias Rail.Learnings.Schemas.LearningProposal
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
@@ -164,6 +165,10 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
     finding = %Finding{id: "fnd_discard_1", title: "A nit", suppressed_by_id: rule.id}
     {:ok, [%Observation{id: observation_id}]} = Learnings.record_overrides(%{task | issue: issue}, [finding])
 
+    {:ok, chosen} = Learnings.save_task_proposal(task, %{action: "add", rule: "Lock the row.", kind: "convention"})
+    {:ok, unchosen} = Learnings.save_task_proposal(task, %{action: "add", rule: "Nobody chose.", kind: "qa"})
+    {:ok, _chosen} = Learnings.choose_task_proposal(Rail.Scope.for_user(reader), chosen, :approved)
+
     assert {:ok, %Task{id: ^task_id}} = Pipeline.discard_task(scope, task)
 
     assert_receive {:pull_request_changed, 212, %{"state" => "closed"}}
@@ -178,6 +183,18 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
     assert Repo.get(DiffComment, comment_id) == nil
     assert Repo.get(Observation, observation_id) == nil
     assert %Learning{id: ^rule_id} = Repo.get(Learning, rule_id)
+
+    # Its proposals are rejected rather than left pending with no task, where the Learnings queue would show them.
+    for proposal <- [chosen, unchosen] do
+      assert %LearningProposal{status: :rejected, task_id: nil, decided_by_id: nil} = Repo.reload!(proposal)
+      assert %Learning{status: :proposed} = Repo.get!(Learning, proposal.learning_id)
+    end
+
+    refute Enum.any?(
+             Learnings.list_learning_proposals(project_id: issue.project_id),
+             &(&1.id in [chosen.id, unchosen.id])
+           )
+
     refute File.exists?(task.scratch_path)
     assert %Issue{state: :todo, state_name: nil} = Repo.get!(Issue, issue_id)
     assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id})

@@ -1,7 +1,8 @@
 defmodule Rail.Learnings.Actions.SaveTaskProposal do
   @moduledoc """
   The curator on a task proposing a rule change, or revising one of its own still pending. It only ever proposes:
-  a draft is a `proposed` rule until it is approved.
+  a draft is a `proposed` rule until it is approved. A revise clears the Approve or Reject a person chose, since
+  they chose it for what the proposal said before.
   """
 
   import Ecto.Query
@@ -78,8 +79,12 @@ defmodule Rail.Learnings.Actions.SaveTaskProposal do
 
   defp revise(%LearningProposal{} = proposal, attrs), do: retitle(proposal, attrs)
 
-  defp retitle(%LearningProposal{} = proposal, attrs),
-    do: proposal |> Ecto.Changeset.change(Map.take(attrs, [:title, :summary])) |> Repo.update()
+  defp retitle(%LearningProposal{} = proposal, attrs) do
+    proposal
+    |> Ecto.Changeset.change(Map.take(attrs, [:title, :summary]))
+    |> Ecto.Changeset.change(choice: nil, decided_by_id: nil, decided_at: nil)
+    |> Repo.update()
+  end
 
   # Active only: the daily pass deletes a provisional rule it proposes to retire, and this proposal with it.
   defp active_rule(project_id, id) when is_binary(id) do

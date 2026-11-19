@@ -386,7 +386,14 @@ defmodule RailWeb.LearningsLive do
 
   defp list(assigns, project_id, :review, query_embedding) do
     embedding = with {_query, {:ok, vector}} <- query_embedding, do: vector
-    {[], Learnings.list_learning_proposals(project_id: project_id, kind: assigns.kind, embedding: embedding), false}
+
+    {[],
+     Learnings.list_learning_proposals(
+       project_id: project_id,
+       task_id: :none,
+       kind: assigns.kind,
+       embedding: embedding
+     ), false}
   end
 
   defp list(assigns, project_id, status, query_embedding) do

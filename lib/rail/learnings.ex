@@ -20,6 +20,9 @@ defmodule Rail.Learnings do
   defdelegate get_learning_proposal(id), to: Actions.GetLearningProposal
   defdelegate approve_learning_proposal(scope, proposal), to: Actions.ApproveLearningProposal
   defdelegate reject_learning_proposal(scope, proposal), to: Actions.RejectLearningProposal
+  defdelegate choose_task_proposal(scope, proposal, choice), to: Actions.ChooseTaskProposal
+  defdelegate finalize_task_proposals(task), to: Actions.FinalizeTaskProposals
+  defdelegate reject_task_proposals(task), to: Actions.RejectTaskProposals
   defdelegate retrieve_learnings(target, queries), to: Actions.RetrieveLearnings
   defdelegate record_corrections(task, records), to: Actions.RecordCorrections
   defdelegate record_overrides(task, findings), to: Actions.RecordOverrides
