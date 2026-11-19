@@ -67,7 +67,7 @@ defmodule Rail.Pipeline.Actions.StartCurator do
         target = Enum.map_join(proposal.targets, "", &"\nReplaces #{&1.id}: #{&1.rule}\n")
 
         """
-        ## #{proposal.id} · #{LearningProposal.action_label(proposal.action)} · #{proposal.status}
+        ## #{proposal.id} · #{LearningProposal.action_label(proposal.action)} · #{decision(proposal)}
 
         #{proposal.title}
 
@@ -78,4 +78,9 @@ defmodule Rail.Pipeline.Actions.StartCurator do
 
     "# Your proposals on this task so far, with how each was decided\n\n" <> Enum.join(entries, "\n")
   end
+
+  defp decision(%LearningProposal{status: :pending, choice: choice}) when choice in [:approved, :rejected],
+    do: "#{choice} so far, decided when the task merges"
+
+  defp decision(%LearningProposal{status: status}), do: status
 end

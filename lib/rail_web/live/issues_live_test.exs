@@ -2756,19 +2756,24 @@ defmodule RailWeb.IssuesLiveTest do
       view |> element("#issue-start-#{ready_id}") |> render_click()
       assert_receive {:git, ^ready_id, git}
 
-      # Another test's broadcast can set the page reading, and a task killed mid-query takes the shared sandbox
-      # connection with it. So the page stops taking messages, and every task of its own but the start finishes first.
+      # The page and its readers share the start's sandbox connection, and one killed mid-query takes it down, as a
+      # reload after another test's broadcast can catch it. Suspended, and its readers left to finish, the page dies
+      # between queries, with only the start's own wait.
       :sys.suspend(page_pid)
-      {:dictionary, git_dictionary} = Process.info(git, :dictionary)
-      {:"$callers", [starter | _page]} = List.keyfind(git_dictionary, :"$callers", 0)
-      {:links, links} = Process.info(page_pid, :links)
+      {:dictionary, dictionary} = Process.info(git, :dictionary)
+      [start_wait | _callers] = Keyword.fetch!(dictionary, :"$callers")
 
-      for pid <- links -- [starter],
-          {:dictionary, dictionary} <- [Process.info(pid, :dictionary)],
-          match?({:"$callers", [^page_pid | _callers]}, List.keyfind(dictionary, :"$callers", 0)) do
-        reading = Process.monitor(pid)
-        assert_receive {:DOWN, ^reading, :process, _pid, _reason}
-      end
+      eventually(fn ->
+        {:links, links} = Process.info(page_pid, :links)
+
+        readers =
+          for pid when is_pid(pid) and pid != start_wait <- links,
+              {:dictionary, dictionary} <- [Process.info(pid, :dictionary)],
+              match?([^page_pid | _callers], dictionary[:"$callers"]),
+              do: pid
+
+        assert readers == []
+      end)
 
       # Killed rather than stopped: a page stopped normally would not take its start with it anyway.
       page = Process.monitor(page_pid)

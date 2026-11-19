@@ -9,6 +9,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   alias Rail.Issues
   alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Learnings
+  alias Rail.Learnings.Workers.FinalizeTaskProposals
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
@@ -132,6 +133,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     refute_enqueued(worker: AdvanceSplit)
     assert [%Oban.Job{args: %{"task_id" => ^task_id}}] = all_enqueued(worker: CleanupMergedTask)
     assert [%Oban.Job{args: %{"task_id" => ^task_id}}] = all_enqueued(worker: NotifyOwner)
+    assert [%Oban.Job{args: %{"task_id" => ^task_id}}] = all_enqueued(worker: FinalizeTaskProposals)
   end
 
   test "a lead with no GitHub token, or one GitHub no longer takes, signs in again and the claim is let go", %{

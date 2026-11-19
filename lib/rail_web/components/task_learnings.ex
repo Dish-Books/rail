@@ -1,7 +1,8 @@
 defmodule RailWeb.Components.TaskLearnings do
   @moduledoc """
-  A task's Learnings item: the curator's proposals for it, each decided on its card, with an empty state while
-  the curator reads, when it found nothing, and when it failed.
+  A task's Learnings item: the curator's proposals for it, each with an Approve and Reject toggle the person can
+  change until the task merges, which carries out what they chose. Empty states cover the curator reading, finding
+  nothing and failing.
   """
   use RailWeb, :html
 
@@ -15,7 +16,7 @@ defmodule RailWeb.Components.TaskLearnings do
 
   def task_learnings(assigns) do
     total = length(assigns.proposals)
-    pending = Enum.count(assigns.proposals, &(&1.status == :pending))
+    pending = Enum.count(assigns.proposals, &LearningProposal.undecided?/1)
 
     assigns =
       assigns
@@ -76,27 +77,34 @@ defmodule RailWeb.Components.TaskLearnings do
               </h3>
             </div>
             <div class="shrink-0 flex items-center gap-1.5">
+              <span
+                :if={proposal.status == :pending and proposal.choice}
+                data-qa="proposal-choice"
+                class="text-[12px] text-slate-500 dark:text-slate-400"
+              >
+                {chosen_label(proposal)}
+              </span>
               <.button
                 :if={proposal.status == :pending}
                 id={"reject-proposal-#{proposal.id}"}
                 size="sm"
-                variant="ghost"
+                variant={if proposal.choice == :rejected, do: "secondary", else: "ghost"}
+                aria-pressed={to_string(proposal.choice == :rejected)}
                 phx-click="reject_proposal"
                 phx-value-id={proposal.id}
                 phx-target={@target}
-                phx-disable-with="Rejecting…"
               >
-                Reject
+                <.icon :if={proposal.choice == :rejected} name="pi-x-bold" class="size-[1.1em]" />Reject
               </.button>
               <.button
                 :if={proposal.status == :pending}
                 id={"approve-proposal-#{proposal.id}"}
                 size="sm"
-                variant="primary"
+                variant={approve_variant(proposal.choice)}
+                aria-pressed={to_string(proposal.choice == :approved)}
                 phx-click="approve_proposal"
                 phx-value-id={proposal.id}
                 phx-target={@target}
-                phx-disable-with="Approving…"
               >
                 <.icon name="pi-check-bold" class="size-[1.1em]" />Approve
               </.button>
@@ -190,6 +198,17 @@ defmodule RailWeb.Components.TaskLearnings do
   defp chip_class(:add), do: "border-emerald-600/70 text-emerald-700 dark:text-emerald-300"
   defp chip_class(:rewrite), do: "border-sky-600/70 text-sky-700 dark:text-sky-300"
   defp chip_class(:retire), do: "border-slate-400 dark:border-slate-500 text-slate-700 dark:text-slate-300"
+
+  # Nothing chosen yet is the call to Approve; once something is, the choice is the one filled in.
+  defp approve_variant(nil), do: "primary"
+  defp approve_variant(:approved), do: "success"
+  defp approve_variant(:rejected), do: "ghost"
+
+  defp chosen_label(%LearningProposal{choice: :approved} = proposal),
+    do: decided_label("Approved", proposal) <> " · applies on merge"
+
+  defp chosen_label(%LearningProposal{choice: :rejected} = proposal),
+    do: decided_label("Rejected", proposal) <> " · final on merge"
 
   # The daily pass approves, and a retired rule rejects, with nobody's name on it.
   defp decided_label(verb, %LearningProposal{decided_by: %{name: name}}) when is_binary(name) and name != "",

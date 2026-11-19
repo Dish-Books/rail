@@ -10,13 +10,28 @@ defmodule Rail.Roles.Actions.GetCustomStageRole do
   # Never the prompt a run is given: that is the issue's own copy of its workflow file's.
   @system_prompt "A custom stage of a workflow file. Each task gives it the prompt its file had when the task's issue was opened."
 
+  @copied [:cli, :model, :reasoning_effort, :reserved_cpus, :max_concurrent]
+
   @doc """
   Creates or refreshes `project_id`'s role for the custom stage `name` and returns `{:ok, role}`. Two tasks entering
-  it at once both land on the one row.
+  it at once both land on the one row. A role that already carries Engineer's settings is returned unwritten, so tasks
+  entering the stage do not queue on its row lock.
   """
   def get_custom_stage_role(project_id, name) when is_binary(project_id) and is_binary(name) do
     engineer = Repo.get_by!(Role, project_id: project_id, stage: :engineer)
 
+    case Repo.get_by(Role, project_id: project_id, custom_stage: name) do
+      %Role{} = role ->
+        if Map.take(role, @copied) == Map.take(engineer, @copied),
+          do: {:ok, role},
+          else: upsert(project_id, name, engineer)
+
+      nil ->
+        upsert(project_id, name, engineer)
+    end
+  end
+
+  defp upsert(project_id, name, engineer) do
     %Role{project_id: project_id, custom_stage: name}
     |> Role.changeset(%{
       name: name,
@@ -30,7 +45,7 @@ defmodule Rail.Roles.Actions.GetCustomStageRole do
       system_prompt: @system_prompt
     })
     |> Repo.insert(
-      on_conflict: {:replace, [:cli, :model, :reasoning_effort, :reserved_cpus, :max_concurrent, :updated_at]},
+      on_conflict: {:replace, [:updated_at | @copied]},
       conflict_target: [:project_id, :custom_stage],
       returning: true
     )

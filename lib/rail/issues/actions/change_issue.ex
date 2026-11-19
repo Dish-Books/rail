@@ -122,38 +122,10 @@ defmodule Rail.Issues.Actions.ChangeIssue do
   defp resolve_status(_scope, _issue, _attrs), do: {:ok, nil}
 
   defp resolve_cycle(%Issue{project: project}, %{cycle: cycle}) do
-    wanted = cycle |> to_string() |> String.trim() |> String.downcase()
-    {:ok, %{cycles: cycles}} = Issues.get_cycles(project)
-    open = Enum.reject(cycles, &(&1.status == :ended))
-    current_index = Enum.find_index(cycles, & &1.current)
-
-    found =
-      case {wanted, Integer.parse(wanted)} do
-        {"none", _number} -> {:set, nil}
-        {"current", _number} -> current_index && {:set, Enum.at(cycles, current_index).id}
-        {"next", _number} -> next_cycle(cycles, current_index)
-        {_named, {number, ""}} -> Enum.find_value(open, &(&1.number == number && {:set, &1.id}))
-        _unknown -> nil
-      end
-
-    if found,
-      do: {:ok, found},
-      else:
-        {:error,
-         {:invalid, :cycle,
-          "is not current, next, none or an open cycle's number: " <> Enum.map_join(open, ", ", &to_string(&1.number))}}
+    with {:ok, cycle_id} <- Issues.find_cycle(project, cycle), do: {:ok, {:set, cycle_id}}
   end
 
   defp resolve_cycle(_issue, _attrs), do: {:ok, nil}
-
-  defp next_cycle(cycles, current_index) when is_integer(current_index) do
-    case Enum.at(cycles, current_index + 1) do
-      %{id: id} -> {:set, id}
-      nil -> nil
-    end
-  end
-
-  defp next_cycle(_cycles, nil), do: nil
 
   defp resolve_assignee(scope, %Issue{} = issue, %{assignee: login}) when is_binary(login) do
     assignable = Users.list_assignable_users(project_id: issue.project_id, tracker: issue.tracker)

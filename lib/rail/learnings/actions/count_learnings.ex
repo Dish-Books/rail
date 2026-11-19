@@ -8,7 +8,7 @@ defmodule Rail.Learnings.Actions.CountLearnings do
   alias Rail.Repo
 
   @doc """
-  The page's four segments: pending proposals, then active, provisional and
+  The page's four segments: pending proposals of no task, which are decided on the task, then active, provisional and
   retired rules, for `:project_id` (one id or a list) or every project.
   """
   def count_learnings(opts \\ []) do
@@ -25,7 +25,7 @@ defmodule Rail.Learnings.Actions.CountLearnings do
       |> Map.new()
 
     review =
-      from(p in LearningProposal, where: p.status == :pending)
+      from(p in LearningProposal, where: p.status == :pending and is_nil(p.task_id))
       |> in_project(project_id)
       |> Repo.aggregate(:count)
 

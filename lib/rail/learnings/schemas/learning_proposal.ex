@@ -2,6 +2,9 @@ defmodule Rail.Learnings.Schemas.LearningProposal do
   @moduledoc """
   A change to the rules waiting on a person. `learning` is the draft for an add, merge or rewrite and the rule in question otherwise;
   at most one override is pending per rule.
+
+  A task's proposal stays `pending` until its task merges, with the person's `choice` so far, which they can change until
+  then; the merge approves or rejects it as chosen. `decided_by` is who chose.
   """
   use Rail.Schema
 
@@ -14,6 +17,7 @@ defmodule Rail.Learnings.Schemas.LearningProposal do
 
   @actions [:add, :merge, :rewrite, :retire, :conflict, :promote, :override]
   @statuses [:pending, :approved, :rejected]
+  @choices [:approved, :rejected]
   @promote_targets [:credo_check, :role_prompt, :claude_md]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "lpr"}
@@ -26,6 +30,7 @@ defmodule Rail.Learnings.Schemas.LearningProposal do
     field :promote_to, Ecto.Enum, values: @promote_targets
     field :source_key, :string
     field :status, Ecto.Enum, values: @statuses, default: :pending
+    field :choice, Ecto.Enum, values: @choices
     field :decided_at, :utc_datetime_usec
 
     # The rules and sightings `target_ids` and `evidence_ids` name, loaded by `get_learning_proposal/1`.
@@ -78,6 +83,10 @@ defmodule Rail.Learnings.Schemas.LearningProposal do
   def promote_label(:credo_check), do: "a lint check"
   def promote_label(:role_prompt), do: "a role prompt"
   def promote_label(:claude_md), do: "a line in the repo's CLAUDE.md"
+
+  @doc "True for a proposal still waiting on a person's Approve or Reject."
+  def undecided?(%__MODULE__{status: :pending, choice: nil}), do: true
+  def undecided?(%__MODULE__{}), do: false
 
   @doc "True for the actions whose `learning` is a draft rather than an existing rule."
   def drafts?(%__MODULE__{action: action}), do: action in [:add, :merge, :rewrite]

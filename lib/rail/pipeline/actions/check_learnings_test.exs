@@ -64,16 +64,22 @@ defmodule Rail.Pipeline.Actions.CheckLearningsTest do
     assert :ok = Pipeline.check_learnings(task)
   end
 
-  test "every proposal still pending is counted, and a decided one is not", %{task: task, curator_run: curator_run} do
+  test "every proposal nobody chose for is counted, and a chosen or decided one is not", %{
+    task: task,
+    curator_run: curator_run
+  } do
     curator_run.(%{status: :finished, stage_outcome: :done})
 
     {:ok, first} =
       Learnings.save_task_proposal(task, %{action: "add", rule: "Broadcast after commit", kind: "convention"})
 
-    {:ok, _second} = Learnings.save_task_proposal(task, %{action: "add", rule: "Lock the row", kind: "convention"})
+    {:ok, second} = Learnings.save_task_proposal(task, %{action: "add", rule: "Lock the row", kind: "convention"})
     assert {:error, {:learnings_open, 2}} = Pipeline.check_learnings(task)
 
     {:ok, _rejected} = Learnings.reject_learning_proposal(system_scope(), first)
     assert {:error, {:learnings_open, 1}} = Pipeline.check_learnings(task)
+
+    {:ok, _chosen} = Learnings.choose_task_proposal(system_scope(), second, :approved)
+    assert :ok = Pipeline.check_learnings(task)
   end
 end

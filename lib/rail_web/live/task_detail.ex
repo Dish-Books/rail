@@ -753,11 +753,8 @@ defmodule RailWeb.Live.TaskDetail do
     {:noreply, socket}
   end
 
-  def handle_event("approve_proposal", %{"id" => id}, socket),
-    do: {:noreply, decide_proposal(socket, id, &Learnings.approve_learning_proposal/2)}
-
-  def handle_event("reject_proposal", %{"id" => id}, socket),
-    do: {:noreply, decide_proposal(socket, id, &Learnings.reject_learning_proposal/2)}
+  def handle_event("approve_proposal", %{"id" => id}, socket), do: {:noreply, choose_proposal(socket, id, :approved)}
+  def handle_event("reject_proposal", %{"id" => id}, socket), do: {:noreply, choose_proposal(socket, id, :rejected)}
 
   # Approve moves the task on, so the page opens on the stage it moved to.
   def handle_event("approve_stage_output", _params, socket) do
@@ -1079,10 +1076,10 @@ defmodule RailWeb.Live.TaskDetail do
 
   defp curator_run(%Task{runs: runs}), do: Enum.find(runs, &match?(%Run{role: %Role{stage: :curator}}, &1))
 
-  # Only this task's proposal is decided here; one decided elsewhere first says so on its card.
-  defp decide_proposal(%{assigns: %{task: %Task{id: task_id}, current_scope: scope}} = socket, id, action) do
+  # Only this task's proposal is chosen here; one decided elsewhere first says so on its card.
+  defp choose_proposal(%{assigns: %{task: %Task{id: task_id}, current_scope: scope}} = socket, id, choice) do
     with {:ok, %LearningProposal{task_id: ^task_id} = proposal} <- Learnings.get_learning_proposal(id),
-         {:ok, _decided} <- action.(scope, proposal) do
+         {:ok, _chosen} <- Learnings.choose_task_proposal(scope, proposal, choice) do
       socket |> update(:proposal_errors, &Map.delete(&1, id)) |> assign_proposals() |> assign_items()
     else
       {:error, :already_decided} ->
@@ -1577,7 +1574,7 @@ defmodule RailWeb.Live.TaskDetail do
   defp learnings_item(%{curator_run: nil}), do: nil
 
   defp learnings_item(%{curator_run: %Run{} = run, proposals: proposals}) do
-    pending = Enum.count(proposals, &(&1.status == :pending))
+    pending = Enum.count(proposals, &LearningProposal.undecided?/1)
 
     # The badge takes the dot's and the mark's place, so the label says what the curator is doing too.
     {curator, dot, mark} =
