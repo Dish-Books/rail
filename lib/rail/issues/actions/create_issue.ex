@@ -24,8 +24,9 @@ defmodule Rail.Issues.Actions.CreateIssue do
 
   `attrs` carries `:title` and `:description`, and optionally `:priority`, `:estimate`,
   `:owner_user_id`, `:workflow_id`, the workflow opening it, `:skipped_steps`, the steps its file
-  turned off, `:stages`, the `IssueStage`s its file named, and `:parent`, the issue it is a sub-issue of. The ticket is opened in triage, or in Todo for a sub-issue, whose work is
-  already planned. Broadcasts `{:issue_created, issue_id}` on `"issues"`.
+  turned off, `:stages`, the `IssueStage`s its file named, `:parent`, the issue it is a sub-issue of, and `:cycle_id`,
+  the cycle a Rail-tracked ticket opens in, which the caller has already checked. The ticket is opened in triage, or in
+  Todo for a sub-issue, whose work is already planned. Broadcasts `{:issue_created, issue_id}` on `"issues"`.
   """
   def create_issue(%Scope{} = scope, %Project{id: project_id} = project, %{} = attrs) do
     # Read again, so a form opened before the project moved off Linear files its ticket where the project is now.

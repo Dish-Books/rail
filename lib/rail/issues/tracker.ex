@@ -16,8 +16,8 @@ defmodule Rail.Issues.Tracker do
 
   @doc """
   Opens a ticket for `attrs` (`:title`, `:description`, `:state`, and optionally `:priority`,
-  `:estimate`, `:owner_user_id` and `:parent`, the issue it is a sub-issue of) and returns the
-  attributes Rail keeps for it, in that state. A tracker sends what it has a place for.
+  `:estimate`, `:owner_user_id`, `:parent`, the issue it is a sub-issue of, and `:cycle_id`, a Rail cycle) and returns
+  the attributes Rail keeps for it, in that state. A tracker sends what it has a place for.
   """
   @callback create_issue(Scope.t(), Project.t(), map()) :: {:ok, map()} | {:error, term()}
 

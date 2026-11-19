@@ -342,11 +342,11 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/settings/workflows")
 
-    # Written behind the page's back, so it still offers Run now.
+    # Written behind the page's back, so it still offers Run now. Sent as that page sends it: any project's workflow
+    # change, from another test, reloads the page onto the invalid file before a click on the button could land.
     Repo.update_all(from(w in Workflow, where: w.id == ^id), set: [definition: nil, next_run_at: nil])
 
-    assert view |> element("#run-now-#{id}") |> render_click() =~
-             "Dependency updates opened nothing: its file is invalid."
+    assert render_click(view, "run_now", %{"id" => id}) =~ "Dependency updates opened nothing: its file is invalid."
   end
 
   test "Run now says what the tracker answered when it opened nothing", %{conn: conn, project: project} do

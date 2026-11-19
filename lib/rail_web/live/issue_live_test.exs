@@ -640,7 +640,9 @@ defmodule RailWeb.IssueLiveTest do
     reject(&Pipeline.start_task/2)
     allow(Pipeline, self(), view.pid)
 
-    view |> element("#issue-start-plan") |> render_click()
+    # Sent as the stale tab sends it: the project is shared, so another test's sync or workflow change can reload this
+    # page onto the new task, and drop its Start button, before a click on the button could land.
+    render_click(view, "start_task", %{})
 
     refute_redirected(view)
     assert has_element?(view, "#issue-task-link[href='/tasks/#{task.id}']")

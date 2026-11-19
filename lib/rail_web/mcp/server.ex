@@ -9,9 +9,11 @@ defmodule RailWeb.Mcp.Server do
     version: "1.0.0",
     capabilities: [:tools],
     instructions:
-      "Rail tracks tickets in projects named by a key, such as RAIL in RAIL-12. Start with list_projects to see the keys."
+      "Rail tracks tickets in projects named by a key, such as RAIL in RAIL-12. Start with list_projects to see the keys. " <>
+        "A Rail-tracked project plans in cycles: list_cycles shows the current one."
 
   component(RailWeb.Mcp.Tools.ListProjects)
+  component(RailWeb.Mcp.Tools.ListCycles)
   component(RailWeb.Mcp.Tools.SearchIssues)
   component(RailWeb.Mcp.Tools.ListIssues)
   component(RailWeb.Mcp.Tools.GetIssue)

@@ -5972,8 +5972,12 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, _task} = Pipeline.update_task(task, %{pr_number: 151, pr_is_draft: false})
       {:ok, _pass} = Pipeline.save_review(task)
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      # The stage hands the page its tray in a message of its own, which queues behind the first render.
+      _settled = render(view)
 
       view |> element("#finish-review") |> render_click()
+      # The click tells the page the task changed in a message of its own, which queues behind the click's render.
+      _settled = render(view)
 
       assert %Task{stage: :finalize} = Repo.reload!(task)
       assert has_element?(view, "#task-ready-for-review", "Ready for review")

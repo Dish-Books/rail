@@ -1,7 +1,8 @@
 defmodule RailWeb.Mcp.Tools.CreateIssue do
   @moduledoc """
   Files a ticket in a project, or a sub-issue under one of its tickets, as you. It is assigned to you unless you name
-  someone else, or no one with an empty assignee.
+  someone else, or no one with an empty assignee. A Rail-tracked project's ticket can open in a cycle; list_cycles shows
+  which is current.
   """
 
   use Anubis.Server.Component, type: :tool
@@ -26,6 +27,10 @@ defmodule RailWeb.Mcp.Tools.CreateIssue do
     field :priority, {:enum, Map.keys(@priorities)}
     field :estimate, :integer, description: "Points."
     field :parent, :string, description: "The identifier of the ticket this is a sub-issue of."
+
+    field :cycle, :string,
+      description: "`current`, `next` or an open cycle's number, in a Rail-tracked project. Left out, no cycle."
+
     field :assignee, :string, description: "A GitHub login, or empty for no one. Left out, you."
   end
 
@@ -36,6 +41,7 @@ defmodule RailWeb.Mcp.Tools.CreateIssue do
 
     with {:ok, project} <- Projects.find_project(scope, params.project),
          {:ok, parent} <- find_parent(scope, project, params[:parent]),
+         {:ok, cycle_id} <- find_cycle(project, params[:cycle]),
          {:ok, owner_user_id, note} <- find_owner(scope, project, params) do
       attrs = %{
         title: params.title,
@@ -43,7 +49,8 @@ defmodule RailWeb.Mcp.Tools.CreateIssue do
         priority: @priorities[params[:priority]],
         estimate: params[:estimate],
         owner_user_id: owner_user_id,
-        parent: parent
+        parent: parent,
+        cycle_id: cycle_id
       }
 
       with {:ok, issue} <- Issues.create_issue(scope, project, attrs),
@@ -66,6 +73,9 @@ defmodule RailWeb.Mcp.Tools.CreateIssue do
       _elsewhere -> {:error, {:invalid, :parent, "#{identifier} is not a ticket in this project"}}
     end
   end
+
+  defp find_cycle(%Project{}, nil), do: {:ok, nil}
+  defp find_cycle(%Project{} = project, wanted), do: Issues.find_cycle(project, wanted)
 
   # Where the tracker cannot assign the person, such as Linear before they connect it, the ticket is filed unassigned.
   defp find_owner(scope, %Project{} = project, params) do
