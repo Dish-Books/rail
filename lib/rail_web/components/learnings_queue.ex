@@ -23,12 +23,6 @@ defmodule RailWeb.Components.LearningsQueue do
   attr :project_name, :string, default: nil
   attr :show_projects, :boolean, default: false
 
-  attr :digest, :map,
-    default: nil,
-    doc: "`%{channel:, permalink:}` for the footer link, `channel` nil where it posts nowhere"
-
-  slot :digest_picker, doc: "replaces the read-only digest link, for those who may change the channel"
-
   def learnings_queue(assigns) do
     assigns =
       assigns
@@ -42,10 +36,6 @@ defmodule RailWeb.Components.LearningsQueue do
       |> assign(:role_label, if(assigns.role, do: Learning.role_label(assigns.role), else: "Any role"))
       |> assign(:match_line, calculate_match_line(assigns))
       |> assign(:empty, calculate_empty(assigns))
-      |> assign(
-        :show_digest,
-        assigns.digest_picker == [] and is_map(assigns.digest) and is_binary(assigns.digest.channel)
-      )
 
     ~H"""
     <aside
@@ -253,28 +243,6 @@ defmodule RailWeb.Components.LearningsQueue do
         <.button size="sm" id="add-learning-button" phx-click="new_learning">
           <.icon name="pi-plus-circle-fill" class="size-[1.1em]" />Add rule
         </.button>
-        {render_slot(@digest_picker)}
-        <.link
-          :if={@show_digest and is_binary(@digest.permalink)}
-          href={@digest.permalink}
-          target="_blank"
-          rel="noopener"
-          id="learnings-digest-link"
-          title="Open today's curator digest in Slack"
-          class="ml-auto min-w-0 inline-flex items-center gap-1 whitespace-nowrap text-[11px] text-slate-500 dark:text-slate-400 hover:underline"
-        >
-          06:00 digest in
-          <span class="truncate font-mono font-semibold text-blue-600 dark:text-blue-400">#{@digest.channel}</span>
-          <.icon name="pi-arrow-square-out" class="size-3 text-blue-600 dark:text-blue-400" />
-        </.link>
-        <span
-          :if={@show_digest and is_nil(@digest.permalink)}
-          id="learnings-digest-link"
-          class="ml-auto min-w-0 inline-flex items-center gap-1 whitespace-nowrap text-[11px] text-slate-500 dark:text-slate-400"
-        >
-          06:00 digest in
-          <span class="truncate font-mono font-semibold text-slate-600 dark:text-slate-300">#{@digest.channel}</span>
-        </span>
       </div>
     </aside>
     """

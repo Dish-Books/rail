@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.LearningsChannelPicker do
   @moduledoc """
-  Picks the Slack channel a project's learnings digest posts in, saving the moment one is picked.
-  `variant` is `:settings` for the Edit Project section or `:footer` for the Learnings page footer.
+  Picks the Slack channel where Rail tells a project's team that a backend lost its sign-in, saving the moment one
+  is picked. Shown in the Edit Project section.
   """
   use RailWeb, :live_component
 
@@ -10,7 +10,7 @@ defmodule RailWeb.Components.LearningsChannelPicker do
   alias Rail.Slack
 
   @doc """
-  The learnings channel's current name, from Slack, or its id when Slack cannot name it. Nil when it posts nowhere.
+  The alerts channel's current name, from Slack, or its id when Slack cannot name it. Nil when it posts nowhere.
   """
   def channel_name(%Project{learnings_channel_external_id: nil}), do: nil
 
@@ -47,20 +47,18 @@ defmodule RailWeb.Components.LearningsChannelPicker do
     socket =
       socket
       |> assign(:id, assigns.id)
-      |> assign(:variant, assigns.variant)
       |> assign(:current_scope, assigns.current_scope)
       |> assign(:channel_name, assigns.channel_name)
-      |> assign(:permalink, assigns[:permalink])
       |> assign_project(assigns.project)
 
     {:ok, socket}
   end
 
-  def render(%{variant: :settings} = assigns) do
+  def render(assigns) do
     ~H"""
     <div id={@id} class="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-1">
       <div class="flex items-center justify-between">
-        <p class="text-sm font-medium text-slate-900 dark:text-slate-100">Learnings digest</p>
+        <p class="text-sm font-medium text-slate-900 dark:text-slate-100">Slack alerts</p>
         <span :if={@saved} id={"#{@id}-saved"} class="text-xs text-emerald-600 dark:text-emerald-400">
           Saved
         </span>
@@ -101,63 +99,8 @@ defmodule RailWeb.Components.LearningsChannelPicker do
         </div>
       </div>
       <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-        The curator's 06:00 UTC digest. Saves when picked, and never triages the channel.
+        Where Rail says a backend lost its sign-in. Saves when picked, and never triages the channel.
       </p>
-    </div>
-    """
-  end
-
-  def render(%{variant: :footer} = assigns) do
-    ~H"""
-    <div
-      id={@id}
-      class="relative ml-auto min-w-0 flex"
-      phx-click-away={@open && "close"}
-      phx-target={@myself}
-    >
-      <button
-        :if={@show_channel}
-        type="button"
-        id={"#{@id}-trigger"}
-        phx-click="toggle"
-        phx-target={@myself}
-        aria-expanded={to_string(@open)}
-        title="Change where the digest posts"
-        class={[
-          "min-w-0 inline-flex items-center gap-1 whitespace-nowrap text-[11px] text-slate-500 dark:text-slate-400 rounded px-1 -mx-1 cursor-pointer hover:text-slate-900 dark:hover:text-slate-100",
-          @open && "outline-2 outline-indigo-500"
-        ]}
-      >
-        06:00 digest in
-        <span class="truncate font-mono font-semibold text-blue-600 dark:text-blue-400">#{@channel_name}</span>
-        <.icon name="pi-caret-up-down" class="size-3 text-slate-400" />
-      </button>
-      <button
-        :if={!@show_channel}
-        type="button"
-        id={"#{@id}-trigger"}
-        phx-click="toggle"
-        phx-target={@myself}
-        aria-expanded={to_string(@open)}
-        class={[
-          "inline-flex items-center gap-1 whitespace-nowrap text-[11px] text-slate-500 dark:text-slate-400 rounded px-1 -mx-1 cursor-pointer hover:text-slate-900 dark:hover:text-slate-100",
-          @open && "outline-2 outline-indigo-500"
-        ]}
-      >
-        <.icon name="pi-slack-logo" class="size-3" />Post digest to Slack
-      </button>
-      <div :if={@open} class="absolute bottom-full right-0 mb-2 z-30">
-        <.options
-          id={@id}
-          myself={@myself}
-          query={@query}
-          shown={@shown}
-          project={@project}
-          show_channel={@show_channel}
-          permalink={@permalink}
-          class="w-72 max-w-[calc(100vw-2rem)]"
-        />
-      </div>
     </div>
     """
   end
@@ -205,7 +148,6 @@ defmodule RailWeb.Components.LearningsChannelPicker do
   attr :shown, :list, required: true
   attr :project, :map, required: true
   attr :show_channel, :boolean, required: true
-  attr :permalink, :string, default: nil
   attr :class, :string, required: true
 
   defp options(assigns) do
@@ -288,16 +230,6 @@ defmodule RailWeb.Components.LearningsChannelPicker do
           </button>
         </div>
       </div>
-      <.link
-        :if={@permalink}
-        href={@permalink}
-        target="_blank"
-        rel="noopener"
-        id={"#{@id}-permalink"}
-        class="mt-1 flex items-center gap-2 px-2.5 py-1.5 border-t border-slate-200 dark:border-slate-700 text-xs text-blue-600 dark:text-blue-400 hover:underline"
-      >
-        <.icon name="pi-arrow-square-out" class="size-3.5" />Open today's digest in Slack
-      </.link>
     </div>
     """
   end
@@ -320,8 +252,8 @@ defmodule RailWeb.Components.LearningsChannelPicker do
 
   defp close(socket), do: socket |> assign(:open, false) |> assign(:query, "")
 
-  # Slack is asked once, on first open; a workspace it cannot list for adds no group. The digest names
-  # tracker issues, so a channel triage marked as shared outside the team is never offered.
+  # Slack is asked once, on first open; a workspace it cannot list for adds no group. Alerts never post in a
+  # channel triage marked as shared outside the team, so none is offered.
   defp load_groups(%{assigns: %{groups: nil}} = socket) do
     external = MapSet.new(Projects.list_slack_channels(external: true), &{&1.slack_workspace_id, &1.external_id})
 

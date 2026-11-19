@@ -889,7 +889,6 @@ defmodule RailWeb.Settings.ProjectsLive do
               :if={@show_modal == :edit}
               module={LearningsChannelPicker}
               id="learnings-channel-picker"
-              variant={:settings}
               current_scope={@current_scope}
               project={@selected_project}
               channel_name={@learnings_channel_name}

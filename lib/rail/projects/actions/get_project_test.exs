@@ -24,7 +24,7 @@ defmodule Rail.Projects.Actions.GetProjectTest do
              Projects.get_project(project_id)
   end
 
-  test "comes with the workspace its learnings digest posts through", %{project: project} do
+  test "comes with the workspace its Slack alerts post through", %{project: project} do
     Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "team_id" => "T_GET"}))
     {:ok, %{id: workspace_id}} = Projects.create_slack_workspace(system_scope(), %{"name" => "Acme", "token" => "xoxb"})
 

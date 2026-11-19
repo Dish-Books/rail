@@ -1,7 +1,7 @@
 defmodule Rail.Learnings.Actions.CurateLearnings do
   @moduledoc """
   The daily curator pass: what no pass has read, folded in one transaction into proposals, links, auto-activations and
-  deletions of provisional rules proposed for retiring, then a digest.
+  deletions of provisional rules proposed for retiring.
   A failed pass stamps nothing, so its observations go to the next one.
   """
 
@@ -14,51 +14,18 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
   import Rail.Learnings.Utils.WriteRulesFile
 
   alias Rail.Git
-  alias Rail.Learnings
   alias Rail.Learnings.Schemas.CuratorPass
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Learnings.Schemas.LearningProposal
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Projects.Schemas.Project
-  alias Rail.Projects.Schemas.SlackChannel
-  alias Rail.Projects.Schemas.SlackWorkspace
   alias Rail.Repo
   alias Rail.Scope
-  alias Rail.Slack
 
   @proposed [:add, :merge, :rewrite, :retire, :conflict, :promote]
   @auto_tasks 3
-
-  @sighting_nouns %{
-    diff_comment: {"diff comment", "diff comments"},
-    design_comment: {"design comment", "design comments"},
-    ticket_comment: {"ticket comment", "ticket comments"},
-    plan_comment: {"plan comment", "plan comments"},
-    screen_comment: {"screen comment", "screen comments"},
-    finding_comment: {"finding comment", "finding comments"},
-    review_finding: {"Fix decision", "Fix decisions"},
-    qa_finding: {"Fix decision", "Fix decisions"},
-    answer: {"answer", "answers"},
-    pr_review_comment: {"PR comment", "PR comments"},
-    pr_review: {"PR comment", "PR comments"},
-    override: {"override", "overrides"},
-    extraction: {"finished task", "finished tasks"}
-  }
-
-  @source_phrases %{
-    diff_comment: "a diff comment",
-    design_comment: "a design comment",
-    ticket_comment: "a ticket comment",
-    plan_comment: "a plan comment",
-    screen_comment: "a screen comment",
-    finding_comment: "a finding comment",
-    review_finding: "a Fix in review",
-    qa_finding: "a Fix in QA",
-    answer: "an answer"
-  }
 
   @doc """
   Runs one pass over `project`. Returns `{:ok, pass}` as it finished, or
@@ -86,9 +53,9 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
       end
 
     case outcome do
-      {:ok, folded} ->
+      :ok ->
         broadcast_learnings_changed(project_id)
-        {:ok, digest(project, Repo.reload!(pass), since, folded)}
+        {:ok, Repo.reload!(pass)}
 
       {:error, reason} ->
         failed = pass |> Ecto.Changeset.change(error: error_message(reason)) |> Repo.update!()
@@ -116,7 +83,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
            {:ok, checkout} <- Git.checkout_detached_worktree(project, checkout),
            :ok <- write_files(project, dir, observations, since),
            {:ok, result} <- run_curator_role(project, dir, brief(project, dir, checkout)) do
-        {:ok, fold(project, pass, observations, result)}
+        fold(project, pass, observations, result)
       end
     after
       File.rm_rf(dir)
@@ -202,7 +169,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
     rules =
       Map.new(Repo.all(from l in Learning, where: l.project_id == ^project_id, select: {l.id, l.status}))
 
-    {:ok, folded} =
+    {:ok, :ok} =
       Repo.transaction(fn ->
         {proposals, _pending} =
           result["proposals"]
@@ -218,23 +185,22 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
 
         linked = for attrs <- List.wrap(result["outcomes"]), proposal = link(attrs, project_id, read, rules), do: proposal
 
-        activated =
-          (proposals ++ linked)
-          |> Enum.filter(&(&1.action == :add))
-          |> Enum.uniq_by(& &1.id)
-          |> Enum.filter(&backed?/1)
-          |> Enum.flat_map(&activate/1)
+        (proposals ++ linked)
+        |> Enum.filter(&(&1.action == :add))
+        |> Enum.uniq_by(& &1.id)
+        |> Enum.filter(&backed?/1)
+        |> Enum.each(&activate/1)
 
         # After activation, so a rule this pass confirmed is active and waits on a person to retire.
-        deleted = delete_provisional_retires(project_id)
+        delete_provisional_retires(project_id)
 
         Repo.update_all(from(o in Observation, where: o.id in ^MapSet.to_list(read)), set: [curator_pass_id: pass_id])
         Repo.update_all(from(p in CuratorPass, where: p.id == ^pass_id), set: [finished_at: DateTime.utc_now()])
 
-        %{proposals: proposals, activated: activated, deleted: deleted}
+        :ok
       end)
 
-    folded
+    :ok
   end
 
   # The curator's word is an agent's, so a proposal naming anything outside this
@@ -388,7 +354,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
       )
 
     {_count, nil} = Repo.delete_all(from(l in Learning, where: l.id in ^Enum.map(learnings, & &1.id)))
-    learnings
+    :ok
   end
 
   # A rule retired since its add was proposed stays retired.
@@ -399,10 +365,10 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
           set: [status: :approved, decided_at: DateTime.utc_now()]
         )
 
-        [Repo.get!(Learning, proposal.learning_id)]
+        :ok
 
       {:error, :retired} ->
-        []
+        :ok
     end
   end
 
@@ -417,109 +383,6 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
   end
 
   defp string(_missing), do: nil
-
-  defp digest(%Project{} = project, %CuratorPass{} = pass, since, %{
-         proposals: proposals,
-         activated: activated,
-         deleted: deleted
-       }) do
-    provisional =
-      Repo.all(
-        from l in Learning,
-          where: l.project_id == ^project.id and l.status == :provisional and l.inserted_at > ^since,
-          order_by: [asc: l.inserted_at],
-          preload: [observations: ^from(o in Observation, order_by: [asc: o.inserted_at], preload: [task: :issue])]
-      )
-
-    # Read again as it posts, so a channel picked while the pass ran gets its digest. It names tracker
-    # issues, so never in a channel triage has marked as shared outside the team.
-    with true <- activated != [] or deleted != [] or proposals != [] or provisional != [],
-         {:ok, %Project{learnings_slack_workspace: %SlackWorkspace{} = workspace, learnings_channel_external_id: channel}}
-         when is_binary(channel) <- Projects.get_project(project.id),
-         false <-
-           match?(
-             {:ok, %SlackChannel{external: true}},
-             Projects.get_slack_channel(external_id: channel, slack_workspace_id: workspace.id)
-           ),
-         {:ok, ts} <-
-           Slack.post_channel_message(workspace, channel, digest_text(project, pass, activated, deleted, provisional)),
-         {:ok, permalink} <- Slack.permalink(workspace, channel, ts) do
-      posted = pass |> Ecto.Changeset.change(digest_permalink: permalink) |> Repo.update!()
-      broadcast_learnings_changed(project.id)
-      posted
-    else
-      _quiet_or_unposted -> pass
-    end
-  end
-
-  defp digest_text(%Project{} = project, %CuratorPass{} = pass, activated, deleted, provisional) do
-    counts = Learnings.count_learnings(project_id: project.id)
-
-    pending =
-      Repo.all(
-        from p in LearningProposal,
-          where: p.project_id == ^project.id and p.status == :pending,
-          group_by: p.action,
-          select: {p.action, count(p.id)}
-      )
-
-    sections = [
-      "*Learnings for #{project.name}*, curator run of #{Calendar.strftime(pass.started_at, "%b %-d")}",
-      activated_section(activated),
-      deleted_section(deleted),
-      if(counts.review > 0, do: "*To review #{counts.review}:* #{Enum.map_join(pending, ", ", &pending_label/1)}"),
-      provisional_section(provisional),
-      "<#{RailWeb.Endpoint.url()}/learnings|Open Learnings in Rail>"
-    ]
-
-    sections |> Enum.reject(&is_nil/1) |> Enum.join("\n")
-  end
-
-  defp activated_section([]), do: nil
-
-  defp activated_section(activated) do
-    activated = Repo.preload(activated, :observations)
-    bullets = Enum.map(activated, &"• #{&1.rule} (#{sightings(&1.observations)})")
-    Enum.join(["*Auto-activated #{length(activated)}*" | bullets], "\n")
-  end
-
-  defp deleted_section([]), do: nil
-
-  # A backlog can delete hundreds at once, more than a Slack message holds, so it names the first few.
-  defp deleted_section(deleted) do
-    bullets = deleted |> Enum.take(10) |> Enum.map(&"• #{&1.rule}")
-    more = if length(deleted) > 10, do: ["…and #{length(deleted) - 10} more"], else: []
-    Enum.join(["*Deleted #{length(deleted)} provisional*" | bullets ++ more], "\n")
-  end
-
-  defp provisional_section([]), do: nil
-
-  defp provisional_section(provisional) do
-    from =
-      provisional
-      |> Enum.flat_map(&Enum.take(&1.observations, 1))
-      |> Enum.map(fn observation ->
-        on = if observation.task, do: " on #{observation.task.issue.identifier}", else: ""
-        "#{source_phrase(observation.source_kind)}#{on}"
-      end)
-
-    "*Provisional since the last run #{length(provisional)}:* from #{Enum.join(from, ", ")}"
-  end
-
-  defp pending_label({:add, count}), do: "#{count} new"
-  defp pending_label({:override, count}), do: "#{count} flagged by an override"
-  defp pending_label({action, count}), do: "#{count} #{action}"
-
-  defp sightings(observations) do
-    observations
-    |> Enum.frequencies_by(& &1.source_kind)
-    |> Enum.map_join(", ", fn {kind, count} ->
-      {one, many} = Map.fetch!(@sighting_nouns, kind)
-      if count == 1, do: "1 #{one}", else: "#{count} #{many}"
-    end)
-  end
-
-  defp source_phrase(kind), do: Map.get(@source_phrases, kind, "a sighting")
 
   defp brief(%Project{} = project, dir, checkout) do
     result = Path.join(dir, "result.json")

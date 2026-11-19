@@ -1,7 +1,6 @@
 defmodule Rail.Learnings.Schemas.CuratorPass do
   @moduledoc """
-  One daily curator pass over a project: when it ran, whether it finished, and
-  where its digest was posted.
+  One daily curator pass over a project: when it ran and whether it finished.
   """
   use Rail.Schema
 
@@ -12,7 +11,6 @@ defmodule Rail.Learnings.Schemas.CuratorPass do
     field :started_at, :utc_datetime_usec
     field :finished_at, :utc_datetime_usec
     field :error, :string
-    field :digest_permalink, :string
 
     belongs_to :project, Project
 
