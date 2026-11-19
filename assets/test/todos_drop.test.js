@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { dropBefore, keyBefore, readDrop, repeatCheck, submitsEdit } from "../js/hooks/todos_drop.js";
+import { caretToEnd, dropBefore, keyBefore, readDrop, repeatCheck, submitsEdit } from "../js/hooks/todos_drop.js";
 
 const transfer = (entries) => ({ getData: (type) => entries[type] ?? "" });
 const htmlText = (html) => html.replace(/<[^>]*>/g, "");
@@ -129,5 +129,13 @@ describe("submitsEdit", () => {
   it("leaves Enter anywhere else, and other keys in the editor, alone", () => {
     assert.equal(submitsEdit({ key: "Enter", isComposing: false, keyCode: 13, target: on("[data-todo-handle]") }), false);
     assert.equal(submitsEdit({ key: "a", isComposing: false, keyCode: 65, target: on("[data-todo-edit]") }), false);
+  });
+});
+
+describe("caretToEnd", () => {
+  it("puts the cursor after the last character", () => {
+    const calls = [];
+    caretToEnd({ value: "Review acme/web#412", setSelectionRange: (start, end) => calls.push([start, end]) });
+    assert.deepEqual(calls, [[19, 19]]);
   });
 });

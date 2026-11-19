@@ -312,7 +312,7 @@ defmodule RailWeb.Components.TodosPanelTest do
     assert has_element?(view, "#todo-delete-#{typo_id}[aria-label='Delete: Uplaod the bills']")
 
     view |> element("#todo-edit-button-#{typo_id}") |> render_click()
-    assert has_element?(view, "#todo-edit-#{typo_id}[phx-mounted][data-todo-edit]", "Uplaod the bills")
+    assert has_element?(view, "#todo-edit-#{typo_id}[phx-mounted*='todos:caret-end'][data-todo-edit]", "Uplaod the bills")
     refute has_element?(view, "#todo-#{typo_id} [data-qa=todo_body_text]")
     refute has_element?(view, "#todo-edit-button-#{typo_id}")
     assert has_element?(view, "#todo-handle-#{typo_id}")
@@ -369,7 +369,9 @@ defmodule RailWeb.Components.TodosPanelTest do
 
     {:ok, view, _html} = live(put_connect_params(conn, %{"todos_open" => true}), ~p"/")
     view |> element("#todo-edit-button-#{todo_id}") |> render_click()
+    view |> form("#todo-edit-form-#{todo_id}", todo: %{body: ""}) |> render_change()
     refute has_element?(view, "#todo-edit-#{todo_id}-error")
+    refute has_element?(view, "#todo-edit-#{todo_id}[aria-invalid]")
 
     view |> form("#todo-edit-form-#{todo_id}", todo: %{body: "   "}) |> render_submit()
 
@@ -416,6 +418,19 @@ defmodule RailWeb.Components.TodosPanelTest do
     assert_push_event(view, "todos-focus", %{id: "todo-body-0"})
     refute has_element?(view, "#todos-count")
     assert has_element?(view, "#todos-empty")
+  end
+
+  test "deleting the row above an open editor puts the focus in that editor", %{conn: conn, scope: scope} do
+    {:ok, %Todo{id: first_id}} = Todos.create_todo(scope, %{"body" => "First"}, :last)
+    {:ok, %Todo{id: second_id}} = Todos.create_todo(scope, %{"body" => "Second"}, :last)
+
+    {:ok, view, _html} = live(put_connect_params(conn, %{"todos_open" => true, "time_zone" => "Etc/UTC"}), ~p"/")
+    view |> element("#todo-edit-button-#{second_id}") |> render_click()
+    view |> element("#todo-delete-#{first_id}") |> render_click()
+
+    assert_push_event(view, "todos-focus", %{id: "todo-edit-" <> ^second_id})
+    refute has_element?(view, "#todo-#{first_id}")
+    assert has_element?(view, "#todo-edit-form-#{second_id}")
   end
 
   test "deleting the only checked-off row empties the footer and the export", %{conn: conn, scope: scope} do

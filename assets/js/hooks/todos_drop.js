@@ -55,6 +55,12 @@ export const submitsEdit = (event) =>
   event.keyCode !== 229 &&
   Boolean(event.target?.closest?.("[data-todo-edit]"));
 
+// Typing in a just-opened editor adds to the end of the text rather than in front of it.
+export const caretToEnd = (textarea) => {
+  const end = textarea.value.length;
+  textarea.setSelectionRange(end, end);
+};
+
 const types = (event) => Array.from(event.dataTransfer?.types || []);
 const droppable = (event) => ["text/uri-list", "text/plain", TODO_TYPE].some((type) => types(event).includes(type));
 
@@ -92,6 +98,7 @@ export const TodosDrop = {
 
     // The panel names the control to take the focus after a save, a cancel or a delete, once the patch is in.
     this.handleEvent("todos-focus", ({ id }) => document.getElementById(id)?.focus());
+    this.el.addEventListener("todos:caret-end", (event) => caretToEnd(event.target));
 
     const disarm = (event) => event.target.closest?.("[data-todo-row]")?.removeAttribute("draggable");
 

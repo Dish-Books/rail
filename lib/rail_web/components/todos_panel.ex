@@ -360,8 +360,7 @@ defmodule RailWeb.Components.TodosPanel do
     socket =
       with [%Todo{} = todo | after_rows] <- rest,
            {:ok, _deleted} <- Todos.delete_todo(socket.assigns.current_scope, todo) do
-        next = List.first(after_rows)
-        focus = if next, do: "todo-delete-#{next.id}", else: "todo-body-#{socket.assigns.form_key}"
+        focus = delete_focus(List.first(after_rows), socket.assigns.editing, socket.assigns.form_key)
         socket |> load_todos() |> push_event("todos-focus", %{id: focus})
       else
         _missing_or_gone -> load_todos(socket)
@@ -386,9 +385,10 @@ defmodule RailWeb.Components.TodosPanel do
       |> assign(:outside_link, not assigns.editing and is_binary(url) and not String.starts_with?(url, "/"))
       |> assign(:show_text, not assigns.editing and is_nil(url))
       |> assign(:show_address, assigns.editing and is_binary(url))
+      # A draft has no action, so the error waits for a refused save.
       |> assign(
         :show_edit_error,
-        assigns.editing and is_atom(assigns.edit_changeset.action) and assigns.edit_changeset.errors != []
+        assigns.editing and assigns.edit_changeset.action == :update and assigns.edit_changeset.errors != []
       )
 
     ~H"""
@@ -499,7 +499,7 @@ defmodule RailWeb.Components.TodosPanel do
           maxlength="500"
           aria-invalid={@show_edit_error && "true"}
           aria-describedby={@show_edit_error && "todo-edit-#{@todo.id}-error"}
-          phx-mounted={JS.focus()}
+          phx-mounted={JS.focus() |> JS.dispatch("todos:caret-end")}
           phx-keydown="cancel_edit"
           phx-key="Escape"
           phx-target={@target}
@@ -583,6 +583,11 @@ defmodule RailWeb.Components.TodosPanel do
     |> assign(:editing, nil)
     |> push_event("todos-focus", %{id: "todo-edit-button-#{todo_id}"})
   end
+
+  defp delete_focus(nil, _editing, form_key), do: "todo-body-#{form_key}"
+  # The row being edited has no Delete, so the focus goes to its editor.
+  defp delete_focus(%Todo{id: todo_id}, %Todo{id: todo_id}, _form_key), do: "todo-edit-#{todo_id}"
+  defp delete_focus(%Todo{id: todo_id}, _editing, _form_key), do: "todo-delete-#{todo_id}"
 
   defp load_todos(socket) do
     %{current_scope: scope, time_zone: time_zone} = socket.assigns
