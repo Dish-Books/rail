@@ -148,6 +148,12 @@ for {seeded, prefix} <- [{project, "rol_test_seed"}, {github_project, "rol_test_
   )
 end
 
+# The custom stages tests enter on the shared project, made once and committed: each test's own first entry would
+# hold the row's insert open until it ended, and every other test entering that stage would wait on it.
+for name <- ["License check", "Missing strings", "Schema review"] do
+  {:ok, _role} = Rail.Roles.get_custom_stage_role(project.id, name)
+end
+
 :persistent_term.put({RailTest, :project}, %{project | linear_workspace: workspace})
 :persistent_term.put({RailTest, :github_project}, github_project)
 
