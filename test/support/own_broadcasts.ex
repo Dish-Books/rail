@@ -1,12 +1,7 @@
 defmodule RailTest.OwnBroadcasts do
   @moduledoc """
-  Keeps each test's broadcasts among its own processes: `Rail.PubSub`'s dispatcher in test.
-
-  Every test hangs its rows off the one seeded project, so a page open in one test hears the syncs, workflows and
-  cycles every other test broadcasts about it, and reloads under that test's assertions. A process belongs to the
-  test it is, or the test its `$callers` lead back to: a LiveView, its async tasks, a `Task` the test started. A
-  broadcast from one test's process reaches no process of another test. A process no test owns - a supervisor's
-  child, an Oban queue - sends to and hears from everyone, as it would without this.
+  `Rail.PubSub`'s dispatcher in test: a broadcast from one test's processes, or those whose `$callers` lead to it,
+  reaches no other test's, since every test shares the seeded project.
   """
 
   @doc """
