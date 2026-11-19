@@ -154,6 +154,8 @@ defmodule RailWeb.Components.IssuePickerTest do
 
   test "No parent is refused with the reason when the issue is gone", %{conn: conn, issue: %Issue{id: issue_id} = issue} do
     {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+    # The pull request lookup reloads the issue when it answers; after the delete, that would leave the page.
+    render_async(view)
     picker = "#issue-parent-picker-#{issue_id}"
 
     view |> element("#issue-parent") |> render_click()

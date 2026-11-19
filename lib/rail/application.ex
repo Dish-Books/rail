@@ -12,7 +12,7 @@ defmodule Rail.Application do
           Rail.Vault,
           Rail.Repo,
           {Oban, Application.fetch_env!(:rail, Oban)},
-          {Phoenix.PubSub, name: Rail.PubSub},
+          {Phoenix.PubSub, name: Rail.PubSub, dispatcher: Application.get_env(:rail, :pubsub_dispatcher, Phoenix.PubSub)},
           {Task.Supervisor, name: Rail.TaskSupervisor},
           (Rail.goth_enabled?() && {Goth, name: Rail.Goth}) || nil,
           Rail.Tools,

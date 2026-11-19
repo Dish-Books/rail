@@ -23,6 +23,7 @@ defmodule Rail.DataCase do
       alias Rail.Repo
 
       setup :verify_on_exit!
+      setup {RailTest.OwnBroadcasts, :own}
       setup :stub_agent_spawn
       setup :stub_git_repo_check
       setup :stub_worktree_slot

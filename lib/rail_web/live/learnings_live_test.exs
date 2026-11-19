@@ -13,6 +13,7 @@ defmodule RailWeb.LearningsLiveTest do
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.PlanCommentCapture
+  alias Rail.Projects
   alias Rail.Repo
   alias Rail.Users
 
@@ -496,7 +497,7 @@ defmodule RailWeb.LearningsLiveTest do
 
   test "a project the person was not granted shows none of its rules or proposals, and takes no new rule", %{conn: conn} do
     {:ok, hidden} =
-      Rail.Projects.create_project(system_scope(), %{
+      Projects.create_project(system_scope(), %{
         name: "Hidden",
         github_repo: "example/hidden-lrn",
         github_installation_id: 1,
@@ -557,6 +558,15 @@ defmodule RailWeb.LearningsLiveTest do
     send(view.pid, :unrelated)
     assert render(view) =~ "Say why"
     assert [%Observation{}] = Repo.all(from o in Observation, where: o.task_id == ^task.id)
+  end
+
+  test "a rename of the project in another tab shows on an open page", %{conn: conn, project: project} do
+    {:ok, view, _html} = live(conn, ~p"/learnings?status=active")
+    assert has_element?(view, "#learnings-empty", "No rules in #{project.name} yet")
+
+    {:ok, _renamed} = Projects.update_project(system_scope(), project, %{"name" => "Renamed LLV"})
+
+    assert has_element?(view, "#learnings-empty", "No rules in Renamed LLV yet")
   end
 
   describe "every kind of proposal, read in full" do
@@ -712,7 +722,7 @@ defmodule RailWeb.LearningsLiveTest do
     project: granted
   } do
     {:ok, project} =
-      Rail.Projects.create_project(system_scope(), %{
+      Projects.create_project(system_scope(), %{
         name: "Keep rule #{System.unique_integer([:positive])}",
         github_repo: "example/keep-rule",
         github_installation_id: 1,
