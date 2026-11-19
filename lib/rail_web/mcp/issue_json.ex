@@ -71,7 +71,9 @@ defmodule RailWeb.Mcp.IssueJSON do
     do: %{identifier: issue.identifier, title: issue.title, status: Issue.calculate_status_name(issue)}
 
   defp cycle(nil), do: nil
-  defp cycle(cycle), do: %{number: cycle.number, starts_on: cycle.starts_on, ends_on: cycle.ends_on}
+
+  defp cycle(cycle),
+    do: %{number: cycle.number, starts_on: cycle.starts_on, ends_on: cycle.ends_on, current: cycle.current}
 
   defp comment(%Comment{} = comment), do: %{author: author(comment), body: comment.body, created_at: comment.inserted_at}
 
