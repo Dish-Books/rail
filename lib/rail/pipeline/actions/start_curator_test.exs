@@ -73,6 +73,11 @@ defmodule Rail.Pipeline.Actions.StartCuratorTest do
     {:ok, %LearningProposal{id: pending_id}} =
       Learnings.save_task_proposal(task, %{action: "add", rule: "Broadcast after commit", kind: "convention"})
 
+    {:ok, %LearningProposal{id: chosen_id} = chosen} =
+      Learnings.save_task_proposal(task, %{action: "add", rule: "Lock the row", kind: "convention"})
+
+    {:ok, _chosen} = Learnings.choose_task_proposal(system_scope(), chosen, :approved)
+
     test = self()
 
     expect(Tools, :start_os_process, 2, fn %Run{} = spawned, ["-p", prompt | _rest] = argv ->
@@ -80,6 +85,7 @@ defmodule Rail.Pipeline.Actions.StartCuratorTest do
       proposals = File.read!(Path.join(dir, "proposals.md"))
       assert proposals =~ "## #{rejected_id} · Add · rejected"
       assert proposals =~ "## #{pending_id} · Add · pending\n\n\n\nBroadcast after commit"
+      assert proposals =~ "## #{chosen_id} · Add · approved so far, decided when the task merges"
       send(test, {:spawned, prompt})
       {:ok, %OsProcess{run: spawned}}
     end)

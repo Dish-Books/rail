@@ -94,6 +94,14 @@ defmodule Rail.Learnings.Actions.SaveTaskProposalTest do
     assert %Learning{rule: "Run assets.build", status: :active} = Repo.get!(Learning, active_id)
   end
 
+  test "a revise clears the Approve or Reject chosen for what the proposal said before", %{task: task} do
+    {:ok, proposal} = Learnings.save_task_proposal(task, %{action: "add", rule: "Lock the row", kind: "convention"})
+    {:ok, _chosen} = Learnings.choose_task_proposal(system_scope(), proposal, :approved)
+
+    assert {:ok, %LearningProposal{status: :pending, choice: nil, decided_at: nil}} =
+             Learnings.save_task_proposal(task, %{proposal: proposal.id, rule: "Lock the row first"})
+  end
+
   test "a decided proposal, another task's and an unknown one cannot be revised", %{project: project, task: task} do
     {:ok, decided} = Learnings.save_task_proposal(task, %{action: "add", rule: "Lock the row", kind: "convention"})
     {:ok, _rejected} = Learnings.reject_learning_proposal(system_scope(), decided)

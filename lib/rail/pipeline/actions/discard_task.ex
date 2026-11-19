@@ -1,7 +1,8 @@
 defmodule Rail.Pipeline.Actions.DiscardTask do
   @moduledoc """
   The task page's Discard: stops every run, closes the pull request, deletes the branch on GitHub, then deletes the
-  task with its files, runs, questions, findings and comments and puts the ticket back to not started.
+  task with its files, runs, questions, findings and comments, rejects the rule proposals it left undecided and puts
+  the ticket back to not started.
   """
 
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
@@ -31,6 +32,7 @@ defmodule Rail.Pipeline.Actions.DiscardTask do
     {:ok, reset} =
       Repo.transaction(fn ->
         :ok = Learnings.delete_task_observations(task)
+        :ok = Learnings.reject_task_proposals(task)
         Repo.delete!(task)
         {:ok, reset} = reset_ticket(issue)
         reset
