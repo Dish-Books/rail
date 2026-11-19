@@ -12,7 +12,7 @@ defmodule Rail.Learnings.Actions.ListLearningProposals do
 
   @doc """
   The pending proposals, oldest first, each with its draft or subject rule and who decided it.
-  Filters by `:project_id`, one id or a list, by `:task_id` and by `:kind`, the rule's; `:statuses` widens it past pending.
+  Filters by `:project_id`, one id or a list, by `:task_id`, `:none` for those of no task, and by `:kind`, the rule's; `:statuses` widens it past pending.
   An `:embedding` ranks the 50 whose rule is nearest it first, leaving out a rule not embedded yet. `targets: true` loads the
   rules each one replaces.
   """
@@ -39,6 +39,7 @@ defmodule Rail.Learnings.Actions.ListLearningProposals do
   defp filter_project(query, nil), do: query
 
   defp filter_task(query, task_id) when is_binary(task_id), do: where(query, [proposal: p], p.task_id == ^task_id)
+  defp filter_task(query, :none), do: where(query, [proposal: p], is_nil(p.task_id))
   defp filter_task(query, nil), do: query
 
   defp filter_kind(query, kind) when kind in @kinds, do: where(query, [learning: l], l.kind == ^kind)

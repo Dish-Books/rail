@@ -1567,7 +1567,7 @@ defmodule RailWeb.Live.TaskDetailTest do
       refute has_element?(view, "#proposal-#{retire.id} [data-qa=proposal-draft]")
     end
 
-    test "Approve makes the rule active and Reject changes no rule, each card then saying who decided it", %{
+    test "Approve and Reject toggle a choice that changes no rule and lets the task merge", %{
       conn: conn,
       project: project,
       task: task
@@ -1586,16 +1586,22 @@ defmodule RailWeb.Live.TaskDetailTest do
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
 
       view |> element("#approve-proposal-#{add.id}") |> render_click()
-      assert has_element?(view, "#proposal-#{add.id} [data-qa=proposal-approved]", "Approved by Dana")
-      refute has_element?(view, "#approve-proposal-#{add.id}")
-      assert %Learning{status: :active} = Repo.get!(Learning, add.learning_id)
+      assert has_element?(view, "#approve-proposal-#{add.id}[aria-pressed=true]")
+      assert has_element?(view, "#reject-proposal-#{add.id}[aria-pressed=false]")
+      assert has_element?(view, "#proposal-#{add.id} [data-qa=proposal-choice]", "Approved by Dana · applies on merge")
+      assert %Learning{status: :proposed} = Repo.get!(Learning, add.learning_id)
       assert has_element?(view, "#review-item-learnings [data-qa=review_item_badge]", "1")
 
-      view |> element("#reject-proposal-#{rewrite.id}") |> render_click()
-      assert has_element?(view, "#proposal-#{rewrite.id} [data-qa=proposal-rejected]", "Rejected by Dana")
+      # Changed before the merge, the choice is the one filled in and still no rule moves.
+      view |> element("#reject-proposal-#{add.id}") |> render_click()
+      assert has_element?(view, "#reject-proposal-#{add.id}[aria-pressed=true]")
+      assert has_element?(view, "#proposal-#{add.id} [data-qa=proposal-choice]", "Rejected by Dana · final on merge")
+
+      view |> element("#approve-proposal-#{rewrite.id}") |> render_click()
       assert %Learning{status: :active} = Repo.reload!(old)
+      assert has_element?(view, "#task-learnings-count", "2 proposals · 0 to decide")
       assert has_element?(view, "#review-item-learnings[title='Learnings: Nothing to decide']")
-      refute has_element?(view, "#review-item-learnings [data-qa=review_item_badge]")
+      assert :ok = Pipeline.check_learnings(task)
     end
 
     test "a proposal decided in another tab says so on its card and changes nothing, and another task's is left", %{

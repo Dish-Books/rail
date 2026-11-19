@@ -2,6 +2,7 @@ defmodule RailWeb.Mcp.Tools.CreateIssueTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
   alias Rail.Scope
@@ -72,6 +73,51 @@ defmodule RailWeb.Mcp.Tools.CreateIssueTest do
 
     assert {:ok, %Issue{id: id, owner_user_id: ^user_id}} = Issues.get_issue(identifier)
     assert_receive {:issue_created, ^id}
+  end
+
+  test "files a ticket into the current or next cycle, or one by number, and refuses an ended one", %{
+    local: %{id: local_id} = local,
+    scope: scope
+  } do
+    # Cycle 1 runs Nov 10 to 23, then Cycle 2 from Nov 24.
+    :ok = Issues.close_cycle_day(~D[2026-11-10])
+    stub(Date, :utc_today, fn -> ~D[2026-11-12] end)
+
+    [%{id: first_id}, %{id: second_id} | _later] =
+      Repo.all(from(c in Cycle, where: c.project_id == ^local_id, order_by: c.number))
+
+    assert {:ok, %{"issue" => %{"identifier" => current, "cycle" => %{"number" => 1, "current" => true}}}} =
+             call_mcp_tool(scope, "create_issue", %{"project" => local.key, "title" => "Now", "cycle" => "Current"})
+
+    assert {:ok, %Issue{cycle_external_id: ^first_id}} = Issues.get_issue(current)
+
+    assert {:ok, %{"issue" => %{"identifier" => next, "cycle" => %{"number" => 2, "current" => false}}}} =
+             call_mcp_tool(scope, "create_issue", %{"project" => local.key, "title" => "Later", "cycle" => "next"})
+
+    assert {:ok, %Issue{cycle_external_id: ^second_id}} = Issues.get_issue(next)
+
+    assert {:ok, %{"issue" => %{"cycle" => %{"number" => 2}}}} =
+             call_mcp_tool(scope, "create_issue", %{"project" => local.key, "title" => "By number", "cycle" => "2"})
+
+    assert {:ok, %{"issue" => %{"cycle" => nil}}} =
+             call_mcp_tool(scope, "create_issue", %{"project" => local.key, "title" => "Unplanned"})
+
+    stub(Date, :utc_today, fn -> ~D[2026-11-24] end)
+    count = Repo.aggregate(from(i in Issue, where: i.project_id == ^local_id), :count)
+
+    assert {:error, "cycle is not current, next, none or an open cycle's number: 2" <> _later} =
+             call_mcp_tool(scope, "create_issue", %{"project" => local.key, "title" => "Too late", "cycle" => "1"})
+
+    assert Repo.aggregate(from(i in Issue, where: i.project_id == ^local_id), :count) == count
+  end
+
+  test "a cycle on a GitHub ticket is refused, since GitHub keeps its own", %{github_project: github} do
+    assert {:error, "A GitHub project's cycles are kept in GitHub; open them there."} =
+             call_mcp_tool(user_scope(project_ids: [github.id]), "create_issue", %{
+               "project" => github.key,
+               "title" => "Planned",
+               "cycle" => "current"
+             })
   end
 
   test "names another assignee, or none", %{

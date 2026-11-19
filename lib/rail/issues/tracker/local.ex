@@ -47,7 +47,8 @@ defmodule Rail.Issues.Tracker.Local do
        title: attrs[:title],
        description: attrs[:description],
        url: RailWeb.Endpoint.url() <> "/issues/" <> id,
-       parent_external_id: attrs[:parent] && attrs[:parent].external_id
+       parent_external_id: attrs[:parent] && attrs[:parent].external_id,
+       cycle_external_id: attrs[:cycle_id]
      })}
   end
 

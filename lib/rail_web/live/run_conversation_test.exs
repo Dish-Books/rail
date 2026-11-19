@@ -2075,6 +2075,8 @@ defmodule RailWeb.Live.RunConversationTest do
     } do
       Repo.update_all(from(f in Finding, where: f.task_id == ^task.id), set: [decision: :skip])
       {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}?item=plan")
+      # The stage hands the page its tray in a message of its own, which queues behind the first render.
+      _settled = render(view)
 
       view |> element("#finish-review") |> render_click()
       _settled = render(view)

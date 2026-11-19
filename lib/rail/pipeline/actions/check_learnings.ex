@@ -1,12 +1,14 @@
 defmodule Rail.Pipeline.Actions.CheckLearnings do
   @moduledoc """
   Whether a task's learnings are addressed, which a tech lead's Approve and Merge wait for: no curator pass is
-  queued, its curator finished its turn without failing, and every proposal it made is decided.
+  queued, its curator finished its turn without failing, and every proposal it made has an Approve or Reject
+  chosen, which the merge then carries out.
   """
 
   import Ecto.Query
 
   alias Rail.Learnings
+  alias Rail.Learnings.Schemas.LearningProposal
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.StartCurator
@@ -15,7 +17,7 @@ defmodule Rail.Pipeline.Actions.CheckLearnings do
 
   @doc """
   Returns `:ok`, or `{:error, reason}`: `:curator_running` while a pass is queued or the curator works,
-  `:curator_failed`, or `{:learnings_open, count}` with the number of the task's proposals still pending.
+  `:curator_failed`, or `{:learnings_open, count}` with the number of the task's proposals nobody chose for yet.
   """
   def check_learnings(%Task{id: task_id, project_id: project_id}) do
     task = Task |> Repo.get!(task_id) |> Repo.preload(runs: :role)
@@ -45,7 +47,9 @@ defmodule Rail.Pipeline.Actions.CheckLearnings do
   defp curator?(project_id), do: Repo.exists?(from r in Role, where: r.project_id == ^project_id and r.stage == :curator)
 
   defp open(task_id, project_id) do
-    case length(Learnings.list_learning_proposals(task_id: task_id, project_id: project_id)) do
+    proposals = Learnings.list_learning_proposals(task_id: task_id, project_id: project_id)
+
+    case Enum.count(proposals, &LearningProposal.undecided?/1) do
       0 -> :ok
       count -> {:error, {:learnings_open, count}}
     end

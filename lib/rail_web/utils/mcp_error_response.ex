@@ -52,6 +52,11 @@ defmodule RailWeb.Utils.McpErrorResponse do
   defp message(:cycle_not_tracked),
     do: "Only a Rail-tracked project's tickets can be listed by cycle; name one with `project`."
 
+  defp message({:cycles_in_tracker, tracker}) do
+    label = Issue.tracker_label(tracker)
+    "A #{label} project's cycles are kept in #{label}; open them there."
+  end
+
   defp message(:parent_on_github),
     do: "GitHub keeps no parent, so a GitHub project's ticket can't be filed as a sub-issue."
 
