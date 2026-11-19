@@ -28,7 +28,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveLearningProposal do
         {:refused, "Nothing saved: a person already decided that proposal, so it can no longer change."}
 
       {:error, :not_found} ->
-        {:refused, "Nothing saved: no active rule, or proposal of this task's, has that id."}
+        {:refused, "Nothing saved: no active or provisional rule, or proposal of this task's, has that id."}
 
       {:error, :bad_action} ->
         {:refused, "Nothing saved: `action` is add, rewrite or retire, or pass `proposal` to change one."}

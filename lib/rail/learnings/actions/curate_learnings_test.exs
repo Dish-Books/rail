@@ -188,10 +188,21 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     assert %Learning{status: :proposed} = Repo.get_by!(Learning, rule: "Two and an abandoned one")
   end
 
-  test "a provisional rule proposed for retiring is deleted, also those waiting from earlier passes, while an active rule's retire waits",
-       %{project: project} do
+  test "a provisional rule proposed for retiring is deleted, also those waiting from earlier passes, while an active rule's retire and a task's wait",
+       %{project: project, tasks: [task | _rest]} do
     provisional =
       Repo.insert!(%Learning{project_id: project.id, status: :provisional, rule: "Old habit", kind: :convention})
+
+    tasks_own =
+      Repo.insert!(%Learning{project_id: project.id, status: :provisional, rule: "Vague", kind: :convention})
+
+    task_retire =
+      Repo.insert!(%LearningProposal{
+        project_id: project.id,
+        task_id: task.id,
+        action: :retire,
+        learning_id: tasks_own.id
+      })
 
     earlier =
       for n <- 1..10,
@@ -220,6 +231,8 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     refute Enum.any?(waiting, &Repo.reload/1)
     assert %Learning{status: :active} = Repo.reload!(active)
     assert %LearningProposal{status: :pending} = Repo.get_by!(LearningProposal, learning_id: active.id)
+    assert %Learning{status: :provisional} = Repo.reload!(tasks_own)
+    assert %LearningProposal{status: :pending} = Repo.reload!(task_retire)
   end
 
   test "a later sighting linked to a pending add counts towards activating it", %{

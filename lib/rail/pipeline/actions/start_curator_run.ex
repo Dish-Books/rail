@@ -62,8 +62,8 @@ defmodule Rail.Pipeline.Actions.StartCuratorRun do
     Save each proposal with `save_learning_proposal`:
 
     - `add` drafts a new rule.
-    - `rewrite` refines the active rule named in `target` with new wording, which replaces it once approved.
-    - `retire` removes the active rule named in `target`, when its code is gone or this task contradicts it.
+    - `rewrite` refines the rule named in `target`, active or provisional, with new wording, which replaces it once approved.
+    - `retire` removes the rule named in `target`, active or provisional, when its code is gone or this task contradicts it.
 
     To change a proposal you saved, save it again with its `proposal` id, giving only what changes. A proposal a person already decided can no longer change. Save nothing for a task that taught nothing new, and say so.
 

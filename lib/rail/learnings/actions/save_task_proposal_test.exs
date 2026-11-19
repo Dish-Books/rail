@@ -32,30 +32,52 @@ defmodule Rail.Learnings.Actions.SaveTaskProposalTest do
     assert_received {:learnings_changed, ^project_id}
   end
 
-  test "a rewrite and a retire target an active rule, and never a provisional one or another project's", %{
+  test "a rewrite and a retire target an active or a provisional rule, never a retired one or another project's", %{
     project: project,
     task: task
   } do
     %Learning{id: active_id} = learning(project, %{rule: "Send each comment", kind: :decision}, status: :active)
     %Learning{id: provisional_id} = learning(project, %{rule: "Retry twice", kind: :qa}, status: :provisional)
+    %Learning{id: retired_id} = learning(project, %{rule: "Old", kind: :qa}, status: :retired)
     %{project: elsewhere} = triage_project()
     %Learning{id: other_id} = learning(elsewhere, %{rule: "Theirs", kind: :qa}, status: :active)
 
-    assert {:ok, %LearningProposal{action: :rewrite, target_ids: [^active_id]}} =
-             Learnings.save_task_proposal(task, %{
-               action: "rewrite",
-               target: active_id,
-               rule: "Send the round's comments as one message.",
-               kind: "decision"
-             })
+    for target <- [active_id, provisional_id] do
+      assert {:ok, %LearningProposal{action: :rewrite, target_ids: [^target]}} =
+               Learnings.save_task_proposal(task, %{
+                 action: "rewrite",
+                 target: target,
+                 rule: "Send the round's comments as one message.",
+                 kind: "decision"
+               })
 
-    assert {:ok, %LearningProposal{action: :retire, learning_id: ^active_id, summary: "Gone since RAIL-112"}} =
-             Learnings.save_task_proposal(task, %{action: "retire", target: active_id, summary: "Gone since RAIL-112"})
+      assert {:ok, %LearningProposal{action: :retire, learning_id: ^target, summary: "Gone since RAIL-112"}} =
+               Learnings.save_task_proposal(task, %{action: "retire", target: target, summary: "Gone since RAIL-112"})
+    end
 
-    for target <- [provisional_id, other_id, nil], action <- ["rewrite", "retire"] do
+    for target <- [retired_id, other_id, nil], action <- ["rewrite", "retire"] do
       assert {:error, :not_found} =
                Learnings.save_task_proposal(task, %{action: action, target: target, rule: "New", kind: "qa"})
     end
+  end
+
+  test "an approved rewrite of a provisional rule activates the new wording and retires the vague one", %{
+    project: project,
+    task: task
+  } do
+    vague = learning(project, %{rule: "Be careful with comments", kind: :decision}, status: :provisional)
+
+    {:ok, proposal} =
+      Learnings.save_task_proposal(task, %{
+        action: "rewrite",
+        target: vague.id,
+        rule: "Send a review round's comments as one message.",
+        kind: "decision"
+      })
+
+    assert {:ok, _approved} = Learnings.approve_learning_proposal(system_scope(), proposal)
+    assert %Learning{status: :active} = Repo.get!(Learning, proposal.learning_id)
+    assert %Learning{status: :retired} = Repo.reload!(vague)
   end
 
   test "a revise naming only the title keeps the action, the target and the draft's roles and path glob", %{

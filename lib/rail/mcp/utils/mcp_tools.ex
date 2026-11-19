@@ -637,8 +637,8 @@ defmodule Rail.Mcp.Utils.McpTools do
     %{
       "name" => "save_learning_proposal",
       "description" =>
-        "Propose a change to the project's rules from this task: `add` a new rule, `rewrite` the active rule in " <>
-          "`target` with new wording, or `retire` the active rule in `target`. A person approves or rejects it " <>
+        "Propose a change to the project's rules from this task: `add` a new rule, `rewrite` the rule in `target` " <>
+          "with new wording, or `retire` the rule in `target`, active or provisional. A person approves or rejects it " <>
           "beside your conversation. Pass `proposal` with the id an earlier save returned to change that proposal " <>
           "instead, giving only what changes; one a person already decided can no longer change.",
       "inputSchema" => %{
@@ -648,7 +648,7 @@ defmodule Rail.Mcp.Utils.McpTools do
           "proposal" => %{"type" => "string", "description" => "The id of your proposal to change, `lpr_...`."},
           "target" => %{
             "type" => "string",
-            "description" => "For rewrite and retire, the active rule's id from rules.md."
+            "description" => "For rewrite and retire, the rule's id from rules.md, active or provisional."
           },
           "title" => %{"type" => "string", "description" => "One line saying what this changes."},
           "summary" => %{"type" => "string", "description" => "A few words on why, from this task."},

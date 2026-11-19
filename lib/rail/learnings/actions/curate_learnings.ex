@@ -341,14 +341,14 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
     tasks >= @auto_tasks
   end
 
-  # No person confirmed a provisional rule, so one proposed for retiring is deleted, its proposals with it, and its
-  # sightings and findings let go of it. An active rule's retire waits on a person.
+  # No person confirmed a provisional rule, so one a pass proposed retiring is deleted, its proposals with it, and its
+  # sightings and findings let go of it. An active rule's retire waits on a person, and a task's waits on its merge.
   defp delete_provisional_retires(project_id) do
     learnings =
       Repo.all(
         from l in Learning,
           join: p in LearningProposal,
-          on: p.learning_id == l.id and p.status == :pending and p.action == :retire,
+          on: p.learning_id == l.id and p.status == :pending and p.action == :retire and is_nil(p.task_id),
           where: l.project_id == ^project_id and l.status == :provisional,
           distinct: true
       )

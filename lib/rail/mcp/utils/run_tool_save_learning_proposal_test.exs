@@ -54,7 +54,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveLearningProposalTest do
     assert {:error, {:refused, "Nothing saved: a person already decided that proposal" <> _rest}} =
              Mcp.call_run_tool(context, "save_learning_proposal", %{"proposal" => proposal.id, "title" => "Narrow"})
 
-    assert {:error, {:refused, "Nothing saved: no active rule" <> _rest}} =
+    assert {:error, {:refused, "Nothing saved: no active or provisional rule" <> _rest}} =
              Mcp.call_run_tool(context, "save_learning_proposal", %{"action" => "retire", "target" => "lrn_gone"})
 
     assert {:error, {:refused, "Nothing saved: `action` is add, rewrite or retire" <> _rest}} =
