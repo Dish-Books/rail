@@ -244,7 +244,7 @@ defmodule Rail.Triage.Actions.HandleSlackEventTest do
       assert_receive {:triage_scheduled, ^bot_id, 15_000}
     end
 
-    test "from Rail's own bot, such as the learnings digest, is not filed, even where bots trigger", %{
+    test "from Rail's own bot, such as a lost sign-in, is not filed, even where bots trigger", %{
       event: event,
       project: project
     } do

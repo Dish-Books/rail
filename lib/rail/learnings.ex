@@ -30,6 +30,5 @@ defmodule Rail.Learnings do
   defdelegate write_task_files(task, dir), to: Actions.WriteTaskFiles
   defdelegate save_task_proposal(task, attrs), to: Actions.SaveTaskProposal
   defdelegate curate_learnings(project), to: Actions.CurateLearnings
-  defdelegate get_latest_curator_pass(project), to: Actions.GetLatestCuratorPass
   defdelegate backfill_learnings(project), to: Actions.BackfillLearnings
 end

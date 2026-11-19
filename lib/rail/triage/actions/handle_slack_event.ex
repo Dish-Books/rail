@@ -5,7 +5,7 @@ defmodule Rail.Triage.Actions.HandleSlackEvent do
 
   Only people's messages in a project's connected channels trigger one. A bot's
   post triggers only where the channel opted in, and a message a teammate posted
-  through Rail never does. Rail's own bot, which posts the learnings digest, is
+  through Rail never does. Rail's own bot, which posts a lost backend sign-in, is
   not filed at all. A message that
   triggers nothing leaves the thread where it stood, and one that triggers
   reopens a dismissed thread. Edits and deletions are ignored.
