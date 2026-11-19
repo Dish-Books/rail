@@ -2750,15 +2750,34 @@ defmodule RailWeb.IssuesLiveTest do
 
       expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
 
-      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      {:ok, %{pid: page_pid} = view, _html} = live(conn, ~p"/issues?cycle=12")
       render_async(view)
 
       view |> element("#issue-start-#{ready_id}") |> render_click()
       assert_receive {:git, ^ready_id, git}
 
+      # The page and its readers share the start's sandbox connection, and one killed mid-query takes it down, as a
+      # reload after another test's broadcast can catch it. Suspended, and its readers left to finish, the page dies
+      # between queries, with only the start's own wait.
+      :sys.suspend(page_pid)
+      {:dictionary, dictionary} = Process.info(git, :dictionary)
+      [start_wait | _callers] = Keyword.fetch!(dictionary, :"$callers")
+
+      eventually(fn ->
+        {:links, links} = Process.info(page_pid, :links)
+
+        readers =
+          for pid when is_pid(pid) and pid != start_wait <- links,
+              {:dictionary, dictionary} <- [Process.info(pid, :dictionary)],
+              match?([^page_pid | _callers], dictionary[:"$callers"]),
+              do: pid
+
+        assert readers == []
+      end)
+
       # Killed rather than stopped: a page stopped normally would not take its start with it anyway.
-      page = Process.monitor(view.pid)
-      Process.exit(view.pid, :kill)
+      page = Process.monitor(page_pid)
+      Process.exit(page_pid, :kill)
       assert_receive {:DOWN, ^page, :process, _pid, :killed}
 
       starting = Process.monitor(git)

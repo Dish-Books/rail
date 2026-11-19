@@ -81,6 +81,8 @@ defmodule RailWeb.Components.DescriptionEditorTest do
     issue: %Issue{id: issue_id} = issue
   } do
     {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+    # The page's pull request lookup reloads the issue when it answers, so it answers before the issue goes.
+    render_async(view)
     Repo.delete!(issue)
 
     editor = with_target(view, "#issue-description-editor-#{issue_id}")

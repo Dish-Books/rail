@@ -164,6 +164,8 @@ defmodule RailWeb.Live.TaskActionsTest do
     refute has_element?(view, "#task-merge")
 
     view |> element("#task-ready-for-review") |> render_click()
+    # The click tells the page the task changed in a message of its own, which queues behind the click's render.
+    _settled = render(view)
 
     refute has_element?(view, "#task-ready-for-review")
     assert has_element?(view, "#task-waiting", "Waiting for a tech lead: Michael Kerr or Priya Raman")
