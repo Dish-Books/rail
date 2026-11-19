@@ -44,8 +44,13 @@ defmodule Rail.Todos.Schemas.Todo do
 
   defp validate_body(changeset) do
     changeset
-    |> update_change(:body, &String.trim/1)
+    |> update_change(:body, &calculate_body/1)
     |> validate_required([:body])
     |> validate_length(:body, max: 500)
   end
+
+  # The list shows one paragraph per to-do, so a pasted line break becomes a space.
+  # Blanking a saved text casts it to nil.
+  defp calculate_body(body) when is_binary(body), do: body |> String.replace(~r/\s*[\r\n]+\s*/, " ") |> String.trim()
+  defp calculate_body(nil), do: nil
 end

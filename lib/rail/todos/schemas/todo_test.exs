@@ -20,6 +20,20 @@ defmodule Rail.Todos.Schemas.TodoTest do
     assert %Ecto.Changeset{valid?: true} = Todo.changeset(%Todo{}, %{"body" => String.duplicate("x", 500)})
   end
 
+  test "blanking a saved to-do's text is refused as blank" do
+    for blank <- ["", "   "] do
+      assert %{body: ["can't be blank"]} = errors_on(Todo.changeset(%Todo{body: "Saved"}, %{"body" => blank}))
+    end
+  end
+
+  test "a pasted line break becomes one space" do
+    assert %Ecto.Changeset{valid?: true, changes: %{body: "Upload the bills then file them"}} =
+             Todo.changeset(%Todo{}, %{"body" => " Upload the bills \r\n\n  then file them\n"})
+
+    assert %Ecto.Changeset{valid?: true, changes: %{body: "Link name"}} =
+             Todo.link_changeset(%Todo{}, %{"body" => "Link\nname", "url" => "/sandboxes"})
+  end
+
   test "a dropped link is a Rail path or an http(s) address" do
     for url <- ["/tasks/tsk_1?item=findings&finding=F3", "/", "https://github.com/acme/rail/pull/1", "http://example.com"] do
       assert %Ecto.Changeset{valid?: true} = Todo.link_changeset(%Todo{}, %{body: "Link", url: url})

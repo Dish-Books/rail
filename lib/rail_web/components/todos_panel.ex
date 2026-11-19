@@ -28,6 +28,8 @@ defmodule RailWeb.Components.TodosPanel do
       |> assign(:form_key, 0)
       |> assign(:focus_field, false)
       |> assign(:changeset, Todo.changeset(%Todo{}, %{}))
+      |> assign(:editing, nil)
+      |> assign(:edit_changeset, nil)
 
     {:ok, socket}
   end
@@ -181,7 +183,14 @@ defmodule RailWeb.Components.TodosPanel do
             data-qa="todos_list"
             class={["space-y-0.5", @list_marks]}
           >
-            <.todo_row :for={todo <- @rows} todo={todo} row_marks={@row_marks} target={@myself} />
+            <.todo_row
+              :for={todo <- @rows}
+              todo={todo}
+              row_marks={@row_marks}
+              target={@myself}
+              editing={is_struct(@editing, Todo) and @editing.id == todo.id}
+              edit_changeset={@edit_changeset}
+            />
           </ul>
         </div>
 
@@ -309,9 +318,62 @@ defmodule RailWeb.Components.TodosPanel do
     {:noreply, load_todos(socket)}
   end
 
+  # A row another tab has since taken off the list is not here to edit or delete.
+  def handle_event("edit", %{"todo_id" => todo_id}, socket) do
+    socket =
+      case Enum.find(socket.assigns.todos ++ socket.assigns.checked_off, &(&1.id == todo_id)) do
+        %Todo{} = todo -> socket |> assign(:editing, todo) |> assign(:edit_changeset, Todo.changeset(todo, %{}))
+        nil -> socket
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("edit_draft", %{"todo" => attrs}, %{assigns: %{editing: %Todo{} = todo}} = socket) do
+    {:noreply, assign(socket, :edit_changeset, Todo.changeset(todo, attrs))}
+  end
+
+  def handle_event("save_edit", %{"todo" => attrs}, %{assigns: %{editing: %Todo{} = todo}} = socket) do
+    socket =
+      case Todos.update_todo(socket.assigns.current_scope, todo, attrs) do
+        {:ok, _todo} -> socket |> close_editor(todo) |> load_todos()
+        {:error, %Ecto.Changeset{} = changeset} -> assign(socket, :edit_changeset, changeset)
+        {:error, :not_found} -> socket |> assign(:editing, nil) |> load_todos()
+      end
+
+    {:noreply, socket}
+  end
+
+  # Cancel just closed the editor, so a draft or save still on its way has nothing to change.
+  def handle_event(event, _params, socket) when event in ["edit_draft", "save_edit"], do: {:noreply, socket}
+
+  def handle_event("cancel_edit", _params, %{assigns: %{editing: %Todo{} = todo}} = socket) do
+    {:noreply, close_editor(socket, todo)}
+  end
+
+  def handle_event("cancel_edit", _params, socket), do: {:noreply, socket}
+
+  def handle_event("delete", %{"todo_id" => todo_id}, socket) do
+    rows = Enum.sort_by(socket.assigns.todos ++ socket.assigns.checked_off, &{&1.position, &1.id})
+    {_before, rest} = Enum.split_while(rows, &(&1.id != todo_id))
+
+    socket =
+      with [%Todo{} = todo | after_rows] <- rest,
+           {:ok, _deleted} <- Todos.delete_todo(socket.assigns.current_scope, todo) do
+        focus = delete_focus(List.first(after_rows), socket.assigns.editing, socket.assigns.form_key)
+        socket |> load_todos() |> push_event("todos-focus", %{id: focus})
+      else
+        _missing_or_gone -> load_todos(socket)
+      end
+
+    {:noreply, socket}
+  end
+
   attr :todo, Todo, required: true
   attr :row_marks, :string, required: true
   attr :target, :any, required: true
+  attr :editing, :boolean, required: true
+  attr :edit_changeset, :any, required: true
 
   defp todo_row(assigns) do
     url = assigns.todo.url
@@ -319,8 +381,15 @@ defmodule RailWeb.Components.TodosPanel do
     assigns =
       assigns
       |> assign(:done, is_struct(assigns.todo.completed_at, DateTime))
-      |> assign(:rail_link, is_binary(url) and String.starts_with?(url, "/"))
-      |> assign(:outside_link, is_binary(url) and not String.starts_with?(url, "/"))
+      |> assign(:rail_link, not assigns.editing and is_binary(url) and String.starts_with?(url, "/"))
+      |> assign(:outside_link, not assigns.editing and is_binary(url) and not String.starts_with?(url, "/"))
+      |> assign(:show_text, not assigns.editing and is_nil(url))
+      |> assign(:show_address, assigns.editing and is_binary(url))
+      # A draft has no action, so the error waits for a refused save.
+      |> assign(
+        :show_edit_error,
+        assigns.editing and assigns.edit_changeset.action == :update and assigns.edit_changeset.errors != []
+      )
 
     ~H"""
     <li
@@ -328,7 +397,10 @@ defmodule RailWeb.Components.TodosPanel do
       data-qa="todo_row"
       data-todo-row={@todo.id}
       class={[
-        "relative flex items-start gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/70",
+        "group/todo relative flex items-start gap-3 px-3 py-2.5 rounded-lg",
+        !@editing && "hover:bg-slate-100 dark:hover:bg-slate-800/70",
+        @editing &&
+          "bg-white dark:bg-slate-900/40 ring-1 ring-inset ring-slate-200 dark:ring-slate-700",
         @row_marks
       ]}
     >
@@ -363,7 +435,7 @@ defmodule RailWeb.Components.TodosPanel do
         <.icon :if={@done} name="pi-check-bold" class="h-[11px] w-[11px]" />
       </button>
       <span
-        :if={is_nil(@todo.url)}
+        :if={@show_text}
         data-qa="todo_body_text"
         class={[
           "min-w-0 flex-1 text-sm leading-5 break-words [overflow-wrap:anywhere]",
@@ -406,9 +478,116 @@ defmodule RailWeb.Components.TodosPanel do
           class="ml-1 h-3.5 w-3.5 align-[-2px] text-slate-400"
         /><span class="sr-only">(opens in a new tab)</span>
       </a>
+      <.form
+        :let={f}
+        :if={@editing}
+        for={@edit_changeset}
+        id={"todo-edit-form-#{@todo.id}"}
+        data-qa="todo_edit_form"
+        phx-change="edit_draft"
+        phx-submit="save_edit"
+        phx-target={@target}
+        class="min-w-0 flex-1 -my-1.5"
+      >
+        <label for={"todo-edit-#{@todo.id}"} class="sr-only">Edit to-do</label>
+        <textarea
+          id={"todo-edit-#{@todo.id}"}
+          name={f[:body].name}
+          data-qa="todo_edit_body"
+          data-todo-edit
+          rows="1"
+          maxlength="500"
+          aria-invalid={@show_edit_error && "true"}
+          aria-describedby={@show_edit_error && "todo-edit-#{@todo.id}-error"}
+          phx-mounted={JS.focus() |> JS.dispatch("todos:caret-end")}
+          phx-keydown="cancel_edit"
+          phx-key="Escape"
+          phx-target={@target}
+          phx-debounce="300"
+          phx-no-format
+          class={[
+            "block w-full resize-none field-sizing-content rounded-lg border bg-white dark:bg-slate-950/60 px-2.5 py-1.5 text-sm leading-5 text-slate-900 dark:text-slate-100 shadow-xs break-words [overflow-wrap:anywhere] focus:outline-none focus:ring-1",
+            @show_edit_error && "border-red-400 focus:ring-red-400",
+            !@show_edit_error &&
+              "border-slate-300 dark:border-slate-600 focus:border-indigo-500 focus:ring-indigo-500"
+          ]}
+        >{f[:body].value}</textarea>
+        <p
+          :if={@show_edit_error}
+          id={"todo-edit-#{@todo.id}-error"}
+          role="alert"
+          data-qa="todo_edit_error"
+          class="mt-1.5 flex items-center gap-1 text-xs text-red-600 dark:text-red-400"
+        >
+          <.icon name="pi-warning-circle" class="h-3.5 w-3.5 shrink-0" />A to-do needs some text.
+        </p>
+        <p
+          :if={@show_address}
+          data-qa="todo_edit_address"
+          class="mt-1.5 flex items-center gap-1 min-w-0 text-[11px] text-slate-500 dark:text-slate-400"
+        >
+          <.icon name="pi-link" class="h-3 w-3 shrink-0" /><span class="truncate font-mono">{@todo.url}</span>
+          <span class="shrink-0">stays the same</span>
+        </p>
+        <div class="mt-2 flex items-center justify-end gap-1.5">
+          <.button
+            type="button"
+            size="xs"
+            variant="ghost"
+            phx-click="cancel_edit"
+            phx-target={@target}
+            data-qa="todo_edit_cancel"
+          >
+            Cancel
+          </.button>
+          <.button type="submit" size="xs" variant="primary" data-qa="todo_edit_save">Save</.button>
+        </div>
+      </.form>
+      <div
+        :if={!@editing}
+        class="-mr-1 flex items-center gap-0.5 shrink-0 opacity-0 group-hover/todo:opacity-100 group-focus-within/todo:opacity-100 pointer-coarse:opacity-100"
+      >
+        <button
+          type="button"
+          id={"todo-edit-button-#{@todo.id}"}
+          data-qa="todo_edit"
+          aria-label={"Edit: #{@todo.body}"}
+          title="Edit"
+          phx-click="edit"
+          phx-value-todo_id={@todo.id}
+          phx-target={@target}
+          class="h-6 w-6 flex items-center justify-center rounded text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500"
+        >
+          <.icon name="pi-pencil-simple" class="h-[15px] w-[15px]" />
+        </button>
+        <button
+          type="button"
+          id={"todo-delete-#{@todo.id}"}
+          data-qa="todo_delete"
+          aria-label={"Delete: #{@todo.body}"}
+          title="Delete"
+          phx-click="delete"
+          phx-value-todo_id={@todo.id}
+          phx-target={@target}
+          class="h-6 w-6 flex items-center justify-center rounded text-slate-500 dark:text-slate-400 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-red-500"
+        >
+          <.icon name="pi-trash" class="h-[15px] w-[15px]" />
+        </button>
+      </div>
     </li>
     """
   end
+
+  defp close_editor(socket, %Todo{id: todo_id}) do
+    socket
+    |> assign(:editing, nil)
+    |> push_event("todos-focus", %{id: "todo-edit-button-#{todo_id}"})
+  end
+
+  defp delete_focus(nil, _editing, form_key), do: "todo-body-#{form_key}"
+  # The row being edited has no Delete, so the focus goes to its editor.
+  defp delete_focus(%Todo{id: todo_id}, %Todo{id: todo_id}, _form_key), do: "todo-edit-#{todo_id}"
+  defp delete_focus(%Todo{id: todo_id}, _editing, _form_key), do: "todo-delete-#{todo_id}"
 
   defp load_todos(socket) do
     %{current_scope: scope, time_zone: time_zone} = socket.assigns
