@@ -52,13 +52,28 @@ defmodule Rail.Learnings.Actions.ChooseTaskProposalTest do
     assert %LearningProposal{status: :rejected, choice: nil} = Repo.reload!(proposal)
   end
 
+  test "a proposal of no task, or one gone, is not found", %{project: project, scope: scope} do
+    draft = learning(project, %{rule: "Daily pass draft", kind: :convention}, status: :proposed)
+    daily = Repo.insert!(%LearningProposal{project_id: project.id, action: :add, learning_id: draft.id})
+
+    assert {:error, :not_found} = Learnings.choose_task_proposal(scope, daily, :approved)
+    assert %LearningProposal{status: :pending, choice: nil} = Repo.reload!(daily)
+
+    assert {:error, :not_found} =
+             Learnings.choose_task_proposal(scope, %LearningProposal{id: "lpr_gone", project_id: project.id}, :rejected)
+  end
+
   test "once the task has merged, a choice decides at once", %{scope: scope, user_id: user_id, task: task} do
     {:ok, proposal} = Learnings.save_task_proposal(task, %{action: "add", rule: "Lock the row.", kind: "convention"})
+    {:ok, other} = Learnings.save_task_proposal(task, %{action: "add", rule: "Retry flaky tests.", kind: "qa"})
     Repo.update_all(from(t in Task, where: t.id == ^task.id), set: [merged_at: DateTime.utc_now()])
 
     assert {:ok, %LearningProposal{status: :approved, decided_by_id: ^user_id}} =
              Learnings.choose_task_proposal(scope, proposal, :approved)
 
     assert %Learning{status: :active, approved_by_id: ^user_id} = Repo.get!(Learning, proposal.learning_id)
+
+    assert {:ok, %LearningProposal{status: :rejected}} = Learnings.choose_task_proposal(scope, other, :rejected)
+    assert %Learning{status: :proposed} = Repo.get!(Learning, other.learning_id)
   end
 end

@@ -13,8 +13,7 @@ defmodule Rail.Learnings.Actions.FinalizeTaskProposals do
   alias Rail.Scope
 
   @doc """
-  Decides `task`'s chosen proposals, oldest first. Returns `:ok`, or the first `{:error, reason}` an approval gave, the
-  proposals before it decided.
+  Decides `task`'s chosen proposals, oldest first. Returns `:ok`.
   """
   def finalize_task_proposals(%Task{id: task_id}) do
     from(p in LearningProposal,
@@ -23,27 +22,23 @@ defmodule Rail.Learnings.Actions.FinalizeTaskProposals do
       preload: :decided_by
     )
     |> Repo.all()
-    |> Enum.reduce_while(:ok, fn proposal, :ok ->
-      case finalize(proposal, proposal.choice) do
-        {:error, reason} -> {:halt, {:error, reason}}
-        _decided -> {:cont, :ok}
-      end
-    end)
+    |> Enum.each(&finalize(&1, &1.choice))
   end
 
-  # Approving one can reject another of the task's on the rule it retires, which is then already decided.
+  # Approving one can reject another of the task's on the rule it retires, which is then already decided. A task only
+  # proposes an add, rewrite or retire, which approving cannot fail on otherwise.
   defp finalize(%LearningProposal{} = proposal, :approved) do
     case Learnings.approve_learning_proposal(chooser(proposal), proposal) do
-      {:error, :retired} -> finalize(proposal, :rejected)
+      {:ok, _approved} -> :ok
       {:error, :already_decided} -> :ok
-      result -> result
+      {:error, :retired} -> finalize(proposal, :rejected)
     end
   end
 
   defp finalize(%LearningProposal{} = proposal, :rejected) do
     case Learnings.reject_learning_proposal(chooser(proposal), proposal) do
+      {:ok, _rejected} -> :ok
       {:error, :already_decided} -> :ok
-      result -> result
     end
   end
 

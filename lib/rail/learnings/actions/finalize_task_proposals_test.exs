@@ -62,6 +62,31 @@ defmodule Rail.Learnings.Actions.FinalizeTaskProposalsTest do
     assert :ok = Learnings.finalize_task_proposals(task)
   end
 
+  test "a choice an earlier approval already decided is passed over, and a system choice approves as auto", %{
+    project: project,
+    scope: scope,
+    task: task
+  } do
+    old = learning(project, %{rule: "Send each comment.", kind: :decision})
+
+    {:ok, rewrite} =
+      Learnings.save_task_proposal(task, %{action: "rewrite", target: old.id, rule: "Send as one.", kind: "decision"})
+
+    {:ok, retire} = Learnings.save_task_proposal(task, %{action: "retire", target: old.id})
+    {:ok, also} = Learnings.save_task_proposal(task, %{action: "retire", target: old.id, title: "Again"})
+    {:ok, _chosen} = Learnings.choose_task_proposal(Rail.Scope.for_system(), rewrite, :approved)
+    {:ok, _chosen} = Learnings.choose_task_proposal(scope, retire, :approved)
+    {:ok, _chosen} = Learnings.choose_task_proposal(scope, also, :rejected)
+
+    assert :ok = Learnings.finalize_task_proposals(task)
+
+    # Approving the rewrite retired the rule and rejected what else was pending on it.
+    assert %LearningProposal{status: :approved, decided_by_id: nil} = Repo.reload!(rewrite)
+    assert %Learning{status: :active, auto: true} = Repo.get!(Learning, rewrite.learning_id)
+    assert %LearningProposal{status: :rejected} = Repo.reload!(retire)
+    assert %LearningProposal{status: :rejected} = Repo.reload!(also)
+  end
+
   test "an approved draft retired since it was chosen is rejected instead", %{scope: scope, task: task} do
     {:ok, add} = Learnings.save_task_proposal(task, %{action: "add", rule: "Lock the row.", kind: "convention"})
     {:ok, _chosen} = Learnings.choose_task_proposal(scope, add, :approved)
