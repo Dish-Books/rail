@@ -911,7 +911,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
       refute has_element?(view, "#learnings-channel-picker-options", "Acme")
     end
 
-    test "the learnings digest shows Don't post, or the channel Slack names now and its workspace", %{
+    test "the Slack alerts picker shows Don't post, or the channel Slack names now and its workspace", %{
       admin_conn: conn,
       project: project,
       posthog: posthog,
@@ -921,7 +921,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
       Req.Test.allow(Rail.Slack, self(), view.pid)
       view |> element("#edit-project-#{project.id}") |> render_click()
 
-      assert has_element?(view, "#learnings-channel-picker", "The curator's 06:00 UTC digest.")
+      assert has_element?(view, "#learnings-channel-picker", "Where Rail says a backend lost its sign-in.")
       assert has_element?(view, "#learnings-channel-picker-trigger", "Don't post")
       refute has_element?(view, "#learnings-channel-picker-saved")
 
