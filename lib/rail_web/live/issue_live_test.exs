@@ -1276,7 +1276,7 @@ defmodule RailWeb.IssueLiveTest do
       |> Repo.insert!()
 
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
-    # The pull request lookup the page starts on connect reloads the issue when it answers, so it answers first.
+    # The page's pull request check reloads the issue when it lands, so it lands before the sync's edit.
     render_async(view)
 
     issue |> Ecto.Changeset.change(title: "After sync") |> Repo.update!()

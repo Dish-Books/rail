@@ -15,7 +15,7 @@ defmodule Rail.Tools.Utils.AnnounceLostSession do
 
   @doc """
   Tells every project with a role whose model `backend` offers that it lost its
-  sign-in with nobody signing it out, in the channel the project's learnings digest posts in.
+  sign-in with nobody signing it out, in the project's alerts channel.
   A channel several projects share is told once, and one marked external never.
   """
   def announce_lost_session(%Backend{name: cli, models: models} = backend) do

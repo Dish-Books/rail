@@ -43,7 +43,7 @@ defmodule Rail.Projects.Schemas.Project do
     belongs_to :linear_workspace, LinearWorkspace
     # Whose MCP connections a triage pass uses; a pass whose role names any it cannot reach fails.
     belongs_to :triage_user, User
-    # Where the curator's digest posts. It is not a `slack_channels` row, so triage never reads it.
+    # Where Rail tells the team a backend lost its sign-in. It is not a `slack_channels` row, so triage never reads it.
     belongs_to :learnings_slack_workspace, SlackWorkspace
     field :learnings_channel_external_id, :string
 
