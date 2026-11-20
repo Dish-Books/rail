@@ -261,7 +261,6 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
       assert %Round{plan: ^plan} = Pipeline.read_plan(task)
     end
 
-    # Code is fenced, so a heading or a bullet inside a block is the code's, not the plan's.
     # A plan cites only what Plan is given: its own project's rules in force.
     test "a plan citing a rule not in force in its project is refused naming it, and leaves the earlier plan", %{
       task: task,
@@ -325,6 +324,7 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
       assert {:ok, %Round{plan: ^plan}} = Pipeline.save_plan(task, %{plan: plan})
     end
 
+    # Code is fenced, so a heading or a bullet inside a block is the code's, not the plan's.
     test "a plan with data changes, signatures and a sketch is saved, whatever its code blocks hold", %{task: task} do
       plan = """
       ## Implementation plan
