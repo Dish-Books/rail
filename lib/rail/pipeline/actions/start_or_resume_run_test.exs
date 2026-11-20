@@ -38,6 +38,20 @@ defmodule Rail.Pipeline.Actions.StartOrResumeRunTest do
     assert Repo.aggregate(Run, :count) == 1
   end
 
+  # CI stops sending its failures back after three in a row. A Retry is a person stepping in, so a run started again
+  # has its next failure sent back rather than stopping it on the spot.
+  test "a run started again counts its CI failures from none", %{task: task, role: role, worktree: worktree} do
+    stub(Git, :branch_fingerprint, fn ^worktree -> nil end)
+    {:ok, run} = Pipeline.start_or_resume_run(task, role, worktree)
+
+    {:ok, _stopped} =
+      run
+      |> Run.changeset(%{status: :finished, ci_failure_streak: 3, error: "CI failed 3 times in a row."})
+      |> Repo.update()
+
+    assert {:ok, %Run{ci_failure_streak: 0, error: nil}} = Pipeline.start_or_resume_run(task, role, worktree)
+  end
+
   test "leaves the fingerprint nil when git cannot answer", %{task: task, role: role, worktree: worktree} do
     expect(Git, :branch_fingerprint, fn ^worktree -> nil end)
 

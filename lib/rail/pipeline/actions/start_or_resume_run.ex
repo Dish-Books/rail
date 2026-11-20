@@ -28,6 +28,8 @@ defmodule Rail.Pipeline.Actions.StartOrResumeRun do
       stage_outcome: :in_progress,
       started_at: DateTime.utc_now(),
       error: nil,
+      # Starting a run again is a person stepping in, as a message is, so CI sends its failures back again.
+      ci_failure_streak: 0,
       stage_fingerprint_head_sha: head_sha,
       stage_fingerprint_dirty_digest: dirty_digest
     }
