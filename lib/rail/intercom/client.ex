@@ -10,6 +10,8 @@ defmodule Rail.Intercom.Client do
   @authorize_url "https://app.intercom.com/oauth"
   @version "2.11"
   @page_size 150
+  # Intercom answers 406 to an API call that doesn't ask for JSON, before it reads the token.
+  @api_headers [{"accept", "application/json"}, {"intercom-version", @version}]
 
   def me(token) when is_binary(token), do: get(token, "/me", [])
 
@@ -35,7 +37,7 @@ defmodule Rail.Intercom.Client do
     |> Req.post(
       url: "#{@api_url}/conversations/#{external_id}/reply",
       auth: {:bearer, token},
-      headers: [{"intercom-version", @version}],
+      headers: @api_headers,
       json: %{message_type: "comment", type: "admin", admin_id: admin_id, body: body}
     )
     |> answer()
@@ -64,6 +66,7 @@ defmodule Rail.Intercom.Client do
     req()
     |> Req.post(
       url: "#{@api_url}/auth/eagle/token",
+      headers: [{"accept", "application/json"}],
       form: [code: code, client_id: workspace.client_id, client_secret: workspace.client_secret]
     )
     |> answer()
@@ -71,7 +74,7 @@ defmodule Rail.Intercom.Client do
 
   defp get(token, path, params) do
     req()
-    |> Req.get(url: @api_url <> path, params: params, auth: {:bearer, token}, headers: [{"intercom-version", @version}])
+    |> Req.get(url: @api_url <> path, params: params, auth: {:bearer, token}, headers: @api_headers)
     |> answer()
   end
 

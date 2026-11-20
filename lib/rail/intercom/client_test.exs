@@ -15,11 +15,12 @@ defmodule Rail.Intercom.ClientTest do
     }
   end
 
-  test "me reads who a token belongs to, on that token and Intercom's API version" do
+  test "me reads who a token belongs to, on that token, asking for JSON on Intercom's API version" do
     Req.Test.expect(Intercom, fn conn ->
       assert conn.request_path == "/me"
       assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer tok_person"]
       assert Plug.Conn.get_req_header(conn, "intercom-version") == ["2.11"]
+      assert Plug.Conn.get_req_header(conn, "accept") == ["application/json"]
       Req.Test.json(conn, %{"id" => "42", "app" => %{"id_code" => "app_client"}})
     end)
 
@@ -44,6 +45,7 @@ defmodule Rail.Intercom.ClientTest do
       assert conn.request_path == "/conversations"
       assert %{"per_page" => "150", "starting_after" => "cur_1"} = conn.query_params
       assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer tok_workspace"]
+      assert Plug.Conn.get_req_header(conn, "accept") == ["application/json"]
 
       Req.Test.json(conn, %{
         "conversations" => [%{"id" => "1"}, %{"id" => "2"}],
@@ -84,6 +86,7 @@ defmodule Rail.Intercom.ClientTest do
       assert conn.method == "POST"
       assert conn.request_path == "/conversations/c9/reply"
       assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer tok_person"]
+      assert Plug.Conn.get_req_header(conn, "accept") == ["application/json"]
       {:ok, body, conn} = Plug.Conn.read_body(conn)
 
       assert %{"message_type" => "comment", "type" => "admin", "admin_id" => "77", "body" => "<p>Hi</p>"} =
@@ -125,6 +128,7 @@ defmodule Rail.Intercom.ClientTest do
   test "exchanges a code for a token with the app's client id and secret", %{workspace: workspace} do
     Req.Test.expect(Intercom, fn conn ->
       assert conn.request_path == "/auth/eagle/token"
+      assert Plug.Conn.get_req_header(conn, "accept") == ["application/json"]
       {:ok, body, conn} = Plug.Conn.read_body(conn)
       assert %{"code" => "code_1", "client_id" => "cid_1", "client_secret" => "secret_1"} = URI.decode_query(body)
       Req.Test.json(conn, %{"access_token" => "tok_person"})
