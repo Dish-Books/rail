@@ -20,6 +20,7 @@ defmodule RailWeb.Components.SettingsNavTest do
     refute html =~ "tab-projects"
     refute html =~ "tab-backends"
     refute html =~ "tab-users"
+    refute html =~ "tab-intercom-workspaces"
   end
 
   test "renders all tabs for admin user with active tab highlighted" do
@@ -35,5 +36,18 @@ defmodule RailWeb.Components.SettingsNavTest do
     assert html =~ "tab-projects"
     assert html =~ "tab-workflows"
     assert html =~ "border-indigo-500 text-indigo-600 font-semibold"
+  end
+
+  test "admins get an Intercom tab after Slack, highlighted on the Intercom page" do
+    html =
+      render_component(&SettingsNav.settings_nav/1,
+        current_scope: Scope.for_user(%{admin: true}),
+        active_tab: :intercom_workspaces
+      )
+
+    assert [_before, after_slack] = String.split(html, ~s(id="tab-slack-workspaces"))
+
+    assert after_slack =~
+             ~r/href="\/settings\/intercom-workspaces"[^>]*id="tab-intercom-workspaces" class="border-indigo-500/
   end
 end

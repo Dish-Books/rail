@@ -40,7 +40,16 @@ config :posthog,
 
 config :rail, Oban,
   repo: Rail.Repo,
-  queues: [issues: 5, tools: 1, toolchains: 1, git: 1, learnings: 2, learnings_embed: 5],
+  queues: [
+    issues: 5,
+    tools: 1,
+    toolchains: 1,
+    git: 1,
+    learnings: 2,
+    learnings_embed: 5,
+    support: 5,
+    support_agent: 3
+  ],
   # A job a restart cut off stays executing, and a unique one blocks every later job, until rescued.
   lifeline: [rescue_after: {30, :minutes}],
   plugins: [

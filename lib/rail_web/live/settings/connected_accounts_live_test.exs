@@ -8,6 +8,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
   alias Rail.Repo
   alias Rail.Scope
   alias Rail.Slack
+  alias Rail.Support
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
@@ -499,6 +500,92 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     view |> element("#disconnect-slack-button") |> render_click()
 
     assert has_element?(view, "#disconnect-slack-button")
+  end
+
+  describe "Intercom" do
+    setup %{project: project} do
+      app_id = "app#{System.unique_integer([:positive])}"
+      Req.Test.expect(Rail.Intercom, &Req.Test.json(&1, %{"app" => %{"id_code" => app_id}}))
+
+      {:ok, workspace} =
+        Support.create_intercom_workspace(system_scope(), project, %{
+          "name" => "Dishbooks Support",
+          "access_token" => "tok",
+          "client_id" => "cid",
+          "client_secret" => "sec"
+        })
+
+      %{workspace: workspace, app_id: app_id}
+    end
+
+    test "shows only once a workspace is connected, with one Connect per workspace", %{
+      authed_conn: conn,
+      workspace: workspace,
+      project: project
+    } do
+      {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+      assert has_element?(view, "#intercom-disconnected-message", "cannot send from Support")
+
+      assert has_element?(
+               view,
+               ~s(#connect-intercom-#{workspace.id}[href="/auth/intercom?workspace_id=#{workspace.id}"]),
+               "Connect Intercom"
+             )
+
+      Req.Test.expect(Rail.Intercom, &Req.Test.json(&1, %{"app" => %{"id_code" => "second#{workspace.id}"}}))
+
+      {:ok, second} =
+        Support.create_intercom_workspace(system_scope(), project, %{
+          "name" => "EU Support",
+          "access_token" => "tok2",
+          "client_id" => "cid2",
+          "client_secret" => "sec2"
+        })
+
+      send(view.pid, {:intercom_workspace_changed, second.id})
+      assert has_element?(view, "#connect-intercom-#{workspace.id}", "Connect Dishbooks Support")
+      assert has_element?(view, "#connect-intercom-#{second.id}", "Connect EU Support")
+    end
+
+    test "connected shows the teammate's name, Disconnect clears it, and a link made elsewhere shows", %{
+      authed_conn: conn,
+      user: user,
+      app_id: app_id
+    } do
+      {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+
+      {:ok, _linked} =
+        Users.update_user(system_scope(), user, %{
+          intercom_admin_id: "42",
+          intercom_app_id: app_id,
+          intercom_name: "Dana Whitfield",
+          intercom_access_token: "ic-tok"
+        })
+
+      send(view.pid, {:users_changed, user.id})
+      assert has_element?(view, "#intercom-connected-details", "Dana Whitfield")
+
+      view |> element("#disconnect-intercom-button") |> render_click()
+
+      assert has_element?(view, "#intercom-disconnected-message")
+      assert %User{intercom_access_token: nil, intercom_app_id: nil} = Repo.reload!(user)
+    end
+
+    test "a disconnect that fails changes nothing on the page", %{authed_conn: conn, user: user} do
+      {:ok, _linked} = Users.update_user(system_scope(), user, %{intercom_access_token: "ic-tok"})
+      expect(Users, :unlink_intercom, fn _scope -> {:error, :db_error} end)
+
+      {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+      assert has_element?(view, "#intercom-user-name", "Intercom teammate")
+      view |> element("#disconnect-intercom-button") |> render_click()
+
+      assert has_element?(view, "#disconnect-intercom-button")
+    end
+  end
+
+  test "has no Intercom row while no workspace is connected", %{authed_conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+    refute has_element?(view, "#intercom-account-section")
   end
 
   describe "Slack notifications" do

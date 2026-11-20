@@ -80,6 +80,17 @@ defmodule RailWeb.Components.NavTest do
              ~s(id="triage-badge")
   end
 
+  test "the Support destination sits between Overview and Triage, with no badge, and is active on Support" do
+    html = render_component(&Nav.nav/1, current_section: :support, attention_count: 0, triage_count: 0)
+
+    assert [_before, after_overview] = String.split(html, ~s(id="nav-overview"))
+    assert [between, _after] = String.split(after_overview, ~s(id="nav-triage"))
+    assert between =~ ~r/id="nav-support"[^>]*data-active="true"/
+    assert between =~ ~s(href="/support")
+    assert between =~ ~s(aria-label="Support")
+    refute between =~ "badge"
+  end
+
   test "the Testing destination sits between Triage and Issues, with no badge" do
     html = render_component(&Nav.nav/1, current_section: :testing, attention_count: 0, triage_count: 0)
 
@@ -207,6 +218,12 @@ defmodule RailWeb.Components.NavTest do
       {:workflows, "Settings"},
       {:users, "Settings"},
       {:roles, "Settings"},
+      {:slack_workspaces, "Settings"},
+      {:intercom_workspaces, "Settings"},
+      {:support, "Support"},
+      {:triage, "Triage"},
+      {:testing, "Testing"},
+      {:learnings, "Learnings"},
       {:tasks, "Task"},
       {:other_custom, "Rail"}
     ]

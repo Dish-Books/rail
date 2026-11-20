@@ -4,6 +4,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
 
   alias Rail.Mcp
   alias Rail.Scope
+  alias Rail.Support
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
@@ -13,6 +14,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Rail.PubSub, "users")
       Phoenix.PubSub.subscribe(Rail.PubSub, "mcp_authorizations")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "intercom_workspaces")
     end
 
     socket =
@@ -27,6 +29,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
       |> assign(:slack_connected, Scope.slack_linked?(current_scope))
       |> assign(:slack_name, user.slack_name)
       |> assign(:slack_notifications_error, nil)
+      |> assign(:intercom_workspaces, Support.list_intercom_workspaces())
       |> assign(:signing_error, nil)
       |> assign(:repository_access, repository_access(socket.assigns.projects))
       |> assign(:mcp_servers, Enum.filter(Mcp.list_servers(), &(&1.enabled and &1.auth == :oauth)))
@@ -464,6 +467,60 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
             </div>
 
             <div
+              :if={@intercom_workspaces != []}
+              id="intercom-account-section"
+              class="flex flex-wrap items-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 p-4"
+            >
+              <.account_avatar label="I" src={nil} id="intercom-avatar" />
+
+              <div class="min-w-0 flex-1">
+                <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Intercom</h3>
+
+                <p
+                  :if={@intercom_connected}
+                  id="intercom-connected-details"
+                  class="mt-0.5 text-sm text-slate-500 dark:text-slate-400 truncate"
+                >
+                  <span id="intercom-user-name">{@intercom_name || "Intercom teammate"}</span>
+                  · replies from Support go out as you
+                </p>
+
+                <p
+                  :if={!@intercom_connected}
+                  id="intercom-disconnected-message"
+                  class="mt-0.5 text-sm text-slate-500 dark:text-slate-400"
+                >
+                  Not connected - you cannot send from Support until you connect.
+                </p>
+              </div>
+
+              <span :if={@intercom_connected} class="text-sm text-emerald-600 dark:text-emerald-400">
+                Connected
+              </span>
+
+              <.button
+                :if={@intercom_connected}
+                variant="secondary"
+                phx-click="disconnect_intercom"
+                id="disconnect-intercom-button"
+              >
+                Disconnect
+              </.button>
+
+              <.button
+                :for={workspace <- @intercom_workspaces}
+                :if={!@intercom_connected}
+                variant="primary"
+                href={~p"/auth/intercom?#{[workspace_id: workspace.id]}"}
+                id={"connect-intercom-#{workspace.id}"}
+              >
+                {if length(@intercom_workspaces) == 1,
+                  do: "Connect Intercom",
+                  else: "Connect #{workspace.name}"}
+              </.button>
+            </div>
+
+            <div
               :for={server <- @mcp_servers}
               id={"mcp-server-section-#{server.name}"}
               class="flex items-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 p-4"
@@ -773,6 +830,13 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
     end
   end
 
+  def handle_event("disconnect_intercom", _params, socket) do
+    case Users.unlink_intercom(socket.assigns.current_scope) do
+      {:ok, user} -> {:noreply, apply_user(socket, user)}
+      {:error, _reason} -> {:noreply, socket}
+    end
+  end
+
   def handle_event("set_slack_notifications", %{"on" => on}, socket) do
     socket =
       case Users.set_slack_notifications(socket.assigns.current_scope, on == "true") do
@@ -835,6 +899,9 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
   end
 
   def handle_info({:users_changed, _someone_else}, socket), do: {:noreply, socket}
+
+  def handle_info({:intercom_workspace_changed, _id}, socket),
+    do: {:noreply, assign(socket, :intercom_workspaces, Support.list_intercom_workspaces())}
 
   # A connection made, used or revoked in Claude or another tab; a modal for one now gone closes.
   def handle_info({:mcp_authorizations_changed, id}, %{assigns: %{current_user: %User{id: id}}} = socket) do
@@ -915,6 +982,8 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
     |> assign(:signing_key?, User.signing?(user))
     |> assign(:signing_fingerprint, User.signing_fingerprint(user))
     |> assign(:slack_notifications, user.slack_notifications)
+    |> assign(:intercom_connected, Scope.intercom_linked?(Scope.for_user(user)))
+    |> assign(:intercom_name, user.intercom_name)
   end
 
   defp slack_notifications_message(false, _on?), do: "Connect Slack to get notifications."

@@ -22,8 +22,10 @@ defmodule Rail.Triage.Actions.GetTriageThread do
         preload: [
           :project,
           :dismissed_by,
+          :forwarded_by,
           slack_channel: :slack_workspace,
-          messages: ^from(m in Message, order_by: [asc: m.posted_at], preload: :sent_by_user),
+          # A forwarded copy carries Intercom's whole-second times, so the id breaks ties.
+          messages: ^from(m in Message, order_by: [asc: m.posted_at, asc: m.id], preload: :sent_by_user),
           items:
             ^from(i in Item,
               order_by: [asc: i.position],

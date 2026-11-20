@@ -5,11 +5,15 @@ defmodule RailWeb.TriageLiveTest do
   import Phoenix.LiveViewTest
 
   alias Rail.Git
+  alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
+  alias Rail.Support
+  alias Rail.Support.Schemas.Conversation
+  alias Rail.Tools
   alias Rail.Triage
   alias Rail.Triage.Schemas.Item
   alias Rail.Triage.Schemas.Thread
@@ -622,7 +626,7 @@ defmodule RailWeb.TriageLiveTest do
       })
     end)
 
-    {:ok, %{id: tracked_issue_id}} = Rail.Issues.create_issue(system_scope(), project, %{title: "Wait times"})
+    {:ok, %{id: tracked_issue_id}} = Issues.create_issue(system_scope(), project, %{title: "Wait times"})
 
     {:ok, thread} =
       Triage.handle_slack_event(
@@ -1042,6 +1046,179 @@ defmodule RailWeb.TriageLiveTest do
       view |> element("[aria-label='Enlarge live.png']") |> render_click()
       refute render(view) =~ "files.slack.com"
       refute render(view) =~ "xoxb-bot"
+    end
+  end
+
+  describe "a thread forwarded from Intercom" do
+    setup %{user: user, project: slack_project} do
+      %{project: project} = triage_project(tracker: :local)
+      {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [slack_project.id, project.id]})
+      unique = System.unique_integer([:positive])
+      app_id = "app#{unique}"
+
+      Req.Test.expect(Rail.Intercom, &Req.Test.json(&1, %{"app" => %{"id_code" => app_id}}))
+
+      {:ok, workspace} =
+        Support.create_intercom_workspace(system_scope(), project, %{
+          "name" => "Dishbooks Support",
+          "access_token" => "tok",
+          "client_id" => "cid",
+          "client_secret" => "sec"
+        })
+
+      payload = %{
+        "id" => "c#{unique}",
+        "created_at" => 1_790_000_000,
+        "updated_at" => 1_790_000_100,
+        "state" => "open",
+        "source" => %{
+          "id" => "s1",
+          "body" => "<p>The sesame is missing and the PDF stops.</p>",
+          "author" => %{"type" => "user", "name" => "Marta Kowalczyk", "email" => "marta@example.com"}
+        },
+        "conversation_parts" => %{
+          "conversation_parts" => [
+            %{
+              "id" => "p1",
+              "part_type" => "note",
+              "created_at" => 1_790_000_100,
+              "body" => "<p>Looks like a bug.</p>",
+              "author" => %{"type" => "admin", "name" => "Dana Whitfield"}
+            }
+          ]
+        }
+      }
+
+      Req.Test.expect(Rail.Intercom, &Req.Test.json(&1, payload))
+      {:ok, conversation} = Support.sync_intercom_conversation(workspace, payload["id"])
+
+      items =
+        for {key, title} <- [{"sesame", "The allergen sheet lists sesame"}, {"pdf", "The PDF prints the whole method"}] do
+          %{
+            "key" => key,
+            "kind" => "bug",
+            "title" => title,
+            "verdict" => "confirmed",
+            "assumptions" => [%{"text" => "Tahini is sesame."}],
+            "issue" => %{"title" => title, "description" => "Seen on Intercom.", "priority" => "high"}
+          }
+        end
+
+      expect(Tools, :run_agent, fn _role, _argv, _opts ->
+        conversation
+        |> Conversation.scratch_path()
+        |> Path.join("result.json")
+        |> File.write!(Jason.encode!(%{"message" => "Two bugs.", "reply" => "Passed on.", "items" => items}))
+
+        {:ok, ""}
+      end)
+
+      {:ok, _drafting} = Support.draft_support_reply(system_scope(), conversation)
+      :ok = Support.run_support_agent(conversation)
+
+      {:ok, user} =
+        Users.update_user(system_scope(), user, %{
+          intercom_admin_id: "7",
+          intercom_app_id: app_id,
+          intercom_name: "Dana Whitfield",
+          intercom_access_token: "ic-tok"
+        })
+
+      Req.Test.expect(Rail.Intercom, &Req.Test.json(&1, %{"type" => "conversation"}))
+      {:ok, _sent} = Support.send_support_reply(Rail.Scope.for_user(user), conversation)
+
+      [thread] =
+        Repo.all(
+          from t in Thread,
+            where: t.project_id == ^project.id,
+            preload: [items: ^from(i in Item, order_by: i.position)]
+        )
+
+      %{forwarded: thread, user: user}
+    end
+
+    test "is marked as from Intercom, shows the conversation and who forwarded it, and takes no notes", %{
+      conn: conn,
+      user: user,
+      forwarded: %Thread{id: thread_id, permalink: permalink, items: [first, _second]}
+    } do
+      {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}")
+
+      assert has_element?(view, "#triage-row-#{thread_id}", "Intercom")
+      assert has_element?(view, "#triage-row-#{thread_id}", "Forwarded by #{user.name}")
+      assert has_element?(view, "#triage-thread", "Intercom")
+      assert has_element?(view, ~s(#open-in-slack[href="#{permalink}"]), "Open in Intercom")
+      assert has_element?(view, "#triage-thread", "Internal note: Looks like a bug.")
+      assert has_element?(view, "#forwarded-note", "Forwarded by #{user.name}")
+      refute has_element?(view, "#note-form")
+      assert has_element?(view, "#triage-items", "Support already replied.")
+      assert has_element?(view, "#create-forwarded-button", "Create 2 tickets")
+      refute has_element?(view, "#create-issue-#{first.id}")
+      refute has_element?(view, "#correct-#{first.id}-0")
+      refute has_element?(view, "#connect-slack-#{first.id}")
+      assert has_element?(view, "#issue-line-#{first.id}", "links back to the Intercom conversation")
+      refute has_element?(view, "#triage-again-button")
+
+      render_click(view, "retriage", %{})
+      assert has_element?(view, "#forward-error", "forwarded from Intercom")
+    end
+
+    test "Create 2 tickets creates both with what was typed, and settles the thread", %{
+      conn: conn,
+      forwarded: %Thread{id: thread_id, items: [first, second]}
+    } do
+      {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}")
+
+      view
+      |> form("#issue-form-#{first.id}", %{"item" => %{"issue_title" => "Sesame shows on the allergen sheet"}})
+      |> render_change()
+
+      view |> element("#create-forwarded-button") |> render_click()
+
+      assert %Thread{status: :done} = Repo.get!(Thread, thread_id)
+
+      assert [%Item{created_issue: %Issue{title: "Sesame shows on the allergen sheet"}}, %Item{created_issue: %Issue{}}] =
+               Repo.all(
+                 from i in Item, where: i.id in ^[first.id, second.id], order_by: i.position, preload: :created_issue
+               )
+
+      refute has_element?(view, "#create-forwarded-button")
+      refute has_element?(view, "#forward-error")
+    end
+
+    test "an item that could not be created is named, the others are, and Enter in a form creates them too", %{
+      conn: conn,
+      forwarded: %Thread{id: thread_id, items: [first, second]}
+    } do
+      {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}")
+      allow(Issues, self(), view.pid)
+      expect(Issues, :create_issue, fn _scope, _project, _attrs -> {:error, :tracker_down} end)
+
+      expect(Issues, :create_issue, fn scope, project, attrs ->
+        call_original(Issues, :create_issue, [scope, project, attrs])
+      end)
+
+      view |> form("#issue-form-#{second.id}") |> render_submit()
+
+      assert has_element?(view, "#forward-error", "Could not create item 1. Try again; the others are created.")
+      assert has_element?(view, "#create-forwarded-button", "Create 1 ticket")
+      assert %Item{created_issue_id: nil} = Repo.get!(Item, first.id)
+      assert %Item{created_issue: %Issue{}} = Item |> Repo.get!(second.id) |> Repo.preload(:created_issue)
+    end
+
+    test "a person who lost the project sees the thread go when they create", %{
+      conn: conn,
+      user: user,
+      forwarded: %Thread{id: thread_id}
+    } do
+      {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}")
+
+      :sys.replace_state(view.pid, fn state ->
+        put_in(state.socket.assigns.current_scope, Rail.Scope.for_user(%{user | project_ids: []}))
+      end)
+
+      view |> element("#create-forwarded-button") |> render_click()
+      refute has_element?(view, "#triage-thread")
     end
   end
 end

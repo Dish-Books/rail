@@ -3,6 +3,8 @@ defmodule Rail.Triage.Actions.AddTriageNoteTest do
 
   alias Rail.Git
   alias Rail.Scope
+  alias Rail.Support.Schemas.Conversation
+  alias Rail.Support.Schemas.IntercomWorkspace
   alias Rail.Tools
   alias Rail.Triage
   alias Rail.Triage.Schemas.Item
@@ -98,5 +100,36 @@ defmodule Rail.Triage.Actions.AddTriageNoteTest do
     {:ok, _dismissed} = Triage.dismiss_triage_thread(scope, thread)
 
     assert {:error, :settled} = Triage.add_triage_note(scope, bug_item, %{"text" => "Too late."})
+  end
+
+  test "a note on a thread forwarded from Intercom is refused and starts no pass", %{
+    thread: %Thread{id: thread_id, project_id: project_id, items: [bug_item | _request]},
+    scope: scope
+  } do
+    workspace =
+      Repo.insert!(%IntercomWorkspace{
+        project_id: project_id,
+        name: "Support",
+        external_id: "note_#{thread_id}",
+        access_token: "tok",
+        client_id: "cid",
+        client_secret: "sec"
+      })
+
+    conversation =
+      Repo.insert!(%Conversation{
+        project_id: project_id,
+        intercom_workspace_id: workspace.id,
+        external_id: "1",
+        intercom_updated_at: DateTime.utc_now()
+      })
+
+    Repo.update_all(from(t in Thread, where: t.id == ^thread_id),
+      set: [support_conversation_id: conversation.id, slack_channel_id: nil]
+    )
+
+    assert {:error, :forwarded} = Triage.add_triage_note(scope, bug_item, %{"text" => "Check again"})
+    refute_received {:triage_scheduled, ^thread_id, _delay}
+    refute Repo.exists?(from(n in Note, where: n.item_id == ^bug_item.id))
   end
 end

@@ -8,6 +8,7 @@ defmodule Rail.Triage.Schemas.Thread do
 
   alias Rail.Projects.Schemas.Project
   alias Rail.Projects.Schemas.SlackChannel
+  alias Rail.Support.Schemas.Conversation
   alias Rail.Triage.Schemas.Item
   alias Rail.Triage.Schemas.Message
   alias Rail.Triage.Schemas.Note
@@ -33,6 +34,9 @@ defmodule Rail.Triage.Schemas.Thread do
 
     belongs_to :project, Project
     belongs_to :slack_channel, SlackChannel
+    # Set on a thread a support person forwarded from Intercom, which has no channel.
+    belongs_to :support_conversation, Conversation
+    belongs_to :forwarded_by, User
     belongs_to :dismissed_by, User
 
     has_many :messages, Message
@@ -49,7 +53,40 @@ defmodule Rail.Triage.Schemas.Thread do
     |> unique_constraint([:slack_channel_id, :external_id])
   end
 
+  @doc """
+  A thread a support person forwarded from Intercom: waiting, with no channel, and never triaged.
+  """
+  def forwarded_changeset(%Conversation{} = conversation, %User{id: user_id}, inbox_url) do
+    now = DateTime.utc_now()
+
+    change(
+      %__MODULE__{
+        project_id: conversation.project_id,
+        support_conversation_id: conversation.id,
+        forwarded_by_id: user_id,
+        status: :waiting,
+        last_message_at: now
+      },
+      external_id: "intercom:#{conversation.external_id}:#{DateTime.to_unix(now, :microsecond)}",
+      title: conversation.title,
+      permalink: inbox_url
+    )
+  end
+
   def statuses, do: @statuses
+
+  def forwarded?(%__MODULE__{support_conversation_id: id}), do: is_binary(id)
+
+  @doc """
+  Where the thread came from, for the queue and the header. Needs the channel preloaded.
+  """
+  def source_label(%__MODULE__{support_conversation_id: id}) when is_binary(id), do: "Intercom"
+  def source_label(%__MODULE__{slack_channel: %SlackChannel{name: name}}), do: "##{name}"
+
+  def link_label(%__MODULE__{} = thread), do: if(forwarded?(thread), do: "Intercom conversation", else: "Slack thread")
+
+  def external?(%__MODULE__{slack_channel: %SlackChannel{external: external}}), do: external
+  def external?(%__MODULE__{}), do: false
 
   @doc """
   Where a pass writes the thread, the issues list and its result, outside any repository.
@@ -66,9 +103,11 @@ defmodule Rail.Triage.Schemas.Thread do
   @doc """
   Whether `message` is one triage reads. A post made through Rail never is, and
   a bot's only where the channel opted in and the bot is not Rail's own, unless
-  a person asked for the thread to be triaged anyway. Needs the channel and its
+  a person asked for the thread to be triaged anyway. A forwarded thread has none. Needs the channel and its
   workspace preloaded.
   """
+  def triggering?(%__MODULE__{slack_channel_id: nil}, %Message{}), do: false
+
   def triggering?(%__MODULE__{} = thread, %Message{} = message) do
     %SlackChannel{bot_triage_enabled: bots?, slack_workspace: workspace} = thread.slack_channel
 

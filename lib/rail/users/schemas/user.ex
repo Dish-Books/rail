@@ -29,6 +29,11 @@ defmodule Rail.Users.Schemas.User do
     field :slack_access_token, EncryptedBinary, redact: true
     # Only `slack_notifications_changeset/2` turns it on, so an admin editing a user cannot.
     field :slack_notifications, :boolean, default: false
+    # Which Intercom app the link is for, so Send refuses a conversation in another workspace.
+    field :intercom_admin_id, :string
+    field :intercom_app_id, :string
+    field :intercom_name, :string
+    field :intercom_access_token, EncryptedBinary, redact: true
     # The Issues page's filters as the URL parameters that set them; only `issues_filters_changeset/2` writes it.
     field :issues_filters, :map, default: %{}
     field :signing_key, EncryptedBinary, redact: true
@@ -63,6 +68,10 @@ defmodule Rail.Users.Schemas.User do
     :slack_team_id,
     :slack_name,
     :slack_access_token,
+    :intercom_admin_id,
+    :intercom_app_id,
+    :intercom_name,
+    :intercom_access_token,
     :signing_key,
     :signing_public_key,
     :signing_key_github_id
