@@ -12,6 +12,7 @@ defmodule Rail.Pipeline.Actions.ReadDesign do
   alias Rail.Pipeline.Schemas.Task
 
   @key ~r/\A[a-z0-9-]+\z/
+  @max_rows 20
 
   @doc """
   Returns `task`'s design, or `nil` when the designer has not written a manifest
@@ -22,12 +23,16 @@ defmodule Rail.Pipeline.Actions.ReadDesign do
   phrases), `:assumptions`, `:html` (the page, or `nil` when it is not written
   yet), `:html_version` (a URL-safe digest of the page, or `nil` with it),
   `:html_path`, `:screenshot_path` and `:screenshot_version` (when the
-  screenshot was last written, or `nil` when there is none). An option without a
-  usable key or title is no option, and a pick naming no option is no pick.
+  screenshot was last written, or `nil` when there is none), `:web`, whether the
+  page marks a web screen, and `:rows`, its phone screens one per state in page
+  order: `%{state: name | nil, ios: "ios-n" | nil, android: "android-n" | nil}`.
+  An option without a usable key or title is no option, and a pick naming no
+  option is no pick.
 
   A manifest written before options carried their tradeoffs has only `notes`,
   which stands in as the summary. `pages: false` leaves every `:html` and
-  `:html_version` `nil` rather than reading the pages, for a caller that only counts.
+  `:html_version` `nil`, `:web` false and `:rows` empty rather than reading the
+  pages, for a caller that only counts.
   """
   def read_design(%Task{scratch_path: scratch_path}, opts \\ []) do
     dir = Path.join(scratch_path, "design")
@@ -53,6 +58,7 @@ defmodule Rail.Pipeline.Actions.ReadDesign do
     html_path = Path.join(dir, "#{key}.html")
     screenshot_path = Path.join(dir, "#{key}.png")
     html = if pages?, do: html(html_path)
+    marks = marks(html)
 
     %{
       key: key,
@@ -63,6 +69,8 @@ defmodule Rail.Pipeline.Actions.ReadDesign do
       assumptions: text(option["assumptions"]) || "",
       html: html,
       html_version: html_version(html),
+      web: Enum.any?(marks, &(&1.screen == "web")),
+      rows: rows(marks),
       html_path: html_path,
       screenshot_path: screenshot_path,
       screenshot_version: version(screenshot_path)
@@ -85,6 +93,41 @@ defmodule Rail.Pipeline.Actions.ReadDesign do
     case File.read(path) do
       {:ok, html} -> html
       {:error, _unwritten} -> nil
+    end
+  end
+
+  # Counted as the browser counts them: a template's content is no element, and a value is matched exactly.
+  # Floki's parser takes any bytes, so a page that is no HTML has no marks rather than an error.
+  defp marks(html) when is_binary(html) do
+    for element <- html |> Floki.parse_document!() |> Floki.filter_out("template") |> Floki.find("[data-screen]"),
+        [screen] = Floki.attribute(element, "data-screen"),
+        screen in ["ios", "android", "web"] do
+      %{screen: screen, state: state(Floki.attribute(element, "data-state"))}
+    end
+  end
+
+  defp marks(nil), do: []
+
+  # The page is the agent's, and a name in another encoding would break the page that shows it.
+  defp state([name | _rest]) do
+    case name |> String.replace_invalid() |> String.trim() |> String.slice(0, 120) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp state([]), do: nil
+
+  # The nth iOS screen and the nth Android screen are one state, named by either, iOS first.
+  defp rows(marks) do
+    ios = Enum.filter(marks, &(&1.screen == "ios"))
+    android = Enum.filter(marks, &(&1.screen == "android"))
+    count = min(max(length(ios), length(android)), @max_rows)
+
+    for n <- 1..count//1 do
+      i = Enum.at(ios, n - 1)
+      a = Enum.at(android, n - 1)
+      %{state: (i && i.state) || (a && a.state), ios: i && "ios-#{n}", android: a && "android-#{n}"}
     end
   end
 
