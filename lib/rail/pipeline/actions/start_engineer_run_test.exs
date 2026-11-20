@@ -107,6 +107,8 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
       assert prompt =~ "its base is main on remote `origin`"
       assert prompt =~ "Ask everything at once."
       assert prompt =~ "Run every command in the foreground and wait for it"
+      assert prompt =~ "When the change reaches iOS or Android"
+      assert prompt =~ "start the project's API server that same way instead of `pnpm dev`"
 
       {:ok, %OsProcess{run: spawned}}
     end)

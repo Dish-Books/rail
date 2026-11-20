@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
 
   import Rail.Pipeline.Utils.ChangeContext
   import Rail.Pipeline.Utils.LearningsBrief
+  import Rail.Pipeline.Utils.MobileAppBrief
   import Rail.Pipeline.Utils.RoundChange
 
   alias Rail.Issues.Schemas.Issue
@@ -57,7 +58,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
     How your part works:
 
     1. #{checklist(task)}
-    2. Start the app server from the worktree and drive the app in your browser. #{browser("qa", scratch_path)}
+    2. Start the app server from the worktree and drive the app in your browser. #{browser("qa", scratch_path)} #{mobile_app_brief()}
     3. Run each check and mark it with `qa_check` as soon as you have run it, with one line on what you saw. Take a picture with `qa_shot` at the point a check asserts something on screen. `qa_shot` saves it under #{Path.join(scratch_path, "qa")} and returns its path. Write a log, query output or any other file that proves a check there yourself.
     4. #{screens(task)}
     5. Re-check every finding below that is not ruled Don't fix or New issue and can be seen in the app, and say for each whether it still fails.

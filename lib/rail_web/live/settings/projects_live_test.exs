@@ -489,7 +489,17 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     admin_user: admin
   } do
     assert {:ok,
-            %Project{id: project_id, qa_skip_paths: ["**/*_test.exs", "**/test/**", "**/*.test.{ts,tsx,js}", "**/*.md"]}} =
+            %Project{
+              id: project_id,
+              qa_skip_paths: [
+                "**/*_test.exs",
+                "**/test/**",
+                "**/*.test.{ts,tsx,js}",
+                "**/*Tests.swift",
+                "**/src/androidTest/**",
+                "**/*.md"
+              ]
+            }} =
              Projects.create_project(Scope.for_user(admin), %{
                name: "Unseen App",
                github_repo: "example/unseen-#{System.unique_integer([:positive])}",
