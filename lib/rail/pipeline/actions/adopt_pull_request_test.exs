@@ -84,15 +84,18 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
       end
     end)
 
-    # Every task's scratch directory is under its project's, and this project is the test's own.
+    # Every task's scratch directory and clone are under its project's, and this project is the test's own.
     on_exit(fn -> File.rm_rf(Path.join(Application.fetch_env!(:rail, :scratch_root), project.id)) end)
+    on_exit(fn -> File.rm_rf(Path.join(Rail.tasks_root(), project.id)) end)
 
-    # The pull request's branch is on the remote alone, as one pushed from someone's own checkout is, so it is
-    # fetched into the clone and the task's worktree made on it.
-    stub(Git, :fetch_branch, fn %Project{id: ^project_id}, "outside/vendor-filter" -> :ok end)
-
+    # The pull request's branch is on the remote alone, as one pushed from someone's own checkout is, so the task's
+    # clone is made on it as the remote has it.
     stub(Git, :get_or_create_worktree, fn %Project{id: ^project_id},
-                                          %Task{worktree_name: "outside/vendor-filter", worktree_path: path} ->
+                                          %Task{
+                                            worktree_name: "outside/vendor-filter",
+                                            pr_number: 12,
+                                            worktree_path: path
+                                          } ->
       File.mkdir_p!(path)
       {:ok, path}
     end)
@@ -119,15 +122,14 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
 
   test "starts the issue's task at Review on the pull request's branch, with QA and the code reviewer checking it", %{
     scope: scope,
-    project: %Project{id: project_id} = project,
+    project: %Project{id: project_id},
     issue: issue
   } do
-    expect(Git, :fetch_branch, fn %Project{id: ^project_id}, "outside/vendor-filter" -> :ok end)
     expect(Tools, :start_os_process, 2, fn %Run{} = run, _argv -> {:ok, %OsProcess{run: run}} end)
 
     assert {:ok, %Task{} = task} = Pipeline.adopt_pull_request(scope, issue)
 
-    worktree_path = Path.join(project.clone_path, ".worktrees/outside/vendor-filter")
+    worktree_path = Path.join([Rail.tasks_root(), project_id, "outside/vendor-filter", "repo"])
 
     assert %Task{
              stage: :review,
@@ -239,8 +241,9 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
     scope = Scope.for_user(starter)
 
-    # Claiming locks the issue's row, which a git fetch must not hold, so no owner is set yet in here.
+    # No transaction waits on a git fetch, so neither the task nor its claim on the issue exists yet in here.
     expect(Git, :get_or_create_worktree, fn _project, %Task{issue_id: ^issue_id} ->
+      refute Repo.get_by(Task, issue_id: issue_id)
       assert %Issue{owner_user_id: nil} = Repo.get!(Issue, issue_id)
       {:error, "no checkout"}
     end)
@@ -260,6 +263,26 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
     assert %Issue{owner_user_id: nil} = Repo.reload!(issue)
     refute_enqueued(worker: SyncIssue)
     refute_enqueued(worker: AdvanceTrackerState)
+    refute_received {:issue_changed, ^issue_id}
+  end
+
+  test "a second adoption that loses to one made while it cloned records nothing and claims nothing", %{
+    issue: %{id: issue_id} = issue,
+    starter: starter
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
+    expect(Git, :get_or_create_worktree, fn _project, %Task{worktree_path: path} ->
+      {:ok, %Task{}} = issue |> Repo.preload(:project) |> Pipeline.create_task(:review)
+      {:ok, path}
+    end)
+
+    assert {:error, %Ecto.Changeset{errors: [issue_id: {_taken, _constraint}]}} =
+             Pipeline.adopt_pull_request(Scope.for_user(starter), issue)
+
+    assert [%Task{pr_number: nil}] = Repo.all(from t in Task, where: t.issue_id == ^issue_id)
+    assert %Issue{owner_user_id: nil} = Repo.reload!(issue)
+    refute_enqueued(worker: SyncIssue)
     refute_received {:issue_changed, ^issue_id}
   end
 
@@ -362,11 +385,6 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
   end
 
   test "leaves the issue without a task when the branch will not fetch or check out", %{scope: scope, issue: issue} do
-    expect(Git, :fetch_branch, fn _project, _branch -> {:error, "no fetch"} end)
-
-    assert {:error, "no fetch"} = Pipeline.adopt_pull_request(scope, issue)
-    refute Repo.get_by(Task, issue_id: issue.id)
-
     expect(Git, :get_or_create_worktree, fn _project, _task -> {:error, "no checkout"} end)
 
     assert {:error, "no checkout"} = Pipeline.adopt_pull_request(scope, issue)

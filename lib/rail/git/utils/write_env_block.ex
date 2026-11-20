@@ -41,7 +41,7 @@ defmodule Rail.Git.Utils.WriteEnvBlock do
           end
 
         with {:ok, kept} <- kept,
-             :ok <- exclude_env(clone) do
+             :ok <- exclude_env(clone, worktree_path) do
           target |> File.write(Enum.join([@open | ours] ++ [@close | kept], "\n") <> "\n") |> said(target)
         end
 
@@ -73,9 +73,10 @@ defmodule Rail.Git.Utils.WriteEnvBlock do
     end
   end
 
-  # Every worktree reads the clone's exclude file, so the file never shows as a change in any of them.
-  defp exclude_env(clone) do
-    info = Path.join([clone, ".git", "info"])
+  # A worktree reads its clone's exclude file; a clone of its own reads only its own.
+  defp exclude_env(clone, worktree_path) do
+    own = Path.join(worktree_path, ".git")
+    info = Path.join(if(File.dir?(own), do: own, else: Path.join(clone, ".git")), "info")
     exclude = Path.join(info, "exclude")
 
     with :ok <- info |> File.mkdir_p() |> said(info) do

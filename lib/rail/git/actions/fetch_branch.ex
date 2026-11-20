@@ -1,8 +1,6 @@
 defmodule Rail.Git.Actions.FetchBranch do
   @moduledoc false
 
-  import Rail.Git.Utils.WithCloneLock
-
   alias Rail.Git
   alias Rail.Projects.Schemas.Project
   alias Rail.Tools
@@ -10,28 +8,28 @@ defmodule Rail.Git.Actions.FetchBranch do
   @timeout_ms to_timeout(minute: 5)
 
   @doc """
-  Fetches `branch` from `origin` into `project`'s clone, with the credentials Rail pushes with, and points the
-  clone's local branch of that name at it, so a worktree made for it starts from what the remote holds.
+  Fetches `branch` from `origin` into the repository at `repo_path`, with the credentials Rail pushes with, and points
+  its local branch of that name at it, so a task's clone starts from what the remote holds.
   """
-  def fetch_branch(%Project{clone_path: clone_path} = project, branch) when is_binary(branch) do
+  # Takes no lock: the repository is a task's clone still being made, which nothing else can see.
+  def fetch_branch(%Project{} = project, repo_path, branch) when is_binary(repo_path) and is_binary(branch) do
     with {:ok, env} <- Git.credential_env(project) do
-      fetch = fn ->
+      fetched =
         with {_fetched, 0} <-
                Tools.run("git", ["fetch", "origin", "+refs/heads/#{branch}:refs/remotes/origin/#{branch}"],
-                 cd: clone_path,
+                 cd: repo_path,
                  env: env,
                  stderr_to_stdout: true,
                  timeout: @timeout_ms
                ) do
           # No upstream, as for a branch Rail made: pushing names the branch itself.
           Tools.run("git", ["branch", "--force", "--no-track", branch, "origin/#{branch}"],
-            cd: clone_path,
+            cd: repo_path,
             stderr_to_stdout: true
           )
         end
-      end
 
-      case with_clone_lock(clone_path, fetch) do
+      case fetched do
         {_output, 0} -> :ok
         # coveralls-ignore-next-line (a fetch that runs for five minutes)
         {:error, :timeout} -> {:error, "The fetch was still running after five minutes, so it was stopped."}

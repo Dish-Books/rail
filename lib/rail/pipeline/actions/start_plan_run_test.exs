@@ -262,19 +262,25 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     {:ok, _project} = Projects.update_project(system_scope(), project, %{worktree_setup_script: "bin/setup"})
     test_pid = self()
 
-    expect(Tools, :start_os_process, fn %Run{role_id: ^role_id} = run, ["-p", prompt | _rest] ->
-      assert prompt =~ "Rail may still be running the worktree's setup script when your turn starts"
+    expect(Tools, :start_os_process, fn %Run{role_id: ^role_id, task: %Task{worktree_slot: slot}} = run, _argv ->
+      assert is_integer(slot)
       send(test_pid, :agent)
       {:ok, %OsProcess{kind: :agent, task_id: run.task_id, run: run, task: run.task}}
     end)
 
-    expect(Tools, :start_command_process, fn %Run{role_id: ^role_id} = run, :setup, "./bin/setup", _opts ->
+    expect(Tools, :start_command_process, fn %Run{role_id: ^role_id, task: %Task{worktree_slot: slot}} = run,
+                                             :setup,
+                                             "./bin/setup",
+                                             _opts ->
+      assert is_integer(slot)
       assert_received :agent
       {:ok, %OsProcess{kind: :setup, task_id: run.task_id, run: run}}
     end)
 
     assert {:ok, %OsProcess{kind: :agent, task_id: task_id}} = Pipeline.start_plan_run(system_scope(), issue)
     assert [%Run{role_id: ^role_id, status: :running}] = Repo.all(from r in Run, where: r.task_id == ^task_id)
+    assert %Task{worktree_slot: slot} = Repo.get!(Task, task_id)
+    assert is_integer(slot)
   end
 
   test "a setup script that cannot start fails the plan, whose agent keeps working", %{

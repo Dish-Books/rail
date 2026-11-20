@@ -11,9 +11,10 @@ x-rail-env: &rail-env
   DATABASE_URL: ecto://postgres:postgres@localhost:5432/rail_prod
   PHX_HOST: rail.dishbooks.com
   RAIL_SCRATCH_ROOT: /srv/rail/scratch
+  RAIL_TASKS_ROOT: /srv/rail/tasks
   RAIL_BACKENDS_ROOT: /srv/rail/backends
   MISE_DATA_DIR: /srv/rail/mise
-  MISE_TRUSTED_CONFIG_PATHS: /srv/rail/projects
+  MISE_TRUSTED_CONFIG_PATHS: /srv/rail/projects:/srv/rail/tasks
 
 # Tags each log line with its compose service, which otel-collector ships under.
 x-logging: &logging

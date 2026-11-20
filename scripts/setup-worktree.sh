@@ -17,8 +17,9 @@
 # 1000 + its Rail slot.
 #
 # A fresh worktree made by hand inherits the developer's own vars (secrets, the vault
-# key, ...) from the primary checkout's `.env`. One Rail made inherits nothing: Rail
+# key, ...) from the primary checkout's `.env`. A task Rail made inherits nothing: Rail
 # writes the project's `.env` into it, under markers of its own, once this succeeds.
+# A task Rail made is a clone of its own, so Rail names the primary in RAIL_CLONE_PATH.
 # Every worktree still reads DB_HOST/DB_PORT from the primary's. Only the managed
 # block is rewritten on rerun.
 #
@@ -59,8 +60,8 @@ print_next_steps() {
 worktree_root="$(git rev-parse --show-toplevel)"
 env_file="$worktree_root/.env"
 
-# The primary checkout is the first entry in `git worktree list`.
-primary_root="$(git worktree list --porcelain | sed -n 's/^worktree //p' | head -1)"
+# The primary checkout is RAIL_CLONE_PATH when Rail sets it, else the first entry in `git worktree list`.
+primary_root="${RAIL_CLONE_PATH:-$(git worktree list --porcelain | sed -n 's/^worktree //p' | head -1)}"
 
 # The shared Postgres's address, as the primary checkout's .env has it. Read before
 # the .env write below, which may be that very file.
@@ -76,6 +77,8 @@ in_db() { PGHOST="$db_host" PGPORT="$db_port" PGUSER=postgres PGPASSWORD=postgre
 
 is_primary=0
 [ "$worktree_root" = "$primary_root" ] && is_primary=1
+# A checkout Rail gave a slot is a task's, whatever git says.
+[ -n "${RAIL_WORKTREE_SLOT:-}" ] && is_primary=0
 
 # Rail hands each of its worktrees a slot unique across every project it runs, and
 # ports to go with it. 1000 up is a range the scan below never reaches.

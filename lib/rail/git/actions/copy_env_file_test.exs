@@ -30,6 +30,22 @@ defmodule Rail.Git.Actions.CopyEnvFileTest do
     assert git!(worktree, ["status", "--porcelain"]) == ""
   end
 
+  test "a task's own clone excludes the .env in its own git folder, so it never shows as a change", %{
+    project: project
+  } do
+    File.write!(Path.join(project.clone_path, ".env"), "FOO=bar\n")
+    task = Path.join(System.tmp_dir!(), "rail_copy_env_task_#{System.unique_integer([:positive])}")
+    git!(project.clone_path, ["clone", "--quiet", project.clone_path, task])
+    on_exit(fn -> File.rm_rf(task) end)
+
+    assert :ok = Git.copy_env_file(project, task)
+
+    assert File.read!(Path.join(task, ".env")) =~ "\nFOO=bar\n"
+    assert git!(task, ["status", "--porcelain"]) == ""
+    assert {:ok, clone_exclude} = File.read(Path.join(project.clone_path, ".git/info/exclude"))
+    refute clone_exclude =~ "/.env"
+  end
+
   test "a clone with no .env gives the worktree none", %{project: project, worktree: worktree} do
     assert :ok = Git.copy_env_file(project, worktree)
     refute File.exists?(Path.join(worktree, ".env"))

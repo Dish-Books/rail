@@ -87,8 +87,9 @@ if config_env() == :prod do
     secret_key_base: System.fetch_env!("SECRET_KEY_BASE"),
     server: System.get_env("PHX_SERVER") != nil
 
-  # The release bakes scratch_root in at build time; a host that keeps state elsewhere points both here.
+  # The release bakes these roots in at build time; a host that keeps state elsewhere points them here.
   if scratch_root = System.get_env("RAIL_SCRATCH_ROOT"), do: config(:rail, scratch_root: scratch_root)
+  if tasks_root = System.get_env("RAIL_TASKS_ROOT"), do: config(:rail, tasks_root: tasks_root)
   if backends_root = System.get_env("RAIL_BACKENDS_ROOT"), do: config(:rail, backends_root: backends_root)
 
   # Compose sets `docker`, so every agent, setup and CI command gets a sandbox of its own.
