@@ -25,6 +25,8 @@ defmodule Rail.Mcp.Utils.RunToolSavePlanTest do
 
   Extends the module.
 
+  Why: it is where the change goes.
+
   ```elixir sketch
   def go, do: :ok
   ```
@@ -92,6 +94,17 @@ defmodule Rail.Mcp.Utils.RunToolSavePlanTest do
 
     assert {:error, %Ecto.Changeset{errors: [design: _no_options]}} =
              run_tool_save_plan(task, %{"plan" => @plan, "design" => "rows"}, [])
+  end
+
+  test "a plan citing a rule its project does not have is passed back naming the rule", %{task: task} do
+    plan = String.replace(@plan, "Why: it is where the change goes.", "Why: as `lrn_01m7tj53pk5a9sen7g4bwxstsf` says.")
+    arguments = %{"title" => "Usage charts", "description" => "Show usage.", "plan" => plan}
+
+    assert {:error,
+            %Ecto.Changeset{errors: [plan: {"cites `lrn_01m7tj53pk5a9sen7g4bwxstsf`, which is not a rule" <> _rest, []}]}} =
+             run_tool_save_plan(task, arguments, [])
+
+    assert Pipeline.read_plan(task) == nil
   end
 
   test "a save after approval is refused, saying the plan no longer changes", %{task: task} do

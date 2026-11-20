@@ -47,6 +47,8 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
 
   Extends the module.
 
+  Why: it is where the change goes.
+
   ```elixir sketch
   def go, do: :ok
   ```
@@ -431,13 +433,19 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     assert {:ok, %OsProcess{}} = Pipeline.start_plan_run(system_scope(), issue)
   end
 
-  test "the brief carries the rules people set for Plan, and not another role's", %{project: project, issue: issue} do
+  test "the brief carries the rules people set for Plan with the ids it cites them by, and not another role's", %{
+    project: project,
+    issue: issue
+  } do
     stub_vertex(%{"source document" => vector([1.0])})
-    learning(project, %{rule: "Copy says task, never ticket", kind: :product, roles: [:plan]}, embedding: [1.0])
+
+    %Learning{id: rule_id} =
+      learning(project, %{rule: "Copy says task, never ticket", kind: :product, roles: [:plan]}, embedding: [1.0])
+
     learning(project, %{rule: "Engineers only", kind: :convention, roles: [:engineer]}, embedding: [1.0])
 
     expect(Tools, :start_os_process, fn %Run{} = run, ["-p", prompt | _rest] ->
-      assert prompt =~ "- Product: Copy says task, never ticket"
+      assert prompt =~ "- `#{rule_id}` Product: Copy says task, never ticket"
       refute prompt =~ "Engineers only"
       {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
     end)

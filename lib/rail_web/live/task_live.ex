@@ -624,10 +624,12 @@ defmodule RailWeb.TaskLive do
 
   def handle_info({:workflows_changed, _project_id}, socket), do: {:noreply, socket}
 
-  # A proposal was saved or decided, here or anywhere; only the Learnings item and the header read it again.
+  # A proposal was saved or decided, or a rule changed, here or anywhere; the Learnings item, the header and the Plan
+  # tab's cited rules read it again.
   def handle_info({:learnings_changed, project_id}, %{assigns: %{task: %Task{project_id: project_id} = task}} = socket) do
     send_update(TaskDetail, id: "task-detail", reload_learnings: true)
     send_update(TaskActions, id: "task-actions", task: task)
+    if socket.assigns.open_item == :plan, do: send_update(PlanStage, id: "plan-stage", reload_rules: true)
     {:noreply, socket}
   end
 

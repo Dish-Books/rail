@@ -133,6 +133,15 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
       assert error =~ "`lib/rail_web/diff_comment.ex` under `### File-level changes` naming no item"
     end
 
+    test "a file naming its item in a paragraph that opens Why: is taken, as a fix plan's cards have no Why", %{
+      fix_plan: fix_plan
+    } do
+      plan = String.replace(@plan, "Draws a sent comment. For comment 1.", "Draws a sent comment.\n\nWhy: comment 1.")
+
+      assert {:ok, %FixPlan{covered_comments: 1}} =
+               fix_plan |> FixPlan.save_changeset(%{"plan" => plan}) |> apply_action(:update)
+    end
+
     test "File-level changes are held to the Plan tab's rules", %{fix_plan: fix_plan} do
       plan = String.replace(@plan, "#### `lib/rail/send.ex`", "#### lib/rail/send.ex")
 

@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Utils.LearningsBrief do
   @moduledoc """
-  The rules a run is given as it starts, as a section of its brief: a list for most roles, and for the Review
-  lead a checklist with ids and the instruction to still write up what a calibration rule says not to raise.
+  The rules a run is given as it starts, as a section of its brief: a list, with ids for Plan to cite, and for the
+  Review lead a checklist with ids and the instruction to still write up what a calibration rule says not to raise.
   """
 
   alias Rail.Learnings
@@ -40,14 +40,24 @@ defmodule Rail.Pipeline.Utils.LearningsBrief do
     """
   end
 
-  defp section(rules, _stage) do
+  defp section(rules, stage) do
     """
 
     What this project has learned. People set these rules or corrected an agent into them, so follow every one that applies to this work. Call `knowledge_search` for more before you ask a question, depart from the plan, or work in a module you do not know.
 
-    #{Enum.map_join(rules, "\n", &line(&1, false))}
+    #{Enum.map_join(rules, "\n", &line(&1, stage == :plan))}#{citing(stage)}
     """
   end
+
+  # Only Plan sees the ids, so only Plan is told what they are for.
+  defp citing(:plan) do
+    "\n\nWhere the reason a file card gives in its `Why:` paragraph, or a `Decision:` in the plan, follows one of " <>
+      "these rules, end it with the rule's id in backticks, such as `lrn_01m7tj53pk5a9sen7g4bwxstsf`. The Plan tab " <>
+      "shows the rule's text under it. Cite only a rule the plan follows, by an id this list or `knowledge_search` " <>
+      "gave you. Rail refuses any other id."
+  end
+
+  defp citing(_stage), do: ""
 
   defp line(%Learning{} = rule, with_id?) do
     id = if with_id?, do: "`#{rule.id}` ", else: ""

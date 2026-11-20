@@ -37,6 +37,8 @@ defmodule RailWeb.Components.PlanCards do
     default: nil,
     doc: "whose GitHub repository and default branch a path links to, with `default_paths`"
 
+  attr :rules, :map, default: %{}, doc: "the rules the plan cites, by id; a fix plan gives none"
+
   slot :heading, required: true, doc: "the section's heading, given the subtitle that says how the cards read"
 
   def plan_cards(assigns) do
@@ -99,6 +101,7 @@ defmodule RailWeb.Components.PlanCards do
             card={card}
             state={state(card, @reviewed)}
             base={@base}
+            rules={@rules}
             on={@on}
             target={@target}
           />
@@ -111,6 +114,7 @@ defmodule RailWeb.Components.PlanCards do
   attr :card, :map, required: true
   attr :state, :atom, required: true, values: [nil, :unreviewed, :reviewed, :revised]
   attr :base, :string, required: true
+  attr :rules, :map, required: true
   attr :on, :map, required: true
   attr :target, :any, required: true
 
@@ -191,10 +195,30 @@ defmodule RailWeb.Components.PlanCards do
           on={@on}
           target={@target}
         />
+        <div
+          :for={{line, index} <- Enum.with_index(@card.why)}
+          :if={@state != :reviewed}
+          data-qa="plan_card_why"
+        >
+          <.line line={line} on={@on} target={@target}>
+            <div class="flex items-start gap-3 py-1">
+              <span class={[
+                "shrink-0 mt-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset ring-indigo-400/60 text-indigo-700 dark:text-indigo-200",
+                index > 0 && "invisible"
+              ]}>
+                Why
+              </span>
+              <div class="min-w-0 prose prose-slate dark:prose-invert max-w-none leading-relaxed wrap-anywhere [&>*]:my-0 text-[14px] text-slate-700 dark:text-slate-200">
+                {raw(line.html)}
+              </div>
+            </div>
+          </.line>
+          <.cited_rules html={line.html} rules={@rules} />
+        </div>
       </div>
 
       <.line
-        :for={line <- @card.prose ++ @card.signatures ++ @card.sketch}
+        :for={line <- @card.prose ++ @card.why ++ @card.signatures ++ @card.sketch}
         :if={@state == :reviewed}
         line={line}
         layout={:away}

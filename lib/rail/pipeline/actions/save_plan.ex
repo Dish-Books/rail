@@ -9,7 +9,9 @@ defmodule Rail.Pipeline.Actions.SavePlan do
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Learnings
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -40,7 +42,7 @@ defmodule Rail.Pipeline.Actions.SavePlan do
          ticket = Map.merge(kept(round, issue), Map.take(given, @ticket)),
          attrs =
            given |> Map.take(["plan", "record_demo"]) |> Map.put("ticket", ticket) |> Map.merge(design),
-         {:ok, saved} <- round |> Round.plan_changeset(attrs) |> Repo.insert_or_update() do
+         {:ok, saved} <- round |> Round.plan_changeset(attrs) |> check_rules(task) |> Repo.insert_or_update() do
       Pipeline.broadcast_output_saved(task)
       # Overview hears only this, and a save takes a sent plan back from the tech leads.
       broadcast_pipeline_changed(task)
@@ -60,6 +62,26 @@ defmodule Rail.Pipeline.Actions.SavePlan do
       true -> :ok
     end
   end
+
+  # A plan cites only what Plan was given: its own project's rules in force.
+  defp check_rules(%Ecto.Changeset{changes: %{plan: plan}} = changeset, %Task{project_id: project_id})
+       when is_binary(plan) do
+    with [_first | _rest] = cited <- ImplementationPlan.cited_rules(plan),
+         ids = Enum.filter(cited, &ImplementationPlan.rule_id?/1),
+         {:ok, found} = Learnings.list_learnings(project_id: project_id, ids: ids, statuses: [:active, :provisional]),
+         [_first | _rest] = unknown <- cited -- Enum.map(found, & &1.id) do
+      add_error(
+        changeset,
+        :plan,
+        "cites #{Enum.map_join(unknown, ", ", &"`#{&1}`")}, which is not a rule in force in this project; " <>
+          "cite only ids your brief or `knowledge_search` gave you"
+      )
+    else
+      _none_cited_or_all_found -> changeset
+    end
+  end
+
+  defp check_rules(%Ecto.Changeset{} = changeset, %Task{}), do: changeset
 
   # What the first save leaves out stands as the issue has it.
   defp kept(%Round{ticket: nil}, %Issue{} = issue) do
