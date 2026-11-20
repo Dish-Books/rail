@@ -206,7 +206,6 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       assert prompt =~ "Each option is the real screen with the change in it, as faithful as a screenshot of the app"
       assert prompt =~ "No wireframes, lorem ipsum, placeholder boxes or grey bars"
       assert prompt =~ "open its screenshot beside the reference picture of the screen it changes"
-      assert prompt =~ "Never draw an option from the code alone"
       assert prompt =~ "If the browser cannot start, Rail fails the plan"
       refute prompt =~ "design from the code's templates"
       {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}

@@ -3301,6 +3301,168 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#design-comment-hint", "Cannot chat with plan role yet")
     end
 
+    test "an option with web and phone screens opens on Mobile, a row a state, and Web shows the page as today", %{
+      conn: conn,
+      task: task,
+      dir: dir
+    } do
+      File.write!(
+        Path.join(dir, "manifest.json"),
+        ~s({"options": [{"key": "waiting-lanes", "title": "Lanes"}, {"key": "one-queue", "title": "One queue"}, {"key": "plain", "title": "Plain"}]})
+      )
+
+      File.write!(Path.join(dir, "waiting-lanes.html"), """
+      <main data-screen="web">Web</main>
+      <div data-screen="ios" data-state="This month"></div><div data-screen="android"></div>
+      <div data-screen="ios" data-state="No expenses this month"></div>
+      """)
+
+      File.write!(Path.join(dir, "one-queue.html"), ~s(<div data-screen="android" data-state="Empty"></div>))
+      File.write!(Path.join(dir, "plain.html"), "<h1>Plain</h1>")
+      %{options: [%{html_version: version} | _rest]} = Pipeline.read_design(task)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#design-screens-mobile[aria-selected='true']")
+      assert has_element?(view, "#design-screens-web[aria-selected='false']")
+      assert has_element?(view, "#design-frame-waiting-lanes[data-phone-widths='417,432']")
+      assert has_element?(view, "#design-row-waiting-lanes-1", "This month")
+      assert has_element?(view, "#design-row-waiting-lanes-1", "393 × 852")
+      assert has_element?(view, "#design-row-waiting-lanes-1", "412 × 915")
+      assert has_element?(view, "#design-row-waiting-lanes-1 iframe[src$='#ios-1'][loading='lazy']")
+      assert has_element?(view, "#design-row-waiting-lanes-1 iframe[src$='#android-1']")
+      assert has_element?(view, "#design-row-waiting-lanes-2", "No expenses this month")
+      assert has_element?(view, "#design-row-waiting-lanes-2 iframe[src$='#ios-2']")
+      refute has_element?(view, "#design-row-waiting-lanes-2", "Android")
+      refute has_element?(view, "#design-screen-waiting-lanes-page")
+
+      view |> element("#design-screens-web") |> render_click()
+      assert has_element?(view, "#design-screens-web[aria-selected='true']")
+      assert has_element?(view, "#design-screen-waiting-lanes-page iframe#design-page-waiting-lanes-#{version}")
+      refute has_element?(view, "[data-qa='design_row']")
+      refute has_element?(view, "iframe[src*='#']")
+
+      view |> with_target("#plan-stage") |> render_click("show_screens", %{"view" => "tablet"})
+      assert has_element?(view, "#design-screens-web[aria-selected='true']")
+
+      # Only an option with both has the switch.
+      view |> element("#design-tab-one-queue") |> render_click()
+      refute has_element?(view, "#design-screens")
+      assert has_element?(view, "#design-frame-one-queue[data-phone-widths='432']")
+      assert has_element?(view, "#design-row-one-queue-1", "Empty")
+      assert has_element?(view, "#design-row-one-queue-1 iframe[src$='#android-1']")
+      refute has_element?(view, "#design-screen-one-queue-page")
+
+      view |> element("#design-tab-plain") |> render_click()
+      refute has_element?(view, "#design-screens")
+      refute has_element?(view, "[data-qa='design_row']")
+      assert has_element?(view, "#design-screen-plain-page iframe[id^='design-page-plain-']")
+      refute has_element?(view, "iframe[src*='#']")
+
+      # Another option opens on Mobile again.
+      view |> element("#design-tab-waiting-lanes") |> render_click()
+      assert has_element?(view, "#design-screens-mobile[aria-selected='true']")
+    end
+
+    test "on the pick, an element clicked in a phone opens its box in that phone, and Plan gets its selector", %{
+      conn: conn,
+      task: task,
+      dir: dir,
+      pick: pick,
+      element: element
+    } do
+      pick.()
+
+      File.write!(Path.join(dir, "waiting-lanes.html"), """
+      <main data-screen="web">Web</main>
+      <div data-screen="ios" data-state="This month"><div id="ios-row">Restaurant Depot</div></div>
+      <div data-screen="android" data-state="This month"></div>
+      """)
+
+      row = %{element | "selector" => "#ios-row", "text" => "Restaurant Depot", "tag" => "div", "x" => 40, "y" => 200}
+      row = Map.merge(row, %{"height" => 72, "frame" => "ios-1"})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#design-comment-toggle") |> render_click()
+      assert has_element?(view, "#design-screen-waiting-lanes-ios-1.ring-2")
+
+      view |> with_target("#plan-stage") |> render_hook("select_element", row)
+      box = view |> element("#design-screen-waiting-lanes-ios-1 [data-qa='plan_comment_form']") |> render()
+      assert box =~ "Restaurant Depot"
+      assert box =~ "left: clamp(8px, 9.592%, calc(100% - min(320px, calc(100% - 16px)) - 8px))"
+      assert box =~ "top: min(calc(31.05% + 10px), calc(100% - 136px))"
+      refute has_element?(view, "#design-screen-waiting-lanes-android-1 [data-qa='plan_comment_form']")
+
+      view |> with_target("#plan-stage") |> render_hook("select_element", %{row | "y" => 600})
+
+      assert view |> element("[data-qa='plan_comment_form']") |> render() =~
+               "bottom: min(calc(31.507% + 10px), calc(100% - 136px))"
+
+      view |> with_target("#plan-stage") |> render_hook("select_element", %{row | "y" => 0, "height" => 876})
+
+      assert view |> element("[data-qa='plan_comment_form']") |> render() =~
+               "top: min(calc(0.0% + 10px), calc(100% - 136px))"
+
+      # A frame the option lacks is the page, which Web shows.
+      view |> with_target("#plan-stage") |> render_hook("select_element", %{row | "frame" => "android-9"})
+      refute has_element?(view, "[data-qa='plan_comment_form']")
+      view |> element("#design-screens-web") |> render_click()
+      assert has_element?(view, "#design-screen-waiting-lanes-page [data-qa='plan_comment_form']")
+
+      view |> element("#design-screens-mobile") |> render_click()
+      view |> with_target("#plan-stage") |> render_hook("select_element", row)
+
+      view
+      |> form("#design-screen-waiting-lanes-ios-1 [data-qa='plan_comment_form']", %{"body" => "Needs receipt first."})
+      |> render_submit()
+
+      refute has_element?(view, "[data-qa='plan_comment_form']")
+
+      expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "#ios-row"
+        assert prompt =~ "Needs receipt first."
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      view |> element("#plan-comment-tray-fold") |> render_click()
+      view |> element("#send-plan-comments") |> render_click()
+    end
+
+    test "a kept draft opens the view that holds its frame, or the page, or a phone-only option's first phone", %{
+      conn: conn,
+      task: task,
+      dir: dir,
+      pick: pick,
+      element: element
+    } do
+      pick.()
+
+      File.write!(Path.join(dir, "waiting-lanes.html"), """
+      <main data-screen="web"><label id="group-by-project">Group by project</label></main>
+      <div data-screen="ios"></div><div data-screen="android"></div>
+      """)
+
+      kept = %{"commenting" => true, "draft" => Map.put(element, "option_key", "waiting-lanes")}
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#design-screens-mobile[aria-selected='true']")
+      view |> with_target("#plan-stage") |> render_hook("restore_commenting", kept)
+      assert has_element?(view, "#design-screens-web[aria-selected='true']")
+      assert has_element?(view, "#design-screen-waiting-lanes-page [data-qa='plan_comment_form']", "Group by project")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      on_android = put_in(kept, ["draft", "frame"], "android-1")
+      view |> with_target("#plan-stage") |> render_hook("restore_commenting", on_android)
+      assert has_element?(view, "#design-screens-mobile[aria-selected='true']")
+      assert has_element?(view, "#design-screen-waiting-lanes-android-1 [data-qa='plan_comment_form']")
+
+      File.write!(Path.join(dir, "waiting-lanes.html"), ~s(<div data-screen="ios"></div><div data-screen="ios"></div>))
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      on_page = put_in(kept, ["draft", "frame"], "page")
+      view |> with_target("#plan-stage") |> render_hook("restore_commenting", on_page)
+      refute has_element?(view, "#design-screens")
+      assert has_element?(view, "#design-screen-waiting-lanes-ios-1 [data-qa='plan_comment_form']")
+    end
+
     test "unsent comments are read again on a fresh mount, and another person never sees them", %{
       conn: conn,
       task: task,

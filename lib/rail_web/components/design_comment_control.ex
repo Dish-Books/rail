@@ -63,7 +63,7 @@ defmodule RailWeb.Components.DesignCommentControl do
         {@disabled_reason || "Click an element to comment on it."}
       </span>
 
-      <div class="ml-auto shrink-0 flex items-center">{render_slot(@inner_block)}</div>
+      <div class="ml-auto shrink-0 flex items-center gap-3">{render_slot(@inner_block)}</div>
     </div>
     """
   end

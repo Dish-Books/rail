@@ -215,14 +215,16 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
       ~s({"options": [{"key": "cards", "title": "Cards"}, {"key": "table", "title": "Table"}]})
     )
 
-    File.write!(Path.join(design_dir, "cards.html"), "<h1>Invoices</h1>")
+    # A phone screen is part of the page, so it goes wherever the page does.
+    page = ~s(<h1>Invoices</h1>\n<div data-screen="ios" data-state="No invoices"><p>Nothing due</p></div>)
+    File.write!(Path.join(design_dir, "cards.html"), page)
     File.write!(Path.join(design_dir, "table.html"), "<table>Rejected</table>")
     File.write!(Path.join(design_dir, "picked"), "cards")
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
       assert ["-p", prompt | _rest] = argv
       assert prompt =~ ~s(The human approved the design "Cards")
-      assert prompt =~ ~s(<design title="Cards">\n<h1>Invoices</h1>\n</design>)
+      assert prompt =~ ~s(<design title="Cards">\n#{page}\n</design>)
       assert prompt =~ "#{design_dir}/cards.html"
       refute prompt =~ "Rejected"
 

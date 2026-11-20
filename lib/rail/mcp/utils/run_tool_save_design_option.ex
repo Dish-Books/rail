@@ -2,7 +2,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveDesignOption do
   @moduledoc """
   Saves one of the designer's options once its page and screenshot exist.
 
-  Plan draws its options from the running app, never from the code alone, so at Plan an option is refused until a
+  Plan draws web screens from the running app, never from the code alone, so at Plan an option is refused until a
   browser of the task's has opened on the app. The review agent revises the picked option from what Plan drew, and is
   not asked.
   """
@@ -44,8 +44,9 @@ defmodule Rail.Mcp.Utils.RunToolSaveDesignOption do
     do: Repo.exists?(from s in BrowserSession, where: s.task_id == ^task_id and not is_nil(s.signed_in_at))
 
   defp unbrowsed do
-    "Nothing saved: no browser has opened on the running app for this task yet, and an option is drawn from the app " <>
-      "as it renders, never from the code alone. Call browser_connect, look at the screens the change touches, then " <>
-      "save. If the browser cannot start, Rail fails the plan and says why."
+    "Nothing saved: no browser has opened on the running app for this task yet, and a web screen is drawn from the " <>
+      "app as it renders, never from the code alone. Open the app for a phone change too, for its data and look. " <>
+      "Call browser_connect, look at the screens the change touches, then save. If the browser cannot start, Rail " <>
+      "fails the plan and says why."
   end
 end
