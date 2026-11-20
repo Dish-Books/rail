@@ -88,7 +88,15 @@ defmodule RailWeb.Components.TriageQueue do
           ]}
         >
           <span class="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-            <span class="font-mono whitespace-nowrap shrink-0">#{row.thread.slack_channel.name}</span>
+            <span
+              :if={row.forwarded_by}
+              class="inline-flex items-center gap-1 whitespace-nowrap shrink-0 font-semibold text-slate-700 dark:text-slate-300"
+            >
+              <.icon name="pi-chats-circle" class="size-3" />{Thread.source_label(row.thread)}
+            </span>
+            <span :if={!row.forwarded_by} class="font-mono whitespace-nowrap shrink-0">
+              {Thread.source_label(row.thread)}
+            </span>
             <span class="truncate">{row.author}</span>
             <span class="ml-auto shrink-0 whitespace-nowrap font-mono">{row.age}</span>
           </span>
@@ -121,6 +129,9 @@ defmodule RailWeb.Components.TriageQueue do
               class="whitespace-nowrap font-mono text-blue-600 dark:text-blue-400"
             >{row.created}</span>
             <span :if={row.error} class="whitespace-nowrap text-red-600 dark:text-red-400">Triage failed</span>
+            <span :if={row.forwarded_by} class="whitespace-nowrap text-slate-500 dark:text-slate-400">
+              Forwarded by {row.forwarded_by}
+            </span>
             <span
               :if={row.to_accept > 0 and @filter != :done}
               class="ml-auto whitespace-nowrap font-semibold text-amber-600 dark:text-amber-400"
@@ -161,9 +172,15 @@ defmodule RailWeb.Components.TriageQueue do
       created: Enum.find_value(thread.items, &(&1.created_issue && &1.created_issue.identifier)),
       error: is_binary(thread.error),
       to_accept: Thread.to_accept_count(thread),
+      forwarded_by: forwarded_by(thread),
       outcome: outcome(thread)
     }
   end
+
+  defp forwarded_by(%Thread{support_conversation_id: id, forwarded_by: user}) when is_binary(id),
+    do: (user && (user.name || user.login)) || "support"
+
+  defp forwarded_by(%Thread{}), do: nil
 
   defp single_verdict([%Item{verdict: verdict}]), do: Item.verdict_label(verdict)
   defp single_verdict(_items), do: nil

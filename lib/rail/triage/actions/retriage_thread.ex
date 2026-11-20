@@ -13,8 +13,10 @@ defmodule Rail.Triage.Actions.RetriageThread do
   Reads a thread again at a person's asking: after a pass failed, or when they
   think a message Rail passed over does need a response. The messages since
   anyone last replied through Rail are read as new. Only the second forces the
-  pass: a retry after a failure is a plain rerun.
+  pass: a retry after a failure is a plain rerun. A forwarded thread has no Slack thread to read again.
   """
+  def retriage_thread(%Scope{}, %Thread{support_conversation_id: id}) when is_binary(id), do: {:error, :forwarded}
+
   def retriage_thread(%Scope{}, %Thread{id: thread_id}) do
     messages = Repo.all(from m in Message, where: m.thread_id == ^thread_id, order_by: [asc: m.posted_at])
     since_reply = messages |> Enum.reverse() |> Enum.take_while(&(not Message.via_rail?(&1))) |> Enum.map(& &1.id)

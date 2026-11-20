@@ -46,4 +46,6 @@ defmodule Rail.Triage do
   defdelegate retriage_thread(scope, thread), to: Actions.RetriageThread
   defdelegate list_triage_threads(opts \\ []), to: Actions.ListTriageThreads
   defdelegate count_triage_threads(opts), to: Actions.CountTriageThreads
+  defdelegate create_forwarded_thread(scope, conversation, items), to: Actions.CreateForwardedThread
+  defdelegate create_forwarded_issues(scope, thread, drafts), to: Actions.CreateForwardedIssues
 end

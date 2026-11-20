@@ -43,6 +43,7 @@ defmodule RailWeb.Router do
 
     post "/linear", LinearWebhookController, :handle
     post "/github", GithubWebhookController, :handle
+    post "/intercom", IntercomWebhookController, :handle
   end
 
   # Before `/mcp`, whose forward would otherwise take it.
@@ -92,6 +93,13 @@ defmodule RailWeb.Router do
 
     get "/", SlackAuthController, :request
     get "/callback", SlackAuthController, :callback
+  end
+
+  scope "/auth/intercom", RailWeb do
+    pipe_through [:browser, :require_authenticated_user]
+
+    get "/", IntercomAuthController, :request
+    get "/callback", IntercomAuthController, :callback
   end
 
   scope "/auth/mcp", RailWeb do
@@ -146,6 +154,8 @@ defmodule RailWeb.Router do
       live "/learnings/proposals/:id", LearningsLive, :proposal
       live "/learnings/:id", LearningsLive, :rule
       live "/sandboxes", SandboxesLive
+      live "/support", SupportLive
+      live "/support/:id", SupportLive
       live "/triage", TriageLive
       live "/triage/:id", TriageLive
       live "/testing", TestingLive
@@ -164,6 +174,7 @@ defmodule RailWeb.Router do
       live "/settings/projects", Settings.ProjectsLive
       live "/settings/linear-workspaces", Settings.LinearWorkspacesLive
       live "/settings/slack-workspaces", Settings.SlackWorkspacesLive
+      live "/settings/intercom-workspaces", Settings.IntercomWorkspacesLive
       live "/settings/users", Settings.UsersLive
       live "/settings/roles", Settings.RolesLive
       live "/settings/backends", Settings.BackendsLive

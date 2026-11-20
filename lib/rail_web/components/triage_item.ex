@@ -16,6 +16,7 @@ defmodule RailWeb.Components.TriageItem do
   attr :slack_linked, :boolean, required: true
   attr :project_name, :string, required: true
   attr :external_channel, :boolean, required: true
+  attr :forwarded, :boolean, default: false, doc: "from Intercom: its issue is created by the thread's one button"
   attr :corrected_by, :string, default: nil
   attr :error, :string, default: nil
 
@@ -118,10 +119,7 @@ defmodule RailWeb.Components.TriageItem do
       |> assign(:estimates, [{"No points", ""} | Enum.map(Item.estimates(), &{estimate_label(&1), &1})])
       |> assign(:estimate, Ecto.Changeset.get_field(assigns.form, :issue_estimate))
       |> assign(:error, assigns.error || item.error)
-      |> assign(
-        :link_line,
-        if(assigns.external_channel, do: "no link posted, external channel", else: "link posted in thread")
-      )
+      |> assign(:link_line, link_line(assigns))
 
     ~H"""
     <article
@@ -209,7 +207,7 @@ defmodule RailWeb.Components.TriageItem do
                   </span>
                 </span>
                 <button
-                  :if={!assumption.corrected}
+                  :if={!@forwarded and !assumption.corrected}
                   type="button"
                   id={"correct-#{@item.id}-#{index}"}
                   phx-click={
@@ -256,7 +254,7 @@ defmodule RailWeb.Components.TriageItem do
             for={@form}
             id={"issue-form-#{@item.id}"}
             phx-change="update_draft"
-            phx-submit="create_issue"
+            phx-submit={if @forwarded, do: "create_forwarded", else: "create_issue"}
             class="space-y-1.5"
           >
             <input type="hidden" name="item_id" value={@item.id} />
@@ -322,6 +320,7 @@ defmodule RailWeb.Components.TriageItem do
                 {@project_name} · waits for Start at Plan on its issue page · {@link_line}
               </span>
               <.button
+                :if={!@forwarded}
                 type="submit"
                 variant="primary"
                 size="sm"
@@ -378,7 +377,7 @@ defmodule RailWeb.Components.TriageItem do
           </.form>
 
           <p
-            :if={!@slack_linked and (@show_issue_form or @show_reply_form)}
+            :if={!@forwarded and !@slack_linked and (@show_issue_form or @show_reply_form)}
             id={"connect-slack-#{@item.id}"}
             class="text-[11px] text-slate-500 dark:text-slate-400"
           >
@@ -470,6 +469,10 @@ defmodule RailWeb.Components.TriageItem do
     </p>
     """
   end
+
+  defp link_line(%{forwarded: true}), do: "links back to the Intercom conversation"
+  defp link_line(%{external_channel: true}), do: "no link posted, external channel"
+  defp link_line(_slack), do: "link posted in thread"
 
   defp estimate_label(1), do: "1 point"
   defp estimate_label(points), do: "#{points} points"

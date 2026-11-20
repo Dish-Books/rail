@@ -22,7 +22,8 @@ defmodule RailWeb.TriageLive do
     needs_issue_link: "This reply links the issue, so create the issue first.",
     external_issue_link: "This reply cannot link the issue in an external channel. Take out {issue link} to post it.",
     no_reply: "There is no reply to post.",
-    settled: "This item is settled and takes no more notes."
+    settled: "This item is settled and takes no more notes.",
+    forwarded: "This thread was forwarded from Intercom, so it is not triaged again and has no Slack thread."
   }
 
   @draft_fields %{
@@ -46,6 +47,7 @@ defmodule RailWeb.TriageLive do
       |> assign(:current_section, :triage)
       |> assign(:show_slack_link_prompt, not Scope.slack_linked?(socket.assigns.current_scope))
       |> assign(:item_errors, %{})
+      |> assign(:forward_error, nil)
       |> assign(:note, Ecto.Changeset.change(%Note{}))
 
     {:ok, socket}
@@ -61,6 +63,7 @@ defmodule RailWeb.TriageLive do
       |> assign(:selected_id, params["id"])
       |> assign(:thread, nil)
       |> assign(:item_errors, %{})
+      |> assign(:forward_error, nil)
       |> assign(:drafts, %{})
       |> assign(:note, Ecto.Changeset.change(%Note{}))
       |> assign(:open_image, nil)
@@ -109,20 +112,54 @@ defmodule RailWeb.TriageLive do
             <span class="text-sm font-bold text-slate-900 dark:text-slate-100">
               {length(@thread.items)} {if length(@thread.items) == 1, do: "item", else: "items"}
             </span>
-            <span class="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+            <span
+              :if={@forwarded}
+              class="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400"
+            >
+              <.icon name="pi-lock-simple" class="size-3" />
+              Support already replied. Nothing reaches the issue tracker until you create it.
+            </span>
+            <span
+              :if={!@forwarded}
+              class="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400"
+            >
               <.icon name="pi-lock-simple" class="size-3" />
               Nothing reaches Slack or the issue tracker until you accept it.
             </span>
-            <.button
-              :if={@show_dismiss}
-              size="sm"
-              phx-click="dismiss_thread"
-              id="dismiss-thread-button"
-              class="ml-auto"
-            >
-              Dismiss thread
-            </.button>
+            <span class="ml-auto flex items-center gap-2">
+              <.button
+                :if={@show_dismiss}
+                size="sm"
+                phx-click="dismiss_thread"
+                id="dismiss-thread-button"
+              >
+                Dismiss thread
+              </.button>
+              <.button
+                :if={@create_count > 0}
+                variant="primary"
+                size="sm"
+                phx-click="create_forwarded"
+                phx-disable-with="Creating…"
+                id="create-forwarded-button"
+              >
+                <.icon name="pi-check-bold" class="size-3.5" />Create {@create_count} {if @create_count ==
+                                                                                            1,
+                                                                                          do:
+                                                                                            "ticket",
+                                                                                          else:
+                                                                                            "tickets"}
+              </.button>
+            </span>
           </div>
+          <p
+            :if={@forward_error}
+            id="forward-error"
+            role="alert"
+            class="px-6 py-2 text-xs text-red-600 dark:text-red-400 border-b border-slate-200 dark:border-slate-700"
+          >
+            {@forward_error}
+          </p>
 
           <div class="flex-1 overflow-y-auto px-5 py-4 space-y-3">
             <div
@@ -134,7 +171,7 @@ defmodule RailWeb.TriageLive do
                 <.icon name="pi-warning-circle" class="size-4" />Triage did not finish
               </p>
               <p class="text-[13px] text-red-800 dark:text-red-200">{@thread.error}</p>
-              <div class="flex justify-end">
+              <div :if={!@forwarded} class="flex justify-end">
                 <.button size="sm" phx-click="retriage" id="triage-again-button">Triage again</.button>
               </div>
             </div>
@@ -178,7 +215,8 @@ defmodule RailWeb.TriageLive do
               form={Map.fetch!(@item_forms, item.id)}
               slack_linked={!@show_slack_link_prompt}
               project_name={@thread.project.name}
-              external_channel={@thread.slack_channel.external}
+              external_channel={Thread.external?(@thread)}
+              forwarded={@forwarded}
               corrected_by={Map.get(@corrected_by, item.id)}
               error={Map.get(@item_errors, item.id)}
             />
@@ -264,8 +302,30 @@ defmodule RailWeb.TriageLive do
   end
 
   def handle_event("retriage", _params, socket) do
-    {:ok, _thread} = Triage.retriage_thread(socket.assigns.current_scope, socket.assigns.thread)
-    {:noreply, load(socket)}
+    case Triage.retriage_thread(socket.assigns.current_scope, socket.assigns.thread) do
+      {:ok, _thread} -> {:noreply, load(socket)}
+      {:error, reason} -> {:noreply, assign(socket, :forward_error, error_message(reason))}
+    end
+  end
+
+  # Creates every open item's ticket with what was typed on this page.
+  def handle_event("create_forwarded", _params, socket) do
+    drafts = Map.new(socket.assigns.drafts, fn {item_id, _typed} -> {item_id, typed(socket.assigns.drafts, item_id)} end)
+
+    forward_error =
+      case Triage.create_forwarded_issues(socket.assigns.current_scope, socket.assigns.thread, drafts) do
+        {:ok, _thread} ->
+          nil
+
+        {:error, {:not_created, positions}} ->
+          "Could not create item #{Enum.join(positions, ", ")}. Try again; the others are created."
+
+        {:error, :not_found} ->
+          "This thread is no longer here."
+      end
+
+    socket = socket |> assign(:forward_error, forward_error) |> load()
+    {:noreply, socket}
   end
 
   def handle_event("open_image", %{"message_id" => message_id, "file_id" => file_id}, socket) do
@@ -332,6 +392,8 @@ defmodule RailWeb.TriageLive do
     |> assign(:item_forms, item_forms(thread, drafts))
     |> assign(:corrected_by, corrected_by(thread, scope.user.id))
     |> assign(:show_dismiss, thread != nil and thread.status != :done)
+    |> assign(:forwarded, thread != nil and Thread.forwarded?(thread))
+    |> assign(:create_count, create_count(thread))
     |> assign(:show_triaging, thread != nil and thread.status == :triaging and thread.items == [])
     |> assign(:show_no_response, show_no_response?(thread))
     |> assign(:open_image, open && resolve_image(thread, open.message_id, open.image.external_id, 0))
@@ -358,6 +420,11 @@ defmodule RailWeb.TriageLive do
 
     if index, do: %{message_id: message_id, image: Enum.at(images, index), position: index + 1, count: length(images)}
   end
+
+  defp create_count(%Thread{support_conversation_id: id, items: items}) when is_binary(id),
+    do: Enum.count(items, &(Item.issue_draft?(&1) and is_nil(&1.created_issue_id)))
+
+  defp create_count(_slack_or_none), do: 0
 
   defp show_no_response?(%Thread{items: [], error: nil, no_response_reason: reason}), do: is_binary(reason)
   defp show_no_response?(_thread), do: false

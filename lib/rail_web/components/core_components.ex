@@ -94,6 +94,10 @@ defmodule RailWeb.CoreComponents do
   defdelegate testing_queue(assigns), to: Components.TestingQueue
   defdelegate throughput_chart(assigns), to: Components.ThroughputChart
   defdelegate top_app_bar(assigns), to: Components.Nav
+  defdelegate support_chat(assigns), to: Components.SupportChat
+  defdelegate support_conversation(assigns), to: Components.SupportConversation
+  defdelegate support_draft(assigns), to: Components.SupportDraft
+  defdelegate support_queue(assigns), to: Components.SupportQueue
   defdelegate triage_image(assigns), to: Components.TriageImage
   defdelegate triage_image_view(assigns), to: Components.TriageImageView
   defdelegate triage_item(assigns), to: Components.TriageItem

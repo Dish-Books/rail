@@ -120,6 +120,21 @@ defmodule RailWeb.Components.SettingsNav do
 
         <.link
           :if={Scope.admin?(@current_scope)}
+          navigate={~p"/settings/intercom-workspaces"}
+          class={[
+            @active_tab == :intercom_workspaces && "border-indigo-500 text-indigo-600 font-semibold",
+            @active_tab != :intercom_workspaces &&
+              "border-transparent text-slate-500 dark:text-slate-400 hover:border-slate-500 dark:hover:border-slate-400 hover:text-slate-900 dark:hover:text-slate-100",
+            "whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium"
+          ]}
+          id="tab-intercom-workspaces"
+          data-qa="settings-tab"
+        >
+          Intercom
+        </.link>
+
+        <.link
+          :if={Scope.admin?(@current_scope)}
           navigate={~p"/settings/users"}
           class={[
             @active_tab == :users && "border-indigo-500 text-indigo-600 font-semibold",

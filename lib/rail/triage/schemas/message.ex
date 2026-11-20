@@ -9,7 +9,8 @@ defmodule Rail.Triage.Schemas.Message do
   alias Rail.Triage.Schemas.Thread
   alias Rail.Users.Schemas.User
 
-  @primary_key {:id, UXID, autogenerate: true, prefix: "tms"}
+  # Monotonic, so a forwarded copy's messages, stamped to the second, keep their order by id.
+  @primary_key {:id, UXID, autogenerate: true, prefix: "tms", monotonic: true}
   schema "triage_messages" do
     field :external_id, :string
     field :author_external_id, :string
