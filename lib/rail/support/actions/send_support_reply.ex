@@ -2,6 +2,8 @@ defmodule Rail.Support.Actions.SendSupportReply do
   @moduledoc false
 
   import Ecto.Query
+  import Rail.Support.Utils.CalculateIntercomHtml
+  import Rail.Support.Utils.VerifyIntercomSender
 
   alias Rail.Intercom
   alias Rail.Repo
@@ -38,13 +40,17 @@ defmodule Rail.Support.Actions.SendSupportReply do
 
   defp can_send(%Scope{} = scope, %User{} = user, %Conversation{} = conversation) do
     cond do
-      not Scope.can_access_project?(scope, conversation.project_id) -> {:error, :not_found}
+      not Scope.can_access_project?(scope, conversation.project_id) ->
+        {:error, :not_found}
+
       # Retrying only the forward posts nothing in Intercom, so it needs no link.
-      is_struct(conversation.reply_posted_at, DateTime) -> :ok
-      not Scope.intercom_linked?(Scope.for_user(user)) -> {:error, :intercom_not_linked}
-      user.intercom_app_id != conversation.intercom_workspace.external_id -> {:error, :intercom_other_workspace}
-      Conversation.drafting?(conversation) -> {:error, :drafting}
-      true -> :ok
+      is_struct(conversation.reply_posted_at, DateTime) ->
+        :ok
+
+      true ->
+        with :ok <- verify_intercom_sender(user, conversation.intercom_workspace) do
+          if Conversation.drafting?(conversation), do: {:error, :drafting}, else: :ok
+        end
     end
   end
 
@@ -89,7 +95,7 @@ defmodule Rail.Support.Actions.SendSupportReply do
            user.intercom_access_token,
            conversation.external_id,
            user.intercom_admin_id,
-           html(conversation.reply_text)
+           calculate_intercom_html(conversation.reply_text)
          ) do
       {:ok, reply} ->
         {:ok, reply}
@@ -157,15 +163,5 @@ defmodule Rail.Support.Actions.SendSupportReply do
       [] -> nil
       {:error, reason} -> Repo.rollback(reason)
     end
-  end
-
-  # Intercom takes the body as HTML: a paragraph per blank-line break, a line break per newline.
-  defp html(text) do
-    text
-    |> String.split(~r/\n{2,}/, trim: true)
-    |> Enum.map_join(fn paragraph ->
-      escaped = paragraph |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
-      "<p>" <> String.replace(escaped, "\n", "<br>") <> "</p>"
-    end)
   end
 end

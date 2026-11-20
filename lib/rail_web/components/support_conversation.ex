@@ -90,7 +90,13 @@ defmodule RailWeb.Components.SupportConversation do
         </h2>
       </div>
 
-      <div id="support-messages" class="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-1.5">
+      <%!-- Opens at the newest message, and follows new ones unless the reader scrolled up. --%>
+      <div
+        id="support-messages"
+        data-run-id={@conversation.id}
+        phx-hook="ChatAutoscroll"
+        class="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-1.5"
+      >
         <div
           :for={entry <- @entries}
           id={"support-message-#{entry.message.id}"}
@@ -125,20 +131,22 @@ defmodule RailWeb.Components.SupportConversation do
               class="text-[13px] leading-relaxed text-slate-800 dark:text-slate-200 whitespace-pre-line break-words"
               phx-no-format
             >{entry.message.text}</p>
-            <a
+            <button
               :for={{file, index} <- Enum.with_index(entry.images)}
-              href={file.url}
-              target="_blank"
-              rel="noopener noreferrer"
+              type="button"
               id={"support-image-#{entry.message.id}-#{index}"}
-              class="mt-2 block w-fit max-w-full rounded-lg focus-visible:outline-2 focus-visible:outline-blue-500"
+              aria-label={"Enlarge #{file.name || "image"}"}
+              phx-click="open_image"
+              phx-value-message_id={entry.message.id}
+              phx-value-index={index}
+              class="mt-2 block w-fit max-w-full cursor-zoom-in rounded-lg focus-visible:outline-2 focus-visible:outline-blue-500"
             >
               <img
                 src={file.url}
                 alt={file.name}
-                class="max-w-[300px] max-h-[300px] w-auto rounded-lg border border-slate-300 dark:border-slate-600"
+                class="max-w-[300px] max-h-[300px] w-auto rounded-lg border border-slate-300 dark:border-slate-600 hover:border-blue-400 dark:hover:border-blue-500"
               />
-            </a>
+            </button>
             <a
               :for={{file, index} <- Enum.with_index(entry.files)}
               href={file.url}
