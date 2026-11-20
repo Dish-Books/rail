@@ -25,12 +25,11 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
-  # Git is faked at its boundary: deleting a branch or a worktree for real is for `Rail.Git`'s own tests.
+  # Git is faked at its boundary: deleting a branch or a checkout for real is for `Rail.Git`'s own tests.
   setup %{project: %{id: project_id, github_repo: repo, github_installation_id: installation_id} = project} do
     stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
     stub(Git, :delete_remote_branch, fn _project, _branch -> :ok end)
-    stub(Git, :remove_worktree, fn _repo_path, _worktree_path -> :ok end)
-    stub(Git, :delete_branch, fn _repo_path, _branch -> :ok end)
+    stub(Git, :remove_task_checkout, fn _project, _task -> :ok end)
 
     # Named per test, since a login two open sandboxes both insert waits on the other's.
     n = System.unique_integer([:positive])
@@ -94,7 +93,7 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
        %{
          scope: scope,
          task: task,
-         issue: %Issue{id: issue_id, project: %{id: project_id, clone_path: clone}} = issue,
+         issue: %Issue{id: issue_id, project: %{id: project_id}} = issue,
          engineer: engineer,
          lead: lead,
          reader: reader
@@ -103,8 +102,7 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
       Pipeline.update_task(task, %{pr_number: 212})
 
     expect(Git, :delete_remote_branch, fn %{id: ^project_id}, ^branch -> :ok end)
-    expect(Git, :remove_worktree, fn ^clone, ^worktree_path -> :ok end)
-    expect(Git, :delete_branch, fn ^clone, ^branch -> :ok end)
+    expect(Git, :remove_task_checkout, fn %{id: ^project_id}, %Task{worktree_path: ^worktree_path} -> :ok end)
 
     now = DateTime.utc_now()
 
@@ -257,7 +255,7 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
       Pipeline.create_run(%{task_id: task.id, role_id: engineer.id, status: :failed, started_at: DateTime.utc_now()})
 
     expect(Git, :delete_remote_branch, fn _project, _branch -> {:error, "remote: Repository rule violations found"} end)
-    reject(Git, :remove_worktree, 2)
+    reject(Git, :remove_task_checkout, 2)
 
     assert {:error, {:branch_not_deleted, "remote: Repository rule violations found"}} =
              Pipeline.discard_task(scope, task)
@@ -277,7 +275,7 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
     end)
 
     reject(Git, :delete_remote_branch, 2)
-    reject(Git, :remove_worktree, 2)
+    reject(Git, :remove_task_checkout, 2)
 
     assert {:error, {:pull_request_not_closed, {:github_api_error, 403, _body}}} =
              Pipeline.discard_task(scope, task)

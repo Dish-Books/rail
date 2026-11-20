@@ -18,7 +18,9 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
 
   @extension [autolink: true, strikethrough: true, table: true, tasklist: true, inline_code_attributes: false]
 
-  @empty %{approach: nil, data_changes: [], decisions: [], cards: nil, criteria: [], verification: nil}
+  @rule_id ~r/`(lrn_[^`\s]+)`/
+
+  @empty %{approach: nil, data_changes: [], decisions: [], cards: nil, criteria: [], verification: nil, rules: []}
 
   # Rail lays a plan out for review by its sections, so one whose shape is off is refused with what
   # to fix, rather than shown broken. Only the shape is checked, never how long or how good it is.
@@ -55,6 +57,22 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
     |> Enum.reduce(@empty, &place/2)
     |> finish()
   end
+
+  @doc """
+  The ids of the rules a plan cites in its cards' Whys and then its decisions, each once, or `[]` when it does not lay
+  out.
+  """
+  def cited_rules(content) when is_binary(content) do
+    case build_sheet(content) do
+      %{rules: rules} -> rules
+      nil -> []
+    end
+  end
+
+  @doc """
+  Whether `text` has the shape of a rule's id, so a lookup is never asked for one that cannot exist.
+  """
+  def rule_id?(text) when is_binary(text), do: Regex.match?(~r/\Alrn_[0-9a-z]{26}\z/, text)
 
   @doc """
   Refuses markdown in `field` whose `### File-level changes` section is not the cards a fix plan's sheet lays out,
@@ -218,10 +236,18 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
   end
 
   defp sheet_errors(sheet) do
-    for %{files: [], tests: [], number: number} <- sheet.criteria do
-      "has criterion #{number} under `### Acceptance criteria` with no file or test in backticks; name what " <>
-        "satisfies it, or leave the criterion out so it reads Not covered"
-    end
+    uncovered =
+      for %{files: [], tests: [], number: number} <- sheet.criteria do
+        "has criterion #{number} under `### Acceptance criteria` with no file or test in backticks; name what " <>
+          "satisfies it, or leave the criterion out so it reads Not covered"
+      end
+
+    whyless =
+      for %{path: path, why: why} <- sheet.cards, why in [nil, ""] do
+        "has no `Why:` paragraph under `#### `#{path}``; say in one why this is the file that changes"
+      end
+
+    uncovered ++ whyless
   end
 
   defp card_errors({[heading], body}) do
@@ -309,7 +335,7 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
     do: put(sheet, :data_changes, items(body, &data_change/1))
 
   defp place({"Decisions", body}, %{decisions: []} = sheet), do: put(sheet, :decisions, items(body, &decision/1))
-  defp place({"Changes", body}, %{cards: nil} = sheet), do: put(sheet, :cards, cards(body))
+  defp place({"Changes", body}, %{cards: nil} = sheet), do: put(sheet, :cards, cards(body, true))
   defp place({"Acceptance criteria", body}, %{criteria: []} = sheet), do: put(sheet, :criteria, criteria(body))
   defp place({"Verification", body}, %{verification: nil} = sheet), do: %{sheet | verification: markdown(body)}
   defp place(_unknown_or_repeated, _sheet), do: :error
@@ -317,8 +343,18 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
   defp put(_sheet, _field, :error), do: :error
   defp put(sheet, field, value), do: Map.put(sheet, field, value)
 
-  defp finish(%{cards: [_first | _rest]} = sheet), do: sheet
+  defp finish(%{cards: [_first | _rest]} = sheet), do: %{sheet | rules: calculate_rules(sheet)}
   defp finish(_not_a_sheet), do: nil
+
+  defp calculate_rules(sheet) do
+    sheet.cards
+    |> Enum.map(& &1.why)
+    |> Enum.concat(Enum.map(sheet.decisions, & &1.text))
+    |> Enum.reject(&is_nil/1)
+    |> Enum.flat_map(&Regex.scan(@rule_id, &1, capture: :all_but_first))
+    |> List.flatten()
+    |> Enum.uniq()
+  end
 
   defp split(nodes, level) do
     nodes
@@ -383,9 +419,9 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
 
   defp trim_lead(inline, _pattern), do: inline
 
-  defp cards(body) do
+  defp cards(body, why?) do
     with [{nil, []} | sections] <- split(body, 4),
-         cards = Enum.map(sections, &card/1),
+         cards = Enum.map(sections, &card(&1, why?)),
          true <- :error not in cards,
          paths = Enum.map(cards, & &1.path),
          true <- Enum.uniq(paths) == paths do
@@ -395,9 +431,10 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
     end
   end
 
-  defp card({%MDEx.Heading{nodes: [%MDEx.Code{literal: path} | suffix]}, body}) do
+  defp card({%MDEx.Heading{nodes: [%MDEx.Code{literal: path} | suffix]}, body}, why?) do
     {sketches, rest} = Enum.split_with(body, &(match?(%MDEx.CodeBlock{}, &1) and sketch?(&1.info)))
-    {signatures, prose} = Enum.split_with(rest, &match?(%MDEx.CodeBlock{}, &1))
+    {signatures, rest} = Enum.split_with(rest, &match?(%MDEx.CodeBlock{}, &1))
+    {whys, prose} = if why?, do: Enum.split_with(rest, &why?/1), else: {[], rest}
     deleted = suffix |> Enum.map_join(&text/1) |> String.trim()
 
     if deleted in ["", "deleted"] and length(sketches) <= 1 and length(signatures) <= 1 do
@@ -405,6 +442,7 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
         path: path,
         deleted?: deleted == "deleted",
         prose: markdown(prose),
+        why: if(whys != [], do: whys |> Enum.map(&%{&1 | nodes: trim_lead(&1.nodes, ~r/\AWhy:\s*/)}) |> markdown()),
         signatures: if(signatures != [], do: markdown(signatures)),
         sketch: if(sketches != [], do: markdown(sketches))
       }
@@ -413,7 +451,10 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
     end
   end
 
-  defp card(_heading_without_a_path), do: :error
+  defp card(_heading_without_a_path, _why?), do: :error
+
+  defp why?(%MDEx.Paragraph{nodes: [%MDEx.Text{literal: literal} | _inline]}), do: String.starts_with?(literal, "Why:")
+  defp why?(_node), do: false
 
   defp sketch?(info), do: "sketch" in String.split(info || "")
 
@@ -448,8 +489,9 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
   defp paths(%{nodes: nodes}), do: Enum.flat_map(nodes, &paths/1)
   defp paths(_leaf), do: []
 
+  # A fix plan's cards keep every sentence as prose, where its check finds each file's finding.
   defp file_cards(body) do
-    case cards(body) do
+    case cards(body, false) do
       :error -> files(body)
       cards -> cards
     end
@@ -472,7 +514,7 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
 
   defp file(%MDEx.ListItem{nodes: [%MDEx.Paragraph{nodes: [%MDEx.Code{literal: path} | inline]} = lead | blocks]}) do
     prose = markdown([%{lead | nodes: trim_lead(inline, ~r/\A\s*:?\s*/)} | blocks])
-    %{path: path, deleted?: false, prose: prose, signatures: nil, sketch: nil}
+    %{path: path, deleted?: false, prose: prose, why: nil, signatures: nil, sketch: nil}
   end
 
   defp markdown(nodes), do: %MDEx.Document{nodes: nodes} |> MDEx.to_markdown!(extension: @extension) |> String.trim()

@@ -55,7 +55,8 @@ defmodule RailWeb.Utils.BuildPlanSheet do
       groups: groups,
       cards: cards,
       criteria: criteria,
-      verification: verification
+      verification: verification,
+      rules: sheet.rules
     }
 
     Map.put(sheet, :lines, collect(sheet))
@@ -144,7 +145,7 @@ defmodule RailWeb.Utils.BuildPlanSheet do
       items_lines(sheet.data_changes),
       items_lines(sheet.decisions),
       sheet.changes_title,
-      Enum.map(sheet.cards, &[&1.line, &1.prose, &1.signatures, &1.sketch]),
+      Enum.map(sheet.cards, &[&1.line, &1.prose, &1.why, &1.signatures, &1.sketch]),
       sheet.criteria && [sheet.criteria.title_line, Enum.map(sheet.criteria.rows, & &1.line)],
       section_lines(sheet.verification)
     ]

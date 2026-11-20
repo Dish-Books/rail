@@ -10,16 +10,15 @@ defmodule Rail.Git.Actions.FetchDefaultBranch do
   @timeout_ms to_timeout(minute: 5)
 
   @doc """
-  Fetches `project`'s default branch from `origin` into the worktree at
-  `worktree_path`, with the same credentials Rail pushes with, and moves the
-  clone's local branch of that name to it.
+  Fetches `project`'s default branch from `origin` into its clone, with the same credentials Rail pushes with, moves
+  the clone's local branch of that name to it, and brings `repo_path` up to it.
   """
-  def fetch_default_branch(%Project{} = project, worktree_path) when is_binary(worktree_path) do
+  def fetch_default_branch(%Project{} = project, repo_path) when is_binary(repo_path) do
     with {:ok, env} <- Git.credential_env(project) do
       fetch = fn ->
         fetched =
           Tools.run("git", ["fetch", "origin", project.default_branch],
-            cd: worktree_path,
+            cd: project.clone_path,
             env: env,
             stderr_to_stdout: true,
             timeout: @timeout_ms
@@ -30,7 +29,7 @@ defmodule Rail.Git.Actions.FetchDefaultBranch do
       end
 
       case with_clone_lock(project.clone_path, fetch) do
-        {_output, 0} -> :ok
+        {_output, 0} -> Git.copy_default_branch(project, repo_path)
         # coveralls-ignore-next-line (a fetch that runs for five minutes)
         {:error, :timeout} -> {:error, "The fetch was still running after five minutes, so it was stopped."}
         {output, code} when is_binary(output) and is_integer(code) -> {:error, String.trim(output)}

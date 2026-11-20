@@ -30,6 +30,25 @@ defmodule Rail.Git.Actions.FetchDefaultBranchTest do
     assert git!(repo, ["branch", "--show-current"]) == ""
   end
 
+  test "fetches into the project's clone and copies what it fetched into a task's own clone", %{
+    project: project,
+    remote: remote,
+    repo: repo
+  } do
+    Req.Test.expect(Client, &Req.Test.json(&1, %{"token" => "ghs_token"}))
+    task = Path.join(System.tmp_dir!(), "rail_fetch_task_#{System.unique_integer([:positive])}")
+    git!(repo, ["clone", "--quiet", repo, task])
+    on_exit(fn -> File.rm_rf(task) end)
+    # The task reaches the remote only through its project's clone.
+    git!(task, ["remote", "set-url", "origin", "/tmp/nowhere_#{System.unique_integer([:positive])}"])
+    git!(task, ["checkout", "--quiet", "-b", "feature"])
+
+    assert :ok = Git.fetch_default_branch(project, task)
+    assert git!(repo, ["rev-parse", "origin/main"]) == git!(remote, ["rev-parse", "main"])
+    assert git!(task, ["rev-parse", "origin/main"]) == git!(remote, ["rev-parse", "main"])
+    assert git!(task, ["rev-parse", "main"]) == git!(remote, ["rev-parse", "main"])
+  end
+
   test "leaves a default branch a person checked out in another worktree where it was", %{
     project: project,
     remote: remote,

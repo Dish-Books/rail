@@ -14,6 +14,7 @@ defmodule Rail.Triage.Actions.PostTriageReply do
   alias Rail.Repo
   alias Rail.Scope
   alias Rail.Triage.Schemas.Item
+  alias Rail.Triage.Schemas.Thread
 
   @doc """
   Posts an item's reply, with the person's edits, in the thread as them. A reply
@@ -22,10 +23,14 @@ defmodule Rail.Triage.Actions.PostTriageReply do
   linked to the thread once the reply is posted.
   """
   def post_triage_reply(%Scope{} = scope, %Item{id: item_id}, attrs) do
-    item = Repo.get!(Item, item_id)
+    item =
+      Item
+      |> Repo.get!(item_id)
+      |> Repo.preload([:created_issue, :existing_issue, thread: [slack_channel: :slack_workspace]])
 
-    with :ok <- open(item),
-         item = Repo.preload(item, [:created_issue, :existing_issue, thread: [slack_channel: :slack_workspace]]),
+    # A forwarded thread has no Slack thread to post in.
+    with :ok <- if(Thread.forwarded?(item.thread), do: {:error, :forwarded}, else: :ok),
+         :ok <- open(item),
          {:ok, drafted} <- item |> Item.draft_changeset(attrs) |> Ecto.Changeset.apply_action(:update),
          :ok <- can_link_issue(item.thread, drafted.reply_text),
          {:ok, text} <- text(drafted),

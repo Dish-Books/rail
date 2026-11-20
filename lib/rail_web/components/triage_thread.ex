@@ -32,6 +32,7 @@ defmodule RailWeb.Components.TriageThread do
       |> assign(:picked, picked)
       |> assign(:assumption, Ecto.Changeset.get_field(assigns.note, :assumption))
       |> assign(:notes, Enum.map(assigns.thread.notes, &note(&1, assigns.current_user_id)))
+      |> assign(:forwarded, Thread.forwarded?(assigns.thread))
 
     ~H"""
     <section
@@ -42,7 +43,13 @@ defmodule RailWeb.Components.TriageThread do
       <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-700">
         <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
           <.project_badge project={@thread.project} />
-          <span class="font-mono">#{@thread.slack_channel.name}</span>
+          <span
+            :if={@forwarded}
+            class="inline-flex items-center gap-1 font-semibold text-slate-700 dark:text-slate-300"
+          >
+            <.icon name="pi-chats-circle" class="size-3" />{Thread.source_label(@thread)}
+          </span>
+          <span :if={!@forwarded} class="font-mono">{Thread.source_label(@thread)}</span>
           <span>· {length(@thread.messages)} {if length(@thread.messages) == 1,
             do: "message",
             else: "messages"}</span>
@@ -54,7 +61,9 @@ defmodule RailWeb.Components.TriageThread do
             id="open-in-slack"
             class="ml-auto inline-flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400"
           >
-            <.icon name="pi-slack-logo" class="size-3.5" />Open in Slack
+            <.icon :if={!@forwarded} name="pi-slack-logo" class="size-3.5" />
+            <.icon :if={@forwarded} name="pi-arrow-square-out" class="size-3.5" />
+            {if @forwarded, do: "Open in Intercom", else: "Open in Slack"}
           </a>
         </div>
         <h2
@@ -180,8 +189,20 @@ defmodule RailWeb.Components.TriageThread do
         </div>
       </div>
 
+      <p
+        :if={@forwarded}
+        id="forwarded-note"
+        class="flex items-center gap-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30 px-4 py-3 text-xs text-slate-500 dark:text-slate-400"
+      >
+        <.icon name="pi-check-circle-fill" class="size-3.5 shrink-0 text-emerald-500" />
+        <span>
+          Forwarded by {forwarded_by(@thread)} at
+          <.local_time id="forwarded-at" at={@thread.inserted_at} />, after replying in Intercom. Nothing here goes to the customer.
+        </span>
+      </p>
+
       <.form
-        :if={@picked}
+        :if={@picked && !@forwarded}
         for={@note}
         id="note-form"
         phx-change="change_note"
@@ -261,6 +282,10 @@ defmodule RailWeb.Components.TriageThread do
       redone_at: if(redone_at && DateTime.after?(redone_at, note.inserted_at), do: redone_at)
     }
   end
+
+  defp forwarded_by(%Thread{forwarded_by: %{name: name}}) when is_binary(name) and name != "", do: name
+  defp forwarded_by(%Thread{forwarded_by: %{login: login}}), do: login
+  defp forwarded_by(%Thread{}), do: "support"
 
   defp mark_class(:bug), do: "bg-red-500/15"
   defp mark_class(:feature_request), do: "bg-violet-500/15"

@@ -33,6 +33,31 @@ defmodule Rail.Users.Schemas.UserTest do
     assert User.changeset(%User{}, attrs).valid?
   end
 
+  test "changeset takes and clears the Intercom link with the app it is for" do
+    attrs = %{
+      email: "dana@example.com",
+      intercom_admin_id: "991",
+      intercom_app_id: "app1",
+      intercom_name: "Dana",
+      intercom_access_token: "tok"
+    }
+
+    assert %Ecto.Changeset{
+             valid?: true,
+             changes: %{
+               intercom_admin_id: "991",
+               intercom_app_id: "app1",
+               intercom_name: "Dana",
+               intercom_access_token: "tok"
+             }
+           } = User.changeset(%User{}, attrs)
+
+    linked = struct(User, attrs)
+
+    assert %Ecto.Changeset{changes: %{intercom_app_id: nil, intercom_access_token: nil}} =
+             User.changeset(linked, %{intercom_app_id: nil, intercom_access_token: nil})
+  end
+
   test "changeset enforces uniqueness on github_id, login, and email" do
     assert {:ok, %User{github_id: github_id, login: login, email: email}} =
              Users.register_oauth_user(%{

@@ -106,4 +106,12 @@ defmodule Rail.ScopeTest do
     refute Scope.slack_linked?(%Scope{user: %{admin: true}})
     refute Scope.slack_linked?(nil)
   end
+
+  test "intercom_linked? is true only when the user has an Intercom token" do
+    assert Scope.intercom_linked?(%Scope{user: %{intercom_access_token: "tok"}})
+    refute Scope.intercom_linked?(%Scope{user: %{intercom_access_token: nil}})
+    refute Scope.intercom_linked?(%Scope{user: %{intercom_access_token: ""}})
+    refute Scope.intercom_linked?(%Scope{user: %{admin: true}})
+    refute Scope.intercom_linked?(nil)
+  end
 end

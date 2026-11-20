@@ -5,6 +5,7 @@ defmodule RailWeb.Components.PlanSheetTest do
   import RailTest.Helpers
   import RailWeb.Helpers, only: [build_plan_sheet: 1, build_plan_sheet: 2]
 
+  alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Projects.Schemas.Project
   alias RailWeb.Components.PlanSheet
@@ -276,6 +277,7 @@ defmodule RailWeb.Components.PlanSheetTest do
         digest: digest,
         line: file_line,
         prose: [prose],
+        why: [why],
         signatures: [signature],
         sketch: [_first, sketched, _end]
       }
@@ -299,13 +301,19 @@ defmodule RailWeb.Components.PlanSheetTest do
         sheet: sheet,
         reviewed: %{path => digest},
         offered: true,
-        placed: %{prose.key => [{comment.("pcm_p", prose), 1}], sketched.key => [{comment.("pcm_k", sketched), 2}]},
+        placed: %{
+          prose.key => [{comment.("pcm_p", prose), 1}],
+          why.key => [{comment.("pcm_w", why), 2}],
+          sketched.key => [{comment.("pcm_k", sketched), 3}]
+        },
         draft: %{doc: :plan, key: signature.key, label: signature.label, body: "Why"}
       )
       |> Floki.parse_fragment!()
 
     [card] = Floki.find(html, "#plan-card-1")
     refute Floki.text(card) =~ "Refuses unless the task is at :review and idle."
+    refute Floki.text(card) =~ "no existing action moves a task back a stage."
+    assert Floki.find(card, "[data-qa='plan_card_why']") == []
     assert Floki.find(card, "[data-qa='plan_card_signatures']") == []
     assert Floki.find(card, "[data-qa='plan_card_sketch']") == []
     assert Floki.find(card, "#line-plan-#{prose.key}") == []
@@ -313,13 +321,54 @@ defmodule RailWeb.Components.PlanSheetTest do
     assert [_header_add] = Floki.find(card, "button[aria-label='Comment on #{file_line.label}']")
     assert [_one_add] = Floki.find(card, "[data-qa='line_comment_add']")
 
-    assert ["File 1, paragraph 1", "File 1, sketch line 2"] =
+    assert ["File 1, paragraph 1", "File 1, why, paragraph 1", "File 1, sketch line 2"] =
              card |> Floki.find("[data-qa='document_comment_line']") |> Enum.map(&String.trim(Floki.text(&1)))
 
     assert [_box] = Floki.find(card, "#document-comment-form-#{signature.key}")
 
     ids = Floki.attribute(html, "[id]", "id")
     assert Enum.uniq(ids) == ids
+  end
+
+  test "a card's Why reads under its sentences labeled Why, with each rule it or a decision cites by kind and status" do
+    plan =
+      sheet_plan()
+      |> String.replace("on the Review screen.", "on the Review screen, `lrn_flagged` and `lrn_not_loaded`.")
+      |> String.replace("- Decision: the note is kept", "- Decision: as `lrn_provisional` says, the note is kept")
+
+    rules = %{
+      "lrn_flagged" => %Learning{
+        id: "lrn_flagged",
+        kind: :convention,
+        status: :active,
+        rule: "Broadcast after the commit",
+        flagged: true
+      },
+      "lrn_provisional" => %Learning{
+        id: "lrn_provisional",
+        kind: :decision,
+        status: :provisional,
+        rule: "Notes live on the task"
+      }
+    }
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: build_plan_sheet(plan), rules: rules)
+      |> Floki.parse_fragment!()
+
+    assert [why] = Floki.find(html, "#plan-card-4 [data-qa='plan_card_why']")
+    assert Floki.text(why) =~ ~r/Why\s+the button is on the Review screen/
+    assert [flagged] = Floki.find(why, "[data-qa='plan_cited_rule']")
+    assert Floki.text(flagged) =~ ~r/Convention\s+Flagged\s+Broadcast after the commit\s+Open rule/
+    assert ["/learnings/lrn_flagged"] = Floki.attribute(flagged, "a", "href")
+
+    assert [decision, ruled_out, _assumption] = Floki.find(html, "#plan-decisions [data-qa='plan_decision']")
+    assert Floki.text(Floki.find(decision, "[data-qa='plan_cited_rule']")) =~ ~r/Decision\s+Provisional\s+Notes live/
+    assert Floki.find(ruled_out, "[data-qa='plan_cited_rule']") == []
+
+    assert Floki.text(Floki.find(html, "#plan-card-1 [data-qa='plan_card_why']")) =~ "no existing action moves a task"
+    assert Floki.find(html, "#plan-card-1 [data-qa='plan_cited_rule']") == []
   end
 
   test "a criterion the plan names nothing for reads Not covered, and those around it keep their files and tests", %{

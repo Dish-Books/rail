@@ -30,6 +30,8 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
 
   Groups.
 
+  Why: it is where the change goes.
+
   ```elixir sketch
   def go, do: :ok
   ```

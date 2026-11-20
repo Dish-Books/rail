@@ -10,6 +10,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
 
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.ClaimForStarter
+  import Rail.Pipeline.Utils.ClaimWorktreeSlot
   import Rail.Pipeline.Utils.FormatComments
   import Rail.Pipeline.Utils.FormatStageOutputs
   import Rail.Pipeline.Utils.FormatTicket
@@ -36,8 +37,8 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
   A checkout no worktree can be made in leaves the issue without a task or an owner, so it can be
   started again; a run that is recorded but fails to spawn keeps its task, with the failure on the
   run. A worktree that still needs the project's setup script gets it beside the agent rather than ahead of it, so
-  planning starts at once and the browser waits for the app. Returns whatever `Tools.start_os_process/2` does, or
-  `{:error, :task_exists}` for an issue with a live task.
+  planning starts at once and the browser waits for the app. Returns whatever `Tools.start_os_process/2` does,
+  `{:error, :task_exists}` for an issue with a live task, or `{:error, :no_worktree_slot}` with the run failed.
   """
   def start_plan_run(%Scope{} = scope, %Issue{} = issue) do
     %Issue{project: %Project{} = project} = issue = Repo.preload(issue, :project)
@@ -47,7 +48,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
       # Pages showing whether an issue has a task, such as Triage, learn of it here.
       broadcast_pipeline_changed(run)
       Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
-      spawn_os_process(%{run | role: role}, worktree_path)
+      spawn_with_slot(%{run | role: role}, worktree_path)
     end
   end
 
@@ -76,6 +77,29 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
           {:error, reason} -> Repo.rollback(reason)
         end
       end)
+    end
+  end
+
+  # Without a slot the setup script reads a task's own clone as the main checkout, so nothing starts without one.
+  # Claimed after the commit, since a lost race for a slot inside the transaction would abort the start.
+  defp spawn_with_slot(%Run{task: %Task{} = task} = run, worktree_path) do
+    case claim_worktree_slot(task) do
+      {:ok, task} ->
+        spawn_os_process(%{run | task: task}, worktree_path)
+
+      # coveralls-ignore-start (only after five claims race each other, as in claim_worktree_slot/1)
+      {:error, :no_worktree_slot} = error ->
+        {:ok, failed} =
+          run
+          |> Run.changeset(%{
+            status: :failed,
+            error: "Rail could not give the task a slot of ports, so Plan did not start."
+          })
+          |> Repo.update()
+
+        broadcast_pipeline_changed(failed)
+        error
+        # coveralls-ignore-stop
     end
   end
 

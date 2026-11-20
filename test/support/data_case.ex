@@ -93,7 +93,7 @@ defmodule Rail.DataCase do
   end
 
   @doc """
-  Gives a task with no worktree slot one no other test holds, before its worktree is made.
+  Gives a task with no worktree slot one no other test holds, whenever it claims one.
 
   Slots are unique across tasks and a test's claim is uncommitted until it ends, so two
   tests claiming the lowest free slot wait on each other. `@tag :real_worktree_slot` opts out.
@@ -102,16 +102,15 @@ defmodule Rail.DataCase do
 
   def stub_worktree_slot(_context) do
     # Named once, since a util is imported rather than aliased and Mimic needs the module.
-    module = Rail.Pipeline.Utils.PrepareWorktree
+    module = Rail.Pipeline.Utils.ClaimWorktreeSlot
 
-    Mimic.stub(module, :prepare_worktree, fn project, %Task{} = task ->
-      task =
-        if task.worktree_slot,
-          do: task,
-          else:
-            task |> Task.changeset(%{worktree_slot: 1_000 + System.unique_integer([:positive])}) |> Rail.Repo.update!()
+    Mimic.stub(module, :claim_worktree_slot, fn
+      %Task{worktree_slot: nil} = task ->
+        task = task |> Task.changeset(%{worktree_slot: 1_000 + System.unique_integer([:positive])}) |> Rail.Repo.update!()
+        {:ok, task}
 
-      Mimic.call_original(module, :prepare_worktree, [project, task])
+      %Task{} = task ->
+        Mimic.call_original(module, :claim_worktree_slot, [task])
     end)
 
     :ok

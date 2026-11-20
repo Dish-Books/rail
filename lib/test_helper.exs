@@ -23,6 +23,8 @@ end
 File.rm_rf!(run_tmp_dir)
 File.mkdir_p!(run_tmp_dir)
 System.put_env("TMPDIR", run_tmp_dir)
+# Tasks' clones are named for their branch, so another suite on the same machine would make the same ones.
+Application.put_env(:rail, :tasks_root, Path.join(run_tmp_dir, "tasks"))
 
 ExUnit.after_suite(fn _result ->
   stop_chrome.(run_tmp_dir)
@@ -43,10 +45,11 @@ Mimic.copy(Rail.Learnings)
 Mimic.copy(Rail.Mcp)
 Mimic.copy(Rail.Pipeline)
 Mimic.copy(Rail.Pipeline.Utils.PrepareTurn)
-Mimic.copy(Rail.Pipeline.Utils.PrepareWorktree)
+Mimic.copy(Rail.Pipeline.Utils.ClaimWorktreeSlot)
 Mimic.copy(Rail.Tools)
 Mimic.copy(Rail.Roles)
 Mimic.copy(Rail.Tools.Browser)
+Mimic.copy(Rail.Triage)
 Mimic.copy(Rail.Tools.BrowserSession)
 Mimic.copy(Rail.Tools.Clients.Speech)
 Mimic.copy(RailWeb.Endpoint)

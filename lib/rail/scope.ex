@@ -77,6 +77,13 @@ defmodule Rail.Scope do
   def slack_linked?(_scope), do: false
 
   @doc """
+  Returns true if the user in scope has linked an Intercom account to send from Support as.
+  """
+  def intercom_linked?(%__MODULE__{user: %{intercom_access_token: token}}) when is_binary(token) and token != "", do: true
+
+  def intercom_linked?(_scope), do: false
+
+  @doc """
   Helper to build a user scope.
   Supports `:admin` (boolean), `:linear_linked` (boolean), `:project_ids` (list), and `:user` overrides.
   """

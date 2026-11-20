@@ -4,34 +4,35 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
   in the thread as them, unless the channel is external. Its task waits for Start at Plan.
   """
 
-  import Ecto.Query
   import Rail.Triage.Utils.CanLinkIssue
   import Rail.Triage.Utils.CanPostToSlack
   import Rail.Triage.Utils.ClaimReply
+  import Rail.Triage.Utils.CreateItemIssue
   import Rail.Triage.Utils.PostToSlack
   import Rail.Triage.Utils.ReleaseReply
   import Rail.Triage.Utils.SettleThread
   import Rail.Triage.Utils.SlackIssueLink
 
-  alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Repo
   alias Rail.Scope
   alias Rail.Triage.Schemas.Item
+  alias Rail.Triage.Schemas.Thread
 
   @doc """
   Nothing is created unless the person can post in the thread. Once the tracker has
   the issue it stays, so a later failure is kept on the item rather than undone.
   """
-  def create_triage_issue(%Scope{user: %{id: user_id}} = scope, %Item{id: item_id}, attrs) do
+  def create_triage_issue(%Scope{} = scope, %Item{id: item_id}, attrs) do
     item = Item |> Repo.get!(item_id) |> Repo.preload(thread: [:project, slack_channel: :slack_workspace])
 
-    with :ok <- can_post_to_slack(scope, item.thread),
+    # A forwarded thread's items are created together, by Create N tickets, with no Slack thread to post in.
+    with :ok <- if(Thread.forwarded?(item.thread), do: {:error, :forwarded}, else: :ok),
+         :ok <- can_post_to_slack(scope, item.thread),
          :ok <- open(item),
          {:ok, drafted} <- item |> Item.draft_changeset(attrs) |> Ecto.Changeset.apply_action(:update),
          :ok <- can_link_issue(item.thread, if(is_nil(item.reply_posted_by_id), do: drafted.reply_text)),
-         :ok <- claim(item, user_id),
-         {:ok, issue} <- create(scope, item, drafted) do
+         {:ok, issue} <- create_item_issue(scope, item, drafted) do
       # The post honors the channel as it was checked, and the row keeps its draft until what was posted replaces it.
       item = %{Repo.reload!(item) | thread: item.thread}
       posted = post(scope, item, drafted, issue)
@@ -47,48 +48,6 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
       is_binary(item.created_issue_id) -> {:error, :already_created}
       item.retriaging -> {:error, :locked}
       true -> :ok
-    end
-  end
-
-  # Two people accepting at once create one issue.
-  defp claim(%Item{id: item_id}, user_id) do
-    case Repo.update_all(from(i in Item, where: i.id == ^item_id and is_nil(i.issue_created_by_id)),
-           set: [issue_created_by_id: user_id]
-         ) do
-      {1, _claimed} -> :ok
-      {0, _taken} -> {:error, :already_created}
-    end
-  end
-
-  # The item keeps the issue as it was created, which is what the person sent.
-  defp create(scope, %Item{thread: thread} = item, %Item{} = drafted) do
-    attrs = %{
-      title: drafted.issue_title,
-      description: drafted.issue_description,
-      priority: drafted.issue_priority,
-      estimate: drafted.issue_estimate
-    }
-
-    case Issues.create_issue(scope, thread.project, attrs) do
-      {:ok, %Issue{} = issue} ->
-        item
-        |> Ecto.Changeset.change(
-          created_issue_id: issue.id,
-          issue_title: attrs.title,
-          issue_description: attrs.description,
-          issue_priority: attrs.priority,
-          issue_estimate: attrs.estimate
-        )
-        |> Repo.update!()
-
-        # The ticket points back at the thread it was reported in.
-        if thread.permalink, do: {:ok, _job} = Issues.link_url(issue, thread.permalink, "Slack thread")
-
-        {:ok, issue}
-
-      {:error, reason} ->
-        Repo.update_all(from(i in Item, where: i.id == ^item.id), set: [issue_created_by_id: nil])
-        {:error, reason}
     end
   end
 

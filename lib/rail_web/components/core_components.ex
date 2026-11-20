@@ -17,6 +17,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate button(assigns), to: Components.Button
   defdelegate changed_comments(assigns), to: Components.ChangedComments
   defdelegate child_switcher(assigns), to: Components.ChildSwitcher
+  defdelegate cited_rules(assigns), to: Components.CitedRules
   defdelegate comment_body(assigns), to: Components.CommentEdit
   defdelegate comment_box(assigns), to: Components.CommentBox
   defdelegate comment_edit_button(assigns), to: Components.CommentEdit
@@ -94,6 +95,10 @@ defmodule RailWeb.CoreComponents do
   defdelegate testing_queue(assigns), to: Components.TestingQueue
   defdelegate throughput_chart(assigns), to: Components.ThroughputChart
   defdelegate top_app_bar(assigns), to: Components.Nav
+  defdelegate support_chat(assigns), to: Components.SupportChat
+  defdelegate support_conversation(assigns), to: Components.SupportConversation
+  defdelegate support_draft(assigns), to: Components.SupportDraft
+  defdelegate support_queue(assigns), to: Components.SupportQueue
   defdelegate triage_image(assigns), to: Components.TriageImage
   defdelegate triage_image_view(assigns), to: Components.TriageImageView
   defdelegate triage_item(assigns), to: Components.TriageItem

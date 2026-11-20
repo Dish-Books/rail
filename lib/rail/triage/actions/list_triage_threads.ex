@@ -20,7 +20,9 @@ defmodule Rail.Triage.Actions.ListTriageThreads do
   def list_triage_threads(opts \\ []) when is_list(opts) do
     status = Keyword.get(opts, :status, :waiting)
     order = if status == :done, do: [desc: :updated_at, desc: :id], else: [desc: :last_message_at, desc: :id]
-    first_messages = from(m in Message, distinct: m.thread_id, order_by: [asc: m.thread_id, asc: m.posted_at])
+
+    first_messages =
+      from(m in Message, distinct: m.thread_id, order_by: [asc: m.thread_id, asc: m.posted_at, asc: m.id])
 
     Thread
     |> where([t], t.status == ^status)
@@ -30,6 +32,7 @@ defmodule Rail.Triage.Actions.ListTriageThreads do
     |> preload([
       :project,
       :dismissed_by,
+      :forwarded_by,
       :slack_channel,
       messages: ^first_messages,
       items: ^from(i in Item, order_by: [asc: i.position], preload: [:issue_created_by, :reply_posted_by, :created_issue])

@@ -10,83 +10,94 @@ defmodule Rail.Git.Actions.GetOrCreateWorktree do
   alias Rail.Tools
 
   @doc """
-  Gets the task's existing worktree directory or creates a new one.
-
-  The repo, the worktree path, the branch and the base branch all come from the
-  project and the task. An existing branch is checked out as-is; otherwise the
-  branch is created from `origin/<default branch>`, fetched first, since nothing
-  else moves the clone's own copy of it.
+  Gets the task's existing checkout or makes it: a clone of the project's clone, hardlinked where the disk allows,
+  with the clone's `origin` and hooks. A task with a pull request continues its branch as `origin` has it; any other
+  starts a new one from `origin/<default branch>`, fetched first.
   """
   def get_or_create_worktree(%Project{} = project, %Task{} = task) do
-    repo_path = project.clone_path
     branch = task.worktree_name || task.id
-    worktree_path = task.worktree_path || Path.join(repo_path, ".worktrees/#{branch}")
+    worktree_path = task.worktree_path || Path.join(project.clone_path, ".worktrees/#{branch}")
 
+    if File.dir?(worktree_path),
+      do: {:ok, worktree_path},
+      # Two starts at once build in one place, so the second waits and then finds the first's clone.
+      else: with_clone_lock(worktree_path, fn -> make(project, task, worktree_path, branch) end)
+  end
+
+  defp make(%Project{} = project, %Task{} = task, worktree_path, branch) do
     if File.dir?(worktree_path) do
       {:ok, worktree_path}
     else
+      # Made beside its path and moved in last, so a failure or a restart midway leaves nothing to reuse.
+      building = worktree_path <> ".new"
+      File.rm_rf!(building)
       File.mkdir_p!(Path.dirname(worktree_path))
 
-      case create_worktree(project, worktree_path, branch) do
-        :ok -> {:ok, worktree_path}
-        {:error, reason} -> {:error, reason}
+      # Fetched first, since a clone takes its default branch from the project clone's local one, which the fetch moves.
+      with :ok <- Git.fetch_default_branch(project, project.clone_path),
+           :ok <- clone(project, building),
+           :ok <- Git.copy_default_branch(project, building),
+           :ok <- check_out(project, task, building, branch),
+           :ok <- with_clone_lock(project.clone_path, fn -> move_in(project, building, worktree_path) end) do
+        {:ok, worktree_path}
+      else
+        {:error, reason} ->
+          File.rm_rf!(building)
+          {:error, failed(worktree_path, reason)}
       end
     end
   end
 
-  defp create_worktree(%Project{clone_path: repo_path} = project, worktree_path, branch) do
-    if branch_exists?(repo_path, branch) do
-      add_worktree(project, worktree_path, [worktree_path, branch])
+  # A plain path rather than --local, which fails outright where git cannot hardlink.
+  defp clone(%Project{clone_path: clone_path, default_branch: default}, building) do
+    args = ["clone", "--quiet", "--no-checkout", "--single-branch", "--branch", default, clone_path, building]
+
+    with {origin, 0} <- git(clone_path, ["remote", "get-url", "origin"]),
+         {_cloned, 0} <- with_clone_lock(clone_path, fn -> git(clone_path, args) end),
+         {_set, 0} <- git(building, ["remote", "set-url", "origin", String.trim(origin)]),
+         # A push updates origin/<branch> only through a fetch refspec that names it, which --single-branch narrows.
+         {_widened, 0} <- git(building, ["config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"]) do
+      # The clone's pre-push hook is the project's, and a new clone starts with none.
+      _hooks = File.cp_r(Path.join(clone_path, ".git/hooks"), Path.join(building, ".git/hooks"))
+      :ok
     else
-      # No upstream, so the branch reads as never pushed rather than as tracking the base.
-      with :ok <- Git.fetch_default_branch(project, repo_path) do
-        base = "origin/#{project.default_branch}"
-        add_worktree(project, worktree_path, ["--no-track", "-b", branch, worktree_path, base])
+      {output, _code} -> {:error, String.trim(output)}
+    end
+  end
+
+  defp check_out(%Project{} = project, %Task{pr_number: number}, building, branch) when is_integer(number) do
+    with :ok <- Git.fetch_branch(project, building, branch), do: checkout(building, [branch])
+  end
+
+  # No upstream, so the branch reads as never pushed rather than as tracking the base.
+  defp check_out(%Project{} = project, %Task{}, building, branch) do
+    checkout(building, ["--no-track", "-b", branch, "origin/#{project.default_branch}"])
+  end
+
+  defp checkout(building, args) do
+    case git(building, ["checkout", "--quiet" | args]) do
+      {_output, 0} -> :ok
+      {output, _code} -> {:error, String.trim(output)}
+    end
+  end
+
+  # With no script to wait on it gets the .env as it is made; otherwise the setup run copies it.
+  # Under the clone's lock, as save_env_file/2 writes every task's .env under it.
+  defp move_in(%Project{} = project, building, worktree_path) do
+    env = if project.worktree_setup_script in [nil, ""], do: write_env_block(project, building), else: :ok
+
+    with :ok <- env do
+      case File.rename(building, worktree_path) do
+        :ok -> :ok
+        {:error, reason} -> {:error, "#{worktree_path}: #{:file.format_error(reason)}"}
       end
     end
   end
 
-  defp add_worktree(%Project{clone_path: repo_path} = project, worktree_path, add_args) do
-    args = ["worktree", "add" | add_args]
+  defp failed(worktree_path, reason) when is_binary(reason),
+    do: "Failed to create the task's clone at #{worktree_path}: #{reason}"
 
-    with_clone_lock(repo_path, fn ->
-      case Tools.run("git", args, cd: repo_path, stderr_to_stdout: true) do
-        # With no script to wait on it is set up as it is made; otherwise the setup run copies the .env.
-        {_out, 0} when project.worktree_setup_script in [nil, ""] ->
-          with {:error, message} <- write_env_block(project, worktree_path),
-               do: remove_new_worktree(repo_path, worktree_path, message)
+  defp failed(_worktree_path, reason), do: reason
 
-        {_out, 0} ->
-          :ok
-
-        {out, code} ->
-          {:error,
-           "Failed to create worktree at #{worktree_path} " <>
-             "(git #{Enum.join(args, " ")} exited #{code}): #{String.trim(out)}"}
-      end
-    end)
-  end
-
-  # Removed, so the next attempt makes it again rather than finding a worktree with no .env.
-  defp remove_new_worktree(repo_path, worktree_path, message) do
-    case Tools.run("git", ["worktree", "remove", "--force", worktree_path], cd: repo_path, stderr_to_stdout: true) do
-      {_out, 0} ->
-        {:error, "Rail could not write the new worktree's .env (#{message}), so it removed the worktree."}
-
-      {out, _code} ->
-        {:error,
-         "Rail could not write the new worktree's .env (#{message}), and could not remove #{worktree_path} " <>
-           "(#{String.trim(out)}): remove it before retrying."}
-    end
-  end
-
-  defp branch_exists?(repo_path, branch) do
-    match?(
-      {_out, 0},
-      Tools.run("git", ["rev-parse", "--verify", "--quiet", "refs/heads/" <> branch],
-        cd: repo_path,
-        stderr_to_stdout: true
-      )
-    )
-  end
+  defp git(path, args), do: Tools.run("git", args, cd: path, stderr_to_stdout: true)
 end

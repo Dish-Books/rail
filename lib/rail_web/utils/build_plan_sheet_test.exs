@@ -90,7 +90,7 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
            } = build_plan_sheet(sheet_plan())
   end
 
-  test "the lines hold every part in the order it is drawn, the sketch's included, each with a key of its own" do
+  test "the lines hold every part in the order it is drawn, each card's Why and sketch included, each with a key of its own" do
     assert %{lines: lines} = build_plan_sheet(sheet_plan())
 
     assert [
@@ -105,21 +105,26 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
              {:section_title, "Changes"},
              {:file, "File 1"},
              {:paragraph, "File 1, paragraph 1"},
+             {:paragraph, "File 1, why, paragraph 1"},
              {:signature, "File 1, signature line 1"},
              {:code, "File 1, sketch line 1"},
              {:code, "File 1, sketch line 2"},
              {:code, "File 1, sketch line 3"},
              {:file, "File 2"},
              {:paragraph, "File 2, paragraph 1"},
+             {:paragraph, "File 2, why, paragraph 1"},
              {:signature, "File 2, signature line 1"},
              {:code, "File 2, sketch line 1"},
              {:file, "File 3"},
              {:paragraph, "File 3, paragraph 1"},
+             {:paragraph, "File 3, why, paragraph 1"},
              {:file, "File 4"},
              {:paragraph, "File 4, paragraph 1"},
+             {:paragraph, "File 4, why, paragraph 1"},
              {:code, "File 4, sketch line 1"},
              {:file, "File 5"},
              {:paragraph, "File 5, paragraph 1"},
+             {:paragraph, "File 5, why, paragraph 1"},
              {:code, "File 5, sketch line 1"},
              {:section_title, "Acceptance criteria"},
              {:table_row, "Criterion 1"},
@@ -226,6 +231,38 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
              Map.delete(after_revision, "lib/rail_web/live/review_stage.ex")
 
     assert before |> Map.values() |> Enum.uniq() |> length() == map_size(before)
+  end
+
+  # A mark made before cards had a Why holds the digest the card had then, so it must still match.
+  test "a card with no Why keeps the digest it had before Whys, and a card's Why is part of its digest" do
+    review_card = fn plan ->
+      plan |> build_plan_sheet() |> Map.fetch!(:cards) |> Enum.find(&(&1.path == "lib/rail_web/live/review_stage.ex"))
+    end
+
+    assert %{why: [], digest: "4a344c82e7071d66fb7e74b69c4f72fbf531aff38040aeeed44aaa7929660052"} =
+             review_card.(String.replace(sheet_plan(), "Why: the button is on the Review screen.\n\n", ""))
+
+    assert %{digest: with_why} = review_card.(sheet_plan())
+    assert %{digest: revised} = review_card.(String.replace(sheet_plan(), "on the Review screen.", "on the Review tab."))
+    refute with_why in ["4a344c82e7071d66fb7e74b69c4f72fbf531aff38040aeeed44aaa7929660052", revised]
+  end
+
+  test "a card's Why is lines of its own, labeled as the card's Why, between its sentences and its code" do
+    plan = String.replace(sheet_plan(), "Why: no existing action moves a task back a stage.", "Why: one.\n\nWhy: two.")
+
+    assert %{
+             cards: [
+               %{
+                 prose: [%{label: "File 1, paragraph 1"}],
+                 why: [
+                   %{kind: :paragraph, text: "one.", label: "File 1, why, paragraph 1", key: "paragraph-" <> _one},
+                   %{kind: :paragraph, text: "two.", label: "File 1, why, paragraph 2", key: "paragraph-" <> _two}
+                 ],
+                 signatures: [%{label: "File 1, signature line 1"}]
+               }
+               | _cards
+             ]
+           } = build_plan_sheet(plan)
   end
 
   test "a plan without Data changes, criteria or Verification has no such part, and one that does not lay out has none" do

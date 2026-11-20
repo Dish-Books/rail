@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
+  alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
@@ -24,6 +25,8 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
   #### `lib/rail.ex`
 
   Extends the module.
+
+  Why: it is where the change goes.
 
   ```elixir sketch
   def go, do: :ok
@@ -258,6 +261,69 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
       assert %Round{plan: ^plan} = Pipeline.read_plan(task)
     end
 
+    # A plan cites only what Plan is given: its own project's rules in force.
+    test "a plan citing a rule not in force in its project is refused naming it, and leaves the earlier plan", %{
+      task: task,
+      plan: plan,
+      project: project,
+      github_project: github_project
+    } do
+      {:ok, _first} = Pipeline.save_plan(task, %{plan: @plan})
+      %Learning{id: elsewhere} = learning(github_project, %{rule: "Another project's", kind: :convention})
+      %Learning{id: proposed} = learning(project, %{rule: "Not yet", kind: :convention}, status: :proposed)
+
+      %Learning{id: retired} =
+        learning(project, %{rule: "Gone", kind: :convention}, status: :retired, retired_at: DateTime.utc_now())
+
+      for id <- [elsewhere, proposed, retired, "lrn_01m7tj53pk5a9sen7g4bwxstsf", "lrn_...", "lrn_Typo"] do
+        cited = String.replace(@plan, "Why: it is where the change goes.", "Why: as `#{id}` says.")
+
+        expected =
+          "cites `#{id}`, which is not a rule in force in this project; cite only ids your brief or " <>
+            "`knowledge_search` gave you"
+
+        assert {:error, changeset} = Pipeline.save_plan(task, %{plan: cited})
+        assert %{plan: [^expected]} = errors_on(changeset)
+      end
+
+      assert %Round{plan: ^plan} = Pipeline.read_plan(task)
+    end
+
+    test "a plan citing an unknown rule with a card that has no Why is refused for both at once", %{task: task} do
+      plan =
+        @plan
+        |> String.replace("Why: it is where the change goes.\n", "")
+        |> String.replace("- Decision: one module changes.", "- Decision: one module, `lrn_01m7tj53pk5a9sen7g4bwxstsf`.")
+
+      assert {:error, changeset} = Pipeline.save_plan(task, %{plan: plan})
+
+      assert %{
+               plan: [
+                 "cites `lrn_01m7tj53pk5a9sen7g4bwxstsf`" <> _cites,
+                 "has no `Why:` paragraph under `#### `lib/rail.ex``" <> _why
+               ]
+             } =
+               errors_on(changeset)
+
+      assert %Round{plan: nil} = Pipeline.read_plan(task)
+    end
+
+    test "a plan citing its project's active and provisional rules in a Why and a decision is saved", %{
+      task: task,
+      project: project
+    } do
+      %Learning{id: active} = learning(project, %{rule: "Kept", kind: :convention})
+      %Learning{id: provisional} = learning(project, %{rule: "New", kind: :decision}, status: :provisional)
+
+      plan =
+        @plan
+        |> String.replace("Why: it is where the change goes.", "Why: as `#{active}` says.")
+        |> String.replace("- Decision: one module changes.", "- Decision: one module changes, `#{provisional}`.")
+        |> String.trim()
+
+      assert {:ok, %Round{plan: ^plan}} = Pipeline.save_plan(task, %{plan: plan})
+    end
+
     # Code is fenced, so a heading or a bullet inside a block is the code's, not the plan's.
     test "a plan with data changes, signatures and a sketch is saved, whatever its code blocks hold", %{task: task} do
       plan = """
@@ -284,6 +350,8 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
 
       Extends the module.
 
+      Why: it is where the change goes.
+
       ```elixir
       def go
       ```
@@ -298,6 +366,8 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
       #### `lib/rail/old.ex` deleted
 
       Goes.
+
+      Why: nothing calls it now.
 
       ### Acceptance criteria
 

@@ -32,6 +32,7 @@ config :rail, :backends_root, Path.join(System.tmp_dir!(), "rail_test_backends")
 config :rail, :cloudflare_access, req_options: [plug: {Req.Test, Rail.Users.Clients.CloudflareAccess}, retry: false]
 config :rail, :docker, req_options: [plug: {Req.Test, Rail.Tools.Clients.Docker}, retry: false]
 config :rail, :github, req_options: [plug: {Req.Test, Rail.GitHub.Client}]
+config :rail, :intercom, req_options: [plug: {Req.Test, Rail.Intercom}, retry: false]
 config :rail, :linear, req_options: [plug: {Req.Test, Rail.Linear}]
 config :rail, :linear_oauth, req_options: [plug: {Req.Test, Rail.Linear}]
 config :rail, :mcp, req_options: [plug: {Req.Test, Rail.Mcp}, retry: false]

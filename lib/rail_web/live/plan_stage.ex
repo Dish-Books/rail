@@ -20,7 +20,9 @@ defmodule RailWeb.Live.PlanStage do
 
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Learnings
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -32,8 +34,11 @@ defmodule RailWeb.Live.PlanStage do
     "android" => {"pi-android-logo", "Android", "412 × 915"}
   }
 
-  # Another of the reader's tabs saved, removed or sent plan comments. Only the markers moved.
+  # A rule of the task's project changed, so a cited one may read differently now.
   @impl true
+  def update(%{reload_rules: true}, socket), do: {:ok, assign_rules(assign(socket, :rules_of, nil))}
+
+  # Another of the reader's tabs saved, removed or sent plan comments. Only the markers moved.
   def update(%{reload_comments: true}, socket) do
     {:ok, assign_comments(socket)}
   end
@@ -76,6 +81,7 @@ defmodule RailWeb.Live.PlanStage do
         child_of={@child_of}
         plan={@plan}
         sheet={@sheet}
+        rules={@rules}
         criteria={@criteria}
         default_paths={@default_paths}
         project={@task.project}
@@ -214,6 +220,7 @@ defmodule RailWeb.Live.PlanStage do
               :if={:architect not in @skipped}
               plan={@plan}
               sheet={@sheet}
+              rules={@rules}
               banner={@banner}
               approved={@approved}
               running={@running}
@@ -985,6 +992,7 @@ defmodule RailWeb.Live.PlanStage do
 
   attr :plan, :any, required: true
   attr :sheet, :any, required: true
+  attr :rules, :map, required: true, doc: "the rules the plan cites, by id"
   attr :banner, :any, required: true
   attr :approved, :boolean, required: true
   attr :running, :boolean, required: true
@@ -1033,6 +1041,7 @@ defmodule RailWeb.Live.PlanStage do
       <.plan_sheet
         :if={@sheet}
         sheet={@sheet}
+        rules={@rules}
         criteria={@criteria}
         default_paths={@default_paths}
         project={@project}
@@ -1069,6 +1078,7 @@ defmodule RailWeb.Live.PlanStage do
   attr :child_of, :map, required: true
   attr :plan, :any, required: true
   attr :sheet, :any, required: true
+  attr :rules, :map, required: true, doc: "the rules the plan cites, by id"
   attr :criteria, :list, required: true
   attr :default_paths, :any, required: true
   attr :project, :any, required: true
@@ -1111,6 +1121,7 @@ defmodule RailWeb.Live.PlanStage do
         <.plan_sheet
           :if={@sheet}
           sheet={@sheet}
+          rules={@rules}
           criteria={@criteria}
           part={@child_of.position}
           default_paths={@default_paths}
@@ -1247,6 +1258,7 @@ defmodule RailWeb.Live.PlanStage do
     |> assign(:design, design)
     |> assign(:plan, plan)
     |> assign(:sheet, sheet)
+    |> assign_rules()
     |> assign(:plan_lines, plan_lines(plan, sheet))
     |> assign(:approved, approved)
     |> assign(:running, running)
@@ -1292,6 +1304,24 @@ defmodule RailWeb.Live.PlanStage do
 
   defp card_paths(%{cards: cards}), do: Enum.map(cards, & &1.path)
   defp card_paths(nil), do: []
+
+  # Learnings is asked once per set of cited ids, so a comment or an unrelated update does not ask again.
+  defp assign_rules(%{assigns: %{sheet: sheet, task: task}} = socket) do
+    # A plan saved before this change may mention a placeholder such as `lrn_...`, which is no id to look up.
+    ids = if sheet, do: Enum.filter(sheet.rules, &ImplementationPlan.rule_id?/1), else: []
+
+    cond do
+      socket.assigns[:rules_of] == ids ->
+        socket
+
+      ids == [] ->
+        socket |> assign(:rules_of, ids) |> assign(:rules, %{})
+
+      true ->
+        {:ok, rules} = Learnings.list_learnings(project_id: task.project_id, ids: ids)
+        socket |> assign(:rules_of, ids) |> assign(:rules, Map.new(rules, &{&1.id, &1}))
+    end
+  end
 
   # Numbered in round order, so a card on a line carries the number the tray gives it.
   defp assign_comments(socket) do

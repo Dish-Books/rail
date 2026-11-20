@@ -65,6 +65,15 @@ defmodule Rail.Pipeline.Actions.RetryRunTest do
     assert {:ok, %Run{id: ^qa_id, stage_outcome: :in_progress}} = Pipeline.retry_run(system_scope(), qa)
   end
 
+  # The task page's Retry sends only the run's id, so the action finds the task to lock itself.
+  test "starts a run given only its id", %{run: run} do
+    %Run{id: qa_id} = run.(:qa, %{error: "Chrome went away"})
+
+    expect(Tools, :start_os_process, fn %Run{id: ^qa_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, %Run{id: ^qa_id}} = Pipeline.retry_run(system_scope(), %Run{id: qa_id})
+  end
+
   test "the review agent picks its conversation up again", %{run: run} do
     %Run{id: lead_id} =
       lead = run.(:review_lead, %{error: "The review agent did not save its review.", conversation_id: "sess_lead"})
@@ -151,6 +160,7 @@ defmodule Rail.Pipeline.Actions.RetryRunTest do
     Repo.delete_all(from(r in Run, where: r.id == ^lead_id))
 
     assert {:error, :not_retryable} = Pipeline.retry_run(system_scope(), lead)
+    assert {:error, :not_retryable} = Pipeline.retry_run(system_scope(), %Run{id: lead_id})
   end
 
   test "is refused for a run that has not failed, one of another step, while anything works, or outside the project",

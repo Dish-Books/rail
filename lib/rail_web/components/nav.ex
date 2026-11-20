@@ -62,6 +62,16 @@ defmodule RailWeb.Components.Nav do
           />
 
           <.nav_item
+            section={:support}
+            active={@current_section == :support}
+            label="Support"
+            icon_active="pi-headset-fill"
+            icon_inactive="pi-headset"
+            href={~p"/support"}
+            attention_count={0}
+          />
+
+          <.nav_item
             section={:triage}
             active={@current_section == :triage}
             label="Triage"
@@ -125,7 +135,8 @@ defmodule RailWeb.Components.Nav do
                 :roles,
                 :backends,
                 :mcp_servers,
-                :slack_workspaces
+                :slack_workspaces,
+                :intercom_workspaces
               ]
             }
             label="Settings"
@@ -401,6 +412,7 @@ defmodule RailWeb.Components.Nav do
   defp section_title(:overview), do: "Overview"
   defp section_title(:issues), do: "Issues"
   defp section_title(:sandboxes), do: "Sandboxes"
+  defp section_title(:support), do: "Support"
   defp section_title(:triage), do: "Triage"
   defp section_title(:testing), do: "Testing"
   defp section_title(:learnings), do: "Learnings"
@@ -416,7 +428,8 @@ defmodule RailWeb.Components.Nav do
               :roles,
               :backends,
               :mcp_servers,
-              :slack_workspaces
+              :slack_workspaces,
+              :intercom_workspaces
             ], do: "Settings"
 
   defp section_title(:tasks), do: "Task"

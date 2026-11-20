@@ -1,13 +1,14 @@
 defmodule Rail.Git do
   @moduledoc """
-  Public context for Git: the worktree a run works in, the identity its agent
+  Public context for Git: the checkout a run works in, the identity its agent
   commits as, and the diff a human reads it back as.
 
-  A run works in a worktree of its own, so making one is on the path of every
-  stage. The agent commits there itself, as the ticket's owner and signed with
-  their key, which Rail writes into the worktree's own config for as long as the
-  worktree lasts. Pushing stays Rail's, since the credential is the project's.
-  The clone's `.env` is the project's, and reaches every worktree once it is set up.
+  A task works in a clone of its own, made from the project's clone rather than
+  added to it as a worktree, so making one is on the path of every stage. The
+  agent commits there itself, as the ticket's owner and signed with their key,
+  which Rail writes into the checkout's own config for as long as it lasts.
+  Pushing stays Rail's, since the credential is the project's. The clone's `.env`
+  is the project's, and reaches every task's checkout once it is set up.
   Reading the result is the other half of the same thing, so parsing a diff and
   remembering who has read which file of it live here too.
   """
@@ -19,6 +20,7 @@ defmodule Rail.Git do
   defdelegate get_or_create_worktree(project, task), to: Actions.GetOrCreateWorktree
   defdelegate checkout_detached_worktree(project, worktree_path), to: Actions.CheckoutDetachedWorktree
   defdelegate remove_worktree(repo_path, worktree_path, opts \\ []), to: Actions.RemoveWorktree
+  defdelegate remove_task_checkout(project, task), to: Actions.RemoveTaskCheckout
   defdelegate delete_branch(repo_path, branch, opts \\ []), to: Actions.DeleteBranch
   defdelegate branch_fingerprint(worktree_path), to: Actions.BranchFingerprint
   defdelegate content_fingerprint(worktree_path), to: Actions.ContentFingerprint
@@ -36,8 +38,9 @@ defmodule Rail.Git do
   defdelegate set_commit_identity(task), to: Actions.SetCommitIdentity
   defdelegate credential_env(project), to: Actions.CredentialEnv
   defdelegate ci_env(project, task), to: Actions.CiEnv
-  defdelegate fetch_default_branch(project, worktree_path), to: Actions.FetchDefaultBranch
-  defdelegate fetch_branch(project, branch), to: Actions.FetchBranch
+  defdelegate fetch_default_branch(project, repo_path), to: Actions.FetchDefaultBranch
+  defdelegate copy_default_branch(project, repo_path), to: Actions.CopyDefaultBranch
+  defdelegate fetch_branch(project, repo_path, branch), to: Actions.FetchBranch
   defdelegate delete_remote_branch(project, branch), to: Actions.DeleteRemoteBranch
   defdelegate read_default_branch_file(project, path), to: Actions.ReadDefaultBranchFile
   defdelegate list_default_branch_files(project, directory), to: Actions.ListDefaultBranchFiles
