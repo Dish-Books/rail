@@ -8,7 +8,7 @@ defmodule Rail.Support do
 
   alias Rail.Support.Actions
 
-  defdelegate list_intercom_workspaces(), to: Actions.ListIntercomWorkspaces
+  defdelegate list_intercom_workspaces(opts \\ []), to: Actions.ListIntercomWorkspaces
   defdelegate get_intercom_workspace(by), to: Actions.GetIntercomWorkspace
 
   @decorate can?(resource: :intercom_workspace, action: :create)

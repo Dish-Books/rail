@@ -53,11 +53,20 @@ defmodule Rail.Support.Actions.UpdateSupportDraftTest do
     assert %Conversation{reply_text: nil} = Repo.get!(Conversation, conversation_id)
   end
 
-  test "is refused once the reply is posted", %{conversation: %{id: conversation_id} = conversation} do
-    Repo.update_all(from(c in Conversation, where: c.id == ^conversation_id), set: [reply_posted_at: DateTime.utc_now()])
+  test "is refused once the reply is posted, but the text as it stands is no change", %{
+    conversation: %{id: conversation_id} = conversation
+  } do
+    Repo.update_all(from(c in Conversation, where: c.id == ^conversation_id),
+      set: [reply_text: "Hi\n\nPassed on.", reply_posted_at: DateTime.utc_now()]
+    )
 
     assert {:error, :already_sent} =
              Support.update_support_draft(system_scope(), conversation, %{"reply_text" => "Too late"})
+
+    assert {:ok, %Conversation{reply_text: "Hi\n\nPassed on."}} =
+             Support.update_support_draft(system_scope(), conversation, %{"reply_text" => "Hi\r\n\r\nPassed on."})
+
+    refute_received {:support_changed, ^conversation_id}
   end
 
   test "a person without the conversation's project is refused", %{conversation: conversation} do

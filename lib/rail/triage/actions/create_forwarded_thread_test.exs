@@ -7,7 +7,6 @@ defmodule Rail.Triage.Actions.CreateForwardedThreadTest do
   alias Rail.Triage
   alias Rail.Triage.Schemas.Item
   alias Rail.Triage.Schemas.Message
-  alias Rail.Triage.Schemas.Note
   alias Rail.Triage.Schemas.Thread
   alias Rail.Users
 
@@ -174,24 +173,11 @@ defmodule Rail.Triage.Actions.CreateForwardedThreadTest do
             }} = Triage.get_triage_thread(system_scope(), thread_id)
   end
 
-  test "takes no notes, no Triage again, no replies and no item's own Create issue, and never queues a pass", %{
-    conversation: conversation,
-    user: user,
-    items: items
-  } do
-    {:ok, %Thread{id: thread_id} = thread} = Triage.create_forwarded_thread(Scope.for_user(user), conversation, items)
-    [%Item{id: item_id} = item | _pdf] = Repo.all(from i in Item, where: i.thread_id == ^thread_id, order_by: i.position)
-    scope = Scope.for_user(user)
+  test "makes the thread Waiting and never queues a pass for it", %{conversation: conversation, user: user, items: items} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "triage")
+    {:ok, %Thread{id: thread_id}} = Triage.create_forwarded_thread(Scope.for_user(user), conversation, items)
 
-    assert {:error, :forwarded} = Triage.add_triage_note(scope, item, %{"text" => "Check again"})
-    assert {:error, :forwarded} = Triage.retriage_thread(scope, thread)
-    assert {:error, :forwarded} = Triage.post_triage_reply(scope, item, %{"reply_text" => "Thanks"})
-    assert {:error, :forwarded} = Triage.create_triage_issue(scope, item, %{})
-
-    refute_receive {:triage_scheduled, ^thread_id, _delay}
-    refute Repo.exists?(from(n in Note, where: n.item_id == ^item_id))
-    assert %Item{created_issue_id: nil, issue_created_by_id: nil, reply_posted_at: nil} = Repo.get!(Item, item_id)
+    refute_received {:triage_scheduled, ^thread_id, _delay}
     assert %Thread{status: :waiting} = Repo.get!(Thread, thread_id)
   end
 end

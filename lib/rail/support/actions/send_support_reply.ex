@@ -102,11 +102,19 @@ defmodule Rail.Support.Actions.SendSupportReply do
 
   defp forward(%Scope{} = scope, %Conversation{id: id}) do
     result =
-      Repo.transaction(fn ->
-        locked = Repo.one!(from c in Conversation, where: c.id == ^id, lock: "FOR UPDATE")
-        thread = forward_items(scope, locked)
-        {locked |> Ecto.Changeset.change(send_error: nil) |> Repo.update!(), thread}
-      end)
+      try do
+        Repo.transaction(fn ->
+          locked = Repo.one!(from c in Conversation, where: c.id == ^id, lock: "FOR UPDATE")
+          thread = forward_items(scope, locked)
+          {locked |> Ecto.Changeset.change(send_error: nil) |> Repo.update!(), thread}
+        end)
+      catch
+        # A forward that crashes still reaches Sentry, and the page still says the reply is out and the items are not.
+        kind, reason ->
+          record_forward_failed(id)
+          Phoenix.PubSub.broadcast(Rail.PubSub, "support", {:support_changed, id})
+          :erlang.raise(kind, reason, __STACKTRACE__)
+      end
 
     case result do
       {:ok, {conversation, thread}} ->
@@ -114,12 +122,15 @@ defmodule Rail.Support.Actions.SendSupportReply do
         {:ok, conversation}
 
       {:error, reason} ->
-        Repo.update_all(from(c in Conversation, where: c.id == ^id),
-          set: [send_error: "Posted the reply in Intercom, but could not forward to triage."]
-        )
-
+        record_forward_failed(id)
         {:error, {:forward_failed, reason}}
     end
+  end
+
+  defp record_forward_failed(id) do
+    Repo.update_all(from(c in Conversation, where: c.id == ^id),
+      set: [send_error: "Posted the reply in Intercom, but could not forward to triage."]
+    )
   end
 
   # Under the conversation's row lock, so two Sends never forward the same item.

@@ -71,4 +71,13 @@ defmodule Rail.Triage.Actions.RetriageThreadTest do
 
     assert :ok = Triage.triage_thread(thread)
   end
+
+  test "a thread forwarded from Intercom is not triaged again", %{thread: %Thread{id: thread_id} = thread} do
+    # The page passes the thread it shows, and the refusal reads that struct before anything else.
+    forwarded = %{thread | support_conversation_id: "scv_forwarded", slack_channel_id: nil}
+
+    assert {:error, :forwarded} = Triage.retriage_thread(Scope.for_user(%{id: nil}), forwarded)
+    refute_received {:triage_scheduled, ^thread_id, _delay}
+    assert %Thread{status: :done, forced: false} = Repo.get!(Thread, thread_id)
+  end
 end

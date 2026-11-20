@@ -63,7 +63,7 @@ defmodule RailWeb.Components.SupportDraft do
     >
       <.icon name="pi-sparkle" class="size-4.5 text-slate-400" />
       <p id="support-no-draft" class="min-w-0 flex-1 text-[13px] text-slate-600 dark:text-slate-300">
-        No draft yet. This conversation came in before Intercom was connected, so the agent has not read it.
+        No draft yet. The agent has not read this conversation.
       </p>
       <span class="ml-auto flex items-center gap-2">
         <.button phx-click="mark_done" id="mark-done-button">
@@ -233,7 +233,7 @@ defmodule RailWeb.Components.SupportDraft do
       </div>
       <div class="flex flex-wrap items-center gap-3">
         <span id="support-send-hint" class="min-w-0 text-xs text-slate-500 dark:text-slate-400">{@hint}</span>
-        <span class="ml-auto flex items-center gap-2">
+        <span class="ml-auto flex flex-wrap justify-end items-center gap-2">
           <%!-- A forward still owed after the reply posted is finished first, so no item is stranded. --%>
           <.button :if={!@posted} phx-click="mark_done" id="mark-done-button">
             <.icon name="pi-check-bold" class="size-3.5" />Mark done
@@ -260,7 +260,8 @@ defmodule RailWeb.Components.SupportDraft do
     cond do
       Conversation.drafting?(conversation) -> "Send waits until the agent finishes."
       is_struct(conversation.reply_posted_at, DateTime) -> "The reply is already in Intercom."
-      is_binary(conversation.agent_error) -> "The draft below is from the agent's last run."
+      is_binary(conversation.agent_error) and blank?(conversation.reply_text) -> "The agent has not drafted a reply yet."
+      is_binary(conversation.agent_error) -> "The draft above is from the agent's last finished run."
       not linked -> "Posts in Intercom as you, then forwards to triage."
       count == 0 -> "Posts in Intercom as #{author_name}."
       true -> "Posts in Intercom as #{author_name}, then forwards #{count} to triage."

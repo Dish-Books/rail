@@ -8,6 +8,8 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Scope
+  alias Rail.Support.Schemas.Conversation
+  alias Rail.Support.Schemas.IntercomWorkspace
   alias Rail.Triage
   alias Rail.Triage.Schemas.Item
   alias Rail.Triage.Schemas.Message
@@ -435,5 +437,39 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
 
       assert {:ok, %Item{created_issue_id: "iss_" <> _id}} = Triage.create_triage_issue(scope, item, %{})
     end
+  end
+
+  test "an item's own Create issue on a thread forwarded from Intercom is refused", %{
+    thread: thread,
+    scope: scope,
+    project: project
+  } do
+    %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug()]})
+
+    workspace =
+      Repo.insert!(%IntercomWorkspace{
+        project_id: project.id,
+        name: "Support",
+        external_id: "issue_#{thread.id}",
+        access_token: "tok",
+        client_id: "cid",
+        client_secret: "sec"
+      })
+
+    conversation =
+      Repo.insert!(%Conversation{
+        project_id: project.id,
+        intercom_workspace_id: workspace.id,
+        external_id: "1",
+        intercom_updated_at: DateTime.utc_now()
+      })
+
+    Repo.update_all(from(t in Thread, where: t.id == ^thread.id),
+      set: [support_conversation_id: conversation.id, slack_channel_id: nil]
+    )
+
+    # No Linear call is expected, so creating the issue would fail the test.
+    assert {:error, :forwarded} = Triage.create_triage_issue(scope, item, %{})
+    assert %Item{created_issue_id: nil, issue_created_by_id: nil} = Repo.get!(Item, item.id)
   end
 end

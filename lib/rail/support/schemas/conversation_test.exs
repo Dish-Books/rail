@@ -34,6 +34,15 @@ defmodule Rail.Support.Schemas.ConversationTest do
     refute Map.has_key?(changes, :status)
   end
 
+  test "a reply's \\r\\n line breaks are stored as \\n, so the stored text sent back is no change" do
+    conversation = %Conversation{reply_text: "Hi\n\nPassed on."}
+
+    assert Conversation.draft_changeset(conversation, %{"reply_text" => "Hi\r\n\r\nPassed on."}).changes == %{}
+
+    assert %Ecto.Changeset{changes: %{reply_text: nil}} =
+             Conversation.draft_changeset(conversation, %{"reply_text" => ""})
+  end
+
   test "Send's label counts the items it forwards, and only forwards once the reply is posted" do
     to_forward = %Item{issue_title: "Sesame shows on the sheet"}
     tracked = %Item{existing_issue_id: "iss_1", issue_title: "Tracked"}

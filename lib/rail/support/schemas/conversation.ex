@@ -51,8 +51,13 @@ defmodule Rail.Support.Schemas.Conversation do
 
   @doc """
   The reply as the person edits it. Refused while a pass works on it or once it is posted.
+  A browser's form can send line breaks as `\\r\\n`; they are stored as `\\n`, as the agent writes them.
   """
-  def draft_changeset(conversation, attrs), do: cast(conversation, attrs, [:reply_text])
+  def draft_changeset(conversation, attrs) do
+    conversation
+    |> cast(attrs, [:reply_text])
+    |> update_change(:reply_text, &if(is_binary(&1), do: String.replace(&1, "\r\n", "\n"), else: &1))
+  end
 
   @doc """
   Mark done: the only way a conversation reaches Done in Rail.

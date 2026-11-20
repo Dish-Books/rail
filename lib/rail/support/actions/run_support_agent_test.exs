@@ -1,6 +1,5 @@
 defmodule Rail.Support.Actions.RunSupportAgentTest do
   use Rail.DataCase, async: true
-  use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Git
   alias Rail.Issues
@@ -14,7 +13,6 @@ defmodule Rail.Support.Actions.RunSupportAgentTest do
   alias Rail.Support.Schemas.ChatMessage
   alias Rail.Support.Schemas.Conversation
   alias Rail.Support.Schemas.Item
-  alias Rail.Support.Workers.RunSupportAgent
   alias Rail.Tools
   alias Rail.Users
 
@@ -88,6 +86,7 @@ defmodule Rail.Support.Actions.RunSupportAgentTest do
       })
 
     {:ok, conversation} = Support.sync_intercom_conversation(workspace, "123")
+    {:ok, _drafting} = Support.draft_support_reply(system_scope(), conversation)
 
     unique = System.unique_integer([:positive])
 
@@ -244,6 +243,7 @@ defmodule Rail.Support.Actions.RunSupportAgentTest do
 
     assert :ok = Support.run_support_agent(conversation)
     Repo.update_all(from(i in Item, where: i.key == "sesame"), set: [forwarded_at: DateTime.utc_now()])
+    {:ok, _drafting} = Support.draft_support_reply(system_scope(), conversation)
 
     expect(Tools, :run_agent, fn _role, _argv, _opts ->
       restated = Map.put(item, "title", "Rewritten after forwarding")
@@ -291,6 +291,7 @@ defmodule Rail.Support.Actions.RunSupportAgentTest do
     end)
 
     assert :ok = Support.run_support_agent(conversation)
+    {:ok, _drafting} = Support.draft_support_reply(system_scope(), conversation)
     assert :ok = Support.run_support_agent(conversation)
 
     assert %{"items" => [%{"state" => "tracked in " <> ^identifier, "existing_issue" => ^identifier}]} =
@@ -316,6 +317,7 @@ defmodule Rail.Support.Actions.RunSupportAgentTest do
         {:ok, ""}
       end)
 
+      {:ok, _drafting} = Support.draft_support_reply(system_scope(), conversation)
       assert :ok = Support.run_support_agent(conversation)
     end
 
@@ -380,6 +382,97 @@ defmodule Rail.Support.Actions.RunSupportAgentTest do
              Support.get_support_conversation(system_scope(), conversation_id)
   end
 
+  test "a job with no draft asked for runs nothing", %{conversation: %{id: conversation_id} = conversation} do
+    Repo.update_all(from(c in Conversation, where: c.id == ^conversation_id), set: [drafting_since: nil])
+    reject(Tools, :run_agent, 3)
+
+    assert :ok = Support.run_support_agent(conversation)
+
+    assert {:ok, %Conversation{agent_started_at: nil, mcp_token_hash: nil, chat_messages: []}} =
+             Support.get_support_conversation(system_scope(), conversation_id)
+  end
+
+  test "drafted_at is when the pass began, so a customer message during it is newer", %{
+    conversation: %{id: conversation_id} = conversation,
+    result_path: result_path
+  } do
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
+      send(self(), {:during, DateTime.utc_now()})
+      File.write!(result_path, Jason.encode!(%{"message" => "Done.", "reply" => "Hi", "items" => []}))
+      {:ok, ""}
+    end)
+
+    assert :ok = Support.run_support_agent(conversation)
+    assert_received {:during, during}
+    assert %Conversation{drafted_at: drafted_at} = Repo.get!(Conversation, conversation_id)
+    assert DateTime.before?(drafted_at, during)
+  end
+
+  test "a pass after the reply posted keeps the posted reply and still changes the list", %{
+    conversation: %{id: conversation_id} = conversation,
+    item: item,
+    result_path: result_path
+  } do
+    Repo.update_all(from(c in Conversation, where: c.id == ^conversation_id),
+      set: [reply_text: "Sent reply", reply_posted_at: DateTime.utc_now()]
+    )
+
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
+      assert %{"reply_posted" => true, "reply" => "Sent reply"} =
+               conversation |> Conversation.scratch_path() |> Path.join("draft.json") |> File.read!() |> Jason.decode!()
+
+      File.write!(result_path, Jason.encode!(%{"message" => "Added it.", "reply" => "A new reply", "items" => [item]}))
+      {:ok, ""}
+    end)
+
+    assert :ok = Support.run_support_agent(conversation)
+
+    assert {:ok,
+            %Conversation{
+              reply_text: "Sent reply",
+              items: [%Item{key: "sesame"}],
+              chat_messages: [%ChatMessage{changes: "Added item 1"}]
+            }} = Support.get_support_conversation(system_scope(), conversation_id)
+  end
+
+  test "a reply Send posts while the pass runs is kept, and an item it forwarded stays as it was forwarded", %{
+    conversation: %{id: conversation_id} = conversation,
+    item: item,
+    result_path: result_path
+  } do
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
+      File.write!(result_path, Jason.encode!(%{"message" => "Drafted.", "reply" => "Hi", "items" => [item]}))
+      {:ok, ""}
+    end)
+
+    assert :ok = Support.run_support_agent(conversation)
+    {:ok, _drafting} = Support.draft_support_reply(system_scope(), conversation)
+
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
+      Repo.update_all(from(c in Conversation, where: c.id == ^conversation_id),
+        set: [reply_posted_at: DateTime.utc_now()]
+      )
+
+      Repo.update_all(from(i in Item, where: i.conversation_id == ^conversation_id),
+        set: [forwarded_at: DateTime.utc_now()]
+      )
+
+      renamed = Map.put(item, "title", "Renamed")
+      File.write!(result_path, Jason.encode!(%{"message" => "Renamed.", "reply" => "Rewritten", "items" => [renamed]}))
+      {:ok, ""}
+    end)
+
+    assert :ok = Support.run_support_agent(conversation)
+
+    assert {:ok,
+            %Conversation{
+              reply_text: "Hi",
+              items: [
+                %Item{key: "sesame", title: "The allergen sheet lists sesame for tahini", forwarded_at: %DateTime{}}
+              ]
+            }} = Support.get_support_conversation(system_scope(), conversation_id)
+  end
+
   describe "a pass that fails keeps the draft as it was, clears Drafting and says why" do
     setup %{conversation: conversation, item: item, result_path: result_path} do
       expect(Tools, :run_agent, fn _role, _argv, _opts ->
@@ -395,13 +488,16 @@ defmodule Rail.Support.Actions.RunSupportAgentTest do
     for {name, body, error} <- [
           {"an unknown verdict",
            ~s({"message": "m", "reply": "New", "items": [{"key": "a", "kind": "bug", "title": "t", "verdict": "maybe", "issue": {"title": "x"}}]}),
-           "The agent's result had an item Rail could not save"},
+           ~s(The agent listed an item Rail could not save: item "a": verdict is invalid.)},
           {"a verdict that does not fit the kind",
            ~s({"message": "m", "reply": "New", "items": [{"key": "a", "kind": "bug", "title": "t", "verdict": "built", "issue": {"title": "x"}}]}),
-           "The agent's result had an item Rail could not save"},
+           ~s(The agent listed an item Rail could not save: item "a": verdict does not fit the kind.)},
           {"an item with neither a ticket nor an issue title",
            ~s({"message": "m", "reply": "New", "items": [{"key": "a", "kind": "bug", "title": "t", "verdict": "confirmed"}]}),
-           "The agent's result had an item Rail could not save"},
+           ~s(The agent listed an item Rail could not save: item "a": issue title can't be blank.)},
+          {"an item whose evidence Rail cannot read",
+           ~s({"message": "m", "reply": "New", "items": [{"key": "a", "kind": "bug", "title": "t", "verdict": "confirmed", "evidence": [{"holds": "maybe"}], "issue": {"title": "x"}}]}),
+           ~s(The agent listed an item Rail could not save: item "a": has evidence or assumptions Rail could not read.)},
           {"a result that is not JSON", "not json", "The agent finished without writing a result Rail could read."},
           {"a result without a reply", ~s({"message": "m", "items": []}),
            "The agent finished without writing a result Rail could read."}
@@ -421,7 +517,7 @@ defmodule Rail.Support.Actions.RunSupportAgentTest do
                 %Conversation{
                   reply_text: "Kept reply",
                   drafting_since: nil,
-                  agent_error: @error <> _rest,
+                  agent_error: @error,
                   items: [%Item{key: "sesame", title: "The allergen sheet lists sesame for tahini"}]
                 }} = Support.get_support_conversation(system_scope(), conversation_id)
       end
@@ -485,7 +581,9 @@ defmodule Rail.Support.Actions.RunSupportAgentTest do
                Support.get_support_conversation(system_scope(), conversation_id)
     end
 
-    test "on a crash, which still raises", %{conversation: %{id: conversation_id} = conversation} do
+    test "on a crash, which still raises, and Oban's retry runs no second pass", %{
+      conversation: %{id: conversation_id} = conversation
+    } do
       expect(Tools, :run_agent, fn _role, _argv, _opts -> raise "boom" end)
 
       assert_raise RuntimeError, "boom", fn -> Support.run_support_agent(conversation) end
@@ -497,6 +595,12 @@ defmodule Rail.Support.Actions.RunSupportAgentTest do
                 agent_started_at: nil,
                 agent_error: "The agent's pass crashed: boom"
               }} = Support.get_support_conversation(system_scope(), conversation_id)
+
+      # The expect above allows one call, so a second pass would fail the test here.
+      assert :ok = Support.run_support_agent(conversation)
+
+      assert {:ok, %Conversation{reply_text: "Kept reply", agent_error: "The agent's pass crashed: boom"}} =
+               Support.get_support_conversation(system_scope(), conversation_id)
     end
 
     test "and a chat line during it asks for no new pass", %{
@@ -585,10 +689,9 @@ defmodule Rail.Support.Actions.RunSupportAgentTest do
 
       assert :ok = Support.run_support_agent(conversation)
 
+      # finish clears Drafting, so only the new request sets it again.
       assert {:ok, %Conversation{drafting_since: %DateTime{}, drafted_at: %DateTime{}}} =
                Support.get_support_conversation(system_scope(), conversation_id)
-
-      assert_enqueued(worker: RunSupportAgent, args: %{"conversation_id" => conversation_id})
     end
 
     test "a customer message", %{

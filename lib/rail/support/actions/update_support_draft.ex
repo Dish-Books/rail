@@ -10,10 +10,15 @@ defmodule Rail.Support.Actions.UpdateSupportDraft do
   """
   def update_support_draft(%Scope{} = scope, %Conversation{id: id}, attrs) do
     conversation = Repo.get!(Conversation, id)
+    changeset = Conversation.draft_changeset(conversation, attrs)
 
     cond do
       not Scope.can_access_project?(scope, conversation.project_id) ->
         {:error, :not_found}
+
+      # A reconnect's form recovery sends back the reply as it stands, which changes nothing.
+      changeset.changes == %{} ->
+        {:ok, conversation}
 
       Conversation.drafting?(conversation) ->
         {:error, :drafting}
@@ -22,7 +27,7 @@ defmodule Rail.Support.Actions.UpdateSupportDraft do
         {:error, :already_sent}
 
       true ->
-        with {:ok, conversation} <- conversation |> Conversation.draft_changeset(attrs) |> Repo.update() do
+        with {:ok, conversation} <- Repo.update(changeset) do
           Phoenix.PubSub.broadcast(Rail.PubSub, "support", {:support_changed, id})
           {:ok, conversation}
         end

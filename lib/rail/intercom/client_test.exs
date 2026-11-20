@@ -104,6 +104,17 @@ defmodule Rail.Intercom.ClientTest do
     assert {:ok, "{\"not\":1}"} = Intercom.download_file(workspace, "https://downloads.intercomcdn.com/f.json")
   end
 
+  test "refuses a file outside Intercom's hosts, without a request", %{workspace: workspace} do
+    for url <- [
+          "https://attacker.example/x.png",
+          "https://intercomcdn.com.attacker.example/x.png",
+          "http://downloads.intercomcdn.com/f.png",
+          "javascript:alert(1)"
+        ] do
+      assert {:error, :not_an_intercom_file} = Intercom.download_file(workspace, url)
+    end
+  end
+
   test "the authorize URL carries the app's client id, the state and Rail's callback", %{workspace: workspace} do
     assert "https://app.intercom.com/oauth?" <> query = Intercom.authorize_url(workspace, "st_1")
 

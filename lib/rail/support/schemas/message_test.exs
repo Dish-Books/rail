@@ -38,6 +38,27 @@ defmodule Rail.Support.Schemas.MessageTest do
            } = Message.build_attrs(part, "comment")
   end
 
+  test "keeps only https images and files" do
+    part = %{
+      "id" => 9,
+      "created_at" => 1_790_000_000,
+      "author" => %{"type" => "user", "name" => "Marta"},
+      "body" =>
+        ~s(<p>See</p><img src="http://x.example/a.png"><img src="data:image/png;base64,AA"><img src="https://downloads.intercomcdn.com/i/b.png">),
+      "attachments" => [
+        %{"url" => "javascript:alert(1)", "name" => "x"},
+        %{"url" => "https://downloads.intercomcdn.com/r.pdf", "name" => "r.pdf"}
+      ]
+    }
+
+    assert %{
+             attachments: [
+               %Attachment{url: "https://downloads.intercomcdn.com/i/b.png"},
+               %Attachment{name: "r.pdf"}
+             ]
+           } = Message.build_attrs(part, "comment")
+  end
+
   test "an author with no name is named by email, then by kind" do
     assert %{author_name: "v@example.com", kind: :customer} =
              Message.build_attrs(

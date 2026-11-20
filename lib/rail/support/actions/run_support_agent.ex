@@ -30,21 +30,30 @@ defmodule Rail.Support.Actions.RunSupportAgent do
   @compared [:title, :kind, :verdict, :issue_title, :issue_description, :issue_priority, :issue_estimate]
 
   @doc """
-  Returns `:ok`, or `{:snooze, seconds}` when another pass holds the conversation, an MCP server did
-  not answer, or every account is used up. A pass that fails keeps the draft and records why.
+  Returns `:ok`, without a pass when no draft is asked for, or `{:snooze, seconds}` when another pass holds
+  the conversation, an MCP server did not answer, or every account is used up. A failed pass keeps the draft.
   """
   def run_support_agent(%Conversation{id: id}) do
     {token, hash} = Mcp.issue_run_token()
     started_at = DateTime.utc_now()
     stale = DateTime.shift(started_at, minute: -@stale_after_minutes)
 
+    # Only a conversation someone asked a draft for: a retried or rescued job whose pass already finished runs nothing.
     {claimed, _rows} =
       Repo.update_all(
-        from(c in Conversation, where: c.id == ^id and (is_nil(c.agent_started_at) or c.agent_started_at < ^stale)),
+        from(c in Conversation,
+          where:
+            c.id == ^id and not is_nil(c.drafting_since) and
+              (is_nil(c.agent_started_at) or c.agent_started_at < ^stale)
+        ),
         set: [agent_started_at: started_at, mcp_token_hash: hash]
       )
 
-    if claimed == 1, do: run(Repo.get!(Conversation, id), token, started_at), else: {:snooze, 30}
+    cond do
+      claimed == 1 -> run(Repo.get!(Conversation, id), token, started_at)
+      Repo.exists?(from c in Conversation, where: c.id == ^id and not is_nil(c.drafting_since)) -> {:snooze, 30}
+      true -> :ok
+    end
   end
 
   defp run(%Conversation{} = conversation, token, started_at) do
@@ -151,11 +160,17 @@ defmodule Rail.Support.Actions.RunSupportAgent do
 
   # Forwarded items are closed: a pass never changes them, and an open one it leaves out is gone.
   defp apply_result(%Conversation{} = conversation, %{"items" => items} = result) do
-    closed = for item <- conversation.items, is_struct(item.forwarded_at, DateTime), do: item.key
     issues = existing_issues(conversation.project, items)
-    before = Map.new(conversation.items, &{&1.key, &1})
 
     Repo.transaction(fn ->
+      # Under the row lock Send's forward takes, so a reply posted or an item forwarded during the pass is seen here.
+      current = Repo.one!(from c in Conversation, where: c.id == ^conversation.id, lock: "FOR UPDATE")
+      current_items = Repo.all(from i in Item, where: i.conversation_id == ^conversation.id)
+      closed = for item <- current_items, is_struct(item.forwarded_at, DateTime), do: item.key
+      before = Map.new(current_items, &{&1.key, &1})
+      # A reply already posted is what the customer has, so a pass never replaces it.
+      reply = if is_struct(current.reply_posted_at, DateTime), do: current.reply_text, else: result["reply"]
+
       kept =
         for {attrs, position} <- Enum.with_index(items, 1), is_map(attrs), attrs["key"] not in closed do
           (Map.get(before, attrs["key"]) || %Item{conversation_id: conversation.id})
@@ -166,8 +181,10 @@ defmodule Rail.Support.Actions.RunSupportAgent do
               item
 
             # The result is the agent's: an item Rail cannot save fails the pass and keeps the draft as it was.
-            {:error, changeset} ->
-              Repo.rollback("The agent's result had an item Rail could not save: #{inspect(changeset.errors)}")
+            {:error, %Ecto.Changeset{errors: errors}} ->
+              Repo.rollback(
+                "The agent listed an item Rail could not save: item #{inspect(attrs["key"])}: #{fields(errors)}."
+              )
           end
         end
 
@@ -180,18 +197,27 @@ defmodule Rail.Support.Actions.RunSupportAgent do
 
       title = if is_binary(result["title"]), do: result["title"]
 
-      conversation
-      |> Ecto.Changeset.change(reply_text: result["reply"], title: conversation.title || title)
+      current
+      |> Ecto.Changeset.change(reply_text: reply, title: current.title || title)
       |> Repo.update!()
 
       Repo.insert!(%ChatMessage{
         conversation_id: conversation.id,
         author: :agent,
         text: String.slice(result["message"], 0, 4000),
-        changes: calculate_changes(conversation, result["reply"], before, kept)
+        changes: calculate_changes(current, reply, before, kept)
       })
     end)
   end
+
+  # Each field's error in words, such as "verdict is invalid". With none, the item's evidence or assumptions failed.
+  defp fields([]), do: "has evidence or assumptions Rail could not read"
+
+  defp fields(errors),
+    do:
+      Enum.map_join(errors, ", ", fn {field, {message, _opts}} ->
+        "#{String.replace(to_string(field), "_", " ")} #{message}"
+      end)
 
   defp existing_issues(%Project{} = project, items) do
     for identifier <- items |> Enum.map(&(is_map(&1) && &1["existing_issue"])) |> Enum.filter(&is_binary/1) |> Enum.uniq(),
@@ -252,10 +278,11 @@ defmodule Rail.Support.Actions.RunSupportAgent do
         {:error, reason} -> error_message(reason)
       end
 
+    # drafted_at is when the pass began, so a customer message posted while it ran is newer and gets a draft.
     Repo.update_all(from(c in Conversation, where: c.id == ^id),
       set:
         [agent_started_at: nil, mcp_token_hash: nil, agent_error: error] ++
-          if(retrying, do: [], else: [drafting_since: nil, drafted_at: DateTime.utc_now()])
+          if(retrying, do: [], else: [drafting_since: nil, drafted_at: started_at])
     )
 
     # A chat line or customer message that arrived during the pass gets a pass of its own.
@@ -291,6 +318,7 @@ defmodule Rail.Support.Actions.RunSupportAgent do
   defp draft(%Conversation{} = conversation) do
     %{
       reply: conversation.reply_text,
+      reply_posted: is_struct(conversation.reply_posted_at, DateTime),
       items:
         Enum.map(conversation.items, fn %Item{} = item ->
           %{
@@ -398,6 +426,7 @@ defmodule Rail.Support.Actions.RunSupportAgent do
     JSON
 
     - The reply goes to the customer, outside the team, posted under the teammate's name. Write it in their voice, plainly.
+    - When draft.json has `reply_posted` true, the customer already has that reply. Return it unchanged as `reply`, change only the list, and tell the teammate in `message` that a new reply needs a new message from the customer.
     - When the customer asks how to do something the product already does, the reply gives the steps, in the words the product's screens use.
     - For anything going to the team, the reply says in general terms that it has been passed on to the dev team. Never promise a fix, a release or a date, and never name a ticket or its identifier.
     - `message` is for the teammate, in two to five short sentences: what you found and what you changed. For every item that already has a ticket, name the ticket's identifier, its title and its current status. The teammate has no other way to see tickets.

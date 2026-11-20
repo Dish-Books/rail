@@ -40,8 +40,9 @@ defmodule Rail.Support.Schemas.Message do
     {text, inline} = calculate_text(part["body"])
     kind = calculate_kind(get_in(part, ["author", "type"]), part_type)
 
+    # Only https addresses, so no other scheme reaches a link, an image or a download.
     files =
-      for %{"url" => url} = file <- List.wrap(part["attachments"]), is_binary(url) do
+      for %{"url" => "https://" <> _rest = url} = file <- List.wrap(part["attachments"]) do
         %__MODULE__.Attachment{
           name: file["name"],
           url: url,
@@ -92,7 +93,7 @@ defmodule Rail.Support.Schemas.Message do
     {:ok, tree} = Floki.parse_fragment(html)
 
     images =
-      for {"img", attrs, _children} <- Floki.find(tree, "img"), {"src", src} <- attrs do
+      for {"img", attrs, _children} <- Floki.find(tree, "img"), {"src", "https://" <> _rest = src} <- attrs do
         %__MODULE__.Attachment{name: Path.basename(URI.parse(src).path || "image"), url: src, content_type: "image/*"}
       end
 

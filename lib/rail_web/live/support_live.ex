@@ -218,7 +218,7 @@ defmodule RailWeb.SupportLive do
     |> assign(:now, DateTime.utc_now())
     |> assign(:conversations, conversations)
     |> assign(:counts, Support.count_support_conversations(project_id: project_filter))
-    |> assign(:workspace_names, Enum.map(Support.list_intercom_workspaces(), & &1.name))
+    |> assign(:workspace_names, Enum.map(Support.list_intercom_workspaces(project_id: project_filter), & &1.name))
     |> assign(:author_name, scope.user.intercom_name || scope.user.name || scope.user.login)
     |> assign(:conversation, conversation)
   end

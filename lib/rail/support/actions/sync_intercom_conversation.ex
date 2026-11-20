@@ -103,10 +103,17 @@ defmodule Rail.Support.Actions.SyncIntercomConversation do
   # What every read refreshes; the title only when Intercom has a subject, so the agent's title stays otherwise.
   defp fields(source, rows, fetched_at) do
     title = subject(source["subject"])
+    author = source["author"] || %{}
+
+    # A teammate's outbound message starts a conversation too; the customer is then whoever answers it.
+    {customer_name, customer_email} =
+      if Message.calculate_kind(author["type"], "source") == :customer,
+        do: {author["name"], author["email"]},
+        else: {Enum.find_value(rows, &(&1.kind == :customer && &1.author_name)), nil}
 
     [
-      customer_name: get_in(source, ["author", "name"]),
-      customer_email: get_in(source, ["author", "email"]),
+      customer_name: customer_name,
+      customer_email: customer_email,
       last_message_at: latest(rows),
       intercom_updated_at: fetched_at,
       updated_at: DateTime.utc_now()

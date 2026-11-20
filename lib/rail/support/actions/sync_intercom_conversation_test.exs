@@ -376,10 +376,41 @@ defmodule Rail.Support.Actions.SyncIntercomConversationTest do
 
     Req.Test.expect(Intercom, &Req.Test.json(&1, outbound))
 
-    assert {:ok, %Conversation{drafting_since: nil, customer_name: "Dana", title: nil}} =
+    assert {:ok, %Conversation{drafting_since: nil, customer_name: nil, title: nil}} =
              Support.sync_intercom_conversation(workspace, external_id, draft: true)
 
     refute_enqueued(worker: RunSupportAgent)
+  end
+
+  test "a conversation a teammate started names the customer who answered, with no email", %{
+    workspace: workspace,
+    payload: payload,
+    external_id: external_id
+  } do
+    outbound = %{
+      payload
+      | "source" => %{
+          "id" => "src1",
+          "author" => %{"type" => "admin", "name" => "Priya", "email" => "priya@acme.test"},
+          "body" => "<p>Hello</p>"
+        },
+        "conversation_parts" => %{
+          "conversation_parts" => [
+            %{
+              "id" => "p1",
+              "part_type" => "comment",
+              "created_at" => 1_790_000_100,
+              "body" => "<p>Hi</p>",
+              "author" => %{"type" => "user", "name" => "Owen Price", "email" => "owen@pier9.test"}
+            }
+          ]
+        }
+    }
+
+    Req.Test.expect(Intercom, &Req.Test.json(&1, outbound))
+
+    assert {:ok, %Conversation{customer_name: "Owen Price", customer_email: nil}} =
+             Support.sync_intercom_conversation(workspace, external_id)
   end
 
   test "the title only changes when Intercom has a subject", %{

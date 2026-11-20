@@ -1113,6 +1113,7 @@ defmodule RailWeb.TriageLiveTest do
         {:ok, ""}
       end)
 
+      {:ok, _drafting} = Support.draft_support_reply(system_scope(), conversation)
       :ok = Support.run_support_agent(conversation)
 
       {:ok, user} =

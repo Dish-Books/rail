@@ -215,6 +215,7 @@ defmodule Rail.Mcp.Actions.AuthenticateRunTokenTest do
         })
 
       {:ok, conversation} = Support.sync_intercom_conversation(workspace, "44")
+      {:ok, _drafting} = Support.draft_support_reply(system_scope(), conversation)
       %{conversation: conversation, triage_role_id: triage_role_id, triage_user_id: triage_user_id}
     end
 

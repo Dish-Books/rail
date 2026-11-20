@@ -43,6 +43,7 @@ defmodule Rail.Support.Workers.RunSupportAgentTest do
       })
 
     {:ok, %{id: conversation_id} = conversation} = Support.sync_intercom_conversation(workspace, "66")
+    {:ok, _drafting} = Support.draft_support_reply(system_scope(), conversation)
 
     expect(Tools, :run_agent, fn _role, _argv, _opts ->
       conversation

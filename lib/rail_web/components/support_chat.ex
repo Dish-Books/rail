@@ -14,7 +14,11 @@ defmodule RailWeb.Components.SupportChat do
     assigns = assign(assigns, :drafting, Conversation.drafting?(assigns.conversation))
 
     ~H"""
-    <aside id="support-chat" data-qa="support-chat" class="w-[400px] shrink-0 flex flex-col min-h-0">
+    <aside
+      id="support-chat"
+      data-qa="support-chat"
+      class="w-[400px] max-xl:w-[260px] shrink-0 flex flex-col min-h-0"
+    >
       <div class="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center gap-2">
         <.icon name="pi-robot" class="size-4 text-slate-400" />
         <p class="text-sm font-bold text-slate-900 dark:text-slate-100">Agent</p>

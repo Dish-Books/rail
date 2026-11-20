@@ -41,10 +41,20 @@ defmodule Rail.Intercom.Client do
     |> answer()
   end
 
+  @doc """
+  Downloads an attached file from Intercom's own hosts, with the workspace's token. Any other address is refused.
+  """
   def download_file(%IntercomWorkspace{access_token: token}, url) when is_binary(url) do
-    req()
-    |> Req.get(url: url, auth: {:bearer, token}, decode_body: false)
-    |> answer()
+    uri = URI.parse(url)
+
+    if uri.scheme == "https" and is_binary(uri.host) and
+         (uri.host == "api.intercom.io" or String.ends_with?(uri.host, ".intercomcdn.com")) do
+      req()
+      |> Req.get(url: url, auth: {:bearer, token}, decode_body: false)
+      |> answer()
+    else
+      {:error, :not_an_intercom_file}
+    end
   end
 
   def authorize_url(%IntercomWorkspace{client_id: client_id}, state),

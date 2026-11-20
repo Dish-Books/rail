@@ -25,7 +25,7 @@ defmodule RailWeb.SupportLiveTest do
 
     # Attachments a pass downloads; everything else a test expects by name.
     Req.Test.stub(Rail.Intercom, fn conn ->
-      assert %{method: "GET", host: "files.example"} = conn
+      assert %{method: "GET", host: "downloads.intercomcdn.com"} = conn
       Plug.Conn.send_resp(conn, 200, "file-bytes")
     end)
 
@@ -56,13 +56,13 @@ defmodule RailWeb.SupportLiveTest do
         "attachments" => [
           %{
             "name" => "allergen-sheet.png",
-            "url" => "https://files.example/sheet.png",
+            "url" => "https://downloads.intercomcdn.com/sheet.png",
             "content_type" => "image/png",
             "filesize" => 98_304
           },
           %{
             "name" => "recipe.pdf",
-            "url" => "https://files.example/recipe.pdf",
+            "url" => "https://downloads.intercomcdn.com/recipe.pdf",
             "content_type" => "application/pdf",
             "filesize" => 188_416
           }
@@ -154,6 +154,7 @@ defmodule RailWeb.SupportLiveTest do
         {:ok, ""}
       end)
 
+      {:ok, _drafting} = Support.draft_support_reply(system_scope(), conversation)
       :ok = Support.run_support_agent(conversation)
     end
 
@@ -210,13 +211,18 @@ defmodule RailWeb.SupportLiveTest do
 
     assert has_element?(
              view,
-             ~s(#support-conversation img[src="https://files.example/sheet.png"][alt="allergen-sheet.png"])
+             ~s(#support-conversation img[src="https://downloads.intercomcdn.com/sheet.png"][alt="allergen-sheet.png"])
            )
 
-    assert has_element?(view, ~s(#support-conversation a[href="https://files.example/recipe.pdf"]), "recipe.pdf")
-    assert has_element?(view, ~s(#support-conversation a[href="https://files.example/recipe.pdf"]), "184 KB")
+    assert has_element?(
+             view,
+             ~s(#support-conversation a[href="https://downloads.intercomcdn.com/recipe.pdf"]),
+             "recipe.pdf"
+           )
 
-    assert has_element?(view, "#support-no-draft", "No draft yet")
+    assert has_element?(view, ~s(#support-conversation a[href="https://downloads.intercomcdn.com/recipe.pdf"]), "184 KB")
+
+    assert has_element?(view, "#support-no-draft", "No draft yet. The agent has not read this conversation.")
     assert has_element?(view, "#support-chat-empty")
   end
 
@@ -439,17 +445,75 @@ defmodule RailWeb.SupportLiveTest do
   } do
     pass.(result)
     expect(Tools, :run_agent, fn _role, _argv, _opts -> {:error, :timeout} end)
+    {:ok, _drafting} = Support.draft_support_reply(system_scope(), conversation)
     :ok = Support.run_support_agent(conversation)
 
     {:ok, view, _html} = live(conn, ~p"/support/#{conversation.id}")
     assert has_element?(view, "#support-agent-error", "The agent did not finish.")
     assert has_element?(view, "#support-agent-error", "still running after 30 minutes")
-    assert has_element?(view, "#support-send-hint", "The draft below is from the agent's last run.")
+    assert has_element?(view, "#support-send-hint", "The draft above is from the agent's last finished run.")
     assert has_element?(view, "#support-reply", "We've passed both on to the dev team.")
 
     view |> element("#try-again-button") |> render_click()
     assert has_element?(view, "#support-drafting")
     refute has_element?(view, "#support-agent-error")
+  end
+
+  test "a first pass that failed says no reply is drafted yet", %{conn: conn, conversation: conversation} do
+    expect(Tools, :run_agent, fn _role, _argv, _opts -> {:error, :timeout} end)
+    {:ok, _drafting} = Support.draft_support_reply(system_scope(), conversation)
+    :ok = Support.run_support_agent(conversation)
+
+    {:ok, view, _html} = live(conn, ~p"/support/#{conversation.id}")
+    assert has_element?(view, "#support-agent-error", "The agent did not finish.")
+    assert has_element?(view, "#support-send-hint", "The agent has not drafted a reply yet.")
+  end
+
+  test "the queue names only the workspaces of the projects in view", %{conn: conn, github_project: github_project} do
+    unique = System.unique_integer([:positive])
+    Req.Test.expect(Rail.Intercom, &Req.Test.json(&1, %{"app" => %{"id_code" => "other_#{unique}"}}))
+
+    {:ok, _other} =
+      Support.create_intercom_workspace(system_scope(), github_project, %{
+        "name" => "Other Support #{unique}",
+        "access_token" => "tok",
+        "client_id" => "cid",
+        "client_secret" => "sec"
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/support")
+    assert has_element?(view, "#support-workspaces", "Intercom · Dishbooks Support")
+    refute render(view) =~ "Other Support"
+  end
+
+  test "a posted reply's form sent back unchanged, as a reconnect does, shows no error", %{
+    conn: conn,
+    conversation: conversation,
+    pass: pass,
+    result: result,
+    user: user,
+    link: link
+  } do
+    pass.(result)
+    link.(user)
+    {:ok, view, _html} = live(conn, ~p"/support/#{conversation.id}")
+    Req.Test.allow(Rail.Intercom, self(), view.pid)
+    allow(Triage, self(), view.pid)
+    Req.Test.expect(Rail.Intercom, &Req.Test.json(&1, %{"type" => "conversation"}))
+    expect(Triage, :create_forwarded_thread, fn _scope, _conversation, _items -> {:error, :boom} end)
+    view |> element("#support-send-button") |> render_click()
+
+    view
+    |> form("#support-reply-form", %{
+      "conversation" => %{"reply_text" => "Hi Marta,\r\n\r\nWe've passed both on to the dev team."}
+    })
+    |> render_change()
+
+    refute has_element?(view, "#support-send-failed")
+    assert has_element?(view, "#support-send-error", "Posted the reply in Intercom, but could not forward to triage.")
+
+    view |> form("#support-reply-form", %{"conversation" => %{"reply_text" => "Changed"}}) |> render_change()
+    assert has_element?(view, "#support-send-failed", "This reply is already being sent, or was sent.")
   end
 
   test "a chat message is added and starts the agent; a blank one is refused; typing survives a reload", %{

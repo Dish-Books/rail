@@ -135,6 +135,7 @@ defmodule Rail.Support.Actions.SendSupportReplyTest do
       {:ok, ""}
     end)
 
+    {:ok, _drafting} = Support.draft_support_reply(system_scope(), conversation)
     :ok = Support.run_support_agent(conversation)
     Phoenix.PubSub.subscribe(Rail.PubSub, "support")
     Phoenix.PubSub.subscribe(Rail.PubSub, "triage")
@@ -253,6 +254,25 @@ defmodule Rail.Support.Actions.SendSupportReplyTest do
 
     assert {:ok, %Conversation{send_error: nil}} = Support.send_support_reply(Scope.for_user(user), conversation)
     assert 1 = Repo.aggregate(from(t in Thread, where: t.support_conversation_id == ^conversation_id), :count)
+  end
+
+  test "a forward that raises keeps the reply posted, records why and still raises", %{
+    conversation: %{id: conversation_id} = conversation,
+    scope: scope
+  } do
+    # One expect, verified on exit, so the reply is posted exactly once.
+    Req.Test.expect(Rail.Intercom, &Req.Test.json(&1, %{"type" => "conversation"}))
+    expect(Triage, :create_forwarded_thread, fn _scope, _conversation, _items -> raise "triage is down" end)
+
+    assert_raise RuntimeError, "triage is down", fn -> Support.send_support_reply(scope, conversation) end
+    assert_received {:support_changed, ^conversation_id}
+
+    assert %Conversation{
+             reply_posted_at: %DateTime{},
+             send_error: "Posted the reply in Intercom, but could not forward to triage."
+           } = Repo.get!(Conversation, conversation_id)
+
+    refute Repo.exists?(from(t in Thread, where: t.support_conversation_id == ^conversation_id))
   end
 
   test "Intercom refusing the reply sends and forwards nothing, and frees the Send to try again", %{

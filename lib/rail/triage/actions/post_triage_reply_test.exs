@@ -7,6 +7,8 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
   alias Rail.Issues.Workers.LinkTrackerUrl
   alias Rail.Projects
   alias Rail.Scope
+  alias Rail.Support.Schemas.Conversation
+  alias Rail.Support.Schemas.IntercomWorkspace
   alias Rail.Tools
   alias Rail.Triage
   alias Rail.Triage.Schemas.Item
@@ -335,5 +337,39 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
 
       assert {:ok, %Item{reply_posted_at: %DateTime{}}} = Triage.post_triage_reply(scope, item, %{})
     end
+  end
+
+  test "a reply on a thread forwarded from Intercom is refused, with nothing posted", %{
+    thread: thread,
+    scope: scope,
+    project: project
+  } do
+    %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug(%{"issue" => nil})]})
+
+    workspace =
+      Repo.insert!(%IntercomWorkspace{
+        project_id: project.id,
+        name: "Support",
+        external_id: "reply_#{thread.id}",
+        access_token: "tok",
+        client_id: "cid",
+        client_secret: "sec"
+      })
+
+    conversation =
+      Repo.insert!(%Conversation{
+        project_id: project.id,
+        intercom_workspace_id: workspace.id,
+        external_id: "1",
+        intercom_updated_at: DateTime.utc_now()
+      })
+
+    Repo.update_all(from(t in Thread, where: t.id == ^thread.id),
+      set: [support_conversation_id: conversation.id, slack_channel_id: nil]
+    )
+
+    # No Slack call is expected, so a post to Slack would fail the test.
+    assert {:error, :forwarded} = Triage.post_triage_reply(scope, item, %{"reply_text" => "Thanks"})
+    assert %Item{reply_posted_at: nil, reply_posted_by_id: nil} = Repo.get!(Item, item.id)
   end
 end
