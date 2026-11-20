@@ -26,7 +26,7 @@ defmodule Rail.Tools.Actions.RunInSandbox do
   `{:error, :timeout}` returned.
   """
   def run_in_sandbox(%OsProcess{} = os_process, command, opts \\ []) when is_binary(command) do
-    %OsProcess{task: task} = os_process = Repo.preload(os_process, :task)
+    %OsProcess{task: task} = os_process = Repo.preload(os_process, task: :project)
     timeout_ms = Keyword.get(opts, :timeout_ms, @timeout_ms)
 
     os_process

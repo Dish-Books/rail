@@ -1,6 +1,6 @@
 defmodule Rail.Pipeline.Utils.BuildTask do
   @moduledoc """
-  The changeset that inserts a task for an issue, with its id, worktree and scratch directory drawn.
+  The changeset that inserts a task for an issue, with its id, checkout and scratch directory drawn.
   """
 
   import Rail.Pipeline.Utils.ScratchPath
@@ -25,7 +25,8 @@ defmodule Rail.Pipeline.Utils.BuildTask do
         %{
           issue_id: issue.id,
           worktree_name: name,
-          worktree_path: Path.join(project.clone_path, ".worktrees/#{name}"),
+          # Keyed by the branch, since a start makes the checkout before the task, and its id, exist.
+          worktree_path: Path.join([Rail.tasks_root(), project.id, Map.get(attrs, :worktree_name, name), "repo"]),
           scratch_path: scratch_path(project.id, id)
         },
         attrs

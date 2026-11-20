@@ -23,13 +23,12 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
 
   @plan "## Implementation plan\n\nFilter by vendor."
 
-  # Git is faked at its boundary: deleting a branch or a worktree, or making one, for real is for `Rail.Git`'s own
-  # tests. The Planner's worktree is where it belongs, with nothing on disk to fingerprint.
+  # Git is faked at its boundary: deleting a branch or a checkout, or making one, for real is for `Rail.Git`'s own
+  # tests. The Planner's checkout is where it belongs, with nothing on disk to fingerprint.
   setup %{project: %{github_repo: repo, github_installation_id: installation_id} = project} do
     stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
     stub(Git, :delete_remote_branch, fn _project, _branch -> :ok end)
-    stub(Git, :remove_worktree, fn _repo_path, _worktree_path -> :ok end)
-    stub(Git, :delete_branch, fn _repo_path, _branch -> :ok end)
+    stub(Git, :remove_task_checkout, fn _project, _task -> :ok end)
     stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
     stub(Git, :branch_fingerprint, fn _worktree_path -> nil end)
 
@@ -117,7 +116,7 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
        %{
          scope: scope,
          task: task,
-         issue: %Issue{id: issue_id, project: %{id: project_id, clone_path: clone}} = issue,
+         issue: %Issue{id: issue_id, project: %{id: project_id}} = issue,
          lead: lead,
          plan_role: %{id: plan_role_id} = plan_role,
          reader: reader,
@@ -130,9 +129,13 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
     now = DateTime.utc_now()
 
     expect(Git, :delete_remote_branch, fn %{id: ^project_id}, ^branch -> :ok end)
-    expect(Git, :remove_worktree, fn ^clone, ^worktree_path -> :ok end)
-    expect(Git, :delete_branch, fn ^clone, ^branch -> :ok end)
-    expect(Git, :get_or_create_worktree, fn %{id: ^project_id}, %Task{id: ^task_id} -> {:ok, worktree_path} end)
+    expect(Git, :remove_task_checkout, fn %{id: ^project_id}, %Task{worktree_path: ^worktree_path} -> :ok end)
+
+    # A fresh branch from the default, as GitHub's was deleted and the pull request let go.
+    expect(Git, :get_or_create_worktree, fn %{id: ^project_id},
+                                            %Task{id: ^task_id, worktree_path: ^worktree_path, pr_number: nil} ->
+      {:ok, worktree_path}
+    end)
 
     {:ok, %Run{id: old_plan_id}} =
       Pipeline.create_run(%{
@@ -313,6 +316,23 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
 
     assert_receive {:started_mid_close, run_id}
     assert_receive {:run_changed, ^run_id}
+  end
+
+  test "a task on a worktree from before clones goes back to Plan with a clone of its own at the same path", %{
+    scope: scope,
+    task: task,
+    issue: %Issue{project: %{id: project_id, clone_path: clone}}
+  } do
+    worktree_path = Path.join(clone, ".worktrees/rtp-1-return-me")
+    {:ok, %Task{id: task_id} = task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
+
+    expect(Git, :remove_task_checkout, fn %{id: ^project_id}, %Task{worktree_path: ^worktree_path} -> :ok end)
+
+    expect(Git, :get_or_create_worktree, fn %{id: ^project_id}, %Task{id: ^task_id, worktree_path: ^worktree_path} ->
+      {:ok, worktree_path}
+    end)
+
+    assert {:ok, %Task{stage: :plan, worktree_path: ^worktree_path}} = Pipeline.return_to_plan(scope, task)
   end
 
   test "a task started without approval goes back the same way", %{scope: scope, task: task, first_id: first_id} do

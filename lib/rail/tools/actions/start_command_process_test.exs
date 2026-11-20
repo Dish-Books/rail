@@ -69,23 +69,26 @@ defmodule Rail.Tools.Actions.StartCommandProcessTest do
     {:ok, run} =
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
 
-    %{run: run, worktree_path: worktree_path}
+    %{run: run, worktree_path: worktree_path, clone_path: project.clone_path}
   end
 
-  test "runs the command in the worktree with its ports, and records how it exited", %{
+  test "runs the command in the worktree with its ports and its project's clone, and records how it exited", %{
     run: run,
-    worktree_path: worktree_path
+    worktree_path: worktree_path,
+    clone_path: clone_path
   } do
     expect(FollowerSupervisor, :start_follower, fn _os_process, [port: _port] -> {:ok, self()} end)
+    command = "pwd; echo $RAIL_PORT_BASE; echo clone=$RAIL_CLONE_PATH; exit 3"
 
-    assert {:ok, %OsProcess{kind: :setup, status: :running, command: "pwd; echo $RAIL_PORT_BASE; exit 3"} = os_process} =
-             Tools.start_command_process(run, :setup, "pwd; echo $RAIL_PORT_BASE; exit 3")
+    assert {:ok, %OsProcess{kind: :setup, status: :running, command: ^command} = os_process} =
+             Tools.start_command_process(run, :setup, command)
 
     eventually(fn -> assert File.read(OsProcess.exit_path(os_process)) == {:ok, "3\n"} end)
 
     assert {:ok, output} = File.read(os_process.stream_path)
     assert output =~ Path.basename(worktree_path)
     assert output =~ "20400"
+    assert output =~ "clone=#{clone_path}\n"
   end
 
   # Runs the real mise, with the settings Rail gives every tool it starts, on a

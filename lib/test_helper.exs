@@ -23,6 +23,8 @@ end
 File.rm_rf!(run_tmp_dir)
 File.mkdir_p!(run_tmp_dir)
 System.put_env("TMPDIR", run_tmp_dir)
+# Tasks' clones are named for their branch, so another suite on the same machine would make the same ones.
+Application.put_env(:rail, :tasks_root, Path.join(run_tmp_dir, "tasks"))
 
 ExUnit.after_suite(fn _result ->
   stop_chrome.(run_tmp_dir)

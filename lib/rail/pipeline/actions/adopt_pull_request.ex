@@ -33,8 +33,17 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequest do
          {:ok, pull_request} <- Issues.link_pull_request(scope, issue),
          true <- is_map(pull_request) || {:error, :no_pull_request},
          {:ok, branch} <- adoptable(pull_request, project),
-         :ok <- Git.fetch_branch(project, branch),
-         {:ok, task} <- insert(scope, project, issue, pull_request, branch),
+         attrs = %{
+           stage: :review,
+           worktree_name: branch,
+           pr_number: pull_request["number"],
+           pr_url: pull_request["html_url"],
+           pr_is_draft: pull_request["draft"]
+         },
+         # The clone comes first, as no transaction may wait on a git fetch.
+         {:ok, _worktree_path} <-
+           Git.get_or_create_worktree(project, project |> build_task(issue, attrs) |> Ecto.Changeset.apply_changes()),
+         {:ok, task} <- insert(scope, project, issue, attrs),
          Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id}),
          # Claimed before the checks start, so they share one slot rather than each claiming its own.
          {:ok, task, _worktree_path} <- prepare_worktree(project, task) do
@@ -71,17 +80,8 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequest do
     )
   end
 
-  defp insert(%Scope{user: user} = scope, %Project{} = project, %Issue{} = issue, pull_request, branch) do
+  defp insert(%Scope{user: user} = scope, %Project{} = project, %Issue{} = issue, attrs) do
     Repo.transaction(fn ->
-      attrs = %{
-        stage: :review,
-        worktree_name: branch,
-        worktree_path: Path.join(project.clone_path, ".worktrees/#{branch}"),
-        pr_number: pull_request["number"],
-        pr_url: pull_request["html_url"],
-        pr_is_draft: pull_request["draft"]
-      }
-
       with {:ok, task} <- project |> build_task(issue, attrs) |> Repo.insert(),
            {:ok, round} <- Pipeline.create_round(task),
            # Whoever adopts it vouches for the change in place of a plan, so Merge does not wait on one.
@@ -95,8 +95,6 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequest do
                estimate: issue.estimate
              })
              |> Repo.update(),
-           # In the transaction, so an issue whose branch will not check out is left without a task to start again.
-           {:ok, _worktree_path} <- Git.get_or_create_worktree(project, task),
            # Last, because it locks the issue's row, which no git fetch should hold.
            :ok <- claim_for_starter(scope, issue) do
         task

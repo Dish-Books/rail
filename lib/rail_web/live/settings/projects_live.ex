@@ -446,8 +446,8 @@ defmodule RailWeb.Settings.ProjectsLive do
                   class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 />
                 <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  Runs once in each new worktree, from its root, before any agent starts there.
-                  RAIL_WORKTREE_SLOT and RAIL_PORT_BASE say which ports are its own.
+                  Runs once in each new task's checkout, from its root, before any agent starts there.
+                  RAIL_WORKTREE_SLOT and RAIL_PORT_BASE say which ports are its own, and RAIL_CLONE_PATH where the project's clone is.
                 </p>
                 <span
                   :if={@changeset.errors[:worktree_setup_script]}

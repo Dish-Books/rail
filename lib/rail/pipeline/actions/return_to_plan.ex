@@ -83,7 +83,8 @@ defmodule Rail.Pipeline.Actions.ReturnToPlan do
         task |> Task.return_to_plan_changeset() |> Repo.update!()
       end)
 
-    # The cleared slot and setup are what the Planner's start reads, so the worktree is made and set up afresh.
+    # The cleared slot and setup are what the Planner's start reads, so the checkout is made and set up afresh, a
+    # clone of its own at the same path even for a task that was on a worktree.
     {:ok, %Run{}} = Pipeline.enter_stage(planning, :plan, fresh: true)
     Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
     broadcast_pipeline_changed(planning)
@@ -95,10 +96,7 @@ defmodule Rail.Pipeline.Actions.ReturnToPlan do
 
   # The design folder is the picked design's pages, which Plan carries on from, as it does the kept stages' files.
   defp remove_work(%Task{project: project, scratch_path: scratch_path} = task, kept) do
-    if is_binary(project.clone_path) do
-      Git.remove_worktree(project.clone_path, task.worktree_path)
-      Git.delete_branch(project.clone_path, task.worktree_name)
-    end
+    if is_binary(project.clone_path), do: Git.remove_task_checkout(project, task)
 
     for path <- Path.wildcard(Path.join(scratch_path, "*"), match_dot: true),
         Path.basename(path) not in ["design", "stages"],

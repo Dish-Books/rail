@@ -46,6 +46,9 @@ defmodule Rail do
   @doc "Where scratch directories live, outside any repository."
   def scratch_root, do: Application.get_env(:rail, :scratch_root) || Path.join(File.cwd!(), "output")
 
+  @doc "Where each task's own clone of its project lives."
+  def tasks_root, do: Application.get_env(:rail, :tasks_root) || Path.join(File.cwd!(), "output/tasks")
+
   @doc "Whether Goth runs, so Rail can reach Google for embeddings."
   def goth_enabled?, do: Application.get_env(:rail, :goth_enabled, false)
 

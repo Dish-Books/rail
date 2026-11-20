@@ -13,11 +13,10 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   alias Rail.Roles
   alias Rail.Users
 
-  # Git is faked at its boundary: removing a worktree or a branch for real is for `Rail.Git`'s own tests.
+  # Git is faked at its boundary: removing a clone, or a worktree and its branch, for real is for `Rail.Git`'s own tests.
   setup %{project: project} do
     stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
-    stub(Git, :remove_worktree, fn _repo_path, _worktree_path -> :ok end)
-    stub(Git, :delete_branch, fn _repo_path, _branch -> :ok end)
+    stub(Git, :remove_task_checkout, fn _project, _task -> :ok end)
 
     {:ok, engineer_role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
@@ -207,7 +206,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     assert_received {:pipeline_changed, ^task_id}
   end
 
-  test "cleans up worktree, branch and scratch directory", %{project: %{clone_path: clone_path}, task: task} do
+  test "cleans up the task's checkout and scratch directory", %{project: %{id: project_id}, task: task} do
     worktree_path = Path.join(System.tmp_dir!(), "rail_cleanup_wt_#{System.unique_integer([:positive])}")
     scratch_dir = Path.join(System.tmp_dir!(), "rail_cleanup_scratch_#{System.unique_integer([:positive])}")
     File.mkdir_p!(scratch_dir)
@@ -221,8 +220,10 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         scratch_path: scratch_dir
       })
 
-    expect(Git, :remove_worktree, fn ^clone_path, ^worktree_path -> :ok end)
-    expect(Git, :delete_branch, fn ^clone_path, "cleanup-branch" -> :ok end)
+    expect(Git, :remove_task_checkout, fn %{id: ^project_id},
+                                          %Task{worktree_path: ^worktree_path, worktree_name: "cleanup-branch"} ->
+      :ok
+    end)
 
     assert {:ok, %Task{worktree_path: ^worktree_path}} = Pipeline.cleanup_task(task)
 
