@@ -48,9 +48,9 @@ Each project picks one, and keeps it once it has issues.
 
 ## 4. Preparing each repository
 
-Rail runs every task in its own git worktree, several at once. Anything a worktree starts (a dev server, tests) must not collide with another worktree's.
+Rail runs every task in its own clone of the project's clone, several at once. Anything a task starts (a dev server, tests) must not collide with another task's.
 
-**Isolate ports and databases.** Every process Rail starts in a worktree (the setup script, CI, the agents) gets `RAIL_WORKTREE_SLOT` and `RAIL_PORT_BASE`. Read them in the dev and test config. For a Phoenix app:
+**Isolate ports and databases.** Every process Rail starts in a task's checkout (the setup script, CI, the agents) gets `RAIL_WORKTREE_SLOT`, `RAIL_PORT_BASE` and `RAIL_CLONE_PATH`, the path of the project's clone. Read the first two in the dev and test config. For a Phoenix app:
 
 ```elixir
 # config/dev.exs
@@ -61,21 +61,21 @@ port = String.to_integer(System.get_env("PORT") || System.get_env("RAIL_PORT_BAS
 # config/test.exs: the same suffix on myapp_test, and port RAIL_PORT_BASE + 2
 ```
 
-Outside Rail neither variable is set, so nothing changes for people.
+Outside Rail none of these is set, so nothing changes for people.
 
-**A setup script.** It runs once in each new worktree, from its root, before any agent starts. It should leave a worktree that can compile, test and serve: fetch dependencies, install assets, create and migrate the databases. Copying `deps`, `_build` and `node_modules` from the primary checkout (`cp -a --reflink=auto`) makes the first compile incremental. Commit it executable (`chmod +x`); Rail runs it as `./<path>`.
+**A setup script.** It runs once in each new task's checkout, from its root, before any agent starts there, except Plan's, which starts beside it. It should leave a checkout that can compile, test and serve: fetch dependencies, install assets, create and migrate the databases. Copying `deps`, `_build` and `node_modules` from the project's clone at `$RAIL_CLONE_PATH` (`cp -a --reflink=auto`) makes the first compile incremental. A task's checkout is a clone of its own, so `git worktree list` there lists only the task. Find the project's clone through `RAIL_CLONE_PATH`, and never treat a checkout as the main one while `RAIL_WORKTREE_SLOT` is set. Commit it executable (`chmod +x`); Rail runs it as `./<path>`.
 
 **A CI command.** What Rail runs on every commit the engineer finishes, before it is pushed, for example `mix test`.
 
 **Prompts (optional).** A stage runs `.rail/prompts/<stage>.md` from the repository's default branch when it exists, and the role's own prompt otherwise.
 
-These have to be on the default branch: Rail cuts every worktree from it.
+These have to be on the default branch: Rail starts every task from it.
 
-Check, in a scratch worktree with `RAIL_WORKTREE_SLOT=999 RAIL_PORT_BASE=29900` exported: the setup script exits 0, the CI command passes, and the databases it used carry the `_rail999` suffix. Then remove the worktree and drop those databases.
+Check, in a scratch clone of the project's clone with `RAIL_CLONE_PATH=<the project's clone> RAIL_WORKTREE_SLOT=999 RAIL_PORT_BASE=29900` exported: the setup script exits 0, the CI command passes, and the databases it used carry the `_rail999` suffix. Then delete the scratch clone and drop those databases.
 
 ## 5. The clone Rail works from
 
-Give Rail a clone of its own; never point it at a checkout someone works in. Rail detaches that checkout's HEAD and force-moves its default branch to `origin`'s on every fetch, and adds every worktree from its `.git`.
+Give Rail a clone of its own; never point it at a checkout someone works in. Rail detaches that checkout's HEAD and force-moves its default branch to `origin`'s on every fetch. It clones each new task from it, and adds worktrees to it for triage threads, curator passes and the toolchain install.
 
 `origin` decides how Rail authenticates:
 
