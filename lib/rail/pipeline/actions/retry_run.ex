@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Actions.RetryRun do
   started the same way, by a person who wants it walked anyway.
   """
 
+  import Ecto.Query, only: [from: 2]
   import Rail.Pipeline.Utils.StartRoleRun
   import Rail.Pipeline.Utils.WithTaskLock
 
@@ -25,15 +26,25 @@ defmodule Rail.Pipeline.Actions.RetryRun do
   `{:error, reason}`: `:not_found`, `:stage_running` while anything works on the task, or `:not_retryable` for a
   run that is gone, has neither failed nor been skipped, or belongs to no step the task is at.
   """
-  def retry_run(%Scope{} = scope, %Run{id: run_id, task_id: task_id}) do
-    # Under the task's lock, so a run Discard or Back to Plan deletes cannot be started again around it.
-    with_task_lock(task_id, fn ->
-      case Run |> Repo.get(run_id) |> Repo.preload([:role, :questions, task: [runs: :role]]) do
-        %Run{} = run -> retry(scope, run)
-        nil -> {:error, :not_retryable}
-      end
-    end)
+  def retry_run(%Scope{} = scope, %Run{id: run_id} = run) do
+    case task_id(run) do
+      # Under the task's lock, so a run Discard or Back to Plan deletes cannot be started again around it.
+      task_id when is_binary(task_id) ->
+        with_task_lock(task_id, fn ->
+          case Run |> Repo.get(run_id) |> Repo.preload([:role, :questions, task: [runs: :role]]) do
+            %Run{} = run -> retry(scope, run)
+            nil -> {:error, :not_retryable}
+          end
+        end)
+
+      nil ->
+        {:error, :not_retryable}
+    end
   end
+
+  # The task page's Retry has only the run's id. A run never moves to another task, so reading it before the lock is safe.
+  defp task_id(%Run{task_id: task_id}) when is_binary(task_id), do: task_id
+  defp task_id(%Run{id: run_id}), do: Repo.one(from(r in Run, where: r.id == ^run_id, select: r.task_id))
 
   defp retry(scope, %Run{task: %Task{} = task, role: %Role{} = role} = run) do
     cond do
