@@ -27,6 +27,7 @@ defmodule Rail.DataCase do
       setup :stub_agent_spawn
       setup :stub_git_repo_check
       setup :stub_worktree_slot
+      setup :stub_worktree_databases
       setup :stub_prepare_turn
     end
   end
@@ -112,6 +113,20 @@ defmodule Rail.DataCase do
       %Task{} = task ->
         Mimic.call_original(module, :claim_worktree_slot, [task])
     end)
+
+    :ok
+  end
+
+  @doc """
+  Keeps every test's cleanup off the databases on the test Postgres.
+
+  A worktree's databases are dropped by name from its slot, and a test's slot can be any number, so a real drop
+  could take a developer's own worktree databases. `@tag :real_worktree_databases` opts out.
+  """
+  def stub_worktree_databases(%{real_worktree_databases: true}), do: :ok
+
+  def stub_worktree_databases(_context) do
+    Mimic.stub(Rail.Pipeline.Utils.DropWorktreeDatabases, :drop_worktree_databases, fn %Task{} -> [] end)
 
     :ok
   end

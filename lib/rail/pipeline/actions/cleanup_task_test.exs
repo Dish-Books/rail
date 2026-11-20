@@ -13,6 +13,8 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   alias Rail.Roles
   alias Rail.Users
 
+  @drop_worktree_databases Rail.Pipeline.Utils.DropWorktreeDatabases
+
   # Git is faked at its boundary: removing a clone, or a worktree and its branch, for real is for `Rail.Git`'s own tests.
   setup %{project: project} do
     stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
@@ -291,8 +293,12 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     assert {:ok, %Task{cleaned_up_at: ^first}} = Pipeline.cleanup_task(Repo.reload!(task))
   end
 
-  test "frees the task's worktree slot, and a new worktree would need setting up again", %{task: task} do
+  test "frees the task's worktree slot and drops its databases, so a new worktree would need setting up again", %{
+    task: task
+  } do
     {:ok, task} = Pipeline.update_task(task, %{worktree_slot: 2, worktree_setup_at: DateTime.utc_now()})
+    # The databases its setup made go with it, since the next task to claim the slot sets up afresh.
+    expect(@drop_worktree_databases, :drop_worktree_databases, fn %Task{worktree_slot: 2} -> ["app_dev_rail2"] end)
 
     assert {:ok, %Task{worktree_slot: nil, worktree_setup_at: nil}} = Pipeline.cleanup_task(task)
   end
