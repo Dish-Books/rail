@@ -30,6 +30,9 @@ services:
     restart: unless-stopped
     network_mode: host
     user: "1000:1000"
+    # Docker's 64 MB /dev/shm is too small for the shared stats of every sandbox database this Postgres holds:
+    # growing them failed with "No space left on device" and a backend then crashed with a segfault.
+    shm_size: 1gb
     command:
       - postgres
       - -c
