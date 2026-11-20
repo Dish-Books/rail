@@ -6,12 +6,13 @@ export function screenFromHash(hash) {
   return match ? { name: match[1], index: Number(match[2]) } : null;
 }
 
-// Tailwind's preflight makes every box border-box, and the bezel sits outside the device's screen.
+// Tailwind's preflight makes every box border-box, and the bezel sits outside the device's screen. The rim keeps the
+// phone's edge visible on a background as dark as the bezel, and stays visible when the tab shrinks the phone.
 const FRAMES = `
-[data-screen="ios"]{position:relative;box-sizing:content-box!important;width:393px;height:852px;border:12px solid #0b0b0f;border-radius:58px;overflow:hidden}
+[data-screen="ios"]{position:relative;box-sizing:content-box!important;width:393px;height:852px;border:12px solid #0b0b0f;border-radius:58px;overflow:hidden;outline:2px solid #4a4a52;outline-offset:-2px}
 [data-screen="ios"]::before{content:"";position:absolute;top:11px;left:50%;translate:-50%;width:126px;height:37px;border-radius:999px;background:#000;z-index:2147483646}
 [data-screen="ios"]::after{content:"";position:absolute;bottom:8px;left:50%;translate:-50%;width:134px;height:5px;border-radius:999px;background:#000;z-index:2147483646}
-[data-screen="android"]{position:relative;box-sizing:content-box!important;width:412px;height:915px;border:10px solid #1b1b1f;border-radius:40px;overflow:hidden}
+[data-screen="android"]{position:relative;box-sizing:content-box!important;width:412px;height:915px;border:10px solid #1b1b1f;border-radius:40px;overflow:hidden;outline:2px solid #4a4a52;outline-offset:-2px}
 [data-screen="android"]::before{content:"";position:absolute;top:10px;left:50%;translate:-50%;width:18px;height:18px;border-radius:999px;background:#000;z-index:2147483646}
 [data-screen="android"]::after{content:"";position:absolute;bottom:6px;left:50%;translate:-50%;width:108px;height:4px;border-radius:999px;background:#191c1b;z-index:2147483646}
 `;
