@@ -8,6 +8,8 @@ defmodule RailWeb.Live.PlanStageTest do
   alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.IssueStage
+  alias Rail.Learnings
+  alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Repo
@@ -34,6 +36,8 @@ defmodule RailWeb.Live.PlanStageTest do
   #### `lib/rail.ex`
 
   Does all of it.
+
+  Why: it is where the change goes.
 
   ```elixir sketch
   def go, do: :ok
@@ -581,6 +585,7 @@ defmodule RailWeb.Live.PlanStageTest do
           {"Approach, paragraph 1", "Why EnterStage?"},
           {"Decisions, item 2", "Keep the history."},
           {"File 1, paragraph 1", "Idle how?"},
+          {"File 1, why, paragraph 1", "Is there really none?"},
           {"File 1, sketch line 2", "Pass the note."},
           {"Criterion 2", "Nothing covers this."},
           {"Criterion 3", "Test it too."}
@@ -598,6 +603,94 @@ defmodule RailWeb.Live.PlanStageTest do
 
     assert has_element?(view, "#plan-card-1 [data-qa='plan_card_sketch'][open]")
     assert has_element?(view, "#plan-criteria [data-qa='plan_criterion']", "Not covered")
+  end
+
+  describe "rules a plan cites" do
+    setup %{task: task, project: project} do
+      %Learning{id: rule_id} =
+        rule = learning(project, %{rule: "Every write is broadcast after it commits", kind: :convention})
+
+      plan =
+        sheet_plan()
+        |> String.replace(
+          "Why: the button is on the Review screen.",
+          "Why: the button is on the Review screen, `#{rule_id}`."
+        )
+        |> String.replace("- Decision: the note is kept", "- Decision: as `#{rule_id}` says, the note is kept")
+
+      {:ok, _plan} = Pipeline.save_plan(task, %{plan: plan})
+      %{rule: rule}
+    end
+
+    test "a card's Why citing a rule draws its kind, status, text and a link to it, and a Why citing none draws no rule",
+         %{conn: conn, task: task, rule: %Learning{id: rule_id}} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+      assert has_element?(view, "#plan-group-web [data-qa='plan_card_why']", "the button is on the Review screen")
+
+      assert has_element?(
+               view,
+               "#plan-group-web [data-qa='plan_cited_rule']",
+               "Every write is broadcast after it commits"
+             )
+
+      assert has_element?(view, "#plan-group-web [data-qa='plan_cited_rule'] [data-qa='learning-kind']", "Convention")
+      assert has_element?(view, "#plan-group-web [data-qa='plan_cited_rule'] [data-qa='learning-status']", "Active")
+
+      assert has_element?(
+               view,
+               "#plan-group-web [data-qa='plan_cited_rule'] a[href='/learnings/#{rule_id}']",
+               "Open rule"
+             )
+
+      assert has_element?(view, "#plan-group-pipeline [data-qa='plan_card_why']", "no existing action moves a task back")
+      refute has_element?(view, "#plan-group-pipeline [data-qa='plan_cited_rule']")
+      refute has_element?(view, "#plan-group-migrations [data-qa='plan_cited_rule']")
+
+      assert [_cited] =
+               view |> render() |> Floki.parse_document!() |> Floki.find("#plan-decisions [data-qa='plan_cited_rule']")
+    end
+
+    test "a cited rule retired while the Plan tab is open reads Retired without a reload", %{
+      conn: conn,
+      task: task,
+      rule: rule
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+      assert has_element?(view, "#plan-group-web [data-qa='plan_cited_rule'] [data-qa='learning-status']", "Active")
+
+      {:ok, _retired} = Learnings.retire_learning(Scope.for_system(), rule)
+      _settled = render(view)
+
+      assert has_element?(view, "#plan-group-web [data-qa='plan_cited_rule'] [data-qa='learning-status']", "Retired")
+
+      assert has_element?(
+               view,
+               "#plan-group-web [data-qa='plan_cited_rule']",
+               "Every write is broadcast after it commits"
+             )
+    end
+  end
+
+  # A plan saved before cards had a Why was never checked for one, and may name a rule only as a placeholder.
+  test "a plan written straight to its round, its cards with no Why, lays out with every card as before", %{
+    conn: conn,
+    task: task
+  } do
+    plan =
+      sheet_plan()
+      |> String.replace(~r/Why: .*\n\n/, "")
+      |> String.replace("- Decision: the note is kept", "- Decision: as `lrn_...` says, the note is kept")
+
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: plan])
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    assert [_one, _two, _three, _four, _five] =
+             view |> render() |> Floki.parse_document!() |> Floki.find("#plan-sheet [data-qa='plan_card']")
+
+    assert has_element?(view, "#plan-decisions [data-qa='plan_decision']", "as lrn_... says, the note is kept")
+    refute has_element?(view, "#plan-sheet [data-qa='plan_card_why']")
+    refute has_element?(view, "#plan-sheet [data-qa='plan_cited_rule']")
   end
 
   describe "reviewed cards" do

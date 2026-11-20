@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Utils.LearningsBrief do
   @moduledoc """
-  The rules a run is given as it starts, as a section of its brief: a list for most roles, and for the Review
-  lead a checklist with ids and the instruction to still write up what a calibration rule says not to raise.
+  The rules a run is given as it starts, as a section of its brief: a list, with ids for Plan to cite, and for the
+  Review lead a checklist with ids and the instruction to still write up what a calibration rule says not to raise.
   """
 
   alias Rail.Learnings
@@ -40,12 +40,12 @@ defmodule Rail.Pipeline.Utils.LearningsBrief do
     """
   end
 
-  defp section(rules, _stage) do
+  defp section(rules, stage) do
     """
 
     What this project has learned. People set these rules or corrected an agent into them, so follow every one that applies to this work. Call `knowledge_search` for more before you ask a question, depart from the plan, or work in a module you do not know.
 
-    #{Enum.map_join(rules, "\n", &line(&1, false))}
+    #{Enum.map_join(rules, "\n", &line(&1, stage == :plan))}
     """
   end
 

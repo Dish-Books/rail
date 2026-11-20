@@ -17,6 +17,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate button(assigns), to: Components.Button
   defdelegate changed_comments(assigns), to: Components.ChangedComments
   defdelegate child_switcher(assigns), to: Components.ChildSwitcher
+  defdelegate cited_rules(assigns), to: Components.CitedRules
   defdelegate comment_body(assigns), to: Components.CommentEdit
   defdelegate comment_box(assigns), to: Components.CommentBox
   defdelegate comment_edit_button(assigns), to: Components.CommentEdit

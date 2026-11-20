@@ -20,6 +20,8 @@ Sending a task back is a stage move, so it goes through `Rail.Pipeline.Actions.E
 
 New action. Refuses unless the task is at `:review` and idle.
 
+Why: no existing action moves a task back a stage.
+
 ```elixir
 def send_back_to_architect(%Run{} = run, note)
 ```
@@ -34,6 +36,8 @@ end
 
 Adds the Send back button beside Send to QA.
 
+Why: the button is on the Review screen.
+
 ```heex sketch
 <.button phx-click="send_back">Send back</.button>
 ```
@@ -41,6 +45,8 @@ Adds the Send back button beside Send to QA.
 #### `lib/rail/pipeline.ex`
 
 Delegates `send_back_to_architect/2` beside `send_to_qa/1`.
+
+Why: every action is reached through its context module.
 
 ```elixir
 defdelegate send_back_to_architect(run, note), to: Actions.SendBackToArchitect
@@ -54,6 +60,8 @@ defdelegate send_back_to_architect(run, note), to: Actions.SendBackToArchitect
 
 Adds the column.
 
+Why: the note is a column of its own.
+
 ```elixir sketch
 alter table(:tasks), do: add(:sent_back_note, :text)
 ```
@@ -61,6 +69,8 @@ alter table(:tasks), do: add(:sent_back_note, :text)
 #### `lib/rail/pipeline/actions/old_send_back.ex` deleted
 
 The new action replaces it.
+
+Why: nothing calls it once the new action is in.
 
 ### Acceptance criteria
 

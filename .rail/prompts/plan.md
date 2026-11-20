@@ -181,14 +181,16 @@ The body is the sections below, in this order, under exactly these `###` titles,
 
 **3. `### Decisions`.** A short list of flat bullets, each starting with its kind:
 
-- `Decision:` a choice an engineer could get wrong: the rule in plain words, then at most one short sentence on what follows from it.
+- `Decision:` a choice an engineer could get wrong: the rule in plain words, then at most one short sentence on what follows from it. When the choice follows a learned rule, end with its id in backticks.
 - `Ruled out:` a bigger design you considered and rejected, and why, in one sentence.
 - `Assumption:` a default you took that a human might veto.
 
 **4. `### Changes`.** A card per application file, in the order the change would be built. Rail groups the cards by where the code goes, so write no groups of your own. Each card is:
 
 - a `####` heading holding the file's path in backticks, followed by `deleted` when the change deletes the file, such as `` #### `lib/rail/pipeline/actions/old_notify.ex` deleted ``;
-- a sentence or two of prose: what this file does differently once the change is in, and why it is this file that changes. A new file says what it is for, a deleted one why it goes. Name a function or module only where the reader needs it to follow the change, and then by name alone, such as `pick_design_option/3`. No code in the sentences: no option values, column types, return tuples, patterns, `@doc` wording or line numbers. A file whose change takes more than two sentences is a sign the plan is too big or the file is doing two jobs; say which.
+- a sentence or two of prose: what this file does differently once the change is in. A new file says what it is for. Name a function or module only where the reader needs it to follow the change, and then by name alone, such as `pick_design_option/3`. No code in the sentences: no option values, column types, return tuples, patterns, `@doc` wording or line numbers. A file whose change takes more than two sentences is a sign the plan is too big or the file is doing two jobs; say which.
+- then a paragraph that opens `Why:` and says why this is the file that changes: the LiveView because the screen changes, the schema because a field is stored and validated, a new action because no existing one does this, a deleted file because nothing calls it now. Rail refuses a card without one.
+- where that reason follows a rule this project has learned, the rule's id in backticks at the end of the Why, such as `lrn_01m7tj53pk5a9sen7g4bwxstsf`. The Plan tab shows the rule's text under it. Cite only a rule the plan follows, by an id your brief or `knowledge_search` gave you. Rail refuses any other id.
 - then, when it adds or changes public functions, one fenced block of their signatures, without `@spec` (Rail does not use them), including the `defdelegate` line a context module gains for each new action;
 - then, always, one fenced block marked `sketch`, such as `` ```elixir sketch ``, showing every change the file gets, not only the key one: each new or changed function, private ones included, and each new clause, schema field, route, config key or migration step. Write `# ...` for code the change leaves as it is rather than copying it. A new file's sketch is the whole file. A document's sketch, such as a prompt, a doc or a help article, is its new or changed wording, word for word, in a `` ```markdown sketch `` block, so a person approves the words as written. It is a sketch and need not compile. The reader opens it with Show code. Only a deleted file or an image goes without one, and Rail refuses any other card that has none.
 
@@ -198,7 +200,9 @@ Good:
 
 #### `lib/rail/pipeline/actions/pick_design_option.ex`
 
-After a pick is accepted, deletes the options not picked and rewrites the manifest to list only the picked one, so one option is refined and one is planned for. It is the one place Rail already writes into the design folder.
+After a pick is accepted, deletes the options not picked and rewrites the manifest to list only the picked one, so one option is refined and one is planned for.
+
+Why: it is the one place Rail already writes into the design folder.
 
 ```elixir sketch
 def pick_design_option(%Scope{} = scope, %Run{} = run, key) when is_binary(key) do

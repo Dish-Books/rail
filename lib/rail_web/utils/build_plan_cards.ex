@@ -77,17 +77,25 @@ defmodule RailWeb.Utils.BuildPlanCards do
     {prose, counts} =
       card.prose |> build_document_blocks() |> Enum.map_reduce(counts, &number(%{&1 | label: within(file, &1.label)}, &2))
 
+    {why, counts} =
+      (card.why || "")
+      |> build_document_blocks()
+      |> Enum.map_reduce(counts, &number(%{&1 | label: within("#{file}, why", &1.label)}, &2))
+
     {signatures, counts} = code_lines(card.signatures, card.path, :signature, "#{file}, signature line", counts)
     {sketch, counts} = code_lines(card.sketch, card.path, :code, "#{file}, sketch line", counts)
 
     # Keyed on the path, as a slug could fold two paths into one, so a sketch left open stays with its file.
     id = :erlang.phash2(card.path)
 
-    # Of the card's own text alone, so a reviewed mark lapses only when a revision changes this card.
-    digest =
-      :sha256
-      |> :crypto.hash(:erlang.term_to_binary({card.path, card.deleted?, card.prose, card.signatures, card.sketch}))
-      |> Base.encode16(case: :lower)
+    # Of the card's own text alone, so a reviewed mark lapses only when a revision changes this card. A card with no
+    # Why hashes as it always has, so a mark made before Whys existed still holds.
+    text =
+      if card.why,
+        do: {card.path, card.deleted?, card.prose, card.why, card.signatures, card.sketch},
+        else: {card.path, card.deleted?, card.prose, card.signatures, card.sketch}
+
+    digest = :sha256 |> :crypto.hash(:erlang.term_to_binary(text)) |> Base.encode16(case: :lower)
 
     card =
       Map.merge(card, %{
@@ -96,6 +104,7 @@ defmodule RailWeb.Utils.BuildPlanCards do
         number: number,
         line: file_line,
         prose: prose,
+        why: why,
         signatures: signatures,
         sketch: sketch
       })

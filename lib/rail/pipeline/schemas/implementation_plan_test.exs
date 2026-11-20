@@ -177,15 +177,38 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
       plan = String.replace(sheet_plan(), ~r/```elixir sketch\ndefdelegate.*?```\n/s, "")
       assert %{plan: ["has no `sketch` block under `#### `lib/rail/pipeline.ex``" <> _rest]} = errors_on(check.(plan))
 
-      doc = "#### `docs/sending-back.md`\n\nSays how to send a task back.\n\n"
+      doc = "#### `docs/sending-back.md`\n\nSays how to send a task back.\n\nWhy: people read it first.\n\n"
       plan = String.replace(sheet_plan(), "### Acceptance criteria", doc <> "### Acceptance criteria")
       assert %{plan: ["has no `sketch` block under `#### `docs/sending-back.md``" <> _rest]} = errors_on(check.(plan))
 
       worded = doc <> "```markdown sketch\nSend back returns the task to Architect.\n```\n\n"
       assert check.(String.replace(sheet_plan(), "### Acceptance criteria", worded <> "### Acceptance criteria")).valid?
 
-      image = "#### `assets/static/images/send-back.png`\n\nThe Send back icon.\n\n"
+      image = "#### `assets/static/images/send-back.png`\n\nThe Send back icon.\n\nWhy: the button shows it.\n\n"
       assert check.(String.replace(sheet_plan(), "### Acceptance criteria", image <> "### Acceptance criteria")).valid?
+    end
+
+    # A reader is told why each file changes, so no card goes without a Why, a deleted file's or an image's included.
+    test "refuses a card with no Why or an empty one, naming its file", %{check: check} do
+      plan = String.replace(sheet_plan(), "Why: the button is on the Review screen.\n\n", "")
+
+      assert %{
+               plan: [
+                 "has no `Why:` paragraph under `#### `lib/rail_web/live/review_stage.ex``; say in one why this is " <>
+                   "the file that changes"
+               ]
+             } = errors_on(check.(plan))
+
+      plan = String.replace(sheet_plan(), "Why: nothing calls it once the new action is in.", "Why:   ")
+
+      assert %{plan: ["has no `Why:` paragraph under `#### `lib/rail/pipeline/actions/old_send_back.ex``" <> _rest]} =
+               errors_on(check.(plan))
+
+      image = "#### `assets/static/images/send-back.png`\n\nThe Send back icon.\n\n"
+      plan = String.replace(sheet_plan(), "### Acceptance criteria", image <> "### Acceptance criteria")
+
+      assert %{plan: ["has no `Why:` paragraph under `#### `assets/static/images/send-back.png``" <> _rest]} =
+               errors_on(check.(plan))
     end
 
     test "refuses what passes the line checks but does not lay out, such as code among the decisions", %{
@@ -213,6 +236,42 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
   end
 
   describe "build_sheet/1" do
+    test "reads a card's Why apart from its sentences, the label left off, wherever the paragraph falls" do
+      assert %{
+               cards: [
+                 %{
+                   prose: "New action. Refuses unless the task is at `:review` and idle.",
+                   why: "no existing action moves a task back a stage."
+                 }
+                 | _cards
+               ]
+             } = ImplementationPlan.build_sheet(sheet_plan())
+
+      plan =
+        sheet_plan()
+        |> String.replace("Why: no existing action moves a task back a stage.\n\n", "")
+        |> String.replace("New action.", "Why: no action does it today.\n\nWhy: and *two* say so.\n\nNew action.")
+
+      assert %{
+               cards: [
+                 %{
+                   prose: "New action. Refuses unless the task is at `:review` and idle.",
+                   why: "no action does it today.\n\nand *two* say so."
+                 }
+                 | _cards
+               ]
+             } = ImplementationPlan.build_sheet(plan)
+
+      plan = String.replace(sheet_plan(), "New action.", "`New` action.")
+
+      assert %{
+               cards: [
+                 %{prose: "`New` action. Refuses" <> _rest, why: "no existing action moves a task back a stage."} | _cards
+               ]
+             } =
+               ImplementationPlan.build_sheet(plan)
+    end
+
     test "keeps braces after inline code in a card's prose" do
       plan = String.replace(sheet_plan(), "Refuses unless the task is at `:review` and idle.", "Holds `x`{.foo} open.")
 
@@ -307,6 +366,36 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
             {"- Assumption: the note is required.\n", "- Assumption: the note is required.\n\nAnd more.\n"}
           ] do
         assert ImplementationPlan.build_sheet(String.replace(sheet_plan(), from, to)) == nil, "#{from} -> #{to}"
+      end
+    end
+  end
+
+  describe "cited_rules/1 and rule_id?/1" do
+    test "cite the ids in backticks in the cards' Whys and the decisions, each once, and no other" do
+      plan =
+        sheet_plan()
+        |> String.replace("on the Review screen.", "on the Review screen, as `lrn_b` and `lrn_a` say.")
+        |> String.replace("- Decision: the note is kept", "- Decision: `lrn_c` and `lrn_b` say the note is kept")
+        |> String.replace("Adds the column.", "Adds the column, as `lrn_sentence` says.")
+        |> String.replace("alter table(:tasks)", "# `lrn_sketch`\nalter table(:tasks)")
+        |> String.replace("Sending a task back", "`lrn_approach` Sending a task back")
+        |> String.replace("- Ruled out: a table", "- Ruled out: lrn_bare and `rule_lrn_d`, a table")
+
+      assert ["lrn_b", "lrn_a", "lrn_c"] = ImplementationPlan.cited_rules(plan)
+      assert [] = ImplementationPlan.cited_rules(sheet_plan())
+      assert [] = ImplementationPlan.cited_rules(@old_plan)
+    end
+
+    test "rule_id?/1 takes only the shape a rule's id has" do
+      assert ImplementationPlan.rule_id?("lrn_01m7tj53pk5a9sen7g4bwxstsf")
+
+      for text <- [
+            "lrn_...",
+            "lrn_01M7TJ53PK5A9SEN7G4BWXSTSF",
+            "lrn_01m7tj53pk5a9sen7g4bwxsts",
+            "prj_01m7tj53pk5a9sen7g4bwxstsf"
+          ] do
+        refute ImplementationPlan.rule_id?(text), text
       end
     end
   end
