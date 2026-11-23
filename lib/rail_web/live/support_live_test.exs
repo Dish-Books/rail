@@ -7,6 +7,7 @@ defmodule RailWeb.SupportLiveTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Repo
+  alias Rail.Scope
   alias Rail.Support
   alias Rail.Support.Schemas.Conversation
   alias Rail.Support.Schemas.IntercomWorkspace
@@ -268,6 +269,8 @@ defmodule RailWeb.SupportLiveTest do
     assert has_element?(view, "#support-chat-text[disabled]")
     assert has_element?(view, "#support-send-hint", "Send waits until the agent finishes.")
     assert has_element?(view, "#support-filter-drafting", "Drafting · 1")
+    # The badge counts what waits on a person, and a draft in progress waits on the agent.
+    refute has_element?(view, "#support-badge")
 
     view |> form("#support-reply-form", %{"conversation" => %{"reply_text" => "Typed"}}) |> render_change()
     assert has_element?(view, "#support-send-failed", "The agent is still working on the draft.")
@@ -551,7 +554,7 @@ defmodule RailWeb.SupportLiveTest do
 
     # Access taken away before this tab heard of it.
     :sys.replace_state(view.pid, fn state ->
-      put_in(state.socket.assigns.current_scope, Rail.Scope.for_user(%{user | project_ids: []}))
+      put_in(state.socket.assigns.current_scope, Scope.for_user(%{user | project_ids: []}))
     end)
 
     view |> form("#support-chat-form", %{"chat_message" => %{"text" => "Anything?"}}) |> render_submit()
@@ -565,8 +568,10 @@ defmodule RailWeb.SupportLiveTest do
     payload: payload
   } do
     {:ok, view, _html} = live(conn, ~p"/support/#{conversation.id}")
+    assert has_element?(view, "#support-badge", "1")
     view |> element("#mark-done-button") |> render_click()
     assert has_element?(view, "#support-done", "Marked done by Dana Whitfield")
+    refute has_element?(view, "#support-badge")
 
     closed = %{payload | "id" => "closed#{conversation.id}", "state" => "closed"}
     Req.Test.expect(Rail.Intercom, &Req.Test.json(&1, closed))
@@ -574,6 +579,26 @@ defmodule RailWeb.SupportLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/support/#{imported.id}?filter=done")
     assert has_element?(view, "#support-done", "Closed in Intercom before it was imported.")
+  end
+
+  test "another page's Support badge counts what waits and follows changes without a reload", %{
+    conn: conn,
+    user: user,
+    conversation: conversation
+  } do
+    {:ok, view, _html} = live(conn, ~p"/triage")
+    assert has_element?(view, "#support-badge", "1")
+
+    {:ok, _done} = Support.mark_support_done(Scope.for_user(user), conversation)
+    # A burst of changes, as an import sends, waits for the one recount already coming.
+    Phoenix.PubSub.broadcast(Rail.PubSub, "support", {:support_changed, conversation.id})
+    assert has_element?(view, "#support-badge", "1")
+
+    eventually(fn -> refute has_element?(view, "#support-badge") end, 3_000)
+
+    # The Triage page's own messages still reach it.
+    send(view.pid, {:triage_changed, "thr_elsewhere"})
+    assert has_element?(view, "#triage-page")
   end
 
   test "an open page shows a new customer message after a sync, without a reload", %{
@@ -623,7 +648,7 @@ defmodule RailWeb.SupportLiveTest do
 
     {:ok, nameless} = Users.update_user(system_scope(), nameless, %{project_ids: [project.id]})
     nameless = link.(nameless)
-    scope = Rail.Scope.for_user(nameless)
+    scope = Scope.for_user(nameless)
 
     {:ok, _line} = Support.send_support_chat(scope, conversation, %{"text" => "Shorter, please."})
     Repo.update_all(Conversation, set: [drafting_since: nil])
