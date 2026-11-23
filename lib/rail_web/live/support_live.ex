@@ -11,6 +11,8 @@ defmodule RailWeb.SupportLive do
   alias Rail.Users
   alias RailWeb.Hooks.NavHook
 
+  on_mount {RailWeb.UserAuth, {:require_tab, :support}}
+
   @filters ["waiting", "drafting", "done"]
   # An import broadcasts once per conversation, so an open page reloads at most once a second.
   @reload_after 1_000

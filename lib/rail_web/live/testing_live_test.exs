@@ -55,6 +55,23 @@ defmodule RailWeb.TestingLiveTest do
     %{conn: log_in_user(conn, user), here: here, there: there, hidden: hidden, done: done, user: user}
   end
 
+  test "a role without the Testing tab is sent to its own first tab", %{conn: conn} do
+    id = System.unique_integer([:positive])
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "testing_live_role_#{id}",
+        login: "testing_live-role-#{id}",
+        email: "testing_live_role_#{id}@example.com"
+      })
+
+    for {role, home} <- [support: "/support"] do
+      {:ok, user} = Users.update_user(system_scope(), user, %{role: role})
+
+      assert {:error, {:redirect, %{to: ^home}}} = live(log_in_user(conn, user), ~p"/testing")
+    end
+  end
+
   test "an empty queue says how a ticket joins it, and one moved into Done elsewhere shows without a reload", %{
     conn: conn,
     here: here

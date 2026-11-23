@@ -7,7 +7,7 @@ defmodule RailWeb.Components.SettingsNavTest do
   alias RailWeb.Components.SettingsNav
 
   test "renders only the connected accounts and workflows tabs for non-admin user" do
-    scope = Scope.for_user(%{admin: false})
+    scope = Scope.for_user(%{admin: false, role: :tester})
 
     html =
       render_component(&SettingsNav.settings_nav/1,
@@ -24,7 +24,7 @@ defmodule RailWeb.Components.SettingsNavTest do
   end
 
   test "renders all tabs for admin user with active tab highlighted" do
-    scope = Scope.for_user(%{admin: true})
+    scope = Scope.for_user(%{admin: true, role: :dev})
 
     html =
       render_component(&SettingsNav.settings_nav/1,
@@ -36,6 +36,17 @@ defmodule RailWeb.Components.SettingsNavTest do
     assert html =~ "tab-projects"
     assert html =~ "tab-workflows"
     assert html =~ "border-indigo-500 text-indigo-600 font-semibold"
+  end
+
+  test "a support person's only tab is Connected Accounts, with no Workflows" do
+    html =
+      render_component(&SettingsNav.settings_nav/1,
+        current_scope: Scope.for_user(%{admin: false, role: :support}),
+        active_tab: :connected_accounts
+      )
+
+    assert html =~ ~s(id="tab-connected-accounts")
+    refute html =~ "tab-workflows"
   end
 
   test "admins get an Intercom tab after Slack, highlighted on the Intercom page" do

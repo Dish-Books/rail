@@ -148,6 +148,21 @@ defmodule RailWeb.McpAuthorizeLiveTest do
     assert [] = Repo.all(from(c in OauthAuthorizationCode, where: c.user_id == ^user_id))
   end
 
+  test "a support person without GitHub is refused for their role, not told to connect GitHub", %{
+    conn: conn,
+    user: %{id: user_id} = user,
+    params: params
+  } do
+    {:ok, user} = Users.update_user(system_scope(), user, %{role: :support})
+    {:ok, user} = Users.unlink_github(Rail.Scope.for_user(user))
+    {:ok, view, _html} = conn |> log_in_user(user) |> live(~p"/oauth/mcp/authorize?#{params}")
+
+    assert has_element?(view, "#mcp-authorize-error", "error = not_authorized")
+    assert has_element?(view, "#mcp-authorize-error", "Your role in Rail does not open Issues")
+    refute has_element?(view, "#mcp-allow")
+    assert [] = Repo.all(from(c in OauthAuthorizationCode, where: c.user_id == ^user_id))
+  end
+
   test "a client gone before Allow renders the error instead", %{
     conn: conn,
     user: user,

@@ -32,6 +32,7 @@ defmodule Rail.Users.Actions.InviteUser do
     %{
       email: attrs |> Attrs.get(:email) |> to_string() |> String.trim() |> String.downcase(),
       admin: Attrs.get(attrs, :admin) in [true, "true", "on"],
+      role: Attrs.get(attrs, :role) || :dev,
       # A form of checkboxes sends a blank alongside the ticked ones.
       project_ids: attrs |> Attrs.get(:project_ids) |> List.wrap() |> Enum.reject(&(&1 in [nil, ""])) |> Enum.uniq()
     }

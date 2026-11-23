@@ -22,6 +22,7 @@ defmodule RailWeb.Components.TaskLayout do
   # Said in place of the stage, `%{label:, icon:, class:}`, by a split parent or a child waiting on its
   # siblings, neither of which has a branch to show yet.
   attr :status, :map, default: nil
+  attr :open_sandboxes, :boolean, default: true, doc: "the reader opens Sandboxes, where the queue line links"
 
   slot :breadcrumb
   slot :meta
@@ -159,7 +160,7 @@ defmodule RailWeb.Components.TaskLayout do
           </span>
 
           <.link
-            :if={@sandbox_line}
+            :if={@sandbox_line && @open_sandboxes}
             navigate={~p"/sandboxes"}
             id="task-line"
             data-qa="task_line"
@@ -170,6 +171,18 @@ defmodule RailWeb.Components.TaskLayout do
               @sandbox_line.os_process
             )}
           </.link>
+          <%!-- Plain text for a role without Sandboxes, since it still says why the run waits. --%>
+          <span
+            :if={@sandbox_line && !@open_sandboxes}
+            id="task-line"
+            data-qa="task_line"
+            class="inline-flex items-center gap-1"
+          >
+            <.icon name="pi-cube" class="size-4" />
+            {format_ordinal(@sandbox_line.position)} in line for {format_reservation(
+              @sandbox_line.os_process
+            )}
+          </span>
 
           {render_slot(@meta)}
 

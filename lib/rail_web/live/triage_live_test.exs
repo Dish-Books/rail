@@ -100,6 +100,23 @@ defmodule RailWeb.TriageLiveTest do
     }
   end
 
+  test "a role without the Triage tab is sent to its own first tab", %{conn: conn} do
+    id = System.unique_integer([:positive])
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "triage_live_role_#{id}",
+        login: "triage_live-role-#{id}",
+        email: "triage_live_role_#{id}@example.com"
+      })
+
+    for {role, home} <- [tester: "/testing", support: "/support"] do
+      {:ok, user} = Users.update_user(system_scope(), user, %{role: role})
+
+      assert {:error, {:redirect, %{to: ^home}}} = live(log_in_user(conn, user), ~p"/triage")
+    end
+  end
+
   test "shows one reply, a card per item, the chat, and Send naming each part, with no evidence or assumptions", %{
     conn: conn,
     project: project,

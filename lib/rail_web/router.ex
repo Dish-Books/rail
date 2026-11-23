@@ -24,6 +24,14 @@ defmodule RailWeb.Router do
     plug RailWeb.UserAuth, :require_admin_user
   end
 
+  pipeline :require_issues_tab do
+    plug RailWeb.UserAuth, {:require_tab, :issues}
+  end
+
+  pipeline :require_triage_tab do
+    plug RailWeb.UserAuth, {:require_tab, :triage}
+  end
+
   pipeline :api do
     plug :accepts, ["json"]
   end
@@ -123,15 +131,6 @@ defmodule RailWeb.Router do
 
     get "/settings", SettingsRedirectController, :index
     get "/project-selection", ProjectSelectionController, :select
-    get "/issues/:issue_id/assets/*path", IssueAssetController, :show
-    get "/triage/messages/:message_id/images/:file_id", TriageImageController, :show
-    get "/tasks/:task_id/design/:key", DesignController, :show
-    get "/tasks/:task_id/design/:key/screenshot", DesignController, :screenshot
-    get "/tasks/:task_id/demo/video", DemoController, :video
-    get "/tasks/:task_id/findings/:key/evidence/:index", EvidenceController, :show
-    get "/tasks/:task_id/screens/:key", ScreenController, :show
-    get "/tasks/:task_id/attachments/:name", AttachmentController, :show
-    get "/tasks/:task_id/diff/:side", DiffImageController, :show
     get "/todos/export", TodoExportController, :export
 
     live_session :require_authenticated_user,
@@ -171,6 +170,25 @@ defmodule RailWeb.Router do
       live "/settings/backends", Settings.BackendsLive
       live "/settings/mcp-servers", Settings.McpServersLive
     end
+  end
+
+  scope "/", RailWeb do
+    pipe_through [:browser, :require_authenticated_user, :require_issues_tab]
+
+    get "/issues/:issue_id/assets/*path", IssueAssetController, :show
+    get "/tasks/:task_id/design/:key", DesignController, :show
+    get "/tasks/:task_id/design/:key/screenshot", DesignController, :screenshot
+    get "/tasks/:task_id/demo/video", DemoController, :video
+    get "/tasks/:task_id/findings/:key/evidence/:index", EvidenceController, :show
+    get "/tasks/:task_id/screens/:key", ScreenController, :show
+    get "/tasks/:task_id/attachments/:name", AttachmentController, :show
+    get "/tasks/:task_id/diff/:side", DiffImageController, :show
+  end
+
+  scope "/", RailWeb do
+    pipe_through [:browser, :require_authenticated_user, :require_triage_tab]
+
+    get "/triage/messages/:message_id/images/:file_id", TriageImageController, :show
   end
 
   scope "/" do

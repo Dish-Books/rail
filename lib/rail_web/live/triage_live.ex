@@ -11,6 +11,8 @@ defmodule RailWeb.TriageLive do
   alias Rail.Triage.Schemas.Thread
   alias Rail.Users.Schemas.User
 
+  on_mount {RailWeb.UserAuth, {:require_tab, :triage}}
+
   @filters ["waiting", "triaging", "done"]
 
   @errors %{

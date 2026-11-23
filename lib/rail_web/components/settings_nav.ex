@@ -3,6 +3,7 @@ defmodule RailWeb.Components.SettingsNav do
   use RailWeb, :html
 
   alias Rail.Scope
+  alias Rail.Users
 
   attr :current_scope, :map, required: true
   attr :active_tab, :atom, required: true
@@ -75,6 +76,7 @@ defmodule RailWeb.Components.SettingsNav do
         </.link>
 
         <.link
+          :if={Users.can?(@current_scope, :issues, :view)}
           navigate={~p"/settings/workflows"}
           class={[
             @active_tab == :workflows && "border-indigo-500 text-indigo-600 font-semibold",

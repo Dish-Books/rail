@@ -254,6 +254,35 @@ defmodule RailWeb.UserAuthTest do
     end
   end
 
+  describe "require_tab/2" do
+    test "sends support to Support and a tester to Testing, and lets a dev through", %{conn: conn, user: user} do
+      for {role, home} <- [support: "/support", tester: "/testing"] do
+        conn =
+          conn
+          |> assign(:current_scope, Scope.for_user(%{user | role: role}))
+          |> UserAuth.call({:require_tab, :triage})
+
+        assert conn.halted
+        assert redirected_to(conn) == home
+      end
+
+      conn =
+        conn
+        |> assign(:current_scope, Scope.for_user(%{user | role: :dev}))
+        |> UserAuth.call({:require_tab, :triage})
+
+      refute conn.halted
+    end
+  end
+
+  describe "home_path/1" do
+    test "is the first tab the role opens, admin or not", %{user: user} do
+      assert UserAuth.home_path(Scope.for_user(%{user | role: :dev})) == "/"
+      assert UserAuth.home_path(Scope.for_user(%{user | role: :tester, admin: true})) == "/testing"
+      assert UserAuth.home_path(Scope.for_user(%{user | role: :support, admin: true})) == "/support"
+    end
+  end
+
   describe "disconnect_sessions/1" do
     test "broadcasts disconnect for each token" do
       token = :crypto.strong_rand_bytes(32)
@@ -326,6 +355,25 @@ defmodule RailWeb.UserAuthTest do
       }
 
       assert {:cont, %LiveView.Socket{redirected: nil}} = UserAuth.on_mount(:require_github, %{}, %{}, socket)
+    end
+
+    test "require_tab sends support to Support and a tester to Testing, and lets a dev through", %{user: user} do
+      for {role, home} <- [support: "/support", tester: "/testing"] do
+        socket = %LiveView.Socket{
+          endpoint: RailWeb.Endpoint,
+          assigns: %{__changed__: %{}, current_scope: Scope.for_user(%{user | role: role})}
+        }
+
+        assert {:halt, %LiveView.Socket{redirected: {:redirect, %{to: ^home}}}} =
+                 UserAuth.on_mount({:require_tab, :overview}, %{}, %{}, socket)
+      end
+
+      socket = %LiveView.Socket{
+        endpoint: RailWeb.Endpoint,
+        assigns: %{__changed__: %{}, current_scope: Scope.for_user(%{user | role: :dev})}
+      }
+
+      assert {:cont, %LiveView.Socket{redirected: nil}} = UserAuth.on_mount({:require_tab, :overview}, %{}, %{}, socket)
     end
 
     test "require_admin halts when user is not admin", %{user: user} do

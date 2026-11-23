@@ -51,6 +51,22 @@ defmodule RailWeb.IssueLiveTest do
     %{conn: log_in_user(conn, user), user: user, project: project}
   end
 
+  test "a support person without GitHub is sent to Support, not shown the issue read-only", %{conn: conn} do
+    id = System.unique_integer([:positive])
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "issue_live_role_#{id}",
+        login: "issue_live-role-#{id}",
+        email: "issue_live_role_#{id}@example.com"
+      })
+
+    {:ok, user} = Users.update_user(system_scope(), user, %{role: :support})
+    {:ok, user} = Users.unlink_github(Scope.for_user(user))
+
+    assert {:error, {:redirect, %{to: "/support"}}} = live(log_in_user(conn, user), ~p"/issues/RAIL-41")
+  end
+
   test "shows the issue's title, description and properties", %{conn: conn, user: user, project: project} do
     issue =
       %Issue{}

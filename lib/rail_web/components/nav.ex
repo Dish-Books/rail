@@ -4,10 +4,14 @@ defmodule RailWeb.Components.Nav do
   """
   use RailWeb, :html
 
+  alias Rail.Scope
+  alias Rail.Users
   alias RailWeb.Components.CaptureIssueModal
   alias RailWeb.Components.TodosPanel
+  alias RailWeb.UserAuth
 
   attr :current_section, :atom, required: true
+  attr :current_scope, Scope, required: true
   attr :attention_count, :integer, default: 0
   attr :triage_count, :integer, default: 0
   attr :support_count, :integer, default: 0
@@ -25,7 +29,7 @@ defmodule RailWeb.Components.Nav do
         <div class="flex items-center py-1">
           <!-- No hover background, so the way home does not read as another destination. -->
           <.link
-            navigate={~p"/"}
+            navigate={UserAuth.home_path(@current_scope)}
             id="app-brand"
             data-qa="app_brand"
             title="Rail"
@@ -53,6 +57,7 @@ defmodule RailWeb.Components.Nav do
         <!-- Destinations List -->
         <nav class="flex flex-col space-y-1" id="nav-destinations" aria-label="Main Navigation">
           <.nav_item
+            :if={Users.can?(@current_scope, :overview, :view)}
             section={:overview}
             active={@current_section == :overview}
             label="Overview"
@@ -63,6 +68,7 @@ defmodule RailWeb.Components.Nav do
           />
 
           <.nav_item
+            :if={Users.can?(@current_scope, :support, :view)}
             section={:support}
             active={@current_section == :support}
             label="Support"
@@ -74,6 +80,7 @@ defmodule RailWeb.Components.Nav do
           />
 
           <.nav_item
+            :if={Users.can?(@current_scope, :triage, :view)}
             section={:triage}
             active={@current_section == :triage}
             label="Triage"
@@ -85,6 +92,7 @@ defmodule RailWeb.Components.Nav do
           />
 
           <.nav_item
+            :if={Users.can?(@current_scope, :testing, :view)}
             section={:testing}
             active={@current_section == :testing}
             label="Testing"
@@ -95,6 +103,7 @@ defmodule RailWeb.Components.Nav do
           />
 
           <.nav_item
+            :if={Users.can?(@current_scope, :issues, :view)}
             section={:issues}
             active={@current_section == :issues}
             label="Issues"
@@ -105,6 +114,7 @@ defmodule RailWeb.Components.Nav do
           />
 
           <.nav_item
+            :if={Users.can?(@current_scope, :learnings, :view)}
             section={:learnings}
             active={@current_section == :learnings}
             label="Learnings"
@@ -115,6 +125,7 @@ defmodule RailWeb.Components.Nav do
           />
 
           <.nav_item
+            :if={Users.can?(@current_scope, :sandboxes, :view)}
             section={:sandboxes}
             active={@current_section == :sandboxes}
             label="Sandboxes"
@@ -125,6 +136,7 @@ defmodule RailWeb.Components.Nav do
           />
 
           <.nav_item
+            :if={Scope.admin?(@current_scope)}
             section={:settings}
             active={
               @current_section in [
@@ -195,7 +207,7 @@ defmodule RailWeb.Components.Nav do
   end
 
   attr :current_section, :atom, required: true
-  attr :current_scope, Rail.Scope, required: true
+  attr :current_scope, Scope, required: true
   attr :current_project_id, :string, default: nil
   attr :projects, :list, default: []
   attr :theme, :string, default: "dark"
@@ -206,6 +218,8 @@ defmodule RailWeb.Components.Nav do
     selected_project = Enum.find(assigns.projects, &(&1.id == assigns.current_project_id))
     assigns = assign(assigns, :active_projects, active_projects)
     assigns = assign(assigns, :selected_project, selected_project)
+    # A created issue opens on the issue page, which a role without Issues cannot open.
+    assigns = assign(assigns, :show_new_issue, Users.can?(assigns.current_scope, :issues, :view))
 
     ~H"""
     <header
@@ -343,6 +357,7 @@ defmodule RailWeb.Components.Nav do
 
         <!-- New Issue Button -->
         <button
+          :if={@show_new_issue}
           type="button"
           id="global-capture-idea-button"
           data-qa="global_capture_idea_button"
@@ -395,6 +410,7 @@ defmodule RailWeb.Components.Nav do
       </div>
 
       <.live_component
+        :if={@show_new_issue}
         module={CaptureIssueModal}
         id={CaptureIssueModal.id()}
         current_scope={@current_scope}

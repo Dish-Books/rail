@@ -17,6 +17,8 @@ defmodule RailWeb.IssueLive do
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
+  on_mount {RailWeb.UserAuth, {:require_tab, :issues}}
+
   @issue_events ["assign", "filter_assignees", "set_cycle", "draft_comment", "comment", "edit_issue", "remove_relation"]
 
   def mount(_params, _session, socket) do
