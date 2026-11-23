@@ -17,6 +17,7 @@ defmodule RailWeb.IssueLive do
   alias Rail.Scope
   alias Rail.Users
 
+  on_mount {RailWeb.UserAuth, {:require_tab, :issues}}
   on_mount {RailWeb.UserAuth, :require_github}
 
   @issue_events ["assign", "filter_assignees", "set_cycle", "draft_comment", "comment", "edit_issue", "remove_relation"]

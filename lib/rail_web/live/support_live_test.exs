@@ -184,6 +184,23 @@ defmodule RailWeb.SupportLiveTest do
     }
   end
 
+  test "a role without the Support tab is sent to its own first tab", %{conn: conn} do
+    id = System.unique_integer([:positive])
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "support_live_role_#{id}",
+        login: "support_live-role-#{id}",
+        email: "support_live_role_#{id}@example.com"
+      })
+
+    for {role, home} <- [tester: "/testing"] do
+      {:ok, user} = Users.update_user(system_scope(), user, %{role: role})
+
+      assert {:error, {:redirect, %{to: ^home}}} = live(log_in_user(conn, user), ~p"/support")
+    end
+  end
+
   test "the queue and the conversation show every message by who sent it, with its files", %{
     conn: conn,
     conversation: %Conversation{id: id, external_id: external_id},

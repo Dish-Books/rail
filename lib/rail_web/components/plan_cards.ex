@@ -38,6 +38,7 @@ defmodule RailWeb.Components.PlanCards do
     doc: "whose GitHub repository and default branch a path links to, with `default_paths`"
 
   attr :rules, :map, default: %{}, doc: "the rules the plan cites, by id; a fix plan gives none"
+  attr :open_learnings, :boolean, default: true, doc: "the reader opens Learnings, where each rule links"
 
   slot :heading, required: true, doc: "the section's heading, given the subtitle that says how the cards read"
 
@@ -102,6 +103,7 @@ defmodule RailWeb.Components.PlanCards do
             state={state(card, @reviewed)}
             base={@base}
             rules={@rules}
+            open_learnings={@open_learnings}
             on={@on}
             target={@target}
           />
@@ -115,6 +117,7 @@ defmodule RailWeb.Components.PlanCards do
   attr :state, :atom, required: true, values: [nil, :unreviewed, :reviewed, :revised]
   attr :base, :string, required: true
   attr :rules, :map, required: true
+  attr :open_learnings, :boolean, required: true
   attr :on, :map, required: true
   attr :target, :any, required: true
 
@@ -213,7 +216,7 @@ defmodule RailWeb.Components.PlanCards do
               </div>
             </div>
           </.line>
-          <.cited_rules html={line.html} rules={@rules} />
+          <.cited_rules html={line.html} rules={@rules} open_learnings={@open_learnings} />
         </div>
       </div>
 

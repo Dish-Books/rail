@@ -59,6 +59,18 @@ defmodule Rail.Users.Actions.InviteUserTest do
     assert {:ok, %Invite{id: ^invite_id, project_ids: []}} = Users.invite_user(scope, %{email: "projects@example.com"})
   end
 
+  test "an invite is for a dev unless it names a role, and re-inviting replaces the role", %{scope: scope} do
+    assert {:ok, %Invite{id: invite_id, role: :dev}} = Users.invite_user(scope, %{email: "role@example.com"})
+
+    assert {:ok, %Invite{id: ^invite_id, role: :tester}} =
+             Users.invite_user(scope, %{"email" => "role@example.com", "role" => "tester"})
+
+    assert {:error, %Ecto.Changeset{} = changeset} =
+             Users.invite_user(scope, %{email: "role@example.com", role: "manager"})
+
+    assert %{role: ["is invalid"]} = errors_on(changeset)
+  end
+
   test "will not reopen an invite that was already redeemed", %{scope: scope} do
     assert {:ok, %Invite{} = invite} = Users.invite_user(scope, %{email: "done@example.com"})
 

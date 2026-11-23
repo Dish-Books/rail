@@ -41,6 +41,23 @@ defmodule RailWeb.LearningsLiveTest do
     %{conn: conn, user: user}
   end
 
+  test "a role without the Learnings tab is sent to its own first tab", %{conn: conn} do
+    id = System.unique_integer([:positive])
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "learnings_live_role_#{id}",
+        login: "learnings_live-role-#{id}",
+        email: "learnings_live_role_#{id}@example.com"
+      })
+
+    for {role, home} <- [tester: "/testing", support: "/support"] do
+      {:ok, user} = Users.update_user(system_scope(), user, %{role: role})
+
+      assert {:error, {:redirect, %{to: ^home}}} = live(log_in_user(conn, user), ~p"/learnings")
+    end
+  end
+
   test "the four segments are counted and the queue opens on what is waiting", %{conn: conn, project: project} do
     rule = learning(project, %{rule: "Use the factory", kind: :convention})
     learning(project, %{rule: "Fresh correction", kind: :convention}, status: :provisional)

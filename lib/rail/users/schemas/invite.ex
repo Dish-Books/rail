@@ -14,6 +14,7 @@ defmodule Rail.Users.Schemas.Invite do
   schema "invites" do
     field :email, :string
     field :admin, :boolean, default: false
+    field :role, Ecto.Enum, values: User.roles(), default: :dev
     field :project_ids, {:array, :string}, default: []
     field :accepted_at, :utc_datetime_usec
 
@@ -23,13 +24,13 @@ defmodule Rail.Users.Schemas.Invite do
     timestamps()
   end
 
-  @updatable_fields [:email, :admin, :project_ids, :accepted_at, :invited_by_id, :accepted_user_id]
+  @updatable_fields [:email, :admin, :role, :project_ids, :accepted_at, :invited_by_id, :accepted_user_id]
 
   def changeset(invite, attrs) do
     invite
     |> cast(attrs, @updatable_fields)
     |> update_change(:email, &String.trim/1)
-    |> validate_required([:email])
+    |> validate_required([:email, :role])
     |> validate_format(:email, ~r/^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: "must be a valid email address")
     |> unique_constraint(:email)
   end

@@ -58,8 +58,8 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
   } do
     assert {:ok, view, html} = live(conn, ~p"/settings/connected-accounts")
 
-    # Settings is the destination lit in the rail, not the overview.
-    assert has_element?(view, "#nav-settings[data-active='true']")
+    # Settings is in the rail for admins alone, so a dev reaches this page from the user menu.
+    refute has_element?(view, "#nav-settings")
     refute has_element?(view, "#nav-overview[data-active='true']")
 
     assert html =~ "Connected Accounts"
@@ -319,7 +319,23 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
   test "renders only connected accounts tab for non-admin user", %{authed_conn: conn} do
     assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
     assert has_element?(view, "#tab-connected-accounts")
+    assert has_element?(view, "#tab-workflows")
     refute has_element?(view, "#tab-projects")
+    assert has_element?(view, "#rail-mcp-section")
+  end
+
+  test "a support person opens it from the user menu, with no Workflows tab and no way to connect Claude", %{
+    conn: conn,
+    user: user
+  } do
+    {:ok, user} = Users.update_user(system_scope(), user, %{role: :support})
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/settings/connected-accounts")
+    assert has_element?(view, "#user-menu-button[href='/settings/connected-accounts']")
+    assert has_element?(view, "#tab-connected-accounts")
+    refute has_element?(view, "#tab-workflows")
+    refute has_element?(view, "#nav-settings")
+    refute has_element?(view, "#rail-mcp-section")
   end
 
   test "renders all settings tabs for admin user", %{conn: conn} do
@@ -343,6 +359,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
       |> put_session(:user_token, admin_token)
 
     assert {:ok, view, _html} = live(admin_conn, ~p"/settings/connected-accounts")
+    assert has_element?(view, "#nav-settings[data-active='true']")
     assert has_element?(view, "#tab-connected-accounts")
     assert has_element?(view, "#tab-projects")
   end

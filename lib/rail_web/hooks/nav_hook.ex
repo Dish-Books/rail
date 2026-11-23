@@ -7,6 +7,7 @@ defmodule RailWeb.Hooks.NavHook do
   alias Rail.Scope
   alias Rail.Tools
   alias Rail.Triage
+  alias Rail.Users
   alias RailWeb.Components.TodosPanel
 
   def on_mount(:default, _params, session, socket) do
@@ -34,9 +35,19 @@ defmodule RailWeb.Hooks.NavHook do
       # The badge is what waits on this user, as the Overview's Waiting on you counts it.
       |> assign(
         :attention_count,
-        Pipeline.count_attention(project_id: Scope.project_ids(scope), owner_user_id: scope.user.id)
+        if(Users.can?(scope, :overview, :view),
+          do: Pipeline.count_attention(project_id: Scope.project_ids(scope), owner_user_id: scope.user.id),
+          else: 0
+        )
       )
-      |> assign(:triage_count, Triage.count_triage_threads(project_id: Scope.project_ids(scope)).waiting)
+      # A role without the tab never sees its badge, so its count is not loaded.
+      |> assign(
+        :triage_count,
+        if(Users.can?(scope, :triage, :view),
+          do: Triage.count_triage_threads(project_id: Scope.project_ids(scope)).waiting,
+          else: 0
+        )
+      )
       |> assign(:current_project_id, current_project_id)
       # What a page lists: the selected project, or else every project the user can see.
       |> assign(:project_filter, current_project_id || Scope.project_ids(scope))

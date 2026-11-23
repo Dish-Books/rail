@@ -9,6 +9,8 @@ defmodule RailWeb.TestingLive do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Scope
 
+  on_mount {RailWeb.UserAuth, {:require_tab, :testing}}
+
   @preload [
     :project,
     :owner_user,

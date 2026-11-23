@@ -117,6 +117,7 @@ defmodule RailWeb.Live.TaskDetail do
         line={@line}
         title={@task.issue.title}
         status={@status}
+        open_sandboxes={Users.can?(@current_scope, :sandboxes, :view)}
         flush
       >
         <:breadcrumb :if={@breadcrumb != []}>{render_slot(@breadcrumb)}</:breadcrumb>
@@ -328,6 +329,7 @@ defmodule RailWeb.Live.TaskDetail do
                       labels={@labels}
                       names={@names}
                       viewer_id={@current_scope.user && @current_scope.user.id}
+                      open_learnings={Users.can?(@current_scope, :learnings, :view)}
                       suppressor={@suppressor}
                       preview={@preview}
                       project_name={@task.project.name}
@@ -491,6 +493,7 @@ defmodule RailWeb.Live.TaskDetail do
                   run_state={Run.state(@curator_run)}
                   errors={@proposal_errors}
                   target={@myself}
+                  open_learnings={Users.can?(@current_scope, :learnings, :view)}
                 />
 
                 <.browser_picker

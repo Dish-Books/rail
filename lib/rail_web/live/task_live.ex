@@ -45,6 +45,7 @@ defmodule RailWeb.TaskLive do
   alias RailWeb.Live.TaskActions
   alias RailWeb.Live.TaskDetail
 
+  on_mount {RailWeb.UserAuth, {:require_tab, :issues}}
   on_mount {RailWeb.UserAuth, :require_github}
 
   # The engineer writes files as it works and the pane reads them off disk, so a

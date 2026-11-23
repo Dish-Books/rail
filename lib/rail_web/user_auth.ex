@@ -22,6 +22,8 @@ defmodule RailWeb.UserAuth do
     require_admin_user(conn, [])
   end
 
+  def call(conn, {:require_tab, tab}), do: require_tab(conn, tab)
+
   def call(conn, _opts) do
     fetch_current_user(conn, [])
   end
@@ -86,6 +88,27 @@ defmodule RailWeb.UserAuth do
     end
   end
 
+  def require_tab(conn, tab) do
+    scope = conn.assigns.current_scope
+
+    if Users.can?(scope, tab, :view) do
+      conn
+    else
+      conn
+      |> redirect(to: home_path(scope))
+      |> halt()
+    end
+  end
+
+  @doc "The first tab the scope's role opens, where a page outside the role sends it."
+  def home_path(scope) do
+    cond do
+      Users.can?(scope, :overview, :view) -> ~p"/"
+      Users.can?(scope, :testing, :view) -> ~p"/testing"
+      true -> ~p"/support"
+    end
+  end
+
   def disconnect_sessions(tokens) do
     Enum.each(tokens, fn %{token: token} ->
       RailWeb.Endpoint.broadcast(user_session_topic(token), "disconnect", %{})
@@ -114,6 +137,14 @@ defmodule RailWeb.UserAuth do
     else
       {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/")}
     end
+  end
+
+  def on_mount({:require_tab, tab}, _params, _session, socket) do
+    scope = socket.assigns.current_scope
+
+    if Users.can?(scope, tab, :view),
+      do: {:cont, socket},
+      else: {:halt, Phoenix.LiveView.redirect(socket, to: home_path(scope))}
   end
 
   # Issue and task pages: someone without GitHub is sent to connect it, and so is an open page once they disconnect.

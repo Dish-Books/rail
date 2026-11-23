@@ -4,6 +4,8 @@ defmodule Rail.Users.Schemas.User do
 
   alias Rail.Types.EncryptedBinary
 
+  @roles [:support, :tester, :dev]
+
   @primary_key {:id, UXID, autogenerate: true, prefix: "usr"}
   schema "users" do
     field :github_id, :string
@@ -12,6 +14,8 @@ defmodule Rail.Users.Schemas.User do
     field :email, :string
     field :avatar_url, :string
     field :admin, :boolean, default: false
+    # Which tabs the person sees; admin adds Settings and nothing else.
+    field :role, Ecto.Enum, values: @roles, default: :dev
     # Approves and merges tasks from Finalize, which admins alone may not.
     field :tech_lead, :boolean, default: false
     field :project_ids, {:array, :string}, default: []
@@ -54,6 +58,7 @@ defmodule Rail.Users.Schemas.User do
     :email,
     :avatar_url,
     :admin,
+    :role,
     :tech_lead,
     :project_ids,
     :github_token,
@@ -82,7 +87,7 @@ defmodule Rail.Users.Schemas.User do
     |> cast(attrs, @updatable_fields)
     # A form of checkboxes sends a blank alongside the ticked ones.
     |> update_change(:project_ids, &(&1 |> Enum.reject(fn id -> id == "" end) |> Enum.uniq()))
-    |> validate_required([:email])
+    |> validate_required([:email, :role])
     |> unique_constraint(:github_id)
     |> unique_constraint(:login)
     |> unique_constraint(:email)
@@ -91,6 +96,9 @@ defmodule Rail.Users.Schemas.User do
       &if(fetch_change(&1, :slack_user_id) == {:ok, nil}, do: force_change(&1, :slack_notifications, false), else: &1)
     )
   end
+
+  @doc "The roles, in the order the Users screen lists them."
+  def roles, do: @roles
 
   @doc """
   Writes a GitHub profile onto the user, who then must have both its id and login.

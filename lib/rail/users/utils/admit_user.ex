@@ -9,7 +9,7 @@ defmodule Rail.Users.Utils.AdmitUser do
 
   @doc """
   Lets a signed-in identity become a user, inside the caller's transaction: a returning user, the first one,
-  or an open invite's address, whose projects and admin it grants. `register` creates or refreshes the user, rolling back when it cannot.
+  or an open invite's address, whose role, projects and admin it grants. `register` creates or refreshes the user, rolling back when it cannot.
   """
   def admit_user(github_id, email, register) when is_function(register, 0) do
     cond do
@@ -31,7 +31,7 @@ defmodule Rail.Users.Utils.AdmitUser do
 
   defp redeem(register, %Invite{} = invite) do
     user = if invite.admin, do: promote(register.()), else: register.()
-    user = user |> User.changeset(%{project_ids: invite.project_ids}) |> Repo.update!()
+    user = user |> User.changeset(%{project_ids: invite.project_ids, role: invite.role}) |> Repo.update!()
 
     # Two server-side fields on a row just read, so a failure here is a bug, not a refused sign-in.
     invite

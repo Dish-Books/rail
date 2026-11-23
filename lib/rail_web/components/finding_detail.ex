@@ -34,6 +34,7 @@ defmodule RailWeb.Components.FindingDetail do
   attr :names, :map, default: %{}, doc: "who ruled, by user id"
   attr :viewer_id, :string, default: nil
   attr :suppressor, :any, default: nil
+  attr :open_learnings, :boolean, default: true, doc: "the reader opens Learnings, where the rule links"
 
   attr :preview, :map,
     default: nil,
@@ -193,6 +194,7 @@ defmodule RailWeb.Components.FindingDetail do
               {@suppressor.rule}
             </p>
             <.link
+              :if={@open_learnings}
               navigate={~p"/learnings/#{@suppressor.id}"}
               id="finding-open-rule"
               class="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"

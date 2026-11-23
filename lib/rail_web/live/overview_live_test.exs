@@ -33,6 +33,23 @@ defmodule RailWeb.OverviewLiveTest do
     :ok
   end
 
+  test "a role without the Overview tab is sent to its own first tab", %{conn: conn} do
+    id = System.unique_integer([:positive])
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "overview_live_role_#{id}",
+        login: "overview_live-role-#{id}",
+        email: "overview_live_role_#{id}@example.com"
+      })
+
+    for {role, home} <- [support: "/support", tester: "/testing"] do
+      {:ok, user} = Users.update_user(system_scope(), user, %{role: role})
+
+      assert {:error, {:redirect, %{to: ^home}}} = live(log_in_user(conn, user), ~p"/")
+    end
+  end
+
   test "redirects an unauthenticated user to the sign-in page", %{conn: conn} do
     assert {:error, {:redirect, %{to: "/sign-in"}}} = live(conn, ~p"/")
   end

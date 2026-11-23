@@ -4,10 +4,16 @@ defmodule RailWeb.Components.NavTest do
   import Phoenix.LiveViewTest
 
   alias Rail.Projects.Schemas.Project
+  alias RailWeb.Components.CaptureIssueModal
   alias RailWeb.Components.Nav
 
   test "nav_rail renders its destinations in order as icons, each named by its title" do
-    html = render_component(&Nav.nav/1, current_section: :overview, attention_count: 0)
+    html =
+      render_component(&Nav.nav/1,
+        current_scope: temp_user_scope(admin: true),
+        current_section: :overview,
+        attention_count: 0
+      )
 
     assert html =~ "id=\"navigation-rail\""
     assert html =~ "data-qa=\"navigation_rail\""
@@ -33,8 +39,13 @@ defmodule RailWeb.Components.NavTest do
     refute html =~ ~r/>\s*Overview\s*</
   end
 
-  test "the Rail mark is a link to Overview named Rail, with a focus outline and no hover background" do
-    html = render_component(&Nav.nav/1, current_section: :tasks, attention_count: 0)
+  test "the Rail mark is a link to Overview for a dev, named Rail, with a focus outline and no hover background" do
+    html =
+      render_component(&Nav.nav/1,
+        current_scope: temp_user_scope(admin: true),
+        current_section: :tasks,
+        attention_count: 0
+      )
 
     assert [_whole, mark_tag] = Regex.run(~r/(<a[^>]*id="app-brand"[^>]*>)/, html)
     assert mark_tag =~ ~s(href="/")
@@ -49,6 +60,7 @@ defmodule RailWeb.Components.NavTest do
   test "nav_rail renders attention badge on overview when attention_count > 0" do
     html_with_badge =
       render_component(&Nav.nav/1,
+        current_scope: temp_user_scope(admin: true),
         current_section: :overview,
         attention_count: 4
       )
@@ -58,6 +70,7 @@ defmodule RailWeb.Components.NavTest do
 
     html_no_badge =
       render_component(&Nav.nav/1,
+        current_scope: temp_user_scope(admin: true),
         current_section: :overview,
         attention_count: 0
       )
@@ -67,7 +80,12 @@ defmodule RailWeb.Components.NavTest do
 
   test "the Triage destination sits between Overview and Issues, with its own badge" do
     html =
-      render_component(&Nav.nav/1, current_section: :triage, attention_count: 3, triage_count: 2)
+      render_component(&Nav.nav/1,
+        current_scope: temp_user_scope(admin: true),
+        current_section: :triage,
+        attention_count: 3,
+        triage_count: 2
+      )
 
     assert [_before, after_overview] = String.split(html, ~s(id="nav-overview"))
     assert [between, _after] = String.split(after_overview, ~s(id="nav-issues"))
@@ -76,12 +94,22 @@ defmodule RailWeb.Components.NavTest do
     assert between =~ ~s(id="triage-badge")
     assert html =~ ~s(id="attention-badge")
 
-    refute render_component(&Nav.nav/1, current_section: :triage, triage_count: 0) =~
+    refute render_component(&Nav.nav/1,
+             current_scope: temp_user_scope(admin: true),
+             current_section: :triage,
+             triage_count: 0
+           ) =~
              ~s(id="triage-badge")
   end
 
   test "the Support destination sits between Overview and Triage, with no badge, and is active on Support" do
-    html = render_component(&Nav.nav/1, current_section: :support, attention_count: 0, triage_count: 0)
+    html =
+      render_component(&Nav.nav/1,
+        current_scope: temp_user_scope(admin: true),
+        current_section: :support,
+        attention_count: 0,
+        triage_count: 0
+      )
 
     assert [_before, after_overview] = String.split(html, ~s(id="nav-overview"))
     assert [between, _after] = String.split(after_overview, ~s(id="nav-triage"))
@@ -92,7 +120,13 @@ defmodule RailWeb.Components.NavTest do
   end
 
   test "the Testing destination sits between Triage and Issues, with no badge" do
-    html = render_component(&Nav.nav/1, current_section: :testing, attention_count: 0, triage_count: 0)
+    html =
+      render_component(&Nav.nav/1,
+        current_scope: temp_user_scope(admin: true),
+        current_section: :testing,
+        attention_count: 0,
+        triage_count: 0
+      )
 
     assert [_before, after_triage] = String.split(html, ~s(id="nav-triage"))
     assert [between, _after] = String.split(after_triage, ~s(id="nav-issues"))
@@ -106,6 +140,7 @@ defmodule RailWeb.Components.NavTest do
     for section <- [:overview, :issues, :sandboxes, :settings] do
       html =
         render_component(&Nav.nav/1,
+          current_scope: temp_user_scope(admin: true),
           current_section: section,
           attention_count: 0
         )
@@ -117,6 +152,7 @@ defmodule RailWeb.Components.NavTest do
     for sub <- [:connected_accounts, :projects, :workflows, :linear_workspaces, :slack_workspaces] do
       html =
         render_component(&Nav.nav/1,
+          current_scope: temp_user_scope(admin: true),
           current_section: sub,
           attention_count: 0
         )
@@ -240,6 +276,45 @@ defmodule RailWeb.Components.NavTest do
         )
 
       assert html =~ expected_title
+    end
+  end
+
+  test "each role sees only its tabs, and Settings only as an admin" do
+    tabs = ["overview", "support", "triage", "testing", "issues", "learnings", "sandboxes", "settings"]
+
+    for {scope, expected} <- [
+          {temp_user_scope(role: :support), ["support"]},
+          {temp_user_scope(role: :tester), ["testing", "issues"]},
+          {temp_user_scope(role: :dev), ["overview", "support", "triage", "testing", "issues", "learnings", "sandboxes"]},
+          {temp_user_scope(role: :support, admin: true), ["support", "settings"]}
+        ] do
+      html = render_component(&Nav.nav/1, current_scope: scope, current_section: :overview)
+
+      assert Enum.filter(tabs, &(html =~ ~s(id="nav-#{&1}"))) == expected
+    end
+  end
+
+  test "the Rail mark takes each role to its first tab" do
+    for {role, home} <- [support: "/support", tester: "/testing", dev: "/"] do
+      html = render_component(&Nav.nav/1, current_scope: temp_user_scope(role: role), current_section: :tasks)
+
+      assert [_whole, mark_tag] = Regex.run(~r/(<a[^>]*id="app-brand"[^>]*>)/, html)
+      assert mark_tag =~ ~s(href="#{home}")
+    end
+  end
+
+  test "top_app_bar shows New Issue and its dialog only to a role that opens Issues" do
+    for {role, shown} <- [support: false, tester: true, dev: true] do
+      html =
+        render_component(&Nav.top_app_bar/1,
+          current_section: :support,
+          current_scope: temp_user_scope(role: role),
+          projects: []
+        )
+
+      assert html =~ ~s(id="global-capture-idea-button") == shown
+      assert html =~ ~s(id="#{CaptureIssueModal.id()}") == shown
+      assert html =~ ~s(id="user-menu-button")
     end
   end
 

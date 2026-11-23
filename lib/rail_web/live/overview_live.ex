@@ -13,6 +13,8 @@ defmodule RailWeb.OverviewLive do
   alias Rail.Scope
   alias Rail.Tools
 
+  on_mount {RailWeb.UserAuth, {:require_tab, :overview}}
+
   @throughput_days 30
   @activity_limit 8
   # Waiting on you, then broken, then working or in line to, then not started.

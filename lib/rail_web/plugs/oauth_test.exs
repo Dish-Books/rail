@@ -122,4 +122,17 @@ defmodule RailWeb.Plugs.OAuthTest do
     assert [~s(Bearer error="invalid_token", error_description="connect GitHub in Rail to use its tools") <> _rest] =
              get_resp_header(conn, "www-authenticate")
   end
+
+  test "a token whose person is now support gets a 401 saying their role does not open Issues", %{
+    conn: conn,
+    user: user,
+    connect: connect
+  } do
+    access_token = connect.()
+    {:ok, _user} = Users.update_user(system_scope(), user, %{role: :support})
+    conn = conn |> put_req_header("authorization", "Bearer #{access_token}") |> OAuth.call(OAuth.init([]))
+
+    assert %{"error" => "invalid_token", "error_description" => "your role in Rail does not open Issues"} =
+             json_response(conn, 401)
+  end
 end

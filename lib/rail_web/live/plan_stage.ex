@@ -26,6 +26,7 @@ defmodule RailWeb.Live.PlanStage do
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Users
 
   # A rule of the task's project changed, so a cited one may read differently now.
   @impl true
@@ -46,6 +47,8 @@ defmodule RailWeb.Live.PlanStage do
       |> assign_new(:line_draft, fn -> nil end)
       |> assign_new(:reported_changed, fn -> nil end)
       |> assign_new(:selected_key, fn -> nil end)
+      # Off the scope from the first mount, since a later update from the task page carries only the task.
+      |> assign_new(:open_learnings, fn %{current_scope: scope} -> Users.can?(scope, :learnings, :view) end)
       |> assign_earlier()
       |> load()
       |> prepend_earlier_tabs()
@@ -74,6 +77,7 @@ defmodule RailWeb.Live.PlanStage do
         plan={@plan}
         sheet={@sheet}
         rules={@rules}
+        open_learnings={@open_learnings}
         criteria={@criteria}
         default_paths={@default_paths}
         project={@task.project}
@@ -212,6 +216,7 @@ defmodule RailWeb.Live.PlanStage do
               plan={@plan}
               sheet={@sheet}
               rules={@rules}
+              open_learnings={@open_learnings}
               banner={@banner}
               approved={@approved}
               running={@running}
@@ -817,6 +822,7 @@ defmodule RailWeb.Live.PlanStage do
   attr :plan, :any, required: true
   attr :sheet, :any, required: true
   attr :rules, :map, required: true, doc: "the rules the plan cites, by id"
+  attr :open_learnings, :boolean, required: true
   attr :banner, :any, required: true
   attr :approved, :boolean, required: true
   attr :running, :boolean, required: true
@@ -866,6 +872,7 @@ defmodule RailWeb.Live.PlanStage do
         :if={@sheet}
         sheet={@sheet}
         rules={@rules}
+        open_learnings={@open_learnings}
         criteria={@criteria}
         default_paths={@default_paths}
         project={@project}
@@ -903,6 +910,7 @@ defmodule RailWeb.Live.PlanStage do
   attr :plan, :any, required: true
   attr :sheet, :any, required: true
   attr :rules, :map, required: true, doc: "the rules the plan cites, by id"
+  attr :open_learnings, :boolean, required: true
   attr :criteria, :list, required: true
   attr :default_paths, :any, required: true
   attr :project, :any, required: true
@@ -946,6 +954,7 @@ defmodule RailWeb.Live.PlanStage do
           :if={@sheet}
           sheet={@sheet}
           rules={@rules}
+          open_learnings={@open_learnings}
           criteria={@criteria}
           part={@child_of.position}
           default_paths={@default_paths}

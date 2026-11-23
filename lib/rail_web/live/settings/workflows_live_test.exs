@@ -32,6 +32,23 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
     %{conn: log_in_user(conn, admin), regular: regular}
   end
 
+  test "a role without the Issues tab is sent to its own first tab", %{conn: conn} do
+    id = System.unique_integer([:positive])
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "settings_workflows_live_role_#{id}",
+        login: "settings_workflows_live-role-#{id}",
+        email: "settings_workflows_live_role_#{id}@example.com"
+      })
+
+    for {role, home} <- [support: "/support"] do
+      {:ok, user} = Users.update_user(system_scope(), user, %{role: role})
+
+      assert {:error, {:redirect, %{to: ^home}}} = live(log_in_user(conn, user), ~p"/settings/workflows")
+    end
+  end
+
   test "lists a merged workflow with its project, file, schedule and next start, and offers no way to edit it", %{
     conn: conn,
     project: project

@@ -157,6 +157,23 @@ defmodule RailWeb.SandboxesLiveTest do
     }
   end
 
+  test "a role without the Sandboxes tab is sent to its own first tab", %{conn: conn} do
+    id = System.unique_integer([:positive])
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "sandboxes_live_role_#{id}",
+        login: "sandboxes_live-role-#{id}",
+        email: "sandboxes_live_role_#{id}@example.com"
+      })
+
+    for {role, home} <- [tester: "/testing", support: "/support"] do
+      {:ok, user} = Users.update_user(system_scope(), user, %{role: role})
+
+      assert {:error, {:redirect, %{to: ^home}}} = live(log_in_user(conn, user), ~p"/sandboxes")
+    end
+  end
+
   test "a turn whose issue Linear deletes leaves an open page, and the page still loads", %{
     conn: conn,
     project: project,

@@ -127,4 +127,35 @@ defmodule Rail.Users.Actions.CanTest do
       refute Users.can?(scope, :issues, :view)
     end
   end
+
+  describe "can?(scope, tab, :view)" do
+    test "each role opens only its tabs" do
+      tabs = [:overview, :support, :triage, :testing, :issues, :learnings, :sandboxes]
+
+      for {role, opens} <- [
+            support: [:support],
+            tester: [:testing, :issues],
+            dev: [:overview, :support, :triage, :testing, :issues, :learnings, :sandboxes]
+          ] do
+        scope = Scope.for_user(%{admin: false, role: role})
+        assert Enum.filter(tabs, &Users.can?(scope, &1, :view)) == opens
+      end
+    end
+
+    test "being an admin widens no role" do
+      scope = Scope.for_user(%{admin: true, role: :support})
+
+      assert Users.can?(scope, :support, :view)
+      refute Users.can?(scope, :issues, :view)
+      refute Users.can?(scope, :triage, :view)
+      assert Users.can?(scope, :users, :manage)
+    end
+
+    test "the system opens every tab, and a scope with no user or no role opens none" do
+      assert Users.can?(Scope.for_system(), :triage, :view)
+      refute Users.can?(nil, :support, :view)
+      refute Users.can?(%Scope{user: nil}, :support, :view)
+      refute Users.can?(Scope.for_user(%{admin: true, role: :manager}), :support, :view)
+    end
+  end
 end
