@@ -174,7 +174,7 @@ defmodule RailWeb.Components.TriageTicket do
           <textarea
             id={"triage-ticket-description-#{@item.id}"}
             name="item[issue_description]"
-            rows="3"
+            rows="8"
             aria-label="Description"
             phx-debounce="400"
             readonly={@readonly}
