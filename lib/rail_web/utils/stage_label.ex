@@ -45,7 +45,7 @@ defmodule RailWeb.Utils.StageLabel do
       Enum.filter(
         siblings,
         &(&1.split_position in task.builds_on and is_nil(&1.merged_at) and is_nil(&1.issue.completed_at) and
-            &1.issue.state not in [:canceled, :duplicate])
+            &1.issue.state != :canceled)
       )
 
     {canceled, removed} = Task.split_blockers(task, siblings)

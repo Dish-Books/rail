@@ -79,7 +79,7 @@ defmodule RailWeb.Components.FindingIssueTest do
       identifier: "RAIL-152",
       url: "https://rail.test/issues/iss_152",
       title: "Issues page re-sorts after every sync",
-      state: :backlog,
+      state: :todo,
       priority: :high
     }
 
@@ -89,7 +89,7 @@ defmodule RailWeb.Components.FindingIssueTest do
       |> Floki.parse_fragment!()
 
     text = Floki.text(doc)
-    assert text =~ ~r/Filed as\s+RAIL-152\s+· Backlog · High priority/
+    assert text =~ ~r/Filed as\s+RAIL-152\s+· Todo · High priority/
     assert text =~ "Its ruling can no longer change."
     assert doc |> Floki.find("#finding-issue-open") |> Floki.text() =~ "Open issue"
     assert ["https://rail.test/issues/iss_152"] = doc |> Floki.find("#finding-issue-open") |> Floki.attribute("href")

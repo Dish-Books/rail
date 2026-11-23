@@ -45,7 +45,7 @@ defmodule Rail.Issues.Schemas.IssueTest do
       project_id: "prj_from_attrs",
       identifier: "ENG-101",
       title: "Fix crash on login",
-      state: :triage
+      state: :todo
     }
 
     changeset = Issue.changeset(%Issue{}, attrs)
@@ -68,7 +68,7 @@ defmodule Rail.Issues.Schemas.IssueTest do
       identifier: "ENG-201",
       number: 201,
       title: "Database constraint test",
-      state: :triage,
+      state: :todo,
       project_id: project_id
     }
 
@@ -100,7 +100,7 @@ defmodule Rail.Issues.Schemas.IssueTest do
   describe "enums, labels, and helper functions" do
     test "priorities/0 and states/0 return expected lists" do
       assert Issue.priorities() == [:urgent, :high, :medium, :low]
-      assert Issue.states() == [:backlog, :triage, :todo, :in_progress, :in_review, :done, :canceled, :duplicate]
+      assert Issue.states() == [:todo, :in_progress, :in_review, :done, :canceled]
     end
 
     test "priority_label/1 returns correct human readable labels" do
@@ -114,26 +114,25 @@ defmodule Rail.Issues.Schemas.IssueTest do
     end
 
     test "state_label/1 returns correct human readable labels" do
-      assert Issue.state_label(:backlog) == "Backlog"
-      assert Issue.state_label(:triage) == "Triage"
       assert Issue.state_label(:todo) == "Todo"
       assert Issue.state_label(:in_progress) == "In Progress"
       assert Issue.state_label(:in_review) == "In Review"
       assert Issue.state_label(:done) == "Done"
       assert Issue.state_label(:canceled) == "Canceled"
-      assert Issue.state_label(:duplicate) == "Duplicate"
+      assert is_nil(Issue.state_label(:triage))
+      assert is_nil(Issue.state_label(:backlog))
+      assert is_nil(Issue.state_label(:duplicate))
       assert is_nil(Issue.state_label(:invalid))
       assert is_nil(Issue.state_label(nil))
       assert is_nil(Issue.state_label(123))
     end
 
     test "finished_state?/1, finished?/1, and closed?/1 identify terminal states" do
-      assert Issue.finished_states() == [:done, :canceled, :duplicate]
+      assert Issue.finished_states() == [:done, :canceled]
       assert Issue.finished_state?(:done)
       assert Issue.finished_state?(:canceled)
-      assert Issue.finished_state?(:duplicate)
       refute Issue.finished_state?(:in_progress)
-      refute Issue.finished_state?(:triage)
+      refute Issue.finished_state?(:todo)
       refute Issue.finished_state?(:invalid)
       refute Issue.finished_state?(nil)
       refute Issue.finished_state?("done")
@@ -149,19 +148,18 @@ defmodule Rail.Issues.Schemas.IssueTest do
       assert Issue.started_state?(:in_progress)
       assert Issue.started_state?(:in_review)
 
-      for state <- [:triage, :backlog, :todo, :done, :canceled, :duplicate, nil] do
+      for state <- [:todo, :done, :canceled, nil] do
         refute Issue.started_state?(state)
       end
     end
 
     test "active?/1 identifies non-terminal working states" do
-      for state <- [:triage, :backlog, :todo, :in_progress, :in_review] do
+      for state <- [:todo, :in_progress, :in_review] do
         assert Issue.active?(state)
       end
 
       refute Issue.active?(:done)
       refute Issue.active?(:canceled)
-      refute Issue.active?(:duplicate)
       refute Issue.active?(:invalid)
       refute Issue.active?(nil)
       refute Issue.active?("todo")
@@ -292,9 +290,9 @@ defmodule Rail.Issues.Schemas.IssueTest do
       assert [] = Issue.calculate_children(%Issue{project_id: "prj_a"})
     end
 
-    test "a parent's done count leaves out canceled and duplicate sub-issues" do
+    test "a parent's done count leaves out canceled sub-issues" do
       children =
-        for state <- [:done, :in_progress, :todo, :canceled, :duplicate, :done],
+        for state <- [:done, :in_progress, :todo, :canceled, :canceled, :done],
             do: %Issue{project_id: "prj_a", state: state}
 
       assert {2, 4} = Issue.calculate_sub_issue_count(%Issue{project_id: "prj_a", children: children})
@@ -325,7 +323,7 @@ defmodule Rail.Issues.Schemas.IssueTest do
         %{name: "Ready for Dev", type: "unstarted", position: 1},
         %{name: "In Progress", type: "started", position: 2},
         %{name: "In Review", type: "started", position: 3},
-        %{name: "Triage", type: "triage", position: -1},
+        %{name: "Todo", type: "triage", position: -1},
         %{name: "Done", type: "completed", position: 4},
         %{name: "Canceled", type: "canceled", position: 5}
       ]
@@ -335,27 +333,23 @@ defmodule Rail.Issues.Schemas.IssueTest do
       end
 
       issues = [
-        issue.("iss_1", :backlog, 1),
         issue.("iss_2", :in_progress, nil),
         issue.("iss_3", :in_review, 3),
         issue.("iss_5", :todo, 1),
-        issue.("iss_6", :done, 5),
-        issue.("iss_7", :triage, 1)
+        issue.("iss_6", :done, 5)
       ]
 
-      # Ready for Dev holds no issue, so it has no group.
+      # Backlog and Ready for Dev hold no issue, so they have no group; a Triage kind shows Todo's icon.
       assert [
                %{label: "In Review", state: :in_review, count: 1, points: 3},
                %{label: "In Progress", state: :in_progress, count: 1, points: 2},
-               %{label: "Backlog", state: :backlog, count: 1, points: 1},
-               %{label: "Triage", state: :triage},
-               %{label: "Done", state: :done},
-               %{label: "Todo", state: :todo, count: 1}
+               %{label: "Todo", state: :todo, count: 1, points: 1},
+               %{label: "Done", state: :done}
              ] = Issue.calculate_status_groups(issues, statuses, %{"prj_a" => 2})
 
-      assert [%{label: "Canceled", state: :canceled}, %{label: "Backlog", state: :backlog}] =
+      assert [%{label: "Canceled", state: :canceled}, %{label: "Todo", state: :todo}] =
                Issue.calculate_status_groups(
-                 [issue.("iss_8", :canceled, 1), issue.("iss_9", :backlog, 1)],
+                 [issue.("iss_8", :canceled, 1), issue.("iss_9", :todo, 1)],
                  [%{name: "Paused", type: "paused", position: 9}, %{name: "Canceled", type: "canceled", position: 5}],
                  %{"prj_a" => 0}
                )
@@ -366,15 +360,13 @@ defmodule Rail.Issues.Schemas.IssueTest do
       {:ok, %{statuses: statuses}} = Issues.get_cycles(project)
 
       issues =
-        for {state, n} <- Enum.with_index([:done, :canceled, :triage, :backlog, :todo, :todo, :in_progress, :in_review]),
+        for {state, n} <- Enum.with_index([:done, :canceled, :todo, :todo, :in_progress, :in_review]),
             do: %Issue{id: "iss_#{n}", project_id: "prj_a", state: state, parent: nil}
 
       assert [
                %{label: "In Review", state: :in_review, count: 1},
                %{label: "In Progress", state: :in_progress, count: 1},
                %{label: "Todo", state: :todo, count: 2, points: 2},
-               %{label: "Backlog", state: :backlog},
-               %{label: "Triage", state: :triage},
                %{label: "Done", state: :done},
                %{label: "Canceled", state: :canceled}
              ] = Issue.calculate_status_groups(issues, statuses, %{"prj_a" => 1})
@@ -443,7 +435,7 @@ defmodule Rail.Issues.Schemas.IssueTest do
     end
 
     test "only unfinished blockers are open" do
-      entries = for state <- [:todo, :done, :canceled, :duplicate, :in_progress], do: %{issue: %Issue{state: state}}
+      entries = for state <- [:todo, :done, :canceled, :in_progress], do: %{issue: %Issue{state: state}}
 
       assert [%{issue: %Issue{state: :todo}}, %{issue: %Issue{state: :in_progress}}] =
                Issue.calculate_open_blockers(entries)

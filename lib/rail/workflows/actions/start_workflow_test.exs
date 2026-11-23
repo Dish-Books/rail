@@ -42,7 +42,7 @@ defmodule Rail.Workflows.Actions.StartWorkflowTest do
               id: issue_id,
               identifier: "TST-" <> _number,
               title: "Dependency updates 2026-10-12",
-              state: :triage,
+              state: :todo,
               project_id: ^project_id,
               workflow_id: ^workflow_id,
               owner_user_id: nil,

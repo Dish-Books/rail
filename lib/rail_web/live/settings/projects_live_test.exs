@@ -1116,7 +1116,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                     project_id: project_id,
                     identifier: branch,
                     title: branch,
-                    state: :backlog
+                    state: :todo
                   })
                 )
 

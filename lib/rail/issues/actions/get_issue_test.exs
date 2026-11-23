@@ -24,7 +24,7 @@ defmodule Rail.Issues.Actions.GetIssueTest do
         project_id: project_id,
         identifier: "GTI-1",
         title: "Get Issue Test",
-        state: :triage
+        state: :todo
       })
       |> Repo.insert!()
 

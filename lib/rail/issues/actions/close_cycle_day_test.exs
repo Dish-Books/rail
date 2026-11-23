@@ -136,7 +136,7 @@ defmodule Rail.Issues.Actions.CloseCycleDayTest do
     assert {:ok, %{cycles: [%{id: ^first_id, scope_history: scope} | _later]}} = Issues.get_cycles(local)
     assert length(scope) == 14
 
-    assert [%ClosedCycleIssue{issue_id: ^issue_id, state: :triage}] =
+    assert [%ClosedCycleIssue{issue_id: ^issue_id, state: :todo}] =
              Repo.all(from(c in ClosedCycleIssue, where: c.cycle_id == ^first_id))
 
     assert %Issue{cycle_id: ^second_id} = Repo.get!(Issue, issue_id)

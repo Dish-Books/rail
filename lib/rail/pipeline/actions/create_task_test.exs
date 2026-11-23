@@ -24,7 +24,7 @@ defmodule Rail.Pipeline.Actions.CreateTaskTest do
         project_id: project.id,
         identifier: "CRT-1",
         title: "Issue",
-        state: :triage
+        state: :todo
       })
       |> Repo.insert!()
       |> Repo.preload(:project)

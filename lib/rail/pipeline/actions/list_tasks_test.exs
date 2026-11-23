@@ -213,7 +213,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     {:ok, _open} = Pipeline.update_task(open, %{stage: :finalize, marked_ready_at: now})
     open_issue |> Issue.tracker_changeset(%{state: :in_review}) |> Repo.update!()
 
-    for closed <- [%{state: :done, completed_at: now}, %{state: :canceled}, %{state: :duplicate}] do
+    for closed <- [%{state: :done, completed_at: now}, %{state: :canceled}, %{state: :canceled}] do
       {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Closed"})
       issue |> Issue.tracker_changeset(closed) |> Repo.update!()
       {:ok, task} = Pipeline.create_task(issue, :finalize)

@@ -50,7 +50,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
       project_id: project.id,
       identifier: "trk-1",
       title: "One",
-      state: :backlog
+      state: :todo
     })
     |> Repo.insert!()
 

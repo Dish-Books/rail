@@ -63,7 +63,7 @@ defmodule Rail.Tools.Actions.StartAfterUsageResetTest do
         project_id: project.id,
         identifier: "RST#{unique}-1",
         title: "Reset Issue",
-        state: :backlog
+        state: :todo
       })
       |> Repo.insert!()
 

@@ -477,7 +477,7 @@ defmodule RailWeb.TestingLiveTest do
     assert %Issue{state: :done, testing_state: :sent_to_triage} = Repo.get!(Issue, sent.id)
 
     assert %{issues: [%Issue{identifier: created, description: "The row is cut off" <> _link}]} =
-             Issues.list_issues(project_id: here.id, state: :triage)
+             Issues.list_issues(project_id: here.id, state: :todo)
 
     assert has_element?(view, "#testing-notice", "#{sent.identifier} sent to triage as #{created}.")
     assert has_element?(view, "#testing-notice-created[href='/issues/#{created}']")
@@ -520,7 +520,7 @@ defmodule RailWeb.TestingLiveTest do
 
     assert_patch(view, ~p"/testing/#{second.id}", 1_000)
     assert has_element?(view, "#testing-notice", "sent to triage as")
-    assert %{total: 1} = Issues.list_issues(project_id: here.id, state: :triage)
+    assert %{total: 1} = Issues.list_issues(project_id: here.id, state: :todo)
 
     view |> element("#testing-mark-tested") |> render_click()
 
@@ -626,7 +626,7 @@ defmodule RailWeb.TestingLiveTest do
     render_hook(view, "send_to_triage", %{"issue_id" => sent.id})
     assert has_element?(view, "#testing-notice", "#{sent.identifier} was already sent to triage.")
     assert has_element?(view, "#testing-notes-status", "Testing finished")
-    assert %{total: 1} = Issues.list_issues(project_id: sent.project_id, state: :triage)
+    assert %{total: 1} = Issues.list_issues(project_id: sent.project_id, state: :todo)
 
     {:ok, view, _html} = live(conn, ~p"/testing/#{reopened.id}")
 

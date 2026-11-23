@@ -34,7 +34,7 @@ defmodule RailWeb.Mcp.Tools.SearchIssuesTest do
     assert {:ok,
             %{
               "issues" => [
-                %{"identifier" => ^near, "title" => "Rows wait", "status" => "Triage", "priority" => "medium"},
+                %{"identifier" => ^near, "title" => "Rows wait", "status" => "Todo", "priority" => "medium"},
                 %{"identifier" => ^far}
               ]
             }} = call_mcp_tool(scope, "search_issues", %{"project" => local.key, "query" => "rows waiting too long"})

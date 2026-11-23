@@ -96,7 +96,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
         project_id: project_id,
         identifier: "LI1-1",
         title: "Triage",
-        state: :triage
+        state: :todo
       })
       |> Repo.insert!()
 
@@ -126,7 +126,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
         identifier: "LI1-3",
         title: "Duplicate",
         priority: :urgent,
-        state: :duplicate
+        state: :canceled
       })
       |> Repo.insert!()
 
@@ -142,7 +142,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
              priority_counts: %{urgent: 1, medium: 2}
            } = Issues.list_issues(project_id: project_id, show_finished: true)
 
-    assert %{issues: [%Issue{id: ^triage_id}]} = Issues.list_issues(project_id: project_id, state: :triage)
+    assert %{issues: [%Issue{id: ^triage_id}]} = Issues.list_issues(project_id: project_id, state: :todo)
 
     assert %{issues: [%Issue{id: ^triage_id, project: %Project{id: ^project_id}}]} =
              Issues.list_issues(project_id: project_id, preload: [:project])
@@ -162,7 +162,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
         project_id: project.id,
         identifier: "LI1-10",
         title: "Fix Login redirect",
-        state: :triage
+        state: :todo
       })
       |> Repo.insert!()
 
@@ -172,7 +172,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
         project_id: project.id,
         identifier: "LI1-20",
         title: "Show 100% width",
-        state: :triage
+        state: :todo
       })
       |> Repo.insert!()
 
@@ -181,7 +181,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       project_id: project.id,
       identifier: "LI1-30",
       title: "Other",
-      state: :triage
+      state: :todo
     })
     |> Repo.insert!()
 
@@ -201,7 +201,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
         project_id: project.id,
         identifier: "LI1-2",
         title: "Named exactly",
-        state: :triage
+        state: :todo
       })
       |> Repo.insert!()
 
@@ -211,7 +211,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
         project_id: project.id,
         identifier: "LI1-#{n}",
         title: "Prefixed #{n}",
-        state: :triage
+        state: :todo
       })
       |> Repo.insert!()
     end
@@ -229,7 +229,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
           identifier: "LI1-#{100 + n}",
           title: "Paged #{n}",
           priority: priority,
-          state: :backlog
+          state: :todo
         })
         |> Repo.insert!()
       end
@@ -268,7 +268,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
         project_id: project.id,
         identifier: "LI1-40",
         title: "Tasked",
-        state: :backlog
+        state: :todo
       })
       |> Repo.insert!()
 
@@ -334,7 +334,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
         project_id: project.id,
         identifier: "LI1-50",
         title: "Mine",
-        state: :backlog,
+        state: :todo,
         owner_user_id: owner_id
       })
       |> Repo.insert!()
@@ -344,7 +344,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       project_id: project.id,
       identifier: "LI1-51",
       title: "Not mine",
-      state: :backlog
+      state: :todo
     })
     |> Repo.insert!()
 
@@ -391,7 +391,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
 
     "Q7"
     |> done.(project_id, ~U[2026-11-07 10:00:00Z])
-    |> Issue.tracker_changeset(%{state: :duplicate})
+    |> Issue.tracker_changeset(%{state: :canceled})
     |> Repo.update!()
 
     done.("Q8", other_id, ~U[2026-11-07 10:00:00Z])

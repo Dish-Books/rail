@@ -14,8 +14,8 @@ defmodule Rail.Issues.Schemas.Issue do
   alias Rail.Workflows.Schemas.Workflow
 
   @priorities [:urgent, :high, :medium, :low]
-  @states [:backlog, :triage, :todo, :in_progress, :in_review, :done, :canceled, :duplicate]
-  @finished_states [:done, :canceled, :duplicate]
+  @states [:todo, :in_progress, :in_review, :done, :canceled]
+  @finished_states [:done, :canceled]
   @started_states [:in_progress, :in_review]
   @optional_steps [:product, :design, :architect, :demo]
   @plan_steps [:product, :design, :architect]
@@ -172,14 +172,11 @@ defmodule Rail.Issues.Schemas.Issue do
   def priority_label(:low), do: "Low"
   def priority_label(_other), do: nil
 
-  def state_label(:backlog), do: "Backlog"
-  def state_label(:triage), do: "Triage"
   def state_label(:todo), do: "Todo"
   def state_label(:in_progress), do: "In Progress"
   def state_label(:in_review), do: "In Review"
   def state_label(:done), do: "Done"
   def state_label(:canceled), do: "Canceled"
-  def state_label(:duplicate), do: "Duplicate"
   def state_label(_other), do: nil
 
   def testing_states, do: @testing_states
@@ -240,7 +237,7 @@ defmodule Rail.Issues.Schemas.Issue do
 
   @doc "Its sub-issues in Done, out of all of them but canceled and duplicate ones, as `{done, total}`."
   def calculate_sub_issue_count(%__MODULE__{} = issue) do
-    counted = issue |> calculate_children() |> Enum.reject(&(&1.state in [:canceled, :duplicate]))
+    counted = issue |> calculate_children() |> Enum.reject(&(&1.state == :canceled))
     {Enum.count(counted, &(&1.state == :done)), length(counted)}
   end
 
@@ -303,7 +300,7 @@ defmodule Rail.Issues.Schemas.Issue do
   def finished?(state), do: finished_state?(state)
   def closed?(state), do: finished_state?(state)
 
-  def active?(state) when is_atom(state), do: state in [:triage, :backlog, :todo, :in_progress, :in_review]
+  def active?(state) when is_atom(state), do: state in [:todo, :in_progress, :in_review]
   def active?(_other), do: false
 
   defp base_changeset(issue, attrs) do
@@ -387,17 +384,15 @@ defmodule Rail.Issues.Schemas.Issue do
   defp type_rank("completed"), do: 4
   defp type_rank(_canceled_or_other), do: 5
 
-  # Rail's own statuses say which state they are, so Todo shows Todo's icon rather than Backlog's.
+  # Rail's own statuses say which state they are. A Triage, Backlog or Todo kind is Todo, a Duplicate one Canceled.
   defp status_state(%{state: state}) when is_atom(state), do: state
 
   defp status_state(%{type: "started", name: name}),
     do: if(String.downcase(name) == "in review", do: :in_review, else: :in_progress)
 
-  defp status_state(%{type: "unstarted"}), do: :backlog
-  defp status_state(%{type: "triage"}), do: :triage
   defp status_state(%{type: "completed"}), do: :done
-  defp status_state(%{type: "canceled"}), do: :canceled
-  defp status_state(%{type: _backlog_or_other}), do: :backlog
+  defp status_state(%{type: type}) when type in ["canceled", "duplicate"], do: :canceled
+  defp status_state(%{type: _unstarted_or_other}), do: :todo
 
   defp sequence_stage(%IssueStage{stage: :custom, name: name}), do: {:custom, name}
   defp sequence_stage(%IssueStage{stage: stage}), do: stage

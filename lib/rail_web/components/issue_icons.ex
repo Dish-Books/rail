@@ -96,14 +96,11 @@ defmodule RailWeb.Components.IssueIcons do
   defp lit_bars(:low), do: 1
   defp lit_bars(_medium), do: 2
 
-  defp status_icon_name(:triage), do: "pi-tray"
-  defp status_icon_name(:backlog), do: "pi-circle-dashed"
   defp status_icon_name(:todo), do: "pi-circle"
   defp status_icon_name(:in_progress), do: "pi-circle-half-fill"
   defp status_icon_name(:in_review), do: "pi-circle-half-tilt-fill"
   defp status_icon_name(:done), do: "pi-check-circle-fill"
   defp status_icon_name(:canceled), do: "pi-x-circle-fill"
-  defp status_icon_name(:duplicate), do: "pi-x-circle-fill"
 
   # In Review is green, so amber stays In Progress's alone.
   defp status_color(:in_review), do: "text-emerald-500"

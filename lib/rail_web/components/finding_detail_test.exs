@@ -205,7 +205,7 @@ defmodule RailWeb.Components.FindingDetailTest do
       identifier: "RAIL-152",
       url: "https://rail.test/issues/iss_152",
       title: "Send twice",
-      state: :triage,
+      state: :todo,
       priority: :low
     }
 
