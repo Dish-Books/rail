@@ -11,7 +11,10 @@ defmodule Rail.Issues.Workers.MoveToLocalTrackerTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueLink
   alias Rail.Issues.Schemas.IssueRelation
+  alias Rail.Issues.Schemas.LinearFileCopy
   alias Rail.Issues.Workers.AdvanceTrackerState
+  alias Rail.Issues.Workers.CopyLinearFile
+  alias Rail.Issues.Workers.MoveToLocalTracker
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -269,7 +272,36 @@ defmodule Rail.Issues.Workers.MoveToLocalTrackerTest do
 
     Req.Test.stub(R2, r2)
 
+    # The move's runs and each file's copy, retries included, until none is left to run.
+    drain = fn drain ->
+      ran = [
+        Oban.drain_queue(queue: :issues),
+        Oban.drain_queue(queue: :linear_files, with_scheduled: true, with_recursion: true)
+      ]
+
+      if Enum.any?(ran, &(&1.success + &1.failure + &1.discard + &1.cancelled + &1.snoozed > 0)), do: drain.(drain)
+      :ok
+    end
+
+    latest_move = fn project_id ->
+      Repo.one!(
+        from(j in Oban.Job,
+          where: j.worker == ^Oban.Worker.to_string(MoveToLocalTracker),
+          where: fragment("? @> ?", j.args, ^%{project_id: project_id}),
+          order_by: [desc: j.id],
+          limit: 1
+        )
+      )
+    end
+
+    copy_jobs = fn state ->
+      Repo.all(from(j in Oban.Job, where: j.worker == ^Oban.Worker.to_string(CopyLinearFile) and j.state == ^state))
+    end
+
     %{
+      drain_move: fn -> drain.(drain) end,
+      latest_move: latest_move,
+      copy_jobs: copy_jobs,
       project: project,
       user: user,
       existing: existing,
@@ -282,6 +314,7 @@ defmodule Rail.Issues.Workers.MoveToLocalTrackerTest do
   end
 
   test "moves every ticket with its comments and files into Rail and flips the project", %{
+    drain_move: drain_move,
     project: %Project{id: project_id} = project,
     user: %{id: user_id},
     existing: %Issue{id: existing_id},
@@ -292,7 +325,7 @@ defmodule Rail.Issues.Workers.MoveToLocalTrackerTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "cycles")
     {:ok, _job} = Issues.move_to_local_tracker(user_scope(admin: true), project)
 
-    assert %{success: 1, discard: 0} = Oban.drain_queue(queue: :issues)
+    drain_move.()
 
     assert %Project{tracker: :local, key: "MVW", linear_team_id: nil, linear_state_ids: %{}, linear_workspace_id: nil} =
              Repo.get!(Project, project_id)
@@ -363,14 +396,19 @@ defmodule Rail.Issues.Workers.MoveToLocalTrackerTest do
     expected_body = "Again ![shot](#{shot_url})"
     assert %Comment{body: ^expected_body} = Enum.find(comments, &(&1.external_id == "lin_com_51"))
     refute Repo.get_by(Comment, external_id: "lin_com_61")
+
+    # Each file was its own job, and nothing is left of them once the move is written.
+    assert 3 == Repo.aggregate(from(j in Oban.Job, where: j.worker == ^Oban.Worker.to_string(CopyLinearFile)), :count)
+    refute Repo.exists?(LinearFileCopy)
   end
 
   test "moves every cycle with its history and closed tickets, and the nightly run carries on from it", %{
+    drain_move: drain_move,
     project: %Project{id: project_id} = project
   } do
     {:ok, _job} = Issues.move_to_local_tracker(user_scope(admin: true), project)
 
-    assert %{success: 1} = Oban.drain_queue(queue: :issues)
+    drain_move.()
 
     cycles = Map.new(Repo.all(from(c in Cycle, where: c.project_id == ^project_id)), &{&1.number, &1})
 
@@ -422,12 +460,13 @@ defmodule Rail.Issues.Workers.MoveToLocalTrackerTest do
   end
 
   test "a cycle Linear has not closed yet is left for the nightly run to close and roll over", %{
+    drain_move: drain_move,
     project: %Project{id: project_id} = project
   } do
     stub(Date, :utc_today, fn -> ~D[2026-11-16] end)
     {:ok, _job} = Issues.move_to_local_tracker(user_scope(admin: true), project)
 
-    assert %{success: 1} = Oban.drain_queue(queue: :issues)
+    drain_move.()
 
     %Cycle{id: cycle_41} = Repo.get_by!(Cycle, project_id: project_id, number: 41)
     %Cycle{id: cycle_42} = Repo.get_by!(Cycle, project_id: project_id, number: 42)
@@ -450,13 +489,14 @@ defmodule Rail.Issues.Workers.MoveToLocalTrackerTest do
   end
 
   test "moves blockers and links, and the next ticket filed is numbered one past the highest", %{
+    drain_move: drain_move,
     project: %Project{id: project_id} = project,
     existing: %Issue{id: existing_id},
     held: %Issue{id: held_id}
   } do
     {:ok, _job} = Issues.move_to_local_tracker(user_scope(admin: true), project)
 
-    assert %{success: 1} = Oban.drain_queue(queue: :issues)
+    drain_move.()
 
     issues = Map.new(Repo.all(from(i in Issue, where: i.project_id == ^project_id)), &{&1.external_id, &1})
     %Issue{id: first_id} = issues["lin_1"]
@@ -496,27 +536,107 @@ defmodule Rail.Issues.Workers.MoveToLocalTrackerTest do
              Issues.create_issue(system_scope(), project, %{title: "After the move"})
   end
 
-  test "a file Linear's own token cannot fetch stops the move before anything is written", %{
+  test "a file Linear refuses holds the move, and trying again copies only that file before the move goes on", %{
+    drain_move: drain_move,
+    copy_jobs: copy_jobs,
     project: %Project{id: project_id} = project,
     linear: linear
   } do
     Req.Test.stub(Rail.Linear, fn
-      %Plug.Conn{host: "uploads.linear.app"} = conn -> Plug.Conn.send_resp(conn, 403, "Forbidden")
-      conn -> linear.(conn)
+      %Plug.Conn{host: "uploads.linear.app", request_path: "/org/a1/shot.png"} = conn ->
+        Plug.Conn.send_resp(conn, 403, "Forbidden")
+
+      conn ->
+        linear.(conn)
     end)
 
-    {:ok, %Oban.Job{id: job_id}} = Issues.move_to_local_tracker(user_scope(admin: true), project)
+    {:ok, _job} = Issues.move_to_local_tracker(user_scope(admin: true), project)
+    drain_move.()
 
-    assert %{discard: 1} = Oban.drain_queue(queue: :issues)
+    # Refused outright, so it is not tried again on its own.
+    assert [%Oban.Job{attempt: 1}] = copy_jobs.("cancelled")
 
-    assert %Oban.Job{
-             meta: %{
-               "failure" =>
-                 "Linear answered 403 for a file on MVW-1 (https://uploads.linear.app/org/a1/shot.png), so nothing was written."
-             }
-           } = Repo.get!(Oban.Job, job_id)
+    assert {:ok,
+            %{
+              ^project_id =>
+                {:stopped,
+                 "Linear answered 403 for a file on MVW-1 (https://uploads.linear.app/org/a1/shot.png). " <>
+                   "2 of 3 files are copied, and trying again copies only the rest."}
+            }} = Issues.list_tracker_moves(user_scope(admin: true), [project])
 
     assert %Project{tracker: :linear} = Repo.get!(Project, project_id)
+    refute Repo.get_by(Issue, external_id: "lin_1")
+    assert_received {:r2_put, "/r2_bucket/" <> spec_key, "FILE /org/att/spec"}
+    refute_received {:r2_put, _path, _body}
+
+    Req.Test.stub(Rail.Linear, linear)
+    {:ok, _job} = Issues.move_to_local_tracker(user_scope(admin: true), project)
+    drain_move.()
+
+    assert_received {:r2_put, "/r2_bucket/" <> _shot_key, "FILE /org/a1/shot.png"}
+    refute_received {:r2_put, _path, _body}
+    assert %Project{tracker: :local} = Repo.get!(Project, project_id)
+
+    # The file copied before the stop is the one the ticket links to.
+    %Issue{id: first_id, description: "See ![shot](" <> _shot} = Repo.get_by!(Issue, external_id: "lin_1")
+    assert String.starts_with?(spec_key, first_id <> "/")
+    spec_url = RailWeb.Endpoint.url() <> "/issues/#{first_id}/assets/" <> Path.basename(spec_key)
+    assert %IssueLink{url: ^spec_url} = Repo.get_by(IssueLink, issue_id: first_id, title: "Spec")
+  end
+
+  test "a file R2 keeps failing on is tried five times, and the move waits on it with every other file kept", %{
+    drain_move: drain_move,
+    copy_jobs: copy_jobs,
+    project: %Project{id: project_id} = project,
+    r2: r2
+  } do
+    Req.Test.stub(R2, fn conn ->
+      if String.ends_with?(conn.request_path, "-shot.png"),
+        do: Plug.Conn.send_resp(conn, 500, "InternalError"),
+        else: r2.(conn)
+    end)
+
+    {:ok, _job} = Issues.move_to_local_tracker(user_scope(admin: true), project)
+    drain_move.()
+
+    assert [%Oban.Job{attempt: 5}] = copy_jobs.("discarded")
+
+    assert {:ok,
+            %{
+              ^project_id =>
+                {:stopped,
+                 "Rail's file storage answered 500 for a file on MVW-1 (https://uploads.linear.app/org/a1/shot.png) " <>
+                   "after 5 tries. 2 of 3 files are copied, and trying again copies only the rest."}
+            }} = Issues.list_tracker_moves(user_scope(admin: true), [project])
+
+    assert %Project{tracker: :linear} = Repo.get!(Project, project_id)
+  end
+
+  test "files waiting with no copy left to run read as stopped, and trying again queues them", %{
+    drain_move: drain_move,
+    project: %Project{id: project_id} = project
+  } do
+    {:ok, _job} = Issues.move_to_local_tracker(user_scope(admin: true), project)
+    assert %{success: 1} = Oban.drain_queue(queue: :issues)
+
+    assert {:ok, %{^project_id => {:copying, 0, 3}}} =
+             Issues.list_tracker_moves(user_scope(admin: true), [project])
+
+    # The copies are lost, as a job deleted by hand would be.
+    Repo.delete_all(from(j in Oban.Job, where: j.worker == ^Oban.Worker.to_string(CopyLinearFile)))
+
+    assert {:ok,
+            %{
+              ^project_id =>
+                {:stopped,
+                 "The move stopped unexpectedly, before it could say why. " <>
+                   "0 of 3 files are copied, and trying again copies only the rest."}
+            }} = Issues.list_tracker_moves(user_scope(admin: true), [project])
+
+    {:ok, _job} = Issues.move_to_local_tracker(user_scope(admin: true), project)
+    drain_move.()
+
+    assert %Project{tracker: :local} = Repo.get!(Project, project_id)
   end
 
   test "a 502 on a later page leaves the project on Linear as it was, and its row says why", %{
@@ -561,10 +681,9 @@ defmodule Rail.Issues.Workers.MoveToLocalTrackerTest do
              Issues.list_tracker_moves(user_scope(admin: true), [project])
   end
 
-  test "each way Linear or R2 can stop the move is recorded as the sentence its row shows", %{
+  test "each way reading Linear can stop the move is recorded as the sentence its row shows", %{
     project: %Project{id: project_id} = project,
-    graphql: graphql,
-    linear: linear
+    graphql: graphql
   } do
     stops = [
       {fn
@@ -591,9 +710,7 @@ defmodule Rail.Issues.Workers.MoveToLocalTrackerTest do
            %{"query" => "query ExportComments" <> _rest} -> Req.Test.json(conn, %{"errors" => [%{}]})
            request -> graphql.(conn, request)
          end
-       end, R2, nil, "The move stopped while reading comments ({:linear_graphql_error, [%{}]}), so nothing was written."},
-      {linear, R2, &Plug.Conn.send_resp(&1, 500, "InternalError"),
-       "Rail's file storage answered 500 while copying files, so nothing was written."}
+       end, R2, nil, "The move stopped while reading comments ({:linear_graphql_error, [%{}]}), so nothing was written."}
     ]
 
     for {linear_stub, r2, r2_stub, sentence} <- stops do
@@ -631,7 +748,8 @@ defmodule Rail.Issues.Workers.MoveToLocalTrackerTest do
     refute Repo.exists?(from(c in Cycle, where: c.project_id == ^project_id))
   end
 
-  test "a ticket written under another id while its files were copied stops the move", %{
+  test "a ticket Rail writes while its files are copied has them copied again under its id", %{
+    drain_move: drain_move,
     project: %Project{id: project_id} = project,
     r2: r2
   } do
@@ -649,21 +767,61 @@ defmodule Rail.Issues.Workers.MoveToLocalTrackerTest do
       r2.(conn)
     end)
 
-    {:ok, %Oban.Job{id: job_id}} = Issues.move_to_local_tracker(user_scope(admin: true), project)
+    {:ok, _job} = Issues.move_to_local_tracker(user_scope(admin: true), project)
+    drain_move.()
 
-    assert %{discard: 1} = Oban.drain_queue(queue: :issues)
+    assert %Issue{id: first_id, tracker: :local, title: "First", description: description} =
+             Repo.get_by(Issue, external_id: "lin_1")
+
+    assert description =~ RailWeb.Endpoint.url() <> "/issues/#{first_id}/assets/"
+    assert %Project{tracker: :local} = Repo.get!(Project, project_id)
+  end
+
+  test "a ticket Rail writes as the move writes stops it, and trying again moves it", %{
+    drain_move: drain_move,
+    latest_move: latest_move,
+    project: %Project{id: project_id} = project
+  } do
+    # The write reads the day first, so the ticket lands after its ids were drawn and before the rows go in.
+    stub(Date, :utc_today, fn ->
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project_id,
+        external_id: "lin_1",
+        identifier: "MVW-1",
+        title: "Synced meanwhile",
+        state: :todo
+      })
+      |> Repo.insert!(on_conflict: :nothing, conflict_target: :external_id)
+
+      ~D[2026-11-12]
+    end)
+
+    {:ok, _job} = Issues.move_to_local_tracker(user_scope(admin: true), project)
+    drain_move.()
 
     assert %Oban.Job{
-             meta: %{"failure" => "A ticket changed in Rail while its files were copied, so nothing was written."}
-           } =
-             Repo.get!(Oban.Job, job_id)
+             meta: %{
+               "failure" =>
+                 "A ticket changed in Rail while its files were copied, so nothing was written. Trying again copies its files again."
+             }
+           } = latest_move.(project_id)
 
-    assert %Issue{tracker: :linear, title: "Synced meanwhile"} = Repo.get_by(Issue, external_id: "lin_1")
+    # In the test the ticket shares the move's transaction, so it rolls back with it.
+    refute Repo.get_by(Issue, external_id: "lin_1")
     assert %Project{tracker: :linear} = Repo.get!(Project, project_id)
-    refute Repo.exists?(from(c in Cycle, where: c.project_id == ^project_id))
+
+    stub(Date, :utc_today, fn -> ~D[2026-11-12] end)
+    {:ok, _job} = Issues.move_to_local_tracker(user_scope(admin: true), project)
+    drain_move.()
+
+    assert %Issue{id: first_id, tracker: :local, description: description} = Repo.get_by(Issue, external_id: "lin_1")
+    assert description =~ RailWeb.Endpoint.url() <> "/issues/#{first_id}/assets/"
   end
 
   test "a team key another project already has stops the move with nothing written", %{
+    drain_move: drain_move,
+    latest_move: latest_move,
     project: %Project{id: project_id} = project
   } do
     # The team's key changed in Linear after the project was set up under its old one.
@@ -679,12 +837,12 @@ defmodule Rail.Issues.Workers.MoveToLocalTrackerTest do
       clone_path: "/tmp/repos/upper-move-project"
     })
 
-    {:ok, %Oban.Job{id: job_id}} = Issues.move_to_local_tracker(user_scope(admin: true), project)
+    {:ok, _job} = Issues.move_to_local_tracker(user_scope(admin: true), project)
 
-    assert %{discard: 1} = Oban.drain_queue(queue: :issues)
+    drain_move.()
 
     assert %Oban.Job{meta: %{"failure" => "Another project already has the key MVW, so nothing was written."}} =
-             Repo.get!(Oban.Job, job_id)
+             latest_move.(project_id)
 
     refute Repo.get_by(Issue, external_id: "lin_1")
     assert %Issue{tracker: :linear, identifier: "OLD-4"} = Repo.get_by(Issue, external_id: "lin_old4")

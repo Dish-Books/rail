@@ -5,6 +5,8 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
   import Phoenix.LiveViewTest
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.LinearFileCopy
+  alias Rail.Issues.Workers.CopyLinearFile
   alias Rail.Issues.Workers.MoveToLocalTracker
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
@@ -1499,6 +1501,35 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
         refute has_element?(tab, "#project-moving-#{project_id}")
         refute has_element?(tab, "#move-project-#{project_id}")
       end
+    end
+
+    test "a move copying files counts them on its row as each one settles", %{
+      admin_conn: conn,
+      move_project_id: project_id
+    } do
+      {:ok, %Oban.Job{id: job_id}} = Oban.insert(MoveToLocalTracker.new(%{project_id: project_id}))
+      Repo.update_all(from(j in Oban.Job, where: j.id == ^job_id), set: [state: "completed"])
+
+      copies =
+        for n <- 1..2 do
+          Repo.insert!(%LinearFileCopy{
+            project_id: project_id,
+            issue_external_id: "lin_#{n}",
+            issue_id: "iss_move_#{n}",
+            url: "https://uploads.linear.app/org/#{n}/shot.png"
+          })
+        end
+
+      for copy <- copies, do: Oban.insert!(CopyLinearFile.new_copy(copy))
+
+      {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      assert has_element?(view, "#project-moving-#{project_id}", "Moving to Rail · 0 of 2 files copied")
+
+      Repo.update_all(from(c in LinearFileCopy, where: c.id == ^hd(copies).id), set: [state: :copied])
+      CopyLinearFile.broadcast_progress("prj_elsewhere")
+      CopyLinearFile.broadcast_progress(project_id)
+
+      assert has_element?(view, "#project-moving-#{project_id}", "Moving to Rail · 1 of 2 files copied")
     end
 
     test "a stopped move says why under the row, after a reload too, and Try again starts it again", %{
