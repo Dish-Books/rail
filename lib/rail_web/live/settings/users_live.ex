@@ -440,7 +440,6 @@ defmodule RailWeb.Settings.UsersLive do
     socket =
       socket
       |> assign(:sheet, :invite)
-      |> assign(:invite_role, :dev)
       |> assign(:sheet_user_id, nil)
       |> assign_sheet_user()
 
@@ -501,6 +500,7 @@ defmodule RailWeb.Settings.UsersLive do
           |> assign(:sheet, nil)
           |> assign(:invite_email, "")
           |> assign(:invite_admin, false)
+          |> assign(:invite_role, :dev)
           |> assign(:invite_project_ids, [])
           |> assign(:error_message, nil)
           |> load_directory(scope)

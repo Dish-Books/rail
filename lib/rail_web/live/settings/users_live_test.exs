@@ -400,9 +400,8 @@ defmodule RailWeb.Settings.UsersLiveTest do
     refute has_element?(view, "#invites-empty")
   end
 
-  test "an invite carries the role picked for it, and the sheet starts on Dev each time it opens", %{
-    admin_conn: conn
-  } do
+  test "an invite carries the role picked for it, keeps it when the sheet is reopened, and the next invite starts on Dev",
+       %{admin_conn: conn} do
     assert {:ok, view, _html} = live(conn, ~p"/settings/users")
     view |> element("#invite-button") |> render_click()
     assert has_element?(view, "#invite-role-dev-input[checked]")
@@ -410,15 +409,19 @@ defmodule RailWeb.Settings.UsersLiveTest do
     view |> form("#invite-form", %{"email" => "helper@example.com", "role" => "tester"}) |> render_change()
     assert has_element?(view, "#invite-role-tester-input[checked]")
 
+    # A half-filled invite keeps its role along with its email.
     view |> element("#invite-sheet-close") |> render_click()
     view |> element("#invite-button") |> render_click()
-    assert has_element?(view, "#invite-role-dev-input[checked]")
+    assert has_element?(view, "#invite-role-tester-input[checked]")
 
     view |> form("#invite-form", %{"email" => "helper@example.com", "role" => "support"}) |> render_submit()
 
     assert %Invite{role: :support} = invite = Repo.get_by(Invite, email: "helper@example.com")
     assert has_element?(view, "#invite-role-#{invite.id}", "Support")
     assert has_element?(view, "#invite-status-#{invite.id}", "Pending")
+
+    view |> element("#invite-button") |> render_click()
+    assert has_element?(view, "#invite-role-dev-input[checked]")
   end
 
   test "an admin invite gets every project", %{admin_conn: conn} do
