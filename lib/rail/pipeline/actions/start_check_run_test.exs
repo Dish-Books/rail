@@ -48,6 +48,9 @@ defmodule Rail.Pipeline.Actions.StartCheckRunTest do
       assert prompt =~ "<report from=\"engineer\">\nGuarded the nil in the action.\n</report>"
       assert prompt =~ "There is no approved plan for this round, so the ticket below is the whole specification."
       assert prompt =~ "Keep the screen states current"
+      assert prompt =~ "When the change reaches iOS or Android"
+      assert prompt =~ "install it on the iOS simulator or the Android emulator, pointed at `http://localhost:PORT`"
+      assert prompt =~ "run `adb reverse tcp:PORT tcp:PORT` before you open the app there"
       {:ok, %OsProcess{run: spawned}}
     end)
 

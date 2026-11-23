@@ -29,4 +29,5 @@ defmodule Rail.Support do
   defdelegate update_support_draft(scope, conversation, attrs), to: Actions.UpdateSupportDraft
   defdelegate mark_support_done(scope, conversation), to: Actions.MarkSupportDone
   defdelegate send_support_reply(scope, conversation), to: Actions.SendSupportReply
+  defdelegate send_support_message(scope, conversation, text), to: Actions.SendSupportMessage
 end

@@ -7,6 +7,7 @@ defmodule Rail.Support.Actions.SendSupportReplyTest do
   alias Rail.Support
   alias Rail.Support.Schemas.Conversation
   alias Rail.Support.Schemas.Item
+  alias Rail.Support.Schemas.Message
   alias Rail.Tools
   alias Rail.Triage
   alias Rail.Triage.Schemas.Item, as: TriageItem
@@ -207,6 +208,44 @@ defmodule Rail.Support.Actions.SendSupportReplyTest do
     assert {:ok, %Conversation{reply_posted_by_id: ^user_id}} = Support.send_support_reply(scope, conversation)
     assert 1 = Repo.aggregate(from(t in Thread, where: t.support_conversation_id == ^conversation_id), :count)
     refute_receive {:triage_changed, ^thread_id}
+  end
+
+  test "the posted reply shows at once, from the conversation Intercom answers with", %{
+    conversation: %{id: conversation_id} = conversation,
+    scope: scope
+  } do
+    Req.Test.expect(Rail.Intercom, fn conn ->
+      Req.Test.json(conn, %{
+        "type" => "conversation",
+        "id" => "ignored",
+        "created_at" => 1_790_000_000,
+        "updated_at" => 1_790_000_400,
+        "state" => "open",
+        "source" => %{
+          "id" => "src1",
+          "body" => "<p>The allergen sheet misses sesame.</p>",
+          "author" => %{"type" => "user"}
+        },
+        "conversation_parts" => %{
+          "conversation_parts" => [
+            %{
+              "id" => "p_reply",
+              "part_type" => "comment",
+              "created_at" => 1_790_000_400,
+              "body" => "<p>Hi Marta, thanks.</p>",
+              "author" => %{"type" => "admin", "name" => "Dana Whitfield"}
+            }
+          ]
+        }
+      })
+    end)
+
+    assert {:ok, %Conversation{reply_posted_at: %DateTime{}}} = Support.send_support_reply(scope, conversation)
+
+    assert %Message{kind: :teammate, text: "Hi Marta, thanks."} =
+             Repo.get_by!(Message, conversation_id: conversation_id, external_id: "p_reply")
+
+    assert %Conversation{intercom_updated_at: ~U[2026-09-21 14:20:00.000000Z]} = Repo.get!(Conversation, conversation_id)
   end
 
   test "a Send that finds another one holding the lock posts nothing", %{

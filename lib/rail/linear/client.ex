@@ -578,7 +578,13 @@ defmodule Rail.Linear.Client do
   def get_asset(target, path, opts \\ []) when is_binary(path) do
     with {:ok, token} <- token(target, opts),
          {:ok, %{status: 200} = response} <-
-           Req.get(build_req(opts), url: "#{@asset_url}/#{path}", auth: {:bearer, token}, decode_body: false) do
+           Req.get(build_req(opts),
+             url: "#{@asset_url}/#{path}",
+             auth: {:bearer, token},
+             decode_body: false,
+             # A demo video takes longer than Req's 15 seconds to arrive.
+             receive_timeout: to_timeout(minute: 2)
+           ) do
       {:ok, content_type(response), response.body}
     else
       {:ok, %{status: status, body: body}} -> {:error, {:linear_api_error, status, body}}

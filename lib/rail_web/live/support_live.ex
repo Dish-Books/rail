@@ -2,10 +2,12 @@ defmodule RailWeb.SupportLive do
   @moduledoc false
   use RailWeb, :live_view
 
+  alias Phoenix.LiveView.JS
   alias Rail.Scope
   alias Rail.Support
   alias Rail.Support.Schemas.ChatMessage
   alias Rail.Support.Schemas.Conversation
+  alias Rail.Support.Schemas.Message
   alias Rail.Users
 
   @filters ["waiting", "drafting", "done"]
@@ -18,6 +20,7 @@ defmodule RailWeb.SupportLive do
     drafting: "The agent is still working on the draft.",
     already_sent: "This reply is already being sent, or was sent.",
     no_reply: "There is no reply to send.",
+    no_message: "Write a message first.",
     not_found: "This conversation is no longer here."
   }
 
@@ -48,6 +51,9 @@ defmodule RailWeb.SupportLive do
       |> assign(:conversation, nil)
       |> assign(:send_error, nil)
       |> assign(:chat_form, Ecto.Changeset.change(%ChatMessage{}))
+      |> assign(:message_form, to_form(%{"text" => ""}, as: :support_message))
+      |> assign(:message_error, nil)
+      |> assign(:open_image, nil)
       |> load()
 
     {:noreply, socket}
@@ -96,6 +102,13 @@ defmodule RailWeb.SupportLive do
             linked={Scope.intercom_linked?(@current_scope)}
             author_name={@author_name}
           />
+          <.support_message
+            conversation={@conversation}
+            form={@message_form}
+            linked={Scope.intercom_linked?(@current_scope)}
+            author_name={@author_name}
+            error={@message_error}
+          />
         </div>
 
         <.agent_chat
@@ -119,6 +132,21 @@ defmodule RailWeb.SupportLive do
           Pick a conversation from the queue.
         </section>
       </div>
+      <.image_view
+        :if={@open_image}
+        prefix="support"
+        key={"#{@open_image.message_id}-#{@open_image.index}"}
+        name={@open_image.image.name || "Image"}
+        src={@open_image.image.url}
+        close={
+          JS.push(
+            JS.focus(to: "#support-image-#{@open_image.message_id}-#{@open_image.index}"),
+            "close_image"
+          )
+        }
+        position={@open_image.index + 1}
+        count={@open_image.count}
+      />
     </Layouts.app>
     """
   end
@@ -160,6 +188,43 @@ defmodule RailWeb.SupportLive do
 
     {:noreply, socket}
   end
+
+  # What is typed to the customer stays through the reloads broadcasts bring.
+  def handle_event("message_change", %{"support_message" => %{"text" => text}}, socket),
+    do: {:noreply, assign(socket, :message_form, to_form(%{"text" => text}, as: :support_message))}
+
+  # A message that did not go out stays in the box, to send again.
+  def handle_event("send_message", %{"support_message" => %{"text" => text}}, socket) do
+    {kept, error} =
+      case Support.send_support_message(socket.assigns.current_scope, socket.assigns.conversation, text) do
+        {:ok, _conversation} ->
+          {"", nil}
+
+        {:error, {:message_failed, _reason}} ->
+          {text, "Intercom did not take the message, so nothing was sent. Try again."}
+
+        {:error, reason} ->
+          {text, Map.get(@errors, reason, "Could not send.")}
+      end
+
+    socket =
+      socket
+      |> assign(:message_form, to_form(%{"text" => kept}, as: :support_message))
+      |> assign(:message_error, error)
+      |> load()
+
+    {:noreply, socket}
+  end
+
+  def handle_event("open_image", %{"message_id" => message_id, "index" => index}, socket),
+    do: {:noreply, assign(socket, :open_image, resolve_image(socket.assigns.conversation, message_id, index, 0))}
+
+  def handle_event("step_image", %{"direction" => "next"}, socket), do: {:noreply, step_image(socket, 1)}
+  def handle_event("step_image", %{"direction" => "previous"}, socket), do: {:noreply, step_image(socket, -1)}
+  def handle_event("image_key", %{"key" => "ArrowRight"}, socket), do: {:noreply, step_image(socket, 1)}
+  def handle_event("image_key", %{"key" => "ArrowLeft"}, socket), do: {:noreply, step_image(socket, -1)}
+  def handle_event("image_key", _other_key, socket), do: {:noreply, socket}
+  def handle_event("close_image", _params, socket), do: {:noreply, assign(socket, :open_image, nil)}
 
   # A forward that failed after the reply posted is shown from the conversation itself.
   def handle_event("send", _params, socket) do
@@ -205,6 +270,27 @@ defmodule RailWeb.SupportLive do
   defp result(socket, {:error, reason}),
     do: socket |> assign(:send_error, Map.get(@errors, reason, "That did not save.")) |> load()
 
+  defp step_image(%{assigns: %{open_image: %{message_id: message_id, index: index}}} = socket, step),
+    do: assign(socket, :open_image, resolve_image(socket.assigns.conversation, message_id, index, step))
+
+  defp step_image(socket, _step), do: socket
+
+  # The images of one message, in order; a step past either end stays put, and a message gone closes the view.
+  defp resolve_image(conversation, message_id, index, step) do
+    index = if is_binary(index), do: String.to_integer(index), else: index
+
+    images =
+      case conversation && Enum.find(conversation.messages, &(&1.id == message_id)) do
+        %Message{attachments: attachments} -> Enum.filter(attachments, &Message.image?/1)
+        nil -> []
+      end
+
+    index = if (index + step) in 0..(length(images) - 1)//1, do: index + step, else: index
+
+    if index in 0..(length(images) - 1)//1,
+      do: %{message_id: message_id, index: index, image: Enum.at(images, index), count: length(images)}
+  end
+
   defp schedule_reload(%{assigns: %{reload_scheduled: true}} = socket), do: socket
 
   defp schedule_reload(socket) do
@@ -233,5 +319,9 @@ defmodule RailWeb.SupportLive do
     |> assign(:workspace_names, Enum.map(Support.list_intercom_workspaces(project_id: project_filter), & &1.name))
     |> assign(:author_name, scope.user.intercom_name || scope.user.name || scope.user.login)
     |> assign(:conversation, conversation)
+    |> then(fn socket ->
+      open = socket.assigns.open_image
+      assign(socket, :open_image, open && resolve_image(conversation, open.message_id, open.index, 0))
+    end)
   end
 end

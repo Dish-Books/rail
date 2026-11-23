@@ -37,7 +37,15 @@ defmodule Rail.Projects.Schemas.Project do
     # Run from the worktree root in each agent's sandbox that opens a browser; prints a magic link and an email.
     field :account_seed_command, :string
     # Files nobody sees in the app: a later round that changed only these gets no QA or demo. Globs, from the root.
-    field :qa_skip_paths, {:array, :string}, default: ["**/*_test.exs", "**/test/**", "**/*.test.{ts,tsx,js}", "**/*.md"]
+    field :qa_skip_paths, {:array, :string},
+      default: [
+        "**/*_test.exs",
+        "**/test/**",
+        "**/*.test.{ts,tsx,js}",
+        "**/*Tests.swift",
+        "**/src/androidTest/**",
+        "**/*.md"
+      ]
 
     # Shared by every project on the same Linear workspace; each project is one team in it.
     belongs_to :linear_workspace, LinearWorkspace

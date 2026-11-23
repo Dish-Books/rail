@@ -2,6 +2,9 @@ defmodule Rail.Support.Actions.SendSupportReply do
   @moduledoc false
 
   import Ecto.Query
+  import Rail.Support.Utils.CalculateIntercomHtml
+  import Rail.Support.Utils.MirrorIntercomConversation
+  import Rail.Support.Utils.VerifyIntercomSender
 
   alias Rail.Intercom
   alias Rail.Repo
@@ -28,8 +31,17 @@ defmodule Rail.Support.Actions.SendSupportReply do
 
     result =
       with :ok <- can_send(scope, user, conversation),
-           {:ok, conversation} <- post_reply(user, conversation) do
-        forward(%{scope | user: user}, conversation)
+           {:ok, conversation, reply} <- post_reply(user, conversation) do
+        result = forward(%{scope | user: user}, conversation)
+
+        # Intercom answers with the conversation as it now stands, so the reply shows at once.
+        # An answer without it, or a retry that only forwards, waits for Intercom's notice instead.
+        with %{"updated_at" => updated_at} when is_integer(updated_at) <- reply do
+          workspace = conversation.intercom_workspace
+          {:ok, _mirrored} = mirror_intercom_conversation(workspace, Map.put(reply, "id", conversation.external_id), [])
+        end
+
+        result
       end
 
     Phoenix.PubSub.broadcast(Rail.PubSub, "support", {:support_changed, id})
@@ -38,21 +50,25 @@ defmodule Rail.Support.Actions.SendSupportReply do
 
   defp can_send(%Scope{} = scope, %User{} = user, %Conversation{} = conversation) do
     cond do
-      not Scope.can_access_project?(scope, conversation.project_id) -> {:error, :not_found}
+      not Scope.can_access_project?(scope, conversation.project_id) ->
+        {:error, :not_found}
+
       # Retrying only the forward posts nothing in Intercom, so it needs no link.
-      is_struct(conversation.reply_posted_at, DateTime) -> :ok
-      not Scope.intercom_linked?(Scope.for_user(user)) -> {:error, :intercom_not_linked}
-      user.intercom_app_id != conversation.intercom_workspace.external_id -> {:error, :intercom_other_workspace}
-      Conversation.drafting?(conversation) -> {:error, :drafting}
-      true -> :ok
+      is_struct(conversation.reply_posted_at, DateTime) ->
+        :ok
+
+      true ->
+        with :ok <- verify_intercom_sender(user, conversation.intercom_workspace) do
+          if Conversation.drafting?(conversation), do: {:error, :drafting}, else: :ok
+        end
     end
   end
 
-  defp post_reply(_user, %Conversation{reply_posted_at: %DateTime{}} = conversation), do: {:ok, conversation}
+  defp post_reply(_user, %Conversation{reply_posted_at: %DateTime{}} = conversation), do: {:ok, conversation, %{}}
 
   defp post_reply(%User{} = user, %Conversation{reply_text: text} = conversation) when is_binary(text) and text != "" do
     with :ok <- claim(conversation),
-         {:ok, _reply} <- deliver(user, conversation) do
+         {:ok, reply} <- deliver(user, conversation) do
       conversation =
         conversation
         |> Ecto.Changeset.change(
@@ -63,7 +79,7 @@ defmodule Rail.Support.Actions.SendSupportReply do
         )
         |> Repo.update!()
 
-      {:ok, conversation}
+      {:ok, conversation, reply}
     end
   end
 
@@ -89,7 +105,7 @@ defmodule Rail.Support.Actions.SendSupportReply do
            user.intercom_access_token,
            conversation.external_id,
            user.intercom_admin_id,
-           html(conversation.reply_text)
+           calculate_intercom_html(conversation.reply_text)
          ) do
       {:ok, reply} ->
         {:ok, reply}
@@ -157,15 +173,5 @@ defmodule Rail.Support.Actions.SendSupportReply do
       [] -> nil
       {:error, reason} -> Repo.rollback(reason)
     end
-  end
-
-  # Intercom takes the body as HTML: a paragraph per blank-line break, a line break per newline.
-  defp html(text) do
-    text
-    |> String.split(~r/\n{2,}/, trim: true)
-    |> Enum.map_join(fn paragraph ->
-      escaped = paragraph |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
-      "<p>" <> String.replace(escaped, "\n", "<br>") <> "</p>"
-    end)
   end
 end

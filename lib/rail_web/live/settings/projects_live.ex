@@ -12,7 +12,10 @@ defmodule RailWeb.Settings.ProjectsLive do
   alias RailWeb.Components.LearningsChannelPicker
 
   def mount(_params, _session, socket) do
-    if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "projects")
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "projects")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "tracker_moves")
+    end
 
     projects = Projects.list_projects(socket.assigns.current_scope)
     linear_workspaces = Projects.list_linear_workspaces()
@@ -148,7 +151,7 @@ defmodule RailWeb.Settings.ProjectsLive do
                       id={"project-moving-#{project.id}"}
                     >
                       <.icon name="pi-circle-notch-bold" class="size-3.5 motion-safe:animate-spin" />
-                      Moving to Rail
+                      {@move_rows[project.id].moving_label}
                     </span>
                   </div>
                   <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
@@ -1401,6 +1404,12 @@ defmodule RailWeb.Settings.ProjectsLive do
     {:noreply, socket}
   end
 
+  # Each file a move copies, so the row counts them as they go.
+  def handle_info({:tracker_move_progress, project_id}, socket) do
+    socket = if Enum.any?(socket.assigns.projects, &(&1.id == project_id)), do: assign_move_rows(socket), else: socket
+    {:noreply, socket}
+  end
+
   # The navigation hook subscribes this view to pipeline events it does not use.
   def handle_info(_message, socket), do: {:noreply, socket}
 
@@ -1468,13 +1477,18 @@ defmodule RailWeb.Settings.ProjectsLive do
         {id,
          %{
            show_move: linear? and is_nil(move),
-           show_moving: linear? and move == :moving,
+           show_moving: linear? and moving_label(move) != nil,
+           moving_label: moving_label(move),
            stopped: if(linear?, do: stopped_reason(move))
          }}
       end)
 
     assign(socket, :move_rows, rows)
   end
+
+  defp moving_label(:moving), do: "Moving to Rail"
+  defp moving_label({:copying, settled, total}), do: "Moving to Rail · #{settled} of #{total} files copied"
+  defp moving_label(_moved_stopped_or_none), do: nil
 
   defp stopped_reason({:stopped, sentence}), do: sentence
   defp stopped_reason(_moving_or_none), do: nil

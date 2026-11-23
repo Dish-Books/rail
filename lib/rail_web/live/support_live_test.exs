@@ -10,6 +10,7 @@ defmodule RailWeb.SupportLiveTest do
   alias Rail.Support
   alias Rail.Support.Schemas.Conversation
   alias Rail.Support.Schemas.IntercomWorkspace
+  alias Rail.Support.Schemas.Message
   alias Rail.Tools
   alias Rail.Triage
   alias Rail.Triage.Schemas.Thread
@@ -646,5 +647,114 @@ defmodule RailWeb.SupportLiveTest do
     {:ok, triage, _html} = live(conn, ~p"/triage/#{thread_id}")
     assert has_element?(triage, "#triage-source", "Intercom · forwarded by support")
     assert has_element?(triage, "#triage-row-#{thread_id}", "Forwarded by support")
+  end
+
+  test "the message box sends to the customer while the agent drafts, leaves the draft alone and clears", %{
+    conn: conn,
+    conversation: conversation,
+    user: user,
+    link: link
+  } do
+    link.(user)
+    {:ok, _drafting} = Support.draft_support_reply(system_scope(), conversation)
+    {:ok, view, _html} = live(conn, ~p"/support/#{conversation.id}")
+
+    assert has_element?(view, "#support-messages[phx-hook='ChatAutoscroll'][data-run-id='#{conversation.id}']")
+    assert has_element?(view, "#support-drafting")
+    assert has_element?(view, ~s(#support-message-text[placeholder="Message Marta Kowalczyk in Intercom as Dana W."]))
+    refute has_element?(view, "#support-message-text[disabled]")
+
+    view |> form("#support-message-form", %{"support_message" => %{"text" => "One more thing"}}) |> render_change()
+    send(view.pid, :reload)
+    assert has_element?(view, "#support-message-text", "One more thing")
+
+    Req.Test.allow(Rail.Intercom, self(), view.pid)
+
+    Req.Test.expect(Rail.Intercom, fn conn ->
+      assert %{method: "POST", request_path: "/conversations/" <> _reply} = conn
+      assert ["Bearer ic-tok"] = Plug.Conn.get_req_header(conn, "authorization")
+      assert %{"body" => "<p>One more thing</p>"} = conn |> Req.Test.raw_body() |> Jason.decode!()
+      Req.Test.json(conn, %{"type" => "conversation"})
+    end)
+
+    view |> form("#support-message-form", %{"support_message" => %{"text" => "One more thing"}}) |> render_submit()
+
+    refute has_element?(view, "#support-message-text", "One more thing")
+    refute has_element?(view, "#support-message-failed")
+    assert has_element?(view, "#support-drafting")
+    assert %Conversation{drafting_since: %DateTime{}, reply_posted_at: nil} = Repo.get!(Conversation, conversation.id)
+  end
+
+  test "a message Intercom refuses keeps the text and says nothing went out; a blank one says to write one", %{
+    conn: conn,
+    conversation: conversation,
+    user: user,
+    link: link
+  } do
+    link.(user)
+    {:ok, view, _html} = live(conn, ~p"/support/#{conversation.id}")
+    Req.Test.allow(Rail.Intercom, self(), view.pid)
+    Req.Test.expect(Rail.Intercom, &Plug.Conn.send_resp(&1, 500, "{}"))
+
+    view |> form("#support-message-form", %{"support_message" => %{"text" => "Hi Marta"}}) |> render_submit()
+
+    assert has_element?(view, "#support-message-failed", "Intercom did not take the message, so nothing was sent.")
+    assert has_element?(view, "#support-message-text", "Hi Marta")
+
+    view |> form("#support-message-form", %{"support_message" => %{"text" => "  "}}) |> render_submit()
+    assert has_element?(view, "#support-message-failed", "Write a message first.")
+  end
+
+  test "unlinked, the message box is off with a prompt to link, and a send says why", %{
+    conn: conn,
+    conversation: conversation
+  } do
+    {:ok, view, _html} = live(conn, ~p"/support/#{conversation.id}")
+
+    assert has_element?(view, "#support-message-text[disabled]")
+    assert has_element?(view, "#support-message-send[disabled]")
+    assert has_element?(view, "#support-message-link-prompt", "Link your Intercom account to message Marta Kowalczyk")
+    assert has_element?(view, ~s(#support-message-link-intercom[href="/settings/connected-accounts"]))
+
+    render_submit(view, "send_message", %{"support_message" => %{"text" => "Hi"}})
+    assert has_element?(view, "#support-message-failed", "Link your Intercom account to send this as yourself.")
+  end
+
+  test "an image opens enlarged over the page, stays put at either end and closes", %{
+    conn: conn,
+    conversation: conversation
+  } do
+    %Message{id: message_id} = Repo.get_by!(Message, conversation_id: conversation.id, external_id: "p2")
+    {:ok, view, _html} = live(conn, ~p"/support/#{conversation.id}")
+
+    render_hook(view, "step_image", %{"direction" => "next"})
+    refute has_element?(view, "#support-image-view")
+
+    view |> element("#support-image-#{message_id}-0") |> render_click()
+
+    assert has_element?(view, "#support-image-view [role='dialog'][aria-label='allergen-sheet.png']")
+    assert has_element?(view, "#support-image-name", "allergen-sheet.png")
+    assert has_element?(view, ~s(#support-image-original[href="https://downloads.intercomcdn.com/sheet.png"]))
+    refute has_element?(view, "#support-image-previous")
+
+    for {event, params} <- [
+          {"step_image", %{"direction" => "next"}},
+          {"step_image", %{"direction" => "previous"}},
+          {"image_key", %{"key" => "ArrowRight"}},
+          {"image_key", %{"key" => "ArrowLeft"}},
+          {"image_key", %{"key" => "Enter"}}
+        ] do
+      render_hook(view, event, params)
+      assert has_element?(view, "#support-image-name", "allergen-sheet.png")
+    end
+
+    send(view.pid, :reload)
+    assert has_element?(view, "#support-image-view")
+
+    view |> element("#support-image-close") |> render_click()
+    refute has_element?(view, "#support-image-view")
+
+    render_hook(view, "open_image", %{"message_id" => "smg_gone", "index" => "0"})
+    refute has_element?(view, "#support-image-view")
   end
 end

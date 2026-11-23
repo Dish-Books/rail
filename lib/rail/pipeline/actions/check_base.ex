@@ -1,7 +1,9 @@
 defmodule Rail.Pipeline.Actions.CheckBase do
   @moduledoc """
   Records how a task's branch stands against the default branch as last fetched: behind it or not, and the files a
-  merge would conflict in. The page offers Update on what this records, and everyone watching hears a change.
+  merge would conflict in. The page offers Update on what this records, and everyone watching hears a change. A
+  branch that was behind and now holds the default branch drops GitHub's last refusal, which was of the branch
+  before it caught up.
   """
 
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
@@ -22,10 +24,13 @@ defmodule Rail.Pipeline.Actions.CheckBase do
       _copied = Git.copy_default_branch(project, task.worktree_path)
       %{behind: behind, conflicts: conflicts} = Git.base_status(task.worktree_path, base)
       changed? = {task.base_behind, task.base_conflicts} != {behind, conflicts}
+      caught_up = if task.base_behind and not behind, do: %{merge_error: nil, merge_error_at: nil}, else: %{}
 
       {:ok, checked} =
         task
-        |> Task.changeset(%{base_behind: behind, base_conflicts: conflicts, base_checked_at: DateTime.utc_now()})
+        |> Task.changeset(
+          Map.merge(caught_up, %{base_behind: behind, base_conflicts: conflicts, base_checked_at: DateTime.utc_now()})
+        )
         |> Repo.update()
 
       if changed?, do: broadcast_pipeline_changed(checked)

@@ -47,6 +47,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate fix_plan_sheet(assigns), to: Components.FixPlanSheet
   defdelegate icon(assigns), to: Components.Icon
   defdelegate image_chip(assigns), to: Components.ImageChip
+  defdelegate image_view(assigns), to: Components.ImageView
   defdelegate in_progress_tasks(assigns), to: Components.InProgressTasks
   defdelegate input(assigns), to: Components.Input
   defdelegate issue_card(assigns), to: Components.IssueCard
@@ -98,6 +99,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate top_app_bar(assigns), to: Components.Nav
   defdelegate support_conversation(assigns), to: Components.SupportConversation
   defdelegate support_draft(assigns), to: Components.SupportDraft
+  defdelegate support_message(assigns), to: Components.SupportMessage
   defdelegate support_queue(assigns), to: Components.SupportQueue
   defdelegate triage_image(assigns), to: Components.TriageImage
   defdelegate triage_image_view(assigns), to: Components.TriageImageView

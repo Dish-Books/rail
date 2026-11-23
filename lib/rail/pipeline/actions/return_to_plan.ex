@@ -7,6 +7,7 @@ defmodule Rail.Pipeline.Actions.ReturnToPlan do
   import Ecto.Query
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.ClearBranch
+  import Rail.Pipeline.Utils.DropWorktreeDatabases
   import Rail.Pipeline.Utils.StageOutputPath
 
   alias Rail.Git
@@ -97,6 +98,9 @@ defmodule Rail.Pipeline.Actions.ReturnToPlan do
   # The design folder is the picked design's pages, which Plan carries on from, as it does the kept stages' files.
   defp remove_work(%Task{project: project, scratch_path: scratch_path} = task, kept) do
     if is_binary(project.clone_path), do: Git.remove_task_checkout(project, task)
+
+    # The slot goes with the worktree, and the Planner's start sets a new one up from scratch.
+    drop_worktree_databases(task)
 
     for path <- Path.wildcard(Path.join(scratch_path, "*"), match_dot: true),
         Path.basename(path) not in ["design", "stages"],

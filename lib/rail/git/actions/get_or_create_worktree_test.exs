@@ -83,8 +83,11 @@ defmodule Rail.Git.Actions.GetOrCreateWorktreeTest do
     assert {:ok, ^wt_path} =
              Git.get_or_create_worktree(project, %Task{worktree_path: wt_path, worktree_name: "feature-single"})
 
-    assert wt_path |> git!(["branch", "--remotes", "--format=%(refname:short)"]) |> String.split() |> Enum.sort() ==
-             ["origin", "origin/main"]
+    # origin/HEAD is only a pointer, and whether a clone gets one depends on git's version, so it is left out.
+    assert wt_path
+           |> git!(["for-each-ref", "--format=%(refname)", "refs/remotes"])
+           |> String.split()
+           |> Enum.reject(&(&1 == "refs/remotes/origin/HEAD")) == ["refs/remotes/origin/main"]
   end
 
   test "a branch pushed from it reads as pushed, and survives the project's clone being moved aside", %{
