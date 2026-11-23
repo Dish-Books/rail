@@ -108,7 +108,7 @@ defmodule RailWeb.TaskLiveTest do
         identifier: "TLV-1",
         title: "Task Live Issue",
         description: "Task Live Issue",
-        state: :triage
+        state: :todo
       })
       |> Repo.insert!()
       |> Map.put(:project, project)
@@ -7150,7 +7150,7 @@ defmodule RailWeb.TaskLiveTest do
         |> Map.put(:project, project)
       end
 
-      parent_issue = insert.("TLV-10", "Work on TLV-10", %{state: :triage})
+      parent_issue = insert.("TLV-10", "Work on TLV-10", %{state: :todo})
       {:ok, parent} = Pipeline.create_task(parent_issue, :split)
       parent = Repo.preload(parent, [:issue, :project])
 

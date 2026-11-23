@@ -10,7 +10,7 @@ defmodule RailWeb.Components.StatusPickerTest do
   alias Rail.Users
 
   @statuses [
-    %{id: "st_todo", name: "Todo", state: :backlog},
+    %{id: "st_todo", name: "Todo", state: :todo},
     %{id: "st_started", name: "In Progress", state: :in_progress},
     %{id: "st_deploy", name: "Waiting on deploy", state: :in_progress},
     %{id: "st_review", name: "In Review", state: :in_review},

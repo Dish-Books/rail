@@ -50,7 +50,7 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearnings do
     rule_ids =
       Repo.all(from l in Learning, where: l.project_id == ^project_id and l.status != :proposed, select: l.id)
 
-    abandoned = task.issue.state in [:canceled, :duplicate]
+    abandoned = task.issue.state == :canceled
 
     sightings =
       for %{"text" => text} = sighting <- List.wrap(result["observations"]),
@@ -78,7 +78,7 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearnings do
 
   defp brief(%Task{issue: %Issue{} = issue} = task, dir) do
     result = Path.join(dir, "result.json")
-    ending = if issue.state in [:canceled, :duplicate], do: "was abandoned", else: "was merged"
+    ending = if issue.state == :canceled, do: "was abandoned", else: "was merged"
 
     String.trim("""
     #{issue.identifier}, "#{issue.title}", has finished: it #{ending}. Read what happened on it and write down what it teaches a later run: the corrections people made, the decisions they took, what an agent got wrong and was told, and anything about the environment it had to work around.

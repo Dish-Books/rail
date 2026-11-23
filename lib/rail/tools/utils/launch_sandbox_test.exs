@@ -61,7 +61,7 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
         project_id: project.id,
         identifier: "LCH-1",
         title: "Launch Issue",
-        state: :backlog
+        state: :todo
       })
       |> Repo.insert!()
 

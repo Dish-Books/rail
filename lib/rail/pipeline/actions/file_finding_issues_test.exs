@@ -50,10 +50,10 @@ defmodule Rail.Pipeline.Actions.FileFindingIssuesTest do
                   identifier: "TST-" <> _first,
                   number: first_number,
                   title: "The branch overflows",
-                  state: :triage
+                  state: :todo
                 }
               },
-              %Finding{key: "resort", issue: %{number: second_number, title: "The list re-sorts", state: :triage}}
+              %Finding{key: "resort", issue: %{number: second_number, title: "The list re-sorts", state: :todo}}
             ]} = Pipeline.file_finding_issues(system_scope(), task, [second, first])
 
     assert first_number < second_number

@@ -42,7 +42,7 @@ defmodule Rail.Mcp.Actions.AuthenticateRunTokenTest do
         project_id: project.id,
         identifier: "RT#{unique}-1",
         title: "Run token issue",
-        state: :backlog,
+        state: :todo,
         owner_user_id: user.id
       })
       |> Repo.insert!()

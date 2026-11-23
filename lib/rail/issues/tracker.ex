@@ -19,18 +19,15 @@ defmodule Rail.Issues.Tracker do
   alias Rail.Scope
   alias Rail.Users.Schemas.User
 
-  @ranks %{triage: 0, backlog: 1, todo: 2, in_progress: 3, in_review: 4, done: 5}
-  @statuses [:triage, :backlog, :todo, :in_progress, :in_review, :done, :canceled, :duplicate]
+  @ranks %{todo: 0, in_progress: 1, in_review: 2, done: 3}
+  @statuses [:todo, :in_progress, :in_review, :done, :canceled]
   # The kind of each, which `Issue.calculate_status_groups/3` orders the groups by.
   @status_types %{
-    triage: "triage",
-    backlog: "backlog",
     todo: "unstarted",
     in_progress: "started",
     in_review: "started",
     done: "completed",
-    canceled: "canceled",
-    duplicate: "canceled"
+    canceled: "canceled"
   }
   @asset_name ~r/\A[0-9a-f]{8}-[0-9a-f-]{27}-[\w.-]+\z/
 

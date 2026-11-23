@@ -44,7 +44,7 @@ defmodule RailTest.GithubHelpers do
           number: number,
           identifier: "#{project.key}-#{number}",
           title: "A GitHub issue",
-          state: :backlog
+          state: :todo
         },
         attrs
       )

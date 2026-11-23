@@ -80,7 +80,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
         project_id: project.id,
         identifier: "TSK-2",
         title: "Untasked Issue",
-        state: :backlog
+        state: :todo
       })
       |> Repo.insert!()
 

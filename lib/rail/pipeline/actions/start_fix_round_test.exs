@@ -1090,7 +1090,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       assert %Finding{decision: :new_issue, issue: %{identifier: "TST-2"} = filed} =
                Repo.preload(Repo.reload!(nit), :issue)
 
-      assert %{title: "A nit", priority: :low, state: :triage, description: described} = filed
+      assert %{title: "A nit", priority: :low, state: :todo, description: described} = filed
       assert described =~ "**Problem.** It crashes."
       assert described =~ "Raised in Review of [TST-1]"
       assert %FixPlan{findings: [%FixPlan.Finding{key: "nil-crash"}]} = Pipeline.read_fix_plan(task)

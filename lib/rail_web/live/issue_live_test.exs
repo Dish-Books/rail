@@ -107,7 +107,7 @@ defmodule RailWeb.IssueLiveTest do
         workflow_id: workflow.id,
         identifier: "WFP-1",
         title: "Flaky test sweep 2026-10-12",
-        state: :triage
+        state: :todo
       })
       |> Repo.insert!()
 
@@ -164,7 +164,7 @@ defmodule RailWeb.IssueLiveTest do
           workflow_id: workflow_id,
           identifier: "WFA-#{n}",
           title: "Admin #{n}",
-          state: :triage
+          state: :todo
         })
         |> Repo.insert!()
       end
@@ -798,20 +798,20 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-start-plan")
   end
 
-  test "a Duplicate issue reads as Duplicate and offers no start", %{conn: conn, project: project} do
+  test "a Canceled issue reads as Canceled and offers no start", %{conn: conn, project: project} do
     issue =
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project.id,
         identifier: "IPG-20",
         title: "Same as IPG-7",
-        state: :duplicate
+        state: :canceled
       })
       |> Repo.insert!()
 
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
 
-    assert has_element?(view, "#issue-status", "Duplicate")
+    assert has_element?(view, "#issue-status", "Canceled")
     refute has_element?(view, "#issue-start")
   end
 
@@ -866,15 +866,15 @@ defmodule RailWeb.IssueLiveTest do
     assert {:ok, view, _html} = live(conn, ~p"/issues/IPG-21")
     assert has_element?(view, "#issue-start")
 
-    duplicate = %{id: "duplicate", name: "Duplicate", state: :duplicate}
+    canceled = %{id: "canceled", name: "Canceled", state: :canceled}
 
     # An unrelated issue closing leaves this page as it was.
-    assert {:ok, _other} = Issues.set_issue_status(system_scope(), other, duplicate)
+    assert {:ok, _other} = Issues.set_issue_status(system_scope(), other, canceled)
     assert has_element?(view, "#issue-status", "Todo")
     assert has_element?(view, "#issue-start")
 
-    assert {:ok, _issue} = Issues.set_issue_status(system_scope(), open, duplicate)
-    assert has_element?(view, "#issue-status", "Duplicate")
+    assert {:ok, _issue} = Issues.set_issue_status(system_scope(), open, canceled)
+    assert has_element?(view, "#issue-status", "Canceled")
     refute has_element?(view, "#issue-start")
   end
 
