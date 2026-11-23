@@ -1,11 +1,10 @@
 defmodule Rail.Support.Actions.SendSupportMessageTest do
   use Rail.DataCase, async: true
-  use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Scope
   alias Rail.Support
   alias Rail.Support.Schemas.Conversation
-  alias Rail.Support.Workers.SyncIntercomConversation
+  alias Rail.Support.Schemas.Message
   alias Rail.Users
 
   setup do
@@ -70,9 +69,8 @@ defmodule Rail.Support.Actions.SendSupportMessageTest do
     }
   end
 
-  test "posts the message as the person while the agent drafts, leaving the draft and status alone, and syncs it", %{
+  test "posts the message as the person while the agent drafts, leaving the draft alone, and shows it at once", %{
     conversation: %{id: conversation_id} = conversation,
-    workspace: %{id: workspace_id},
     scope: scope,
     external_id: external_id
   } do
@@ -89,7 +87,29 @@ defmodule Rail.Support.Actions.SendSupportMessageTest do
                "body" => "<p>Hi Marta,<br>one more thing.</p><p>Sesame &lt;is&gt; next.</p>"
              } = conn |> Req.Test.raw_body() |> Jason.decode!()
 
-      Req.Test.json(conn, %{"type" => "conversation"})
+      # Intercom answers with the whole conversation, the new part included, and no id of its own here.
+      Req.Test.json(conn, %{
+        "type" => "conversation",
+        "created_at" => 1_790_000_000,
+        "updated_at" => 1_790_000_300,
+        "state" => "open",
+        "source" => %{
+          "id" => "src1",
+          "body" => "<p>The allergen sheet misses sesame.</p>",
+          "author" => %{"type" => "user", "name" => "Marta Kowalczyk", "email" => "marta@example.com"}
+        },
+        "conversation_parts" => %{
+          "conversation_parts" => [
+            %{
+              "id" => "p_sent",
+              "part_type" => "comment",
+              "created_at" => 1_790_000_300,
+              "body" => "<p>Hi Marta,<br>one more thing.</p>",
+              "author" => %{"type" => "admin", "name" => "Dana Whitfield"}
+            }
+          ]
+        }
+      })
     end)
 
     assert {:ok, %Conversation{id: ^conversation_id}} =
@@ -97,10 +117,8 @@ defmodule Rail.Support.Actions.SendSupportMessageTest do
 
     assert_receive {:support_changed, ^conversation_id}
 
-    assert_enqueued(
-      worker: SyncIntercomConversation,
-      args: %{"workspace_id" => workspace_id, "external_id" => external_id, "draft" => false, "imported" => false}
-    )
+    assert %Message{kind: :teammate, author_name: "Dana Whitfield"} =
+             Repo.get_by!(Message, conversation_id: conversation_id, external_id: "p_sent")
 
     assert %Conversation{status: :waiting, drafting_since: %DateTime{}, reply_text: nil, reply_posted_at: nil} =
              Repo.get!(Conversation, conversation_id)
@@ -114,13 +132,13 @@ defmodule Rail.Support.Actions.SendSupportMessageTest do
     assert %Conversation{status: :done} = Repo.get!(Conversation, conversation.id)
   end
 
-  test "Intercom refusing the message sends nothing and syncs nothing", %{conversation: conversation, scope: scope} do
+  test "Intercom refusing the message sends nothing and shows nothing", %{conversation: conversation, scope: scope} do
     Req.Test.expect(Rail.Intercom, &Plug.Conn.send_resp(&1, 500, "down"))
 
     assert {:error, {:message_failed, {:intercom_error, 500, "down"}}} =
              Support.send_support_message(scope, conversation, "Hi Marta")
 
-    refute_enqueued(worker: SyncIntercomConversation)
+    assert [%Message{external_id: "src1"}] = Repo.all(from(m in Message, where: m.conversation_id == ^conversation.id))
   end
 
   test "a blank message is refused without asking Intercom", %{conversation: conversation, scope: scope} do

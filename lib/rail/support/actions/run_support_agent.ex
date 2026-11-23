@@ -426,6 +426,7 @@ defmodule Rail.Support.Actions.RunSupportAgent do
     JSON
 
     - The reply goes to the customer, outside the team, posted under the teammate's name. Write it in their voice, plainly.
+    - The reply continues the conversation. Once a teammate has written to the customer in conversation.md, it opens with no greeting or introduction, answers only what the customer wrote since the teammate's last message, and repeats nothing an earlier reply already said.
     - When draft.json has `reply_posted` true, the customer already has that reply. Return it unchanged as `reply`, change only the list, and tell the teammate in `message` that a new reply needs a new message from the customer.
     - When the customer asks how to do something the product already does, the reply gives the steps, in the words the product's screens use.
     - For anything going to the team, the reply says in general terms that it has been passed on to the dev team. Never promise a fix, a release or a date, and never name a ticket or its identifier.

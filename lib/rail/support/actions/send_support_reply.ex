@@ -3,6 +3,7 @@ defmodule Rail.Support.Actions.SendSupportReply do
 
   import Ecto.Query
   import Rail.Support.Utils.CalculateIntercomHtml
+  import Rail.Support.Utils.MirrorIntercomConversation
   import Rail.Support.Utils.VerifyIntercomSender
 
   alias Rail.Intercom
@@ -30,8 +31,17 @@ defmodule Rail.Support.Actions.SendSupportReply do
 
     result =
       with :ok <- can_send(scope, user, conversation),
-           {:ok, conversation} <- post_reply(user, conversation) do
-        forward(%{scope | user: user}, conversation)
+           {:ok, conversation, reply} <- post_reply(user, conversation) do
+        result = forward(%{scope | user: user}, conversation)
+
+        # Intercom answers with the conversation as it now stands, so the reply shows at once.
+        # An answer without it, or a retry that only forwards, waits for Intercom's notice instead.
+        with %{"updated_at" => updated_at} when is_integer(updated_at) <- reply do
+          workspace = conversation.intercom_workspace
+          {:ok, _mirrored} = mirror_intercom_conversation(workspace, Map.put(reply, "id", conversation.external_id), [])
+        end
+
+        result
       end
 
     Phoenix.PubSub.broadcast(Rail.PubSub, "support", {:support_changed, id})
@@ -54,11 +64,11 @@ defmodule Rail.Support.Actions.SendSupportReply do
     end
   end
 
-  defp post_reply(_user, %Conversation{reply_posted_at: %DateTime{}} = conversation), do: {:ok, conversation}
+  defp post_reply(_user, %Conversation{reply_posted_at: %DateTime{}} = conversation), do: {:ok, conversation, %{}}
 
   defp post_reply(%User{} = user, %Conversation{reply_text: text} = conversation) when is_binary(text) and text != "" do
     with :ok <- claim(conversation),
-         {:ok, _reply} <- deliver(user, conversation) do
+         {:ok, reply} <- deliver(user, conversation) do
       conversation =
         conversation
         |> Ecto.Changeset.change(
@@ -69,7 +79,7 @@ defmodule Rail.Support.Actions.SendSupportReply do
         )
         |> Repo.update!()
 
-      {:ok, conversation}
+      {:ok, conversation, reply}
     end
   end
 
