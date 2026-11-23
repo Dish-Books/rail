@@ -276,7 +276,7 @@ defmodule Rail.Support.Actions.SyncIntercomConversationTest do
              Support.sync_intercom_conversation(workspace, external_id)
   end
 
-  test "a customer message after the posted reply opens a new round", %{
+  test "a customer message after the posted reply opens a new round, with an empty draft", %{
     workspace: workspace,
     payload: payload,
     external_id: external_id,
@@ -288,12 +288,12 @@ defmodule Rail.Support.Actions.SyncIntercomConversationTest do
     posted_at = ~U[2026-09-21 14:25:00.000000Z]
 
     Repo.update_all(from(c in Conversation, where: c.id == ^conversation_id),
-      set: [reply_posted_at: posted_at, reply_posted_by_id: user_id, send_error: "x"]
+      set: [reply_text: "Hi Julia, thanks.", reply_posted_at: posted_at, reply_posted_by_id: user_id, send_error: "x"]
     )
 
     Req.Test.expect(Intercom, &Req.Test.json(&1, %{payload | "updated_at" => 1_790_000_600}))
 
-    assert {:ok, %Conversation{reply_posted_at: ^posted_at}} =
+    assert {:ok, %Conversation{reply_text: "Hi Julia, thanks.", reply_posted_at: ^posted_at}} =
              Support.sync_intercom_conversation(workspace, external_id)
 
     customer = %{
@@ -314,7 +314,7 @@ defmodule Rail.Support.Actions.SyncIntercomConversationTest do
       )
     )
 
-    assert {:ok, %Conversation{reply_posted_at: nil, reply_posted_by_id: nil, send_error: nil}} =
+    assert {:ok, %Conversation{reply_text: nil, reply_posted_at: nil, reply_posted_by_id: nil, send_error: nil}} =
              Support.sync_intercom_conversation(workspace, external_id)
   end
 

@@ -2,13 +2,13 @@ defmodule Rail.Support.Actions.SendSupportMessage do
   @moduledoc false
 
   import Rail.Support.Utils.CalculateIntercomHtml
+  import Rail.Support.Utils.MirrorIntercomConversation
   import Rail.Support.Utils.VerifyIntercomSender
 
   alias Rail.Intercom
   alias Rail.Repo
   alias Rail.Scope
   alias Rail.Support.Schemas.Conversation
-  alias Rail.Support.Workers.SyncIntercomConversation
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
@@ -32,20 +32,16 @@ defmodule Rail.Support.Actions.SendSupportMessage do
 
       true ->
         with :ok <- verify_intercom_sender(user, conversation.intercom_workspace),
-             {:ok, _reply} <- post(user, conversation, text) do
-          # Intercom's own notice of the reply syncs it too; the job is unique, so only one runs.
-          {:ok, _job} =
-            %{
-              "workspace_id" => conversation.intercom_workspace_id,
-              "external_id" => conversation.external_id,
-              "draft" => false,
-              "imported" => false
-            }
-            |> SyncIntercomConversation.new()
-            |> Oban.insert()
+             {:ok, reply} <- post(user, conversation, text) do
+          # Intercom answers with the conversation as it now stands, so the message shows at once.
+          # An answer without it waits for Intercom's notice of the reply instead.
+          with %{"updated_at" => updated_at} when is_integer(updated_at) <- reply do
+            workspace = conversation.intercom_workspace
+            {:ok, _mirrored} = mirror_intercom_conversation(workspace, Map.put(reply, "id", conversation.external_id), [])
+          end
 
           Phoenix.PubSub.broadcast(Rail.PubSub, "support", {:support_changed, id})
-          {:ok, conversation}
+          {:ok, Repo.get!(Conversation, id)}
         end
     end
   end
