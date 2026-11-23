@@ -243,6 +243,19 @@ defmodule Rail.Pipeline.Actions.SendToNextStageTest do
       assert ["[qa] " <> ^line] = qa_run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
     end
 
+    test "that changed only iOS and Android tests starts the code reviewer alone", %{run: run, changed: changed} do
+      changed.([
+        "mobile/android/app/src/androidTest/java/BillScreenTest.kt",
+        "mobile/android/app/src/test/java/BillTest.kt",
+        "mobile/ios/DishBooksTests/BillTests.swift"
+      ])
+
+      assert {:ok, %Run{}} = Pipeline.send_to_next_stage(run)
+
+      assert_received {:started, :review}
+      refute_received {:started, _stage}
+    end
+
     test "that changed a file the app runs starts QA and the demo too", %{run: run, changed: changed} do
       changed.(["lib/bill.ex", "test/bill_test.exs"])
 

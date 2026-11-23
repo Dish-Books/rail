@@ -1,7 +1,13 @@
 defmodule Rail.Issues.Workers.MoveToLocalTracker do
   @moduledoc """
-  Moves a Linear project's tickets into Rail, once. Everything is read from Linear and its files copied to R2 first; then
-  one transaction writes the rows `Tracker.Local` reads and flips the project and every ticket onto it.
+  Moves a Linear project's tickets into Rail. Each run reads the project from Linear, then:
+
+    * records any file its tickets show that has no `LinearFileCopy` yet, queues a `CopyLinearFile` for each one still
+      to copy, and stops. The last of those to finish runs the move again.
+    * once every file is copied or gone from Linear, one transaction writes the rows `Tracker.Local` reads and flips the
+      project and every ticket onto it.
+
+  So a move that stops keeps every file it copied, and trying again copies only the rest.
 
   Rows are written straight to the tables, as `LinearSync` writes them, so nothing is queued back to a tracker.
   """
@@ -21,7 +27,8 @@ defmodule Rail.Issues.Workers.MoveToLocalTracker do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueLink
   alias Rail.Issues.Schemas.IssueRelation
-  alias Rail.Issues.Tracker.Local
+  alias Rail.Issues.Schemas.LinearFileCopy
+  alias Rail.Issues.Workers.CopyLinearFile
   alias Rail.Linear.Client, as: Linear
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
@@ -60,7 +67,6 @@ defmodule Rail.Issues.Workers.MoveToLocalTracker do
     reading_issues: "reading tickets",
     reading_comments: "reading comments",
     reading_cycles: "reading cycles",
-    copying_files: "copying files",
     writing: "writing"
   }
 
@@ -68,10 +74,12 @@ defmodule Rail.Issues.Workers.MoveToLocalTracker do
   def perform(%Oban.Job{args: %{"project_id" => project_id}} = job) do
     {:ok, project} = Projects.get_project(project_id)
 
-    # Every stop is {:error, {step, reason}}, and the transaction rolls back with the same shape.
-    with {:ok, linear} <- read_linear(project),
-         ids = issue_ids(linear.issues),
-         {:ok, files} <- copy_files(project, linear, ids),
+    # Every stop is {:error, {step, reason}}, and the transaction rolls back with the same shape. A project already off
+    # Linear stops before any file is copied for it.
+    with :ok <- if(project.tracker == :linear, do: :ok, else: {:error, {:writing, :left_linear}}),
+         {:ok, linear} <- read_linear(project),
+         ids = issue_ids(project, linear.issues),
+         {:ok, files} <- await_files(project, linear, ids),
          {:ok, %Project{}} <-
            Repo.transaction(fn -> write(project, linear, ids, files) end, timeout: to_timeout(minute: 10)) do
       Phoenix.PubSub.broadcast(Rail.PubSub, "projects", {:project_changed, project_id})
@@ -79,6 +87,7 @@ defmodule Rail.Issues.Workers.MoveToLocalTracker do
       Phoenix.PubSub.broadcast(Rail.PubSub, "cycles", {:cycles_changed, project_id})
       :ok
     else
+      :copying -> :ok
       {:error, {step, reason}} -> record_failure(job, project, step, reason)
     end
   end
@@ -112,47 +121,98 @@ defmodule Rail.Issues.Workers.MoveToLocalTracker do
     end
   end
 
-  # A ticket Rail already holds keeps its id; the rest are drawn now, since their files are stored under them.
-  defp issue_ids(issues) do
+  # A ticket Rail already holds keeps its id, and one whose files an earlier run copied keeps the id they are stored
+  # under. The rest are drawn now, since their files are stored under them.
+  defp issue_ids(%Project{id: project_id}, issues) do
     external_ids = Enum.map(issues, & &1["id"])
     held = Map.new(Repo.all(from(i in Issue, where: i.external_id in ^external_ids, select: {i.external_id, i.id})))
-    Map.new(external_ids, &{&1, held[&1] || UXID.generate!(prefix: "iss")})
+
+    copied =
+      Map.new(
+        Repo.all(
+          from(c in LinearFileCopy,
+            where: c.project_id == ^project_id,
+            distinct: true,
+            select: {c.issue_external_id, c.issue_id}
+          )
+        )
+      )
+
+    Map.new(external_ids, &{&1, held[&1] || copied[&1] || UXID.generate!(prefix: "iss")})
   end
 
-  defp copy_files(%Project{} = project, linear, ids) do
+  # `{:ok, files}`, by `{issue_external_id, url}`, once every file the tickets show is copied or gone from Linear.
+  # Until then, queues a copy of each file still to copy and returns `:copying`.
+  defp await_files(%Project{id: project_id}, linear, ids) do
+    pairs = file_pairs(linear)
+    {:ok, copies} = Repo.transaction(fn -> sync_copies(project_id, linear, ids, pairs) end)
+    wanted = MapSet.new(pairs)
+    copies = Enum.filter(copies, &MapSet.member?(wanted, {&1.issue_external_id, &1.url}))
+
+    case Enum.filter(copies, &(&1.state == :pending)) do
+      [] ->
+        {:ok,
+         for(%LinearFileCopy{state: :copied} = c <- copies, into: %{}, do: {{c.issue_external_id, c.url}, c.copied_url})}
+
+      # Oban's `insert_all` skips the uniqueness check, but a copy settles only a file still pending, so a second job for
+      # one costs only its upload.
+      pending ->
+        pending |> Enum.map(&CopyLinearFile.new_copy/1) |> Enum.chunk_every(@chunk) |> Enum.each(&Oban.insert_all/1)
+        CopyLinearFile.broadcast_progress(project_id)
+        :copying
+    end
+  end
+
+  defp file_pairs(linear) do
     texts =
       Enum.flat_map(linear.issues, fn issue ->
         attachments = for attachment <- get_in(issue, ["attachments", "nodes"]) || [], do: attachment["url"]
         Enum.map([issue["description"] | attachments], &{issue["id"], &1})
       end) ++ Enum.map(linear.comments, &{get_in(&1, ["issue", "id"]), &1["body"]})
 
-    pairs =
-      for {external_id, text} <- texts,
-          is_binary(text),
-          [url] <- Regex.scan(@upload_url, text),
-          uniq: true,
-          do: {external_id, url}
+    for {external_id, text} <- texts,
+        is_binary(text),
+        [url] <- Regex.scan(@upload_url, text),
+        uniq: true,
+        do: {external_id, url}
+  end
+
+  # A file stored under an id its ticket no longer has, since Rail wrote the ticket meanwhile, is copied again under the
+  # one it has. Running the move again retries every file that failed.
+  defp sync_copies(project_id, linear, ids, pairs) do
+    now = DateTime.utc_now()
+
+    stale =
+      for %LinearFileCopy{} = copy <- Repo.all(from(c in LinearFileCopy, where: c.project_id == ^project_id)),
+          Map.has_key?(ids, copy.issue_external_id),
+          copy.issue_id != ids[copy.issue_external_id],
+          do: copy.id
+
+    Repo.delete_all(from(c in LinearFileCopy, where: c.id in ^stale))
+
+    Repo.update_all(from(c in LinearFileCopy, where: c.project_id == ^project_id and c.state == :failed),
+      set: [state: :pending, error: nil, updated_at: now]
+    )
 
     identifiers = Map.new(linear.issues, &{&1["id"], &1["identifier"]})
 
-    Enum.reduce_while(pairs, {:ok, %{}}, fn {external_id, url} = pair, {:ok, files} ->
-      case copy_file(project, Map.fetch!(ids, external_id), url) do
-        {:ok, copied} -> {:cont, {:ok, Map.put(files, pair, copied)}}
-        :gone -> {:cont, {:ok, files}}
-        {:error, reason} -> {:halt, {:error, {:copying_files, {:file, identifiers[external_id], url, reason}}}}
+    rows =
+      for {external_id, url} <- pairs do
+        %{
+          id: UXID.generate!(prefix: "lfc"),
+          project_id: project_id,
+          issue_external_id: external_id,
+          issue_id: Map.fetch!(ids, external_id),
+          identifier: identifiers[external_id],
+          url: url,
+          state: :pending,
+          inserted_at: now,
+          updated_at: now
+        }
       end
-    end)
-  end
 
-  # Stored as a file uploaded to the ticket in Rail would be. One Linear had already lost keeps its old address.
-  defp copy_file(%Project{} = project, issue_id, "https://uploads.linear.app/" <> path) do
-    filename = path |> String.split("?") |> hd() |> Path.basename()
-
-    case Linear.get_asset(project, path) do
-      {:ok, content_type, body} -> Local.upload_asset(%Issue{id: issue_id}, filename, content_type, body)
-      {:error, {:linear_api_error, 404, _body}} -> :gone
-      {:error, _reason} = error -> error
-    end
+    insert_chunks(LinearFileCopy, rows, on_conflict: :nothing, conflict_target: [:project_id, :issue_external_id, :url])
+    Repo.all(from(c in LinearFileCopy, where: c.project_id == ^project_id))
   end
 
   defp write(%Project{id: project_id}, linear, ids, files) do
@@ -187,6 +247,7 @@ defmodule Rail.Issues.Workers.MoveToLocalTracker do
     insert_relations(project, relations, now)
     insert_links(linear.issues, links, %{ids: ids, files: files, now: now})
     flip(project, linear.key, now)
+    Repo.delete_all(from(c in LinearFileCopy, where: c.project_id == ^project_id))
 
     case Projects.switch_to_local_tracker(project, linear.key) do
       {:ok, %Project{} = project} -> project
@@ -549,11 +610,6 @@ defmodule Rail.Issues.Workers.MoveToLocalTracker do
     {:error, sentence}
   end
 
-  defp calculate_failure(_step, {:file, identifier, url, {:linear_api_error, status, _body}}),
-    do: "Linear answered #{status} for a file on #{identifier} (#{url}), so nothing was written."
-
-  defp calculate_failure(step, {:file, _identifier, _url, reason}), do: calculate_failure(step, reason)
-
   defp calculate_failure(step, {:linear_api_error, status, %{"errors" => [%{"message" => message} | _rest]}}),
     do: "Linear answered #{status} while #{step} (#{message}), so nothing was written."
 
@@ -566,13 +622,11 @@ defmodule Rail.Issues.Workers.MoveToLocalTracker do
   defp calculate_failure(_step, :no_workspace_token),
     do: "Rail has no Linear token for this project's workspace, so nothing was written."
 
-  defp calculate_failure(step, {:r2_error, status, _body}),
-    do: "Rail's file storage answered #{status} while #{step}, so nothing was written."
-
   defp calculate_failure(_step, :left_linear), do: "The project had already left Linear, so nothing was written."
 
   defp calculate_failure(_step, :ticket_changed),
-    do: "A ticket changed in Rail while its files were copied, so nothing was written."
+    do:
+      "A ticket changed in Rail while its files were copied, so nothing was written. Trying again copies its files again."
 
   defp calculate_failure(_step, %Ecto.Changeset{} = changeset),
     do: "Another project already has the key #{Ecto.Changeset.get_field(changeset, :key)}, so nothing was written."

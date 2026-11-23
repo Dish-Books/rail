@@ -21,7 +21,7 @@ config :esbuild,
   # The woff2 fonts travel inside phosphor.css, since a sandboxed page's font requests carry no sign-in.
   design_kit: [
     args:
-      ~w(tailwind=@tailwindcss/browser phosphor=css/design_kit.css --bundle --format=iife --target=es2020 --loader:.woff2=dataurl --loader:.woff=file --loader:.ttf=file --loader:.svg=file --asset-names=[name] --outdir=../priv/static/design-kit),
+      ~w(tailwind=@tailwindcss/browser phosphor=css/design_kit.css screens=js/design_screens.js --bundle --format=iife --target=es2020 --loader:.woff2=dataurl --loader:.woff=file --loader:.ttf=file --loader:.svg=file --asset-names=[name] --outdir=../priv/static/design-kit),
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
   ]
@@ -42,6 +42,7 @@ config :rail, Oban,
   repo: Rail.Repo,
   queues: [
     issues: 5,
+    linear_files: 5,
     tools: 1,
     toolchains: 1,
     git: 1,

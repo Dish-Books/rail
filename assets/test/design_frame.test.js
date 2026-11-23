@@ -19,7 +19,9 @@ import {
   previewScale,
   readDraft,
   resolveSelector,
+  rowScale,
   shouldStartOverlay,
+  shown,
   storageKey
 } from "../js/hooks/design_frame.js";
 
@@ -387,5 +389,38 @@ describe("picking an element", () => {
     assert.equal(drawsHover({ pointerType: "touch" }), false);
     assert.equal(drawsHover({ pointerType: "mouse" }), true);
     assert.equal(drawsHover({ pointerType: "pen" }), true);
+  });
+});
+
+describe("rowScale", () => {
+  it("keeps the phones at device size while a row of them fits", () => {
+    assert.equal(rowScale(1200, [417, 432], 32), 1);
+    assert.equal(rowScale(881, [417, 432], 32), 1);
+    assert.equal(rowScale(500, [417], 32), 1);
+  });
+
+  it("shrinks every phone together when the row is too narrow, never below nothing", () => {
+    assert.equal(rowScale(440.5, [417, 432], 32), 0.5);
+    assert.equal(rowScale(208.5, [417], 32), 0.5);
+    assert.equal(rowScale(-20, [417, 432], 32), 0);
+  });
+
+  it("leaves a row with no phones at full size", () => {
+    assert.equal(rowScale(300, [], 32), 1);
+  });
+});
+
+describe("shown", () => {
+  const view = { getComputedStyle: (element) => ({ visibility: element.visibility }) };
+  const element = (rects, visibility) => ({ getClientRects: () => ({ length: rects }), visibility });
+
+  it("is true for an element with a box that is visible", () => {
+    assert.equal(shown(element(1, "visible"), view), true);
+  });
+
+  it("is false for an element with no box, or one hidden or collapsed", () => {
+    assert.equal(shown(element(0, "visible"), view), false);
+    assert.equal(shown(element(1, "hidden"), view), false);
+    assert.equal(shown(element(2, "collapse"), view), false);
   });
 });

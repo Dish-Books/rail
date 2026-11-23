@@ -28,6 +28,13 @@ defmodule RailWeb.Live.PlanStage do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Users
 
+  # The framed phone's viewport, which plan_stage and the design kit's screens.js hold alike.
+  @viewports %{"page" => {1920, 1080}, "ios" => {417, 876}, "android" => {432, 935}}
+  @screen_labels %{
+    "ios" => {"pi-apple-logo", "iOS", "393 × 852"},
+    "android" => {"pi-android-logo", "Android", "412 × 915"}
+  }
+
   # A rule of the task's project changed, so a cited one may read differently now.
   @impl true
   def update(%{reload_rules: true}, socket), do: {:ok, assign_rules(assign(socket, :rules_of, nil))}
@@ -49,6 +56,7 @@ defmodule RailWeb.Live.PlanStage do
       |> assign_new(:selected_key, fn -> nil end)
       # Off the scope from the first mount, since a later update from the task page carries only the task.
       |> assign_new(:open_learnings, fn %{current_scope: scope} -> Users.can?(scope, :learnings, :view) end)
+      |> assign_new(:screen_view, fn -> "mobile" end)
       |> assign_earlier()
       |> load()
       |> prepend_earlier_tabs()
@@ -199,6 +207,7 @@ defmodule RailWeb.Live.PlanStage do
               commenting={@commenting}
               draft={@draft}
               markers={@markers}
+              screen_view={@screen_view}
               user_id={@current_scope.user.id}
               target={@myself}
             />
@@ -245,9 +254,15 @@ defmodule RailWeb.Live.PlanStage do
       socket
       |> assign(:selected_key, key)
       |> assign(:option, shown_option(socket.assigns.design, key))
+      |> assign(:screen_view, "mobile")
 
     {:noreply, socket}
   end
+
+  def handle_event("show_screens", %{"view" => view}, socket) when view in ["web", "mobile"],
+    do: {:noreply, assign(socket, :screen_view, view)}
+
+  def handle_event("show_screens", _params, socket), do: {:noreply, socket}
 
   def handle_event("pick", %{"key" => key}, socket) do
     socket.assigns.current_scope |> Pipeline.pick_design_option(socket.assigns.run, key) |> respond(socket)
@@ -270,8 +285,8 @@ defmodule RailWeb.Live.PlanStage do
 
   # What a reload kept, taken only as a fresh toggle and click would be: on the pick, while Plan can take a message.
   def handle_event("restore_commenting", params, socket) do
-    %{comment_reason: reason, design: design} = socket.assigns
-    kept = reason == nil && draft(params["draft"])
+    %{comment_reason: reason, design: design, option: option} = socket.assigns
+    kept = reason == nil && draft(params["draft"], option)
 
     socket =
       cond do
@@ -279,7 +294,10 @@ defmodule RailWeb.Live.PlanStage do
           socket
 
         match?(%{option_key: key} when key == design.picked, kept) ->
-          socket |> assign(:commenting, true) |> assign(:draft, kept)
+          socket
+          |> assign(:commenting, true)
+          |> assign(:draft, kept)
+          |> assign(:screen_view, if(kept.frame == "page", do: "web", else: "mobile"))
 
         kept == nil and params["draft"] == nil and params["commenting"] == true ->
           assign(socket, :commenting, true)
@@ -293,10 +311,10 @@ defmodule RailWeb.Live.PlanStage do
 
   # The element comes from the page in the frame, so only its expected shape is taken; the changeset checks the rest.
   def handle_event("select_element", params, socket) do
-    %{commenting: commenting, comment_reason: reason, design: design} = socket.assigns
+    %{commenting: commenting, comment_reason: reason, design: design, option: option} = socket.assigns
 
     socket =
-      case commenting and reason == nil and draft(Map.put(params, "option_key", design.picked)) do
+      case commenting and reason == nil and draft(Map.put(params, "option_key", design.picked), option) do
         %{} = draft -> socket |> assign(:draft, draft) |> assign(:line_draft, nil)
         _off_or_malformed -> socket
       end
@@ -542,15 +560,24 @@ defmodule RailWeb.Live.PlanStage do
   attr :commenting, :boolean, required: true
   attr :draft, :map, default: nil, doc: "the element the comment box is open on, with what is typed so far"
   attr :markers, :list, required: true
+  attr :screen_view, :string, required: true, doc: "web or mobile, for an option with both"
   attr :user_id, :string, required: true
   attr :target, :any, required: true
 
   defp design_pane(assigns) do
+    option = assigns.option
+    phones? = option != nil and option.rows != []
+    show_rows = phones? and not (option.web and assigns.screen_view == "web")
+
     assigns =
       assigns
       |> assign(:picked, assigns.design && assigns.design.picked)
       |> assign(:slots, slots(assigns.design, assigns.running))
       |> assign(:full, match?(%{options: [_one, _two, _three | _more]}, assigns.design))
+      |> assign(:show_switch, phones? and option.web)
+      |> assign(:show_rows, show_rows)
+      |> assign(:rows, if(show_rows, do: Enum.with_index(option.rows, 1), else: []))
+      |> assign(:phone_widths, phone_widths(option))
 
     ~H"""
     <div
@@ -684,6 +711,40 @@ defmodule RailWeb.Live.PlanStage do
             disabled_reason={@comment_reason}
             target={@target}
           >
+            <div
+              :if={@show_switch}
+              id="design-screens"
+              role="tablist"
+              aria-label="Screens"
+              class="inline-flex items-center rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800/60 p-0.5"
+            >
+              <button
+                :for={
+                  {view, icon, label} <- [
+                    {"web", "pi-desktop", "Web"},
+                    {"mobile", "pi-device-mobile", "Mobile"}
+                  ]
+                }
+                type="button"
+                role="tab"
+                id={"design-screens-#{view}"}
+                data-qa="design_screens"
+                aria-selected={to_string(@screen_view == view)}
+                phx-click="show_screens"
+                phx-value-view={view}
+                phx-target={@target}
+                class={[
+                  "inline-flex items-center gap-1.5 h-7 px-3 rounded-md text-xs font-semibold cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500",
+                  @screen_view == view &&
+                    "bg-white dark:bg-slate-600 text-slate-900 dark:text-slate-100 shadow-xs",
+                  @screen_view != view &&
+                    "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+                ]}
+              >
+                <.icon name={icon} class="size-3.5" />{label}
+              </button>
+            </div>
+
             <button
               :if={@picked == nil and @can_pick and (@full or @running)}
               type="button"
@@ -709,7 +770,7 @@ defmodule RailWeb.Live.PlanStage do
           <div
             id={"design-frame-#{@option.key}"}
             phx-hook="DesignFrame"
-            phx-mounted={JS.ignore_attributes(["style"])}
+            data-phone-widths={@phone_widths}
             data-comments={to_string(@picked != nil)}
             data-commenting={to_string(@commenting)}
             data-selected={@draft && @draft.selector}
@@ -720,51 +781,52 @@ defmodule RailWeb.Live.PlanStage do
             data-task-id={@task.id}
             data-user-id={@user_id}
             data-conversation="#conversation-tab-root"
-            class={[
-              "relative w-full aspect-video overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white",
-              @commenting &&
-                "ring-2 ring-blue-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900 cursor-crosshair"
-            ]}
+            class={["flex flex-col gap-6", @commenting && "cursor-crosshair"]}
           >
-            <iframe
-              :if={@option.html != nil}
-              id={"design-page-#{@option.key}-#{@option.html_version}"}
-              title={@option.title}
-              sandbox="allow-scripts"
-              src={frame_src(@task, @option, @picked)}
-              phx-mounted={JS.ignore_attributes(["style"])}
-              class="absolute top-0 left-0 w-[1920px] h-[1080px] origin-top-left border-0"
-            />
-            <p
-              :if={@option.html == nil}
-              class="absolute inset-0 flex items-center justify-center text-xs text-slate-400"
+            <div
+              :for={{row, n} <- @rows}
+              id={"design-row-#{@option.key}-#{n}"}
+              data-qa="design_row"
+              class="flex flex-col gap-3"
             >
-              This option has no page yet.
-            </p>
-
-            <.comment_box
-              :if={@draft}
-              id={"plan-comment-form-#{draft_key(@draft)}"}
-              body_id={"plan-comment-body-#{draft_key(@draft)}"}
-              qa="plan_comment"
-              label={@draft.tag}
-              body={@draft.body}
-              submit="save_plan_comment"
-              change="change_plan_comment"
-              cancel="cancel_plan_comment"
-              target={@target}
-              class="absolute z-10 shadow-2xl"
-              style={box_style(@draft)}
-            >
-              <:heading>
-                <div class="flex items-center gap-1.5 px-1 pb-1.5 min-w-0 text-[11px] text-slate-500 dark:text-slate-400">
-                  <span class="shrink-0 font-semibold text-slate-700 dark:text-slate-200">
-                    {@draft.tag}
-                  </span>
-                  <span :if={@draft.text != ""} class="truncate">"{@draft.text}"</span>
+              <p
+                :if={row.state}
+                class="text-sm font-semibold text-slate-800 dark:text-slate-200 wrap-break-word"
+              >
+                {row.state}
+              </p>
+              <div
+                data-phone-row
+                class="flex justify-center gap-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-950/70 p-6"
+              >
+                <div
+                  :for={frame <- Enum.filter([row.ios, row.android], &is_binary/1)}
+                  class="flex flex-col items-center gap-3 min-w-0"
+                >
+                  <.screen_label frame={frame} />
+                  <.screen_frame
+                    task={@task}
+                    option={@option}
+                    picked={@picked}
+                    frame={frame}
+                    commenting={@commenting}
+                    draft={@draft}
+                    target={@target}
+                  />
                 </div>
-              </:heading>
-            </.comment_box>
+              </div>
+            </div>
+
+            <.screen_frame
+              :if={not @show_rows}
+              task={@task}
+              option={@option}
+              picked={@picked}
+              frame="page"
+              commenting={@commenting}
+              draft={@draft}
+              target={@target}
+            />
           </div>
         </div>
 
@@ -815,6 +877,120 @@ defmodule RailWeb.Live.PlanStage do
           {@option.assumptions}
         </p>
       </div>
+    </div>
+    """
+  end
+
+  attr :frame, :string, required: true
+
+  defp screen_label(assigns) do
+    {icon, name, size} = Map.fetch!(@screen_labels, platform(assigns.frame))
+
+    assigns =
+      assigns
+      |> assign(:icon, icon)
+      |> assign(:name, name)
+      |> assign(:size, size)
+
+    ~H"""
+    <p class="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+      <.icon name={@icon} class="size-3.5" />{@name}
+      <span class="ml-1 normal-case tracking-normal font-normal text-slate-400 dark:text-slate-500">
+        {@size}
+      </span>
+    </p>
+    """
+  end
+
+  attr :task, Task, required: true
+  attr :option, :map, required: true
+  attr :picked, :any, required: true
+  attr :frame, :string, required: true, doc: "a phone screen such as ios-2, or page for the whole 1920px page"
+  attr :commenting, :boolean, required: true
+  attr :draft, :map, default: nil
+  attr :target, :any, required: true
+
+  defp screen_frame(assigns) do
+    {width, height} = Map.fetch!(@viewports, platform(assigns.frame))
+    page? = assigns.frame == "page"
+
+    assigns =
+      assigns
+      |> assign(:width, width)
+      |> assign(:height, height)
+      |> assign(:page, page?)
+      |> assign(
+        :frame_id,
+        if(page?,
+          do: "design-page-#{assigns.option.key}-#{assigns.option.html_version}",
+          else: "design-page-#{assigns.option.key}-#{assigns.frame}-#{assigns.option.html_version}"
+        )
+      )
+
+    ~H"""
+    <div
+      id={"design-screen-#{@option.key}-#{@frame}"}
+      data-screen-frame
+      data-frame={@frame}
+      data-screen={platform(@frame)}
+      data-viewport-width={@width}
+      data-viewport-height={@height}
+      phx-mounted={JS.ignore_attributes(["style", "data-scale"])}
+      class={[
+        "relative",
+        @page &&
+          "w-full aspect-video overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white",
+        not @page && "shrink-0",
+        @commenting &&
+          "ring-2 ring-blue-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900"
+      ]}
+    >
+      <%!-- A phone page declares no color scheme, and one unlike Rail's would paint the frame's corners opaque. --%>
+      <iframe
+        :if={@option.html != nil}
+        id={@frame_id}
+        title={@option.title}
+        sandbox="allow-scripts"
+        src={frame_src(@task, @option, @picked, @frame)}
+        width={@width}
+        height={@height}
+        loading={if not @page, do: "lazy"}
+        phx-mounted={JS.ignore_attributes(["style"])}
+        class={[
+          "absolute top-0 left-0 origin-top-left border-0",
+          not @page && "[color-scheme:light]"
+        ]}
+      />
+      <p
+        :if={@option.html == nil}
+        class="absolute inset-0 flex items-center justify-center text-xs text-slate-400"
+      >
+        This option has no page yet.
+      </p>
+
+      <.comment_box
+        :if={@draft && @draft.frame == @frame}
+        id={"plan-comment-form-#{draft_key(@draft)}"}
+        body_id={"plan-comment-body-#{draft_key(@draft)}"}
+        qa="plan_comment"
+        label={@draft.tag}
+        body={@draft.body}
+        submit="save_plan_comment"
+        change="change_plan_comment"
+        cancel="cancel_plan_comment"
+        target={@target}
+        class="absolute z-10 shadow-2xl"
+        style={box_style(@draft)}
+      >
+        <:heading>
+          <div class="flex items-center gap-1.5 px-1 pb-1.5 min-w-0 text-[11px] text-slate-500 dark:text-slate-400">
+            <span class="shrink-0 font-semibold text-slate-700 dark:text-slate-200">
+              {@draft.tag}
+            </span>
+            <span :if={@draft.text != ""} class="truncate">"{@draft.text}"</span>
+          </div>
+        </:heading>
+      </.comment_box>
     </div>
     """
   end
@@ -1274,11 +1450,31 @@ defmodule RailWeb.Live.PlanStage do
   defp stop_commenting_unless_allowed(%{assigns: %{comment_reason: nil}} = socket), do: socket
   defp stop_commenting_unless_allowed(socket), do: socket |> assign(:commenting, false) |> assign(:draft, nil)
 
-  defp frame_src(task, option, nil), do: ~p"/tasks/#{task.id}/design/#{option.key}?v=#{option.html_version}"
+  # The fragment is outside the sigil: `~p` takes only a query after the path.
+  defp frame_src(task, option, picked, frame) do
+    src =
+      if picked,
+        do: ~p"/tasks/#{task.id}/design/#{option.key}?v=#{option.html_version}&comments=1",
+        else: ~p"/tasks/#{task.id}/design/#{option.key}?v=#{option.html_version}"
 
-  defp frame_src(task, option, _picked),
-    do: ~p"/tasks/#{task.id}/design/#{option.key}?v=#{option.html_version}&comments=1"
+    if frame == "page", do: src, else: src <> "#" <> frame
+  end
 
+  defp platform("page"), do: "page"
+  defp platform("ios-" <> _n), do: "ios"
+  defp platform("android-" <> _n), do: "android"
+
+  # Every phone shares one scale, set by the platforms the option has anywhere in its rows.
+  defp phone_widths(%{rows: rows}) do
+    [ios: "ios", android: "android"]
+    |> Enum.filter(fn {field, _name} -> Enum.any?(rows, &is_binary(Map.fetch!(&1, field))) end)
+    |> Enum.map_join(",", fn {_field, name} -> elem(Map.fetch!(@viewports, name), 0) end)
+  end
+
+  defp phone_widths(nil), do: ""
+
+  # The frame comes from the page or a reload: one the option lacks moves to the page frame, or a phone-only
+  # option's first phone.
   defp draft(
          %{
            "option_key" => key,
@@ -1290,11 +1486,15 @@ defmodule RailWeb.Live.PlanStage do
            "height" => height,
            "x" => x,
            "y" => y
-         } = params
+         } = params,
+         option
        )
        when is_binary(key) and is_binary(selector) and is_binary(text) and is_binary(tag) and is_binary(html) and
               is_integer(width) and is_integer(height) and is_integer(x) and is_integer(y) do
     body = if is_binary(params["body"]), do: params["body"]
+    phones = phone_frames(option)
+    fallback = if option.rows != [] and not option.web, do: hd(phones), else: "page"
+    frame = if params["frame"] in phones or params["frame"] == fallback, do: params["frame"], else: fallback
 
     %{
       option_key: key,
@@ -1306,18 +1506,22 @@ defmodule RailWeb.Live.PlanStage do
       height: height,
       x: x,
       y: y,
+      frame: frame,
       body: body
     }
   end
 
-  defp draft(_malformed), do: nil
+  defp draft(_malformed, _option), do: nil
+
+  defp phone_frames(%{rows: rows}),
+    do: Enum.flat_map(rows, &Enum.filter([&1.ios, &1.android], fn frame -> is_binary(frame) end))
 
   # Named for its element, so a box on another element mounts afresh and takes the focus.
   defp draft_key(draft), do: :erlang.phash2({draft.selector, draft.x, draft.y})
 
   # Under the element when there is room below it, above it when there is room above, and otherwise near the element's
   # top; then moved just far enough to fit the frame, so in a short frame it may cover its element.
-  defp box_style(draft) do
+  defp box_style(%{frame: "page"} = draft) do
     left = "left: clamp(8px, #{percent(draft.x, 1920)}%, calc(100% - 448px)); width: min(440px, calc(100% - 16px));"
     # 136px is the box's height plus a margin, so a capped box stops just inside the frame's edge.
     fit = fn offset -> "min(calc(#{offset}% + 10px), calc(100% - 136px))" end
@@ -1326,6 +1530,23 @@ defmodule RailWeb.Live.PlanStage do
       draft.y + draft.height <= 1080 * 0.6 -> "#{left} top: #{fit.(percent(draft.y + draft.height, 1080))};"
       draft.y >= 1080 * 0.4 -> "#{left} bottom: #{fit.(percent(1080 - draft.y, 1080))};"
       true -> "#{left} top: #{fit.(percent(draft.y, 1080))};"
+    end
+  end
+
+  # Inside the phone it was opened on, so a box on the right-hand phone never widens the row.
+  defp box_style(draft) do
+    {width, height} = Map.fetch!(@viewports, platform(draft.frame))
+
+    left =
+      "left: clamp(8px, #{percent(draft.x, width)}%, calc(100% - min(320px, calc(100% - 16px)) - 8px)); " <>
+        "width: min(320px, calc(100% - 16px));"
+
+    fit = fn offset -> "min(calc(#{offset}% + 10px), calc(100% - 136px))" end
+
+    cond do
+      draft.y + draft.height <= height * 0.6 -> "#{left} top: #{fit.(percent(draft.y + draft.height, height))};"
+      draft.y >= height * 0.4 -> "#{left} bottom: #{fit.(percent(height - draft.y, height))};"
+      true -> "#{left} top: #{fit.(percent(draft.y, height))};"
     end
   end
 

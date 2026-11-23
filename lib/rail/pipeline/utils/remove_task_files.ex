@@ -1,7 +1,10 @@
 defmodule Rail.Pipeline.Utils.RemoveTaskFiles do
   @moduledoc """
-  Removes what a task keeps on disk: its checkout and its scratch folder.
+  Removes what a task keeps on disk: its checkout, its scratch folder and the
+  databases its worktree's setup made.
   """
+
+  import Rail.Pipeline.Utils.DropWorktreeDatabases
 
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Task
@@ -9,10 +12,11 @@ defmodule Rail.Pipeline.Utils.RemoveTaskFiles do
   alias Rail.Repo
 
   @doc """
-  Removes `task`'s checkout and scratch folder, whichever of them exist.
+  Removes `task`'s checkout, scratch folder and worktree databases, whichever of them exist.
   """
   def remove_task_files(%Task{} = task) do
     project = Repo.get(Project, task.project_id)
+    drop_worktree_databases(task)
 
     if project do
       if is_binary(task.worktree_path) and task.worktree_path != "" and is_binary(project.clone_path),

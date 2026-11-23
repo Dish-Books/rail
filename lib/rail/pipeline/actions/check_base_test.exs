@@ -34,6 +34,35 @@ defmodule Rail.Pipeline.Actions.CheckBaseTest do
     assert %Task{base_conflicts: ["lib/a.ex"]} = Repo.reload!(task)
   end
 
+  test "a branch that catches up with the default branch drops GitHub's last refusal, and one still behind keeps it",
+       %{task: %Task{id: task_id} = task} do
+    {:ok, task} =
+      Pipeline.update_task(task, %{
+        stage: :finalize,
+        marked_ready_at: DateTime.utc_now(),
+        base_behind: true,
+        merge_error: "Head branch is out of date",
+        merge_error_at: DateTime.utc_now()
+      })
+
+    stub(Git, :base_status, fn _path, "main" -> %{behind: true, conflicts: []} end)
+    assert {:ok, %Task{merge_error: "Head branch is out of date"} = still_behind} = Pipeline.check_base(task)
+    assert Task.finalize_state(still_behind) == :refused
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+    stub(Git, :base_status, fn _path, "main" -> %{behind: false, conflicts: []} end)
+    assert {:ok, %Task{base_behind: false, merge_error: nil, merge_error_at: nil}} = Pipeline.check_base(still_behind)
+    assert_received {:pipeline_changed, ^task_id}
+    assert Task.finalize_state(Repo.reload!(task)) == :ready
+  end
+
+  test "a refusal on a branch that was never behind is kept", %{task: task} do
+    {:ok, task} = Pipeline.update_task(task, %{merge_error: "Required status check is failing", base_behind: false})
+    stub(Git, :base_status, fn _path, "main" -> %{behind: false, conflicts: []} end)
+
+    assert {:ok, %Task{merge_error: "Required status check is failing"}} = Pipeline.check_base(task)
+  end
+
   test "a task in its own clone reads as behind once its project's clone has fetched a newer default", %{
     project: %{linear_workspace_id: workspace_id}
   } do

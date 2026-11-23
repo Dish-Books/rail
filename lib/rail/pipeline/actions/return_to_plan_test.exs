@@ -21,6 +21,8 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
   alias Rail.Roles
   alias Rail.Users
 
+  @drop_worktree_databases Rail.Pipeline.Utils.DropWorktreeDatabases
+
   @plan "## Implementation plan\n\nFilter by vendor."
 
   # Git is faked at its boundary: deleting a branch or a checkout, or making one, for real is for `Rail.Git`'s own
@@ -130,6 +132,7 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
 
     expect(Git, :delete_remote_branch, fn %{id: ^project_id}, ^branch -> :ok end)
     expect(Git, :remove_task_checkout, fn %{id: ^project_id}, %Task{worktree_path: ^worktree_path} -> :ok end)
+    expect(@drop_worktree_databases, :drop_worktree_databases, fn %Task{id: ^task_id} -> [] end)
 
     # A fresh branch from the default, as GitHub's was deleted and the pull request let go.
     expect(Git, :get_or_create_worktree, fn %{id: ^project_id},

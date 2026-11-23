@@ -1,9 +1,6 @@
 // The design element, in one file built twice: into Rail's bundle for the hooks, and as a classic script the
 // design page loads, where it starts the overlay that outlines and marks elements inside the mockup.
 // The two halves speak only by postMessage, and everything one hears from the other is untrusted.
-export const VIEWPORT_WIDTH = 1920;
-export const VIEWPORT_HEIGHT = 1080;
-
 // The same caps the changeset holds a comment to.
 export const LIMITS = { selector: 1000, text: 200, tag: 64, html: 20000, missing: 500 };
 export const CUT_MARK = "<!-- Rail cut the element's HTML here, at 20,000 characters. -->";
@@ -18,6 +15,18 @@ const TAG = /^[A-Za-z][A-Za-z0-9-]*$/;
 
 export function fitScale(available, size) {
   return available / size;
+}
+
+// Every phone on the tab shares one scale: full size while a row of the option's platforms fits, all smaller together
+// when it does not, so the phones never wrap.
+export function rowScale(available, widths, gap) {
+  const total = widths.reduce((sum, width) => sum + width, 0) + gap * Math.max(0, widths.length - 1);
+  return total > 0 ? Math.min(1, Math.max(0, available) / total) : 1;
+}
+
+// Every frame holds the whole page, so an element this frame hides is not this frame's to mark.
+export function shown(element, view) {
+  return element.getClientRects().length > 0 && view.getComputedStyle(element).visibility === "visible";
 }
 
 // A preview shrinks to fit the detail's width and never grows past the element's own size.
@@ -261,8 +270,11 @@ function frameState(el, scale) {
   };
 }
 
-// Shows a design mockup at its real 1920x1080 viewport, scaled down to fit the width it is given, so each option
-// reads the way its screenshot will; with comments on, it carries the mode, the clicks and the markers to the frame.
+const PHONE_GAP = 32;
+const ROW_PADDING = 48;
+
+// Shows a design mockup at its real 1920x1080 viewport, or each phone screen at device size, scaled down to fit the
+// width it is given; with comments on, it carries the mode, the clicks and the markers to every frame.
 export const DesignFrame = {
   mounted() {
     // A new width is a new scale, which the markers are drawn for.
@@ -333,26 +345,41 @@ export const DesignFrame = {
     if (action === "escape" && commenting) this.pushEventTo(this.el, "stop_commenting", {});
   },
 
-  attachFrame() {
-    const frame = this.el.querySelector("iframe");
-    if (frame === this.frame) return;
+  screens() {
+    return Array.from(this.el.querySelectorAll("[data-screen-frame]"), (wrapper) => ({
+      wrapper,
+      name: wrapper.dataset.frame,
+      platform: wrapper.dataset.screen,
+      frame: wrapper.querySelector("iframe"),
+      width: Number(wrapper.dataset.viewportWidth),
+      height: Number(wrapper.dataset.viewportHeight)
+    }));
+  },
 
-    this.frame = frame;
-    frame?.addEventListener("load", () => this.postState());
+  attachFrame() {
+    this.attached ||= new WeakSet();
+    for (const { frame } of this.screens()) {
+      if (!frame || this.attached.has(frame)) continue;
+      this.attached.add(frame);
+      frame.addEventListener("load", () => this.postState());
+    }
   },
 
   postState() {
     if (this.el.dataset.comments !== "true") return;
-    this.frame?.contentWindow?.postMessage(frameState(this.el, this.scale), "*");
+    for (const { wrapper, frame } of this.screens()) {
+      frame?.contentWindow?.postMessage(frameState(this.el, Number(wrapper.dataset.scale) || 1), "*");
+    }
   },
 
   receive(event) {
-    const report = checkMessage(event, this.frame?.contentWindow, this.el.dataset.version);
+    const screen = this.screens().find(({ frame }) => frame && event.source === frame.contentWindow);
+    const report = screen && checkMessage(event, screen.frame.contentWindow, this.el.dataset.version);
     if (!report) return;
 
     if (report.kind === "select" && this.el.dataset.commenting === "true") {
       const { kind: _kind, ...element } = report;
-      this.pushEventTo(this.el, "select_element", element);
+      this.pushEventTo(this.el, "select_element", { ...element, frame: screen.name });
     }
 
     if (report.kind === "key") this.act(report.key);
@@ -364,17 +391,25 @@ export const DesignFrame = {
   },
 
   fit() {
-    const frame = this.el.querySelector("iframe");
+    const screens = this.screens();
     // A hidden tab has no width, and a frame scaled to nothing is fitted again when it shows.
-    if (!frame || this.el.clientWidth === 0) return;
+    if (screens.length === 0 || this.el.clientWidth === 0) return;
 
-    const scale = fitScale(this.el.clientWidth, VIEWPORT_WIDTH);
-    this.scale = scale;
-    frame.style.width = `${VIEWPORT_WIDTH}px`;
-    frame.style.height = `${VIEWPORT_HEIGHT}px`;
-    frame.style.transformOrigin = "0 0";
-    frame.style.transform = `scale(${scale})`;
-    this.el.style.height = `${VIEWPORT_HEIGHT * scale}px`;
+    const row = this.el.querySelector("[data-phone-row]");
+    const widths = (this.el.dataset.phoneWidths || "").split(",").filter(Boolean).map(Number);
+    const phoneScale = row ? rowScale(row.clientWidth - ROW_PADDING, widths, PHONE_GAP) : 1;
+
+    for (const { wrapper, platform, frame, width, height } of screens) {
+      const scale = platform === "page" ? fitScale(wrapper.clientWidth, width) : phoneScale;
+      wrapper.dataset.scale = String(scale);
+      if (platform !== "page") wrapper.style.width = `${width * scale}px`;
+      wrapper.style.height = `${height * scale}px`;
+      if (!frame) continue;
+      frame.style.width = `${width}px`;
+      frame.style.height = `${height}px`;
+      frame.style.transformOrigin = "0 0";
+      frame.style.transform = `scale(${scale})`;
+    }
   }
 };
 
@@ -478,7 +513,7 @@ function startOverlay(win) {
     }
 
     const selected = state.commenting ? resolveSelector(doc, state.selected) : null;
-    if (selected) place(selectedOutline, selected);
+    if (selected && shown(selected, win)) place(selectedOutline, selected);
     else selectedOutline.style.display = "none";
 
     markerLayer.textContent = "";
@@ -489,6 +524,7 @@ function startOverlay(win) {
         missing.push(String(marker.id));
         continue;
       }
+      if (!shown(element, win)) continue;
 
       const rect = element.getBoundingClientRect();
       const box = markerBox(state.scale);
