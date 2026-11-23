@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
 
   alias Rail.Git
   alias Rail.Issues
+  alias Rail.Issues.Clients.R2
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
@@ -64,17 +65,6 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
         {stage, role}
       end)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_approve_plan_1", "identifier" => "APP-1", "title" => "Approve Plan"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "The raw ask."})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     # Git is stubbed, so the worktree is only ever looked for: a plain directory stands in for it.
@@ -119,24 +109,14 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
       File.write!(Path.join(design_dir, "picked"), "table")
     end
 
-    uploaded = fn ->
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "fileUpload" => %{
-              "success" => true,
-              "uploadFile" => %{
-                "uploadUrl" => "https://uploads.linear.app/put/app-1",
-                "assetUrl" => "https://uploads.linear.app/assets/app-1-table.png",
-                "headers" => []
-              }
-            }
-          }
-        })
-      end)
+    # The picked screenshot is stored on Rail, under the issue, and the test hears the key it went to.
+    test_pid = self()
 
-      Req.Test.expect(Rail.Linear, fn conn ->
+    uploaded = fn ->
+      Req.Test.expect(R2, fn conn ->
+        assert %Plug.Conn{method: "PUT", request_path: "/r2_bucket/" <> key} = conn
         assert {:ok, "png bytes", conn} = Plug.Conn.read_body(conn)
+        send(test_pid, {:stored, key})
         Plug.Conn.send_resp(conn, 200, "")
       end)
     end
@@ -193,65 +173,28 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
              Repo.all(from r in Run, where: r.task_id == ^task_id and r.role_id != ^roles[:plan].id, preload: :role)
   end
 
-  test "with a pick it adds the picked design's section and screenshot to the ticket in one write", %{
-    task: task,
-    run: run,
-    picked: picked,
-    uploaded: uploaded
-  } do
+  test "with a pick it adds the picked design's section and screenshot, stored at its own address on Rail, to the ticket in one write",
+       %{
+         task: %{issue_id: issue_id} = task,
+         run: run,
+         picked: picked,
+         uploaded: uploaded
+       } do
     picked.()
     {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "table"})
     uploaded.()
-
-    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
-
-    description =
-      "The approved ticket body.\n\n## Design: Table\n\nDense rows.\n\n![Table](https://uploads.linear.app/assets/app-1-table.png)"
-
-    assert %Issue{title: "Approved title", description: ^description} = Repo.get!(Issue, task.issue_id)
-    assert %Task{stage: :engineer} = Repo.reload!(task)
-  end
-
-  test "a Rail-tracked issue gets the picked design's screenshot at its own address on Rail", %{
-    task: %{issue_id: issue_id} = task,
-    run: run,
-    picked: picked
-  } do
-    picked.()
-    {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "table"})
-    Issue |> Repo.get!(issue_id) |> Ecto.Changeset.change(tracker: :local) |> Repo.update!()
-
-    Req.Test.expect(Rail.Issues.Clients.R2, fn conn ->
-      assert %Plug.Conn{method: "PUT", request_path: "/r2_bucket/" <> key} = conn
-      assert {:ok, "png bytes", conn} = Plug.Conn.read_body(conn)
-      send(self(), {:stored, key})
-      Plug.Conn.send_resp(conn, 200, "")
-    end)
+    %Issue{identifier: identifier} = Repo.get!(Issue, issue_id)
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
     assert_received {:stored, key}
     assert [^issue_id, name] = String.split(key, "/")
-    assert name =~ ~r/\A[0-9a-f-]{36}-APP-1-table\.png\z/
+    assert name =~ ~r/\A[0-9a-f-]{36}-#{identifier}-table\.png\z/
 
     description =
       "The approved ticket body.\n\n## Design: Table\n\nDense rows.\n\n![Table](#{RailWeb.Endpoint.url()}/issues/#{issue_id}/assets/#{name})"
 
-    assert %Issue{description: ^description} = Repo.get!(Issue, issue_id)
-  end
-
-  test "a tracker that cannot hold the screenshot still gets the design's section", %{
-    task: task,
-    run: run,
-    picked: picked
-  } do
-    picked.()
-    {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "table"})
-    expect(Issues, :upload_asset, fn %Issue{}, _filename, "image/png", _bytes -> {:error, :unsupported} end)
-
-    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
-
-    description = "The approved ticket body.\n\n## Design: Table\n\nDense rows."
-    assert %Issue{title: "Approved title", description: ^description} = Repo.get!(Issue, task.issue_id)
+    assert %Issue{title: "Approved title", description: ^description} = Repo.get!(Issue, issue_id)
+    assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 
   test "with Product off it publishes nothing over the issue, which stays the ticket", %{task: task, run: run} do
@@ -259,7 +202,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
 
-    assert %Issue{title: "Approve Plan", description: nil} = Repo.get!(Issue, task.issue_id)
+    assert %Issue{title: "Issue", description: "The raw ask."} = Repo.get!(Issue, task.issue_id)
     refute_enqueued(worker: Rail.Issues.Workers.SyncIssue)
     assert %Task{stage: :engineer} = Repo.reload!(task)
   end
@@ -279,7 +222,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   end
 
   test "with Product and Architect off a pick alone is approved, adding its section to the issue as it stands", %{
-    task: task,
+    task: %{issue_id: issue_id} = task,
     run: run,
     picked: picked,
     uploaded: uploaded
@@ -294,18 +237,21 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
     uploaded.()
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
+    assert_received {:stored, key}
+    assert [^issue_id, name] = String.split(key, "/")
 
-    description = "## Design: Table\n\nDense rows.\n\n![Table](https://uploads.linear.app/assets/app-1-table.png)"
+    description =
+      "The raw ask.\n\n## Design: Table\n\nDense rows.\n\n![Table](#{RailWeb.Endpoint.url()}/issues/#{issue_id}/assets/#{name})"
 
-    assert %Issue{title: "Approve Plan", description: ^description} = Repo.get!(Issue, task.issue_id)
+    assert %Issue{title: "Issue", description: ^description} = Repo.get!(Issue, issue_id)
   end
 
   test "a second approval is told the plan is already approved and publishes nothing again", %{task: task, run: run} do
     assert {:ok, _approved} = Pipeline.approve_plan(system_scope(), run)
-    {:ok, _issue} = Issues.update_issue(Repo.get!(Issue, task.issue_id), %{description: "Edited in Linear since."})
+    {:ok, _issue} = Issues.update_issue(Repo.get!(Issue, task.issue_id), %{description: "Edited since."})
 
     assert {:error, :already_approved} = Pipeline.approve_plan(system_scope(), run)
-    assert %Issue{description: "Edited in Linear since."} = Repo.get!(Issue, task.issue_id)
+    assert %Issue{description: "Edited since."} = Repo.get!(Issue, task.issue_id)
   end
 
   test "is refused without a ticket, or without a plan", %{task: task, run: run} do
@@ -347,13 +293,13 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
     File.rm!(Path.join(dir, "table.png"))
     assert {:error, :screenshot_missing} = Pipeline.approve_plan(system_scope(), run)
 
-    assert %Issue{title: "Approve Plan"} = Repo.get!(Issue, task.issue_id)
+    assert %Issue{title: "Issue"} = Repo.get!(Issue, task.issue_id)
   end
 
-  test "an upload Linear refuses leaves the task at Plan with nothing recorded", %{task: task, run: run, picked: picked} do
+  test "an upload that fails leaves the task at Plan with nothing recorded", %{task: task, run: run, picked: picked} do
     picked.()
     {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "table"})
-    Req.Test.expect(Rail.Linear, &Req.Test.json(&1, %{"data" => %{"fileUpload" => %{"success" => false}}}))
+    Req.Test.expect(R2, &Plug.Conn.send_resp(&1, 500, "down"))
 
     assert {:error, _reason} = Pipeline.approve_plan(system_scope(), run)
     assert %Task{stage: :plan} = Repo.reload!(task)
@@ -368,9 +314,9 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   } do
     File.mkdir_p!(dir)
     File.write!(Path.join(dir, "manifest.json"), ~s({"options": []}))
-    expect(Issues, :update_issue, fn _issue, %{title: "Approved title"} -> {:error, :linear_down} end)
+    expect(Issues, :update_issue, fn _issue, %{title: "Approved title"} -> {:error, :write_failed} end)
 
-    assert {:error, :linear_down} = Pipeline.approve_plan(system_scope(), run)
+    assert {:error, :write_failed} = Pipeline.approve_plan(system_scope(), run)
     assert %Task{stage: :plan} = Repo.reload!(task)
     assert %Round{approved_at: nil} = Pipeline.read_plan(task)
   end
@@ -484,7 +430,8 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
       {:ok, _later} = Pipeline.create_round(task)
       Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
 
-      # Nothing is stubbed for Linear, so publishing again would fail the test.
+      # The ticket went out at the start, so it is not published again.
+      reject(Issues, :update_issue, 2)
       assert {:ok, %Run{}} = Pipeline.approve_plan(lead, run)
       assert %Task{stage: :engineer} = Repo.reload!(task)
       assert_received {:pipeline_changed, ^task_id}

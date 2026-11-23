@@ -40,7 +40,6 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: "lin_run_ci",
         identifier: "RCI-1",
         title: "Run CI",
         state: :backlog
@@ -184,7 +183,6 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: other_project.id,
-        external_id: "lin_other_ci",
         identifier: "OCI-1",
         title: "Other CI",
         state: :backlog

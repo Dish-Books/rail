@@ -7,19 +7,6 @@ defmodule Rail.Pipeline.Actions.ListDiffCommentsTest do
   alias Rail.Users
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, 2, fn conn ->
-      id = System.unique_integer([:positive])
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_dcm_list_#{id}", "identifier" => "DCL-#{id}", "title" => "Diff Comments"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Diff Comments"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 

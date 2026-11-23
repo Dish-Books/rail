@@ -1,7 +1,7 @@
 defmodule RailWeb.Mcp.Tools.GetIssue do
   @moduledoc """
   Opens a ticket in full: its description, comments, parent, sub-issues and assignee, and the cycle and blockers of a
-  Rail-tracked ticket.
+  ticket.
   """
 
   use Anubis.Server.Component, type: :tool, annotations: %{readOnlyHint: true}

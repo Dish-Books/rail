@@ -160,17 +160,6 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
 
   describe "the save tools Rail serves each stage" do
     setup %{project: project} do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueCreate" => %{
-              "success" => true,
-              "issue" => %{"id" => "lin_crs_1", "identifier" => "CRS-1", "title" => "Call Run Save"}
-            }
-          }
-        })
-      end)
-
       {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Call Run Save"})
       {:ok, task} = Pipeline.create_task(issue, :review)
       on_exit(fn -> File.rm_rf(task.scratch_path) end)
@@ -551,7 +540,6 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
               name: name,
               github_repo: "example/#{key}",
               github_installation_id: 1,
-              tracker: :local,
               key: key,
               default_branch: "main",
               clone_path: "/tmp/#{key}"
@@ -578,7 +566,7 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
         Repo.update_all(from(i in Issue, where: i.id == ^id), set: [embedding: Pgvector.new(vector(components))])
       end
 
-      Repo.update_all(from(i in Issue, where: i.id == ^done_id), set: [state: :done, state_name: "Done"])
+      Repo.update_all(from(i in Issue, where: i.id == ^done_id), set: [state: :done])
       stub_vertex(%{"waiting" => vector([1.0])})
       expected = "- `#{near}` Rows show no wait time · Triage\n- `#{done}` Queue order by age · Done"
 
@@ -659,15 +647,6 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
 
       assert {:ok, %{"content" => [%{"text" => "get_issue needs an `identifier`" <> _rest}]}} =
                Mcp.call_run_tool(triage, "get_issue", nil)
-    end
-
-    test "get_issue on a Linear project says so when Linear fails to answer", %{project: project} do
-      Req.Test.expect(Rail.Linear, &(&1 |> Plug.Conn.put_status(500) |> Req.Test.json(%{})))
-      linear = %RunContext{os_process: nil, role: %Role{stage: :triage, project_id: project.id, mcp_tools: []}}
-
-      assert {:ok,
-              %{"content" => [%{"text" => "Rail could not fetch TST-404 from the project's tracker. Try again later."}]}} =
-               Mcp.call_run_tool(linear, "get_issue", %{"identifier" => "TST-404"})
     end
 
     test "each call is logged under issues", %{project: project, local: local} do

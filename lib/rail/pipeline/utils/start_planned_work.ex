@@ -35,7 +35,7 @@ defmodule Rail.Pipeline.Utils.StartPlannedWork do
     result =
       Repo.transaction(fn ->
         task = Repo.one!(from t in Task, where: t.id == ^run.task_id, lock: "FOR UPDATE")
-        task = Repo.preload(task, [:runs, issue: [], project: :linear_workspace])
+        task = Repo.preload(task, [:runs, :issue, :project])
 
         with true <- Scope.can_access_project?(scope, task.project_id) || {:error, :not_found},
              :ok <- startable(task),
@@ -102,22 +102,15 @@ defmodule Rail.Pipeline.Utils.StartPlannedWork do
     update_issue(issue, ticket_attrs(ticket, ticket.description))
   end
 
-  # A tracker that cannot hold the screenshot, such as GitHub Issues, still gets the design's text.
   defp publish_design(%Task{issue: %Issue{} = issue} = task, ticket, {option, screenshot}) do
-    uploaded =
-      case Issues.upload_asset(
+    with {:ok, asset_url} <-
+           Issues.upload_asset(
              %{issue | project: task.project},
              "#{issue.identifier}-#{option.key}.png",
              "image/png",
              screenshot
            ) do
-        {:error, :unsupported} -> {:ok, nil}
-        result -> result
-      end
-
-    with {:ok, asset_url} <- uploaded do
-      image = if asset_url, do: "\n\n![#{option.title}](#{asset_url})", else: ""
-      section = String.trim("## Design: #{option.title}\n\n#{option.summary}") <> image
+      section = String.trim("## Design: #{option.title}\n\n#{option.summary}") <> "\n\n![#{option.title}](#{asset_url})"
       description = String.trim(ticket.description || "")
       description = if description == "", do: section, else: description <> "\n\n" <> section
 

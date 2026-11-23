@@ -221,7 +221,7 @@ defmodule Rail.Support.Actions.RunSupportAgent do
 
   defp existing_issues(%Project{} = project, items) do
     for identifier <- items |> Enum.map(&(is_map(&1) && &1["existing_issue"])) |> Enum.filter(&is_binary/1) |> Enum.uniq(),
-        {:ok, %Issue{id: id}} <- [Issues.import_issue(project, identifier)],
+        {:ok, %Issue{id: id}} <- [Issues.get_project_issue(project, identifier)],
         into: %{},
         do: {identifier, id}
   end
@@ -440,15 +440,10 @@ defmodule Rail.Support.Actions.RunSupportAgent do
     """)
   end
 
-  defp search(%Conversation{project: %Project{tracker: :local}}),
+  defp search(%Conversation{}),
     do:
       "Before you draft any issue, search this project's tickets for one that already covers the item with `search_issues`, which matches by meaning and includes finished tickets. " <>
         "Search at least twice, in the customer's words and then in the names you found in the code. Open a likely match with `get_issue` and read its status before you cite it."
-
-  defp search(%Conversation{project: project}),
-    do:
-      "Before you draft any issue, search Linear for one that already covers the item, with the Linear tools you were offered, on the #{project.key} team. " <>
-        "Include finished issues, try at least two phrasings, and open a likely match to read its status before you cite it."
 
   defp rules(%Conversation{messages: messages}, role) do
     case Learnings.retrieve_learnings(role, [Enum.map_join(messages, "\n\n", & &1.text)]) do

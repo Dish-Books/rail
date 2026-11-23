@@ -8,17 +8,6 @@ defmodule Rail.Pipeline.Actions.ReadDemoTest do
   setup %{project: project} do
     scope = system_scope()
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_rdm_1", "identifier" => "RDM-1", "title" => "Read Demo"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Read Demo"})
     {:ok, task} = Pipeline.create_task(issue, :review)
 
@@ -26,7 +15,7 @@ defmodule Rail.Pipeline.Actions.ReadDemoTest do
     File.mkdir_p!(demo_dir)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
-    %{task: Repo.preload(task, :issue), write_up: Path.join(demo_dir, "RDM-1.json")}
+    %{task: Repo.preload(task, :issue), write_up: Path.join(demo_dir, "#{issue.identifier}.json")}
   end
 
   test "reads what the run said it filmed", %{task: task, write_up: write_up} do

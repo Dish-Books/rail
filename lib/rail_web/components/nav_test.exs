@@ -114,7 +114,7 @@ defmodule RailWeb.Components.NavTest do
     end
 
     # Test settings sub-sections highlight Settings nav
-    for sub <- [:connected_accounts, :projects, :workflows, :linear_workspaces, :slack_workspaces] do
+    for sub <- [:connected_accounts, :projects, :workflows, :slack_workspaces] do
       html =
         render_component(&Nav.nav/1,
           current_section: sub,

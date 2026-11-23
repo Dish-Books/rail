@@ -16,12 +16,12 @@ defmodule Rail.Support.Actions.RunSupportAgentTest do
   alias Rail.Tools
   alias Rail.Users
 
-  setup context do
+  setup do
     stub(Git, :checkout_detached_worktree, fn _project, worktree_path -> {:ok, worktree_path} end)
     stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
     stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
 
-    %{project: project, role: role} = triage_project(tracker: Map.get(context, :tracker, :local))
+    %{project: project, role: role} = triage_project()
     app_id = "app_#{System.unique_integer([:positive])}"
 
     payload = %{
@@ -197,14 +197,13 @@ defmodule Rail.Support.Actions.RunSupportAgentTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: "local_#{System.unique_integer([:positive])}",
         identifier: "#{project.key}-212",
         title: "A recipe scales from an event's cover count",
         state: :in_progress
       })
       |> Repo.insert!()
 
-    expect(Issues, :import_issue, fn _project, "TRI-212" -> {:ok, issue} end)
+    expect(Issues, :get_project_issue, fn _project, "TRI-212" -> {:ok, issue} end)
 
     expect(Tools, :run_agent, fn _role, _argv, _opts ->
       tracked = Map.merge(item, %{"key" => "scaling", "existing_issue" => "TRI-212", "issue" => nil})
@@ -275,14 +274,13 @@ defmodule Rail.Support.Actions.RunSupportAgentTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: "local_#{System.unique_integer([:positive])}",
         identifier: "#{project.key}-9",
         title: "Tracked",
         state: :todo
       })
       |> Repo.insert!()
 
-    stub(Issues, :import_issue, fn _project, ^identifier -> {:ok, issue} end)
+    stub(Issues, :get_project_issue, fn _project, ^identifier -> {:ok, issue} end)
 
     expect(Tools, :run_agent, 2, fn _role, _argv, _opts ->
       tracked = Map.merge(item, %{"existing_issue" => identifier, "issue" => nil})
@@ -361,8 +359,7 @@ defmodule Rail.Support.Actions.RunSupportAgentTest do
     assert chat =~ "### You\n\nEarlier answer."
   end
 
-  @tag tracker: :linear
-  test "a pass on a Linear project, with the project's rules, runs as a local one does", %{
+  test "a pass with the project's rules saves its reply", %{
     role: %{id: role_id},
     conversation: %{id: conversation_id} = conversation,
     result_path: result_path

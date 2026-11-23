@@ -1,6 +1,6 @@
 defmodule RailWeb.Components.CycleDatesModal do
   @moduledoc """
-  The Edit dates dialog for a Rail-tracked cycle, drawn from the changeset its page holds. It raises
+  The Edit dates dialog for a cycle, drawn from the changeset its page holds. It raises
   `validate_cycle_dates`, `save_cycle_dates` and `close_cycle_dates`.
   """
   use RailWeb, :html

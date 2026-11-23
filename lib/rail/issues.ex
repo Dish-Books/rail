@@ -1,12 +1,7 @@
 defmodule Rail.Issues do
   @moduledoc """
-  Context boundary for issues, tracked in Linear, GitHub Issues or Rail itself.
-
-  Local edits write the issue and `Rail.Issues.Workers.SyncIssue` pushes them to
-  the tracker, through the project's `Rail.Issues.Tracker`. A person's status change
-  goes the other way: the tracker hears first and the row follows its answer. Each
-  tracker tells Rail about its own changes through a webhook. A Rail-tracked issue is
-  edited here in full, and those edits only tell open pages.
+  Context boundary for issues, which Rail tracks itself in `Rail.Issues.Tracker`. A write tells the pages showing the
+  issue through `Rail.Issues.Workers.SyncIssue`.
   """
 
   use Rail.PermissionsDecorator
@@ -46,18 +41,9 @@ defmodule Rail.Issues do
   defdelegate set_blockers(scope, issue, blockers), to: Actions.SetBlockers
   defdelegate change_issue(scope, issue, attrs), to: Actions.ChangeIssue
 
-  @decorate can?(resource: :projects, action: :update)
-  defdelegate move_to_local_tracker(scope, project), to: Actions.MoveToLocalTracker
-
-  @decorate can?(resource: :projects, action: :update)
-  defdelegate list_tracker_moves(scope, projects), to: Actions.ListTrackerMoves
-
-  defdelegate sync_issues(project), to: Actions.SyncIssues
-  defdelegate import_issue(project, identifier), to: Actions.ImportIssue
-  defdelegate handle_linear_webhook(workspace, payload), to: Actions.HandleLinearWebhook
+  defdelegate get_project_issue(project, identifier), to: Actions.GetProjectIssue
   defdelegate upload_asset(issue, filename, content_type, data_binary), to: Actions.UploadAsset
   defdelegate get_asset(issue, path), to: Actions.GetAsset
   defdelegate comment(scope, issue, attrs), to: Actions.Comment
-  defdelegate set_up_tracker(project), to: Actions.SetUpTracker
   defdelegate handle_github_webhook(project, event, payload), to: Actions.HandleGithubWebhook
 end

@@ -22,7 +22,6 @@ defmodule RailWeb.TestingLive do
 
   # The usual longest gap between a double click's two clicks, so the second lands on the loading screen.
   @advance_ms 500
-  @linear_uploads "https://uploads.linear.app/"
 
   def mount(_params, _session, socket) do
     if connected?(socket) do
@@ -196,7 +195,7 @@ defmodule RailWeb.TestingLive do
                         :for={{image, index} <- Enum.with_index(@issue.testing_images)}
                         id={"testing-image-#{index}"}
                         name={image.name}
-                        src={image_src(@issue, image)}
+                        src={image.url}
                         removable={@in_queue}
                         phx-click="remove_testing_image"
                         phx-value-issue_id={@issue.id}
@@ -357,7 +356,7 @@ defmodule RailWeb.TestingLive do
   def handle_event(event, _params, socket) when event in ["mark_tested", "send_to_triage"], do: {:noreply, socket}
 
   # A ticket reaching Done joins the queue, and one leaving it drops out, from whatever wrote it. The open ticket is
-  # read again when it or a relative changed, and Linear asked for blockers only when it or a blocker did.
+  # read again when it or a relative changed, and blockers only when it or a blocker did.
   def handle_info({event, changed_id}, socket) when event in [:issue_changed, :issue_created] do
     %{issue: issue, blockers: blockers} = socket.assigns
     blocker_ids = for %{issue: %Issue{id: id}} <- (blockers && blockers.blocked_by ++ blockers.blocks) || [], do: id
@@ -377,15 +376,6 @@ defmodule RailWeb.TestingLive do
 
   def handle_info({:issue_relations_changed, ids}, %{assigns: %{issue: %Issue{id: issue_id}}} = socket) do
     socket = if issue_id in ids, do: read_blockers(socket), else: socket
-    {:noreply, socket}
-  end
-
-  def handle_info({:issues_synced, project_id}, socket) do
-    socket =
-      if match?(%Issue{project_id: ^project_id}, socket.assigns.issue) or is_nil(socket.assigns.issue),
-        do: load(socket),
-        else: load_queue(socket)
-
     {:noreply, socket}
   end
 
@@ -424,9 +414,6 @@ defmodule RailWeb.TestingLive do
       case result do
         {:ok, {:ok, _saved}} ->
           socket
-
-        {:ok, {:error, :unsupported}} ->
-          assign(socket, :image_error, "#{name} was not added: this ticket's tracker cannot hold pictures.")
 
         {:ok, {:error, :testing_finished}} ->
           assign(socket, :image_error, "#{name} was not added: testing on this ticket has finished.")
@@ -514,9 +501,6 @@ defmodule RailWeb.TestingLive do
   defp finished_label(%Issue{state: :done, testing_state: :sent_to_triage}), do: "was already sent to triage"
   defp finished_label(_moved_or_gone), do: "is no longer in Done"
 
-  # Linear serves its uploads only to a token, so a Linear picture is read through the ticket's own asset route.
-  defp image_src(%Issue{id: id}, %{url: url}), do: String.replace_prefix(url, @linear_uploads, "/issues/#{id}/assets/")
-
   # Shown only out of the queue, where a Done ticket is Tested or Sent to triage.
   defp lock_label(%Issue{state: :done}), do: "Testing finished"
   defp lock_label(_not_done), do: "Not in Done"
@@ -562,11 +546,11 @@ defmodule RailWeb.TestingLive do
     |> assign(:lock_label, issue && lock_label(issue))
   end
 
-  # Read once connected and only when the open ticket or a blocker changes, so saving notes never asks Linear.
+  # Read once connected and only when the open ticket or a blocker changes, so saving notes never reads them.
   defp read_blockers(%{assigns: %{issue: %Issue{} = issue}} = socket) do
     if connected?(socket) do
       start_async(socket, :blockers, fn ->
-        {issue.id, Map.get(Issues.get_blockers([issue]), issue.external_id, %{blocked_by: [], blocks: []})}
+        {issue.id, Map.get(Issues.get_blockers([issue]), issue.id, %{blocked_by: [], blocks: []})}
       end)
     else
       socket
@@ -575,8 +559,7 @@ defmodule RailWeb.TestingLive do
 
   defp read_blockers(socket), do: socket
 
-  # Only Rail schedules a ticket's cycles; any other ticket shows no cycle row.
-  defp read_cycles(%{assigns: %{issue: %Issue{tracker: :local, project: project}}} = socket) do
+  defp read_cycles(%{assigns: %{issue: %Issue{project: project}}} = socket) do
     {:ok, %{cycles: cycles}} = Issues.get_cycles(project)
     assign(socket, :cycles, cycles)
   end

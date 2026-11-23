@@ -1,5 +1,5 @@
 defmodule Rail.Issues.Schemas.IssueRelation do
-  @moduledoc "One Rail-tracked issue blocking another in the same project. A pair holds one relation, either way round."
+  @moduledoc "One issue blocking another in the same project. A pair holds one relation, either way round."
   use Rail.Schema
 
   alias Rail.Issues.Schemas.Issue

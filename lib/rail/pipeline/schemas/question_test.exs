@@ -16,21 +16,6 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
     {:ok, backend} =
       Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_question_schema_1",
-              "identifier" => "QSC-1",
-              "title" => "Question Schema Issue"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Question Schema Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :plan)

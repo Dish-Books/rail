@@ -17,7 +17,7 @@ defmodule Rail.Pipeline.Actions.ListTasks do
   `:pr_url` keeps the tasks whose pull request is at that address.
   `:parent_task_id` keeps one split's children, in their order unless `:order_by` says otherwise, and
   `split_child: true` every child of every split.
-  `ready: true` keeps the review queue: tasks at Finalize marked ready and not merged, whose issue Linear has
+  `ready: true` keeps the review queue: tasks at Finalize marked ready and not merged, whose issue has
   not closed, oldest mark first.
   `plan_ready: true` keeps the tech leads' plans to approve: tasks whose first round's plan was sent and is not
   approved, started or not, oldest sent first, with that round alone as `rounds`.

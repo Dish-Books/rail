@@ -9,17 +9,6 @@ defmodule Rail.Mcp.Utils.RunToolSaveFindingTest do
   alias Rail.Pipeline.Schemas.FindingNote
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_rtsf_1", "identifier" => "RTSF-1", "title" => "Run Tool Finding"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Run Tool Finding"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)

@@ -4,67 +4,11 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
   alias Rail.Issues
   alias Rail.Issues.Clients.R2
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Projects
-  alias Rail.Scope
 
-  test "upload_asset/4 uploads to Linear and returns the asset URL", %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "fileUpload" => %{
-            "success" => true,
-            "uploadFile" => %{
-              "uploadUrl" => "https://api.linear.app/upload/screenshot.png",
-              "assetUrl" => "https://uploads.linear.app/screenshot.png",
-              "headers" => [%{"key" => "Content-Type", "value" => "image/png"}]
-            }
-          }
-        }
-      })
-    end)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      assert conn.method == "PUT"
-      Plug.Conn.send_resp(conn, 200, "")
-    end)
-
-    assert {:ok, "https://uploads.linear.app/screenshot.png"} =
-             Issues.upload_asset(%Issue{project: project}, "screenshot.png", "image/png", "PNG_CONTENT")
-  end
-
-  test "upload_asset/4 returns an error when Linear gives nowhere to upload to", %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"fileUpload" => %{"success" => false}}})
-    end)
-
-    assert {:error, {:linear_mutation_failed, "fileUpload"}} =
-             Issues.upload_asset(%Issue{project: project}, "file.png", "image/png", "DATA")
-  end
-
-  test "upload_asset/4 returns error when the project has no workspace" do
-    {:ok, project} =
-      Projects.create_project(Scope.for_system(), %{
-        name: "Upload Asset No Workspace",
-        github_repo: "org/upload-asset-none",
-        github_installation_id: 5202,
-        key: "UPN",
-        default_branch: "main",
-        clone_path: "/tmp/repos/upload-asset-none"
-      })
-
-    assert {:error, :no_workspace_token} =
-             Issues.upload_asset(%Issue{project: project}, "file.png", "image/png", "DATA")
-  end
-
-  test "upload_asset/4 has nowhere to put a file for a GitHub project", %{github_project: project} do
-    assert {:error, :unsupported} =
-             Issues.upload_asset(%Issue{tracker: :github, project: project}, "shot.png", "image/png", <<1>>)
-  end
-
-  test "upload_asset/4 puts a Rail-tracked issue's file in R2 under its id and returns its address on Rail", %{
+  test "upload_asset/4 puts an issue's file in R2 under its id and returns its address on Rail", %{
     project: project
   } do
-    issue = %Issue{id: "iss_upload_local", tracker: :local, project: %{project | tracker: :local}}
+    issue = %Issue{id: "iss_upload_local", project: project}
 
     Req.Test.expect(R2, fn conn ->
       assert %Plug.Conn{
@@ -90,7 +34,7 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
   end
 
   test "upload_asset/4 gives no address when R2 refuses the file", %{project: project} do
-    issue = %Issue{id: "iss_upload_refused", tracker: :local, project: %{project | tracker: :local}}
+    issue = %Issue{id: "iss_upload_refused", project: project}
 
     Req.Test.expect(R2, fn conn -> Plug.Conn.send_resp(conn, 403, "AccessDenied") end)
 

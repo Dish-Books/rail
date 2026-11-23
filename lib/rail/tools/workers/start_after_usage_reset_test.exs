@@ -47,7 +47,6 @@ defmodule Rail.Tools.Workers.StartAfterUsageResetTest do
       Repo.insert!(
         Issue.changeset(%Issue{}, %{
           project_id: project.id,
-          external_id: "lin_job_#{n}",
           identifier: "JOB#{n}-1",
           title: "Job",
           state: :backlog

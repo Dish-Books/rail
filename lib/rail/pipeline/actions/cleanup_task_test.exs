@@ -22,21 +22,6 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
     {:ok, engineer_role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_cleanup_task_1",
-              "identifier" => "CLT-1",
-              "title" => "Cleanup Task Issue"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Cleanup Task Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :plan)
@@ -74,19 +59,6 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
   describe "a split parent" do
     setup %{project: project} do
-      for {identifier, title} <- [{"CLT-10", "Work on CLT-10"}, {"CLT-11", "Child CLT-11"}, {"CLT-12", "Child CLT-12"}] do
-        Req.Test.expect(Rail.Linear, fn conn ->
-          Req.Test.json(conn, %{
-            "data" => %{
-              "issueCreate" => %{
-                "success" => true,
-                "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
-              }
-            }
-          })
-        end)
-      end
-
       {:ok, parent_issue} = Issues.create_issue(system_scope(), project, %{title: "Work on CLT-10"})
       {:ok, parent} = Pipeline.create_task(parent_issue, :split)
       parent = Repo.preload(parent, [:issue, :project])
@@ -242,21 +214,6 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   end
 
   test "handles cleanup gracefully when worktree_path is already nil", %{project: project, task: _task} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_task_cleanup_task_8709",
-              "identifier" => "TSK-8709",
-              "title" => "Task 8709"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue_8709} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Task 8709"})
 
     {:ok, task} = Pipeline.create_task(issue_8709, :plan)
@@ -274,17 +231,6 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   # Cleaning up twice is ordinary: two cleanups can race, and the second
   # must not rewrite when the first one happened.
   test "a task already cleaned up keeps the time it was", %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_twice", "identifier" => "CLN-2", "title" => "Task cleaned twice"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Task cleaned twice"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     {:ok, task} = Pipeline.update_task(task, %{stage: :merged})

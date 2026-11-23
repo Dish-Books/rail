@@ -2,8 +2,8 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
-  alias Rail.GitHub.Client
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Issues.Workers.SyncIssue
@@ -12,40 +12,34 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
   alias Rail.Workflows.Schemas.Workflow
   alias Rail.Workflows.Schemas.WorkflowDefinition
 
-  test "create_issue/2 opens the ticket in triage with the title and description given", %{
-    project: %{id: project_id} = project
-  } do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
+  # Each test makes its own project, since a shared one would hold the numbering lock across tests.
+  setup do
+    key = "Loc#{System.unique_integer([:positive])}"
 
-      assert %{
-               "input" => %{
-                 "teamId" => "lin_team_id",
-                 "title" => "Short title",
-                 "description" => "More details here",
-                 "stateId" => "st_triage",
-                 "priority" => 2
-               }
-             } = Jason.decode!(body)["variables"]
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_captured_1",
-              "identifier" => "ENG-301",
-              "title" => "Short title",
-              "description" => "More details here",
-              "priority" => 2,
-              "state" => %{"id" => "st_triage", "name" => "Triage", "type" => "triage"},
-              "branchName" => "eng-301-branch",
-              "url" => "https://linear.app/issue/ENG-301"
-            }
-          }
-        }
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Numbered",
+        github_repo: "example/#{key}",
+        github_installation_id: 1,
+        key: key,
+        default_branch: "main",
+        clone_path: "/tmp/#{key}"
       })
-    end)
+
+    %{project: project, key: key}
+  end
+
+  test "numbers each issue one past the last, and names and branches it from that number", %{
+    project: %{id: project_id} = project,
+    key: key
+  } do
+    branch_prefix = String.downcase(key)
+    identifier_1 = "#{key}-1"
+    identifier_2 = "#{key}-2"
+    identifier_3 = "#{key}-3"
+    branch_1 = "#{branch_prefix}-1-comments-left-on-diff-lines"
+    branch_2 = "#{branch_prefix}-2-the-diff-pane-scrolls-past-its-end"
+    branch_3 = "#{branch_prefix}-3"
 
     Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
 
@@ -53,152 +47,123 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
             %Issue{
               id: "iss_" <> _id = issue_id,
               project_id: ^project_id,
-              external_id: "lin_captured_1",
-              identifier: "ENG-301",
-              title: "Short title",
-              description: "More details here",
-              priority: :high,
+              number: 1,
+              identifier: ^identifier_1,
+              branch_name: ^branch_1,
               state: :triage,
-              state_name: "Triage",
-              branch_name: "eng-301-branch",
-              url: "https://linear.app/issue/ENG-301",
-              number: nil
+              priority: :high,
+              title: "Comments left on diff lines",
+              description: "They vanish on reload"
             }} =
              Issues.create_issue(system_scope(), project, %{
-               title: "Short title",
-               description: "More details here",
+               title: "Comments left on diff lines",
+               description: "They vanish on reload",
                priority: :high
              })
 
     assert_receive {:issue_created, ^issue_id}
+
+    assert {:ok, %Issue{number: 2, identifier: ^identifier_2, branch_name: ^branch_2}} =
+             Issues.create_issue(system_scope(), project, %{title: "  The diff pane: scrolls past its end!  "})
+
+    assert {:ok, %Issue{number: 3, identifier: ^identifier_3, branch_name: ^branch_3}} =
+             Issues.create_issue(system_scope(), project, %{title: "!!!"})
   end
 
-  test "create_issue/2 opens a sub-issue in Todo under its parent, with its estimate and its owner assigned", %{
+  test "numbers each project on its own", %{project: project, key: key} do
+    other_key = "Oth#{System.unique_integer([:positive])}"
+    other_identifier = "#{other_key}-1"
+
+    {:ok, other} =
+      Projects.create_project(system_scope(), %{
+        name: "Another",
+        github_repo: "example/#{other_key}",
+        github_installation_id: 1,
+        key: other_key,
+        default_branch: "main",
+        clone_path: "/tmp/#{other_key}"
+      })
+
+    identifier = "#{key}-2"
+    {:ok, _first} = Issues.create_issue(system_scope(), project, %{title: "First"})
+
+    assert {:ok, %Issue{number: 2, identifier: ^identifier}} =
+             Issues.create_issue(system_scope(), project, %{title: "Second"})
+
+    assert {:ok, %Issue{number: 1, identifier: ^other_identifier}} =
+             Issues.create_issue(system_scope(), other, %{title: "Elsewhere"})
+  end
+
+  test "links an issue and its sub-issue to their own pages, with nothing sent anywhere and no job queued", %{
+    project: project,
+    key: key
+  } do
+    identifier = "#{key}-2"
+
+    {:ok, %Issue{id: parent_id, url: parent_url} = parent} =
+      Issues.create_issue(system_scope(), project, %{title: "Split me", priority: :high})
+
+    assert parent_url == RailWeb.Endpoint.url() <> "/issues/" <> parent_id
+
+    assert {:ok,
+            %Issue{
+              id: child_id,
+              identifier: ^identifier,
+              parent_id: ^parent_id,
+              state: :todo,
+              estimate: 3
+            }} =
+             Issues.create_issue(system_scope(), project, %{title: "A part", estimate: 3, parent: parent})
+
+    child_url = RailWeb.Endpoint.url() <> "/issues/" <> child_id
+    assert %Issue{url: ^child_url} = Repo.get!(Issue, child_id)
+    refute_enqueued(worker: SyncIssue)
+    refute_enqueued(worker: AdvanceTrackerState)
+  end
+
+  test "opens a sub-issue in Todo under its parent, in the cycle given, with its estimate and its owner assigned", %{
     project: project
   } do
-    {:ok, %{id: owner_id} = owner} =
+    {:ok, %{id: owner_id}} =
       Users.register_oauth_user(%{github_id: "gh_sub_issue_owner", login: "sub_owner", email: "sub_owner@example.com"})
 
-    owner |> Ecto.Changeset.change(linear_user_id: "lin_usr_sub_owner") |> Repo.update!()
-    parent = %Issue{external_id: "lin_parent_1"}
+    {:ok, %Issue{id: parent_id} = parent} =
+      Issues.create_issue(system_scope(), project, %{title: "The whole"})
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
-
-      assert %{
-               "input" => %{
-                 "title" => "A child",
-                 "parentId" => "lin_parent_1",
-                 "estimate" => 3,
-                 "assigneeId" => "lin_usr_sub_owner",
-                 "stateId" => "st_todo"
-               }
-             } = Jason.decode!(body)["variables"]
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_child_1",
-              "identifier" => "ENG-310",
-              "title" => "A child",
-              "estimate" => 3,
-              "cycle" => %{"id" => "cyc_12"},
-              "parent" => %{"id" => "lin_parent_1"}
-            }
-          }
-        }
-      })
-    end)
+    %Cycle{id: cycle_id} =
+      Repo.insert!(%Cycle{project_id: project.id, starts_on: ~D[2026-11-24], ends_on: ~D[2026-12-07]})
 
     assert {:ok,
             %Issue{
               state: :todo,
-              state_name: "Todo",
               estimate: 3,
               owner_user_id: ^owner_id,
-              cycle_external_id: "cyc_12",
-              parent_external_id: "lin_parent_1"
+              cycle_id: ^cycle_id,
+              parent_id: ^parent_id
             }} =
              Issues.create_issue(system_scope(), project, %{
                title: "A child",
                estimate: 3,
-               owner_user_id: owner.id,
-               parent: parent
+               owner_user_id: owner_id,
+               parent: parent,
+               cycle_id: cycle_id
              })
   end
 
-  test "create_issue/2 leaves an owner who never linked Linear unassigned there", %{project: project} do
-    {:ok, owner} =
-      Users.register_oauth_user(%{
-        github_id: "gh_unlinked_owner",
-        login: "unlinked-create-issue",
-        email: "unlinked-create-issue@example.com"
-      })
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
-      refute Map.has_key?(Jason.decode!(body)["variables"]["input"], "assigneeId")
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_captured_9", "identifier" => "ENG-309", "title" => "Unlinked"}
-          }
-        }
-      })
-    end)
-
-    assert {:ok, %Issue{state: :triage}} =
-             Issues.create_issue(system_scope(), project, %{title: "Unlinked", owner_user_id: owner.id})
-  end
-
-  test "create_issue/2 defaults to medium priority and sends Linear none", %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
-      input = Jason.decode!(body)["variables"]["input"]
-
-      refute Map.has_key?(input, "priority")
-      refute Map.has_key?(input, "description")
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_captured_2", "identifier" => "ENG-302", "title" => "No priority"}
-          }
-        }
-      })
-    end)
-
-    assert {:ok, %Issue{priority: :medium, state: :triage, state_name: "Triage"}} =
+  test "defaults to medium priority", %{project: project} do
+    assert {:ok, %Issue{priority: :medium, state: :triage, description: nil}} =
              Issues.create_issue(system_scope(), project, %{title: "No priority"})
   end
 
-  test "create_issue/2 refuses a priority that is not one of the known ones", %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_captured_3", "identifier" => "ENG-303", "title" => "Bad priority"}
-          }
-        }
-      })
-    end)
-
+  test "refuses a priority that is not one of the known ones", %{project: %{id: project_id} = project} do
     assert {:error, %Ecto.Changeset{} = changeset} =
              Issues.create_issue(system_scope(), project, %{title: "Bad priority", priority: "invalid_priority"})
 
     assert %{priority: ["is invalid"]} = errors_on(changeset)
+    refute Repo.exists?(from(i in Issue, where: i.project_id == ^project_id))
   end
 
-  test "create_issue/2 refuses an estimate below 0 or a blank title before asking the tracker", %{
-    project: %{id: project_id} = project
-  } do
-    # No Linear request is expected, so one made would fail the test.
+  test "refuses an estimate below 0 or a blank title", %{project: %{id: project_id} = project} do
     assert {:error, %Ecto.Changeset{} = changeset} =
              Issues.create_issue(system_scope(), project, %{title: "Negative", estimate: -5})
 
@@ -206,12 +171,10 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
 
     assert {:error, %Ecto.Changeset{} = changeset} = Issues.create_issue(system_scope(), project, %{title: "  "})
     assert %{title: ["can't be blank"]} = errors_on(changeset)
-    refute Repo.exists?(from(i in Issue, where: i.project_id == ^project_id and i.title in ["Negative", "  "]))
+    refute Repo.exists?(from(i in Issue, where: i.project_id == ^project_id))
   end
 
-  test "create_issue/2 keeps the workflow opening it and the steps it skips, over a row the webhook saved first", %{
-    project: project
-  } do
+  test "keeps the workflow opening it and the steps it skips", %{project: project} do
     %Workflow{id: workflow_id} =
       Repo.insert!(%Workflow{
         project_id: project.id,
@@ -220,387 +183,50 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
         next_run_at: ~U[2026-10-12 09:00:00Z]
       })
 
-    %Issue{id: mirrored_id} =
-      %Issue{}
-      |> Issue.tracker_changeset(%{
-        project_id: project.id,
-        external_id: "lin_TST-84",
-        identifier: "TST-84",
-        title: "Sweep 2026-10-12",
-        state: :triage
-      })
-      |> Repo.insert!()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_TST-84", "identifier" => "TST-84", "title" => "Sweep 2026-10-12"}
-          }
-        }
-      })
-    end)
-
-    assert {:ok, %Issue{id: ^mirrored_id, workflow_id: ^workflow_id, skipped_steps: [:product, :demo]}} =
+    assert {:ok, %Issue{id: id, workflow_id: ^workflow_id, skipped_steps: [:product, :demo]}} =
              Issues.create_issue(system_scope(), project, %{
                title: "Sweep 2026-10-12",
                workflow_id: workflow_id,
                skipped_steps: [:product, :demo]
              })
 
-    assert %Issue{workflow_id: ^workflow_id, skipped_steps: [:product, :demo]} = Repo.get!(Issue, mirrored_id)
+    assert %Issue{workflow_id: ^workflow_id, skipped_steps: [:product, :demo]} = Repo.get!(Issue, id)
   end
 
-  test "create_issue/2 keeps the cycle and parent a webhook saved first", %{project: project} do
-    %Issue{id: mirrored_id} =
-      %Issue{}
-      |> Issue.tracker_changeset(%{
-        project_id: project.id,
-        external_id: "lin_TST-85",
-        identifier: "TST-85",
-        title: "Planned already",
-        state: :triage,
-        cycle_external_id: "cyc_9",
-        parent_external_id: "lin_parent_9"
-      })
-      |> Repo.insert!()
+  test "two issues can never share a number", %{project: project} do
+    {:ok, %Issue{number: 1}} = Issues.create_issue(system_scope(), project, %{title: "First"})
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_TST-85",
-              "identifier" => "TST-85",
-              "title" => "Planned already",
-              "cycle" => nil,
-              "parent" => nil
-            }
-          }
-        }
-      })
-    end)
+    assert {:error, changeset} =
+             %Issue{}
+             |> Issue.tracker_changeset(%{
+               project_id: project.id,
+               identifier: "taken",
+               number: 1,
+               title: "Same number",
+               state: :triage
+             })
+             |> Repo.insert()
 
-    assert {:ok, %Issue{id: ^mirrored_id, cycle_external_id: "cyc_9", parent_external_id: "lin_parent_9"}} =
-             Issues.create_issue(system_scope(), project, %{title: "Planned already"})
+    assert %{number: ["has already been taken"]} = errors_on(changeset)
   end
 
-  test "create_issue/2 keeps the testing state and notes of a row saved first", %{project: project} do
-    mirrored =
-      %Issue{}
-      |> Issue.tracker_changeset(%{
-        project_id: project.id,
-        external_id: "lin_TST-86",
-        identifier: "TST-86",
-        title: "Tested already",
-        state: :in_review
-      })
-      |> Repo.insert!()
-      |> Issue.tracker_changeset(%{state: :done})
-      |> Repo.update!()
-
-    {:ok, _noted} = Issues.save_testing_notes(system_scope(), mirrored, "Checked the export")
-    {:ok, _tested} = Issues.mark_issue_tested(system_scope(), mirrored)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_TST-86", "identifier" => "TST-86", "title" => "Tested already"}
-          }
-        }
-      })
-    end)
-
-    assert {:ok, %Issue{testing_state: :tested, testing_notes: "Checked the export"}} =
-             Issues.create_issue(system_scope(), project, %{title: "Tested already"})
+  test "an issue inserted with an identifier of its own keeps it", %{project: project} do
+    assert %Issue{identifier: "OLD-7"} =
+             %Issue{}
+             |> Issue.tracker_changeset(%{
+               project_id: project.id,
+               identifier: "OLD-7",
+               title: "Named already",
+               state: :triage
+             })
+             |> Repo.insert!()
   end
 
-  test "create_issue/2 returns an error when Linear does not create it", %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => false}}})
-    end)
+  test "only an insert goes without an identifier", %{project: project} do
+    assert %Ecto.Changeset{valid?: true} =
+             Issue.changeset(%Issue{}, %{project_id: project.id, title: "t", state: :triage})
 
-    assert {:error, {:linear_mutation_failed, "issueCreate"}} =
-             Issues.create_issue(system_scope(), project, %{title: "Failing", description: "Failing"})
-  end
-
-  test "create_issue/2 opens nothing for a project whose Linear team is not known yet" do
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "No Team Project",
-        github_repo: "org/create-issue-no-team",
-        github_installation_id: 6120,
-        key: "NTP",
-        default_branch: "main",
-        clone_path: "/tmp/repos/create-issue-no-team"
-      })
-
-    # No Linear stub is queued, so a request would raise.
-    assert {:error, :linear_team_not_found} = Issues.create_issue(system_scope(), project, %{title: "Nowhere to go"})
-  end
-
-  test "create_issue/2 returns Linear's error", %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      conn |> Plug.Conn.put_status(500) |> Req.Test.json(%{"error" => "down"})
-    end)
-
-    assert {:error, {:linear_api_error, 500, _body}} = Issues.create_issue(system_scope(), project, %{title: "Failing"})
-  end
-
-  describe "a GitHub project" do
-    test "opens the issue in triage, labelled with its priority, assigned to its owner", %{github_project: project} do
-      {:ok, %{id: owner_id}} =
-        Users.register_oauth_user(%{github_id: "gh_gi_owner", login: "gi-owner", email: "gi@example.com"})
-
-      created = github_issue_json(%{"title" => "Fix the login redirect", "labels" => [%{"name" => "rail:triage"}]})
-
-      Req.Test.expect(Client, 2, fn conn ->
-        case {conn.method, conn.request_path} do
-          {"POST", "/app/installations/1/access_tokens"} ->
-            Req.Test.json(conn, %{"token" => "ghs_token"})
-
-          {"POST", "/repos/example/test-gh/issues"} ->
-            {:ok, body, conn} = Plug.Conn.read_body(conn)
-
-            assert %{
-                     "title" => "Fix the login redirect",
-                     "body" => "It sends people home",
-                     "labels" => ["rail:triage", "rail:high"],
-                     "assignees" => ["gi-owner"]
-                   } == Jason.decode!(body)
-
-            conn |> Plug.Conn.put_status(201) |> Req.Test.json(created)
-        end
-      end)
-
-      external_id = created["node_id"]
-
-      assert {:ok,
-              %Issue{
-                tracker: :github,
-                external_id: ^external_id,
-                number: 42,
-                identifier: "tgh#42",
-                branch_name: "tgh-42-fix-the-login-redirect",
-                state: :triage,
-                state_name: "Triage",
-                priority: :high,
-                owner_user_id: ^owner_id,
-                url: "https://github.com/example/test-gh/issues/42"
-              }} =
-               Issues.create_issue(system_scope(), project, %{
-                 title: "Fix the login redirect",
-                 description: "It sends people home",
-                 priority: :high,
-                 owner_user_id: owner_id
-               })
-    end
-
-    test "keeps the row a poll saved first instead of failing on it", %{github_project: project} do
-      created = github_issue_json(%{"labels" => [%{"name" => "rail:triage"}]})
-
-      %Issue{id: mirrored_id} =
-        github_issue(project, %{external_id: created["node_id"], number: 42, identifier: "tgh#42"})
-
-      Req.Test.expect(Client, 2, fn conn ->
-        case conn.request_path do
-          "/app/installations/1/access_tokens" -> Req.Test.json(conn, %{"token" => "ghs_token"})
-          "/repos/example/test-gh/issues" -> conn |> Plug.Conn.put_status(201) |> Req.Test.json(created)
-        end
-      end)
-
-      assert {:ok, %Issue{id: ^mirrored_id, state: :triage}} =
-               Issues.create_issue(system_scope(), project, %{title: "Short title"})
-    end
-
-    test "says so when the App was never granted Issues", %{github_project: project} do
-      Req.Test.expect(Client, 2, fn conn ->
-        case conn.request_path do
-          "/app/installations/1/access_tokens" ->
-            Req.Test.json(conn, %{"token" => "ghs_token"})
-
-          "/repos/example/test-gh/issues" ->
-            conn |> Plug.Conn.put_status(403) |> Req.Test.json(%{"message" => "Resource not accessible by integration"})
-        end
-      end)
-
-      assert {:error, :github_issues_permission_missing} = Issues.create_issue(system_scope(), project, %{title: "Nope"})
-    end
-  end
-
-  describe "a Rail-tracked project" do
-    # Each test makes its own project, since a shared one would hold the numbering lock across tests.
-    setup do
-      key = "Loc#{System.unique_integer([:positive])}"
-
-      {:ok, project} =
-        Projects.create_project(system_scope(), %{
-          name: "Rail-tracked",
-          github_repo: "example/#{key}",
-          github_installation_id: 1,
-          tracker: :local,
-          key: key,
-          default_branch: "main",
-          clone_path: "/tmp/#{key}"
-        })
-
-      %{local_project: project, key: key}
-    end
-
-    test "numbers each issue one past the last, and names and branches it from that number", %{
-      local_project: %{id: project_id} = project,
-      key: key
-    } do
-      branch_prefix = String.downcase(key)
-      identifier_1 = "#{key}-1"
-      identifier_2 = "#{key}-2"
-      identifier_3 = "#{key}-3"
-      branch_1 = "#{branch_prefix}-1-comments-left-on-diff-lines"
-      branch_2 = "#{branch_prefix}-2-the-diff-pane-scrolls-past-its-end"
-      branch_3 = "#{branch_prefix}-3"
-
-      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
-
-      assert {:ok,
-              %Issue{
-                id: issue_id,
-                tracker: :local,
-                project_id: ^project_id,
-                number: 1,
-                identifier: ^identifier_1,
-                branch_name: ^branch_1,
-                state: :triage,
-                state_name: "Triage",
-                title: "Comments left on diff lines",
-                description: "They vanish on reload"
-              }} =
-               Issues.create_issue(system_scope(), project, %{
-                 title: "Comments left on diff lines",
-                 description: "They vanish on reload"
-               })
-
-      assert_receive {:issue_created, ^issue_id}
-
-      assert {:ok, %Issue{number: 2, identifier: ^identifier_2, branch_name: ^branch_2}} =
-               Issues.create_issue(system_scope(), project, %{title: "  The diff pane: scrolls past its end!  "})
-
-      assert {:ok, %Issue{number: 3, identifier: ^identifier_3, branch_name: ^branch_3}} =
-               Issues.create_issue(system_scope(), project, %{title: "!!!"})
-    end
-
-    test "numbers each project on its own", %{local_project: project, key: key} do
-      other_key = "Oth#{System.unique_integer([:positive])}"
-      other_identifier = "#{other_key}-1"
-
-      {:ok, other} =
-        Projects.create_project(system_scope(), %{
-          name: "Another Rail-tracked",
-          github_repo: "example/#{other_key}",
-          github_installation_id: 1,
-          tracker: :local,
-          key: other_key,
-          default_branch: "main",
-          clone_path: "/tmp/#{other_key}"
-        })
-
-      identifier = "#{key}-2"
-      {:ok, _first} = Issues.create_issue(system_scope(), project, %{title: "First"})
-
-      assert {:ok, %Issue{number: 2, identifier: ^identifier}} =
-               Issues.create_issue(system_scope(), project, %{title: "Second"})
-
-      assert {:ok, %Issue{number: 1, identifier: ^other_identifier}} =
-               Issues.create_issue(system_scope(), other, %{title: "Elsewhere"})
-    end
-
-    test "links an issue and its sub-issue to their own pages, with nothing sent anywhere and no job queued", %{
-      local_project: project,
-      key: key
-    } do
-      identifier = "#{key}-2"
-
-      {:ok, %Issue{id: parent_id, external_id: parent_external_id, url: parent_url} = parent} =
-        Issues.create_issue(system_scope(), project, %{title: "Split me", priority: :high})
-
-      assert parent_url == RailWeb.Endpoint.url() <> "/issues/" <> parent_id
-      assert {:ok, _uuid} = Ecto.UUID.cast(parent_external_id)
-
-      assert {:ok,
-              %Issue{
-                id: child_id,
-                identifier: ^identifier,
-                parent_external_id: ^parent_external_id,
-                state: :todo,
-                state_name: "Todo",
-                estimate: 3
-              }} =
-               Issues.create_issue(system_scope(), project, %{title: "A part", estimate: 3, parent: parent})
-
-      child_url = RailWeb.Endpoint.url() <> "/issues/" <> child_id
-      assert %Issue{url: ^child_url} = Repo.get!(Issue, child_id)
-      refute_enqueued(worker: SyncIssue)
-      refute_enqueued(worker: AdvanceTrackerState)
-    end
-
-    test "a ticket filed from the project as a page loaded it before it moved off Linear lands in Rail", %{
-      local_project: %{id: project_id} = project,
-      key: key
-    } do
-      identifier = "#{key}-1"
-
-      # No Linear stub is queued, so a request would raise.
-      assert {:ok, %Issue{project_id: ^project_id, tracker: :local, identifier: ^identifier}} =
-               Issues.create_issue(system_scope(), %{project | tracker: :linear}, %{title: "Filed late"})
-    end
-
-    test "two issues can never share a number", %{local_project: project} do
-      {:ok, %Issue{number: 1}} = Issues.create_issue(system_scope(), project, %{title: "First"})
-
-      assert {:error, changeset} =
-               %Issue{}
-               |> Issue.tracker_changeset(%{
-                 project_id: project.id,
-                 tracker: :local,
-                 external_id: Ecto.UUID.generate(),
-                 identifier: "taken",
-                 number: 1,
-                 title: "Same number",
-                 state: :triage
-               })
-               |> Repo.insert()
-
-      assert %{number: ["has already been taken"]} = errors_on(changeset)
-    end
-
-    test "only an insert of a Rail-tracked issue goes without an identifier", %{local_project: project} do
-      assert %{identifier: ["can't be blank"]} =
-               %Issue{}
-               |> Issue.changeset(%{
-                 project_id: project.id,
-                 tracker: :linear,
-                 external_id: "x",
-                 title: "t",
-                 state: :triage
-               })
-               |> errors_on()
-
-      {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Named"})
-      assert %{identifier: ["can't be blank"]} = issue |> Issue.changeset(%{identifier: nil}) |> errors_on()
-    end
-  end
-
-  test "keeps what the tracker names the ticket and adds Rail's own fields", %{
-    github_project: %{id: project_id} = project
-  } do
-    expect(Rail.Issues.Tracker.Github, :create_issue, fn _scope, ^project, %{title: "Contract"} ->
-      {:ok, %{external_id: "I_contract", identifier: "tgh#5000", title: "Contract", state: :triage, number: 5000}}
-    end)
-
-    assert {:ok, %Issue{tracker: :github, project_id: ^project_id, priority: :medium, identifier: "tgh#5000"}} =
-             Issues.create_issue(system_scope(), project, %{title: "Contract"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Named"})
+    assert %{identifier: ["can't be blank"]} = issue |> Issue.changeset(%{identifier: nil}) |> errors_on()
   end
 end

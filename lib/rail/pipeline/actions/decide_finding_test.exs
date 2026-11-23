@@ -13,17 +13,6 @@ defmodule Rail.Pipeline.Actions.DecideFindingTest do
   setup %{project: project} do
     stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_dcf_1", "identifier" => "DCF-1", "title" => "Decide Finding"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Decide Finding"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
@@ -89,7 +78,7 @@ defmodule Rail.Pipeline.Actions.DecideFindingTest do
     finding: finding
   } do
     task = Rail.Repo.preload(task, :issue)
-    path = Path.join([task.scratch_path, "fix_plans", "DCF-1.json"])
+    path = Path.join([task.scratch_path, "fix_plans", "#{task.issue.identifier}.json"])
     File.mkdir_p!(Path.dirname(path))
 
     File.write!(
@@ -116,7 +105,7 @@ defmodule Rail.Pipeline.Actions.DecideFindingTest do
   end
 
   test "New issue switches to Fix or Don't fix and back before a Send, and files nothing", %{finding: finding} do
-    # The tracker is never stubbed here, so a filing would fail the test.
+    reject(Issues, :create_issue, 3)
     {:ok, new_issue} = Pipeline.decide_finding(system_scope(), finding, :new_issue)
     {:ok, fixed} = Pipeline.decide_finding(system_scope(), new_issue, :fix)
     {:ok, dismissed} = Pipeline.decide_finding(system_scope(), fixed, :skip)
@@ -132,17 +121,6 @@ defmodule Rail.Pipeline.Actions.DecideFindingTest do
     finding: %{id: finding_id} = finding
   } do
     {:ok, new_issue} = Pipeline.decide_finding(system_scope(), finding, :new_issue)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_dcf_2", "identifier" => "DCF-2", "title" => "Nil is not handled"}
-          }
-        }
-      })
-    end)
 
     {:ok, [_filed]} = Pipeline.file_finding_issues(system_scope(), Repo.preload(task, [:issue, :project]), [new_issue])
 

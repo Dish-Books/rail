@@ -8,17 +8,6 @@ defmodule Rail.Pipeline.Actions.ReadQaChecklistTest do
   setup %{project: project} do
     scope = system_scope()
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_rcl_1", "identifier" => "RCL-1", "title" => "Read Checklist"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Read Checklist"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     qa_dir = Path.join(task.scratch_path, "qa")

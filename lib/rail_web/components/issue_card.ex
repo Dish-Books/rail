@@ -242,7 +242,7 @@ defmodule RailWeb.Components.IssueCard do
           target="_blank"
           rel="noopener noreferrer"
           data-qa="issue-external-link"
-          title={"Open issue in #{Issue.tracker_label(@issue.tracker)}"}
+          title="Open issue in a new tab"
           onclick={@actionable && "event.stopPropagation()"}
           class="p-1 rounded text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
         >

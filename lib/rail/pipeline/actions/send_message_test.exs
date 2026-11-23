@@ -17,21 +17,6 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_send_message_1",
-              "identifier" => "SND-1",
-              "title" => "Send Message Issue"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Send Message Issue"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 

@@ -4,7 +4,7 @@ defmodule Rail.Mcp.Schemas.McpServer do
 
   The list is global. Discovery fills in the OAuth endpoints and the client Rail
   registered with the server; each user then connects their own account. `name`
-  also prefixes every tool the proxy exposes (`linear__get_issue`), so it is fixed
+  also prefixes every tool the proxy exposes (`sentry__get_issue`), so it is fixed
   to characters an agent CLI accepts in a tool name.
   """
   use Rail.Schema

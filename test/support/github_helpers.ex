@@ -31,24 +31,7 @@ defmodule RailTest.GithubHelpers do
   end
 
   @doc """
-  A comment as GitHub's REST API and webhooks send it.
-  """
-  def github_comment_json(overrides \\ %{}) do
-    Map.merge(
-      %{
-        "node_id" => "IC_kw#{System.unique_integer([:positive])}",
-        "body" => "A comment",
-        "user" => %{"id" => 9001, "login" => "octocat", "avatar_url" => "https://avatars.example/octocat"},
-        "issue_url" => "https://api.github.com/repos/example/test-gh/issues/42",
-        "created_at" => "2026-10-06T12:00:00Z",
-        "updated_at" => "2026-10-06T12:00:00Z"
-      },
-      overrides
-    )
-  end
-
-  @doc """
-  A GitHub issue saved in `project` the way a sync saves one, so nothing is pushed back.
+  An issue saved in `project` with `attrs`, as a fixture, so nothing is announced.
   """
   def github_issue(%Project{} = project, attrs \\ %{}) do
     number = attrs[:number] || System.unique_integer([:positive])
@@ -58,10 +41,8 @@ defmodule RailTest.GithubHelpers do
       Map.merge(
         %{
           project_id: project.id,
-          tracker: :github,
-          external_id: "I_kw#{System.unique_integer([:positive])}",
           number: number,
-          identifier: "#{project.key}##{number}",
+          identifier: "#{project.key}-#{number}",
           title: "A GitHub issue",
           state: :backlog
         },

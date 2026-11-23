@@ -23,7 +23,6 @@ defmodule Rail.Triage.Actions.TriageThread do
   alias Rail.Mcp
   alias Rail.Mcp.RunContext
   alias Rail.Pipeline
-  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Slack
@@ -151,8 +150,8 @@ defmodule Rail.Triage.Actions.TriageThread do
     end
   end
 
-  # Outside a Rail-tracked project the agent finds existing issues through the role's MCP servers, so a pass
-  # without them would draft duplicates rather than fail: it is stopped here,
+  # A role's MCP servers are part of the pass, so a pass without them would draft a worse answer rather than fail: it is
+  # stopped here,
   # saying what to fix before a retry. A server that did not answer is no
   # failure: the pass is tried again until it does.
   defp check_tools(%Thread{project: project}, role) do
@@ -365,18 +364,12 @@ defmodule Rail.Triage.Actions.TriageThread do
     """)
   end
 
-  defp search(%Thread{project: %Project{tracker: :local}}),
+  defp search(%Thread{}),
     do:
-      "Before you draft any issue, search this project's tickets for one that already covers the item. They are kept in Rail, not Linear: " <>
-        "search them with `search_issues`, which matches by meaning and includes finished and archived tickets. Search at least twice, " <>
+      "Before you draft any issue, search this project's tickets for one that already covers the item. " <>
+        "Search them with `search_issues`, which matches by meaning and includes finished and archived tickets. Search at least twice, " <>
         "first describing the problem in the thread's own words and then in the names you found in the code, before you decide none does. " <>
         "Open a likely match with `get_issue` and read it before you cite it, and give `existing_issue` exactly as the search showed it."
-
-  defp search(%Thread{project: project}),
-    do:
-      "Before you draft any issue, search Linear for one that already covers the item, with the Linear tools you were offered, on the #{project.key} team. " <>
-        "Include finished issues, and try at least two phrasings, the thread's own words and the names you found in the code, before you decide none does. " <>
-        "Open a likely match and read it before you cite it."
 
   # People outside the team read an external channel's replies, so they never point into the tracker.
   defp tracked(%Thread{slack_channel: %{external: true}}),

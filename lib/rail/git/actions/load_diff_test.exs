@@ -12,17 +12,6 @@ defmodule Rail.Git.Actions.LoadDiffTest do
   setup %{project: project} do
     scope = system_scope()
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_ldf_1", "identifier" => "LDF-1", "title" => "Load Diff"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Load Diff"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 

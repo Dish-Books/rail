@@ -17,22 +17,6 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
   setup %{project: project} do
     scope = system_scope()
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_hand_over_work_1",
-              "identifier" => "CMW-1",
-              "title" => "Invoice filters",
-              "url" => "https://linear.app/rail/issue/CMW-1"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Invoice filters"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
@@ -263,6 +247,10 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
     end
 
     test "the first push opens the task's pull request as a draft, and keeps it", %{scope: scope, run: run, task: task} do
+      %{issue: %{identifier: identifier, branch_name: branch, url: url}} = Repo.preload(task, :issue)
+      title = "#{identifier} Issue"
+      body = "Closes #{identifier}\n\n#{url}\n\nOpened by Rail as a draft."
+
       Req.Test.expect(Client, 3, fn conn ->
         case {conn.method, conn.request_path} do
           {"POST", "/app/installations/1/access_tokens"} ->
@@ -272,16 +260,15 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
             Req.Test.json(conn, [])
 
           {"POST", "/repos/example/test-seed/pulls"} ->
-            {:ok, body, conn} = Plug.Conn.read_body(conn)
+            {:ok, request, conn} = Plug.Conn.read_body(conn)
 
             assert %{
-                     "title" => "CMW-1 Invoice filters",
-                     "head" => "cmw-1",
+                     "title" => ^title,
+                     "head" => ^branch,
                      "base" => "main",
                      "draft" => true,
-                     "body" =>
-                       "Closes CMW-1\n\nhttps://linear.app/rail/issue/CMW-1\n\nOpened by Rail as a draft." <> _rest
-                   } = Jason.decode!(body)
+                     "body" => ^body <> _rest
+                   } = Jason.decode!(request)
 
             conn
             |> Plug.Conn.put_status(201)
@@ -297,45 +284,6 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
 
       assert %Task{pr_number: 12, pr_url: "https://github.com/example/test-seed/pull/12", pr_is_draft: true} =
                Repo.reload!(task)
-    end
-
-    test "a GitHub issue's pull request closes it on merge", %{scope: scope, repo: repo, github_project: project} do
-      issue = github_issue(project, %{number: 31, url: "https://github.com/example/test-gh/issues/31"})
-      {:ok, task} = Pipeline.create_task(issue, :engineer)
-      {:ok, task} = Pipeline.update_task(task, %{worktree_path: repo})
-      on_exit(fn -> File.rm_rf(task.scratch_path) end)
-
-      {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
-
-      {:ok, run} =
-        Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :finished, started_at: DateTime.utc_now()})
-
-      Req.Test.expect(Client, 3, fn conn ->
-        case {conn.method, conn.request_path} do
-          {"POST", "/app/installations/1/access_tokens"} ->
-            Req.Test.json(conn, %{"token" => "ghs_token"})
-
-          {"GET", "/repos/example/test-gh/pulls"} ->
-            Req.Test.json(conn, [])
-
-          {"POST", "/repos/example/test-gh/pulls"} ->
-            {:ok, body, conn} = Plug.Conn.read_body(conn)
-
-            assert %{"body" => "Closes #31\n\nhttps://github.com/example/test-gh/issues/31\n\nOpened by Rail" <> _rest} =
-                     Jason.decode!(body)
-
-            conn
-            |> Plug.Conn.put_status(201)
-            |> Req.Test.json(%{
-              "number" => 13,
-              "html_url" => "https://github.com/example/test-gh/pull/13",
-              "draft" => true
-            })
-        end
-      end)
-
-      assert {:ok, %Run{}} = Pipeline.hand_over_work(scope, run)
-      assert %Task{pr_number: 13} = Repo.reload!(task)
     end
 
     test "an open pull request already on the branch is adopted, not opened twice", %{scope: scope, run: run, task: task} do

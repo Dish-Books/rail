@@ -12,10 +12,9 @@ defmodule Rail.Issues.Actions.UnblockIssueTest do
 
     {:ok, local} =
       Projects.create_project(system_scope(), %{
-        name: "Rail-tracked",
+        name: "Tracked here",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -55,9 +54,5 @@ defmodule Rail.Issues.Actions.UnblockIssueTest do
 
   test "issues of two projects have no relation to remove", %{blocker: blocker, blocked: blocked, scope: scope} do
     assert {:error, :not_found} = Issues.unblock_issue(scope, blocker, %{blocked | project_id: "prj_other"})
-  end
-
-  test "issues Linear holds keep their relations there", %{blocker: blocker, blocked: blocked, scope: scope} do
-    assert {:error, :unsupported} = Issues.unblock_issue(scope, %{blocker | tracker: :linear}, blocked)
   end
 end

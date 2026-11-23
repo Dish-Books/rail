@@ -128,7 +128,7 @@ defmodule RailWeb.Components.SplitBoardTest do
              |> Floki.find("#split-row-SPL-8 [data-qa=split-row-line] .whitespace-nowrap")
              |> Enum.map(&Floki.text/1)
 
-    assert "SPL-6 was canceled, so this will not start; cancel it in Linear to finish the split" =
+    assert "SPL-6 was canceled, so this will not start; cancel it to finish the split" =
              Floki.text(Floki.find(board, "#split-row-SPL-8 [data-qa=split-row-line]"))
   end
 

@@ -10,17 +10,6 @@ defmodule Rail.Mcp.Utils.RunToolSaveStageOutputTest do
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_rtsso_1", "identifier" => "RTSSO-1", "title" => "Dependency updates"}
-          }
-        }
-      })
-    end)
-
     stages = [
       %IssueStage{stage: :plan},
       %IssueStage{stage: :engineer},

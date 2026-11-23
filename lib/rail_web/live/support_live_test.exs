@@ -20,7 +20,7 @@ defmodule RailWeb.SupportLiveTest do
     stub(Git, :checkout_detached_worktree, fn _project, worktree_path -> {:ok, worktree_path} end)
     stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
 
-    %{project: project} = triage_project(tracker: :local)
+    %{project: project} = triage_project()
     unique = System.unique_integer([:positive])
     app_id = "app#{unique}"
 

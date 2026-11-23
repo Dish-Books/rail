@@ -19,22 +19,6 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
   setup %{project: project} do
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_start_review_1",
-              "identifier" => "SRV-1",
-              "title" => "Invoice filters",
-              "description" => "Filter invoices by vendor."
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} =
       Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Filter invoices by vendor."})
 

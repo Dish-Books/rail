@@ -21,7 +21,6 @@ defmodule Rail.Issues.Actions.ChangeIssueTest do
         name: "Changed here",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -50,78 +49,6 @@ defmodule Rail.Issues.Actions.ChangeIssueTest do
     }
   end
 
-  describe "on a Linear ticket" do
-    setup %{project: project} do
-      issue =
-        %Issue{}
-        |> Issue.tracker_changeset(%{
-          project_id: project.id,
-          external_id: "lin_change_1",
-          identifier: "TST-7101",
-          title: "Kept in Linear",
-          state: :todo,
-          state_name: "Todo"
-        })
-        |> Repo.insert!()
-
-      %{linear_issue: issue}
-    end
-
-    test "a title with a status changes neither, saying the title is edited in Linear", %{
-      linear_issue: %Issue{id: id} = issue
-    } do
-      assert {:error, {:edited_in_tracker, :linear, [:title]}} =
-               Issues.change_issue(system_scope(), issue, %{title: "Renamed", status: "Done"})
-
-      assert %Issue{title: "Kept in Linear", state: :todo} = Repo.get!(Issue, id)
-    end
-
-    test "a status alone moves the ticket in Linear", %{linear_issue: %Issue{id: id} = issue} do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "teams" => %{
-              "nodes" => [
-                %{
-                  "states" => %{
-                    "nodes" => [
-                      %{"id" => "st_todo", "name" => "Todo", "type" => "unstarted", "position" => 1.0},
-                      %{"id" => "st_done", "name" => "Done", "type" => "completed", "position" => 5.0}
-                    ]
-                  }
-                }
-              ]
-            }
-          }
-        })
-      end)
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
-        assert %{"id" => "lin_change_1", "input" => %{"stateId" => "st_done"}} = Jason.decode!(body)["variables"]
-
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueUpdate" => %{
-              "success" => true,
-              "issue" => %{
-                "id" => "lin_change_1",
-                "identifier" => "TST-7101",
-                "title" => "Kept in Linear",
-                "state" => %{"name" => "Done", "type" => "completed"},
-                "completedAt" => "2026-11-12T10:00:00.000Z",
-                "updatedAt" => "2026-11-12T10:00:00.000Z"
-              }
-            }
-          }
-        })
-      end)
-
-      assert {:ok, %Issue{id: ^id, state: :done, state_name: "Done"}} =
-               Issues.change_issue(system_scope(), issue, %{status: " done "})
-    end
-  end
-
   test "an unknown status with a good title writes nothing", %{issue: %Issue{id: id} = issue, scope: scope} do
     assert {:error, {:invalid, :status, "is not one of: " <> names}} =
              Issues.change_issue(scope, issue, %{title: "Renamed", status: "Shipped"})
@@ -132,7 +59,7 @@ defmodule Rail.Issues.Actions.ChangeIssueTest do
 
   test "sets the text, priority, estimate, parent, status, cycle, assignee and blockers, and open pages hear it", %{
     issue: %Issue{id: id} = issue,
-    other: %Issue{id: other_id, identifier: other_identifier, external_id: other_external_id},
+    other: %Issue{id: other_id, identifier: other_identifier},
     teammate: %{id: teammate_id, login: login},
     cycles: [%{id: first_id}, %{id: second_id} | _later],
     scope: scope
@@ -144,9 +71,9 @@ defmodule Rail.Issues.Actions.ChangeIssueTest do
               description: "Why",
               priority: :high,
               estimate: 3,
-              parent_external_id: ^other_external_id,
+              parent_id: ^other_id,
               state: :in_progress,
-              cycle_external_id: ^second_id,
+              cycle_id: ^second_id,
               owner_user_id: ^teammate_id
             }} =
              Issues.change_issue(scope, issue, %{
@@ -164,19 +91,19 @@ defmodule Rail.Issues.Actions.ChangeIssueTest do
     assert [%IssueRelation{blocker_issue_id: ^other_id}] =
              Repo.all(from(r in IssueRelation, where: r.blocked_issue_id == ^id))
 
-    # The assignee reaches open pages once the tracker has it, as the issue page's own assign does.
+    # The assignee reaches open pages through the sync job, as the issue page's own assign does.
     [job] = all_enqueued(worker: SyncIssue, args: %{issue_id: id})
     Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
     assert :ok = perform_job(SyncIssue, job.args)
     assert_receive {:issue_changed, ^id}
 
-    assert {:ok, %Issue{cycle_external_id: ^first_id, owner_user_id: nil, parent_external_id: nil}} =
+    assert {:ok, %Issue{cycle_id: ^first_id, owner_user_id: nil, parent_id: nil}} =
              Issues.change_issue(scope, issue, %{cycle: "current", assignee: "", parent: ""})
 
-    assert {:ok, %Issue{cycle_external_id: ^second_id, owner_user_id: ^teammate_id}} =
+    assert {:ok, %Issue{cycle_id: ^second_id, owner_user_id: ^teammate_id}} =
              Issues.change_issue(scope, issue, %{cycle: 2, assignee: "me"})
 
-    assert {:ok, %Issue{cycle_external_id: nil}} = Issues.change_issue(scope, issue, %{cycle: "None", blocked_by: []})
+    assert {:ok, %Issue{cycle_id: nil}} = Issues.change_issue(scope, issue, %{cycle: "None", blocked_by: []})
     assert [] = Repo.all(from(r in IssueRelation, where: r.blocked_issue_id == ^id))
   end
 
@@ -256,7 +183,6 @@ defmodule Rail.Issues.Actions.ChangeIssueTest do
         name: "No cycles",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -278,12 +204,12 @@ defmodule Rail.Issues.Actions.ChangeIssueTest do
 
   test "a ticket the person cannot open, or one read under the wrong project, is not found", %{
     issue: issue,
-    project: linear
+    project: other
   } do
     assert {:error, :not_found} = Issues.change_issue(user_scope(project_ids: []), issue, %{title: "Renamed"})
 
     assert {:error, :not_found} =
-             Issues.change_issue(system_scope(), %{issue | project_id: linear.id}, %{title: "Renamed"})
+             Issues.change_issue(system_scope(), %{issue | project_id: other.id}, %{title: "Renamed"})
 
     assert {:error, :not_found} = Issues.change_issue(system_scope(), %{issue | id: "iss_missing"}, %{title: "Renamed"})
   end

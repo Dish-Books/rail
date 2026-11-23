@@ -11,10 +11,9 @@ defmodule Rail.Issues.Actions.EditIssueTest do
 
     {:ok, local} =
       Projects.create_project(system_scope(), %{
-        name: "Rail-tracked",
+        name: "Tracked here",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -64,27 +63,13 @@ defmodule Rail.Issues.Actions.EditIssueTest do
   end
 
   test "sets and clears the parent from an issue of the same project", %{local: local, issue: issue, scope: scope} do
-    {:ok, %Issue{id: parent_id, external_id: parent_external_id}} =
-      Issues.create_issue(system_scope(), local, %{title: "The parent"})
+    {:ok, %Issue{id: parent_id}} = Issues.create_issue(system_scope(), local, %{title: "The parent"})
 
-    assert {:ok, %Issue{parent_external_id: ^parent_external_id}} =
+    assert {:ok, %Issue{parent_id: ^parent_id}} =
              Issues.edit_issue(scope, issue, %{"parent_id" => parent_id})
 
-    assert {:ok, %Issue{parent_external_id: nil}} = Issues.edit_issue(scope, issue, %{"parent_id" => ""})
-    assert {:ok, %Issue{parent_external_id: nil}} = Issues.edit_issue(scope, issue, %{"parent_id" => nil})
-  end
-
-  test "a parent_external_id in the attrs is ignored, so only parent_id sets a parent", %{
-    local: local,
-    issue: %Issue{id: issue_id} = issue,
-    scope: scope
-  } do
-    {:ok, %Issue{external_id: parent_external_id}} = Issues.create_issue(system_scope(), local, %{title: "The parent"})
-
-    assert {:ok, %Issue{parent_external_id: nil}} =
-             Issues.edit_issue(scope, issue, %{"parent_external_id" => parent_external_id})
-
-    assert %Issue{parent_external_id: nil} = Repo.get!(Issue, issue_id)
+    assert {:ok, %Issue{parent_id: nil}} = Issues.edit_issue(scope, issue, %{"parent_id" => ""})
+    assert {:ok, %Issue{parent_id: nil}} = Issues.edit_issue(scope, issue, %{"parent_id" => nil})
   end
 
   test "a parent from another project is refused", %{issue: issue, scope: scope} do
@@ -95,7 +80,6 @@ defmodule Rail.Issues.Actions.EditIssueTest do
         name: "Another",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -121,7 +105,7 @@ defmodule Rail.Issues.Actions.EditIssueTest do
     assert {:error, changeset} = Issues.edit_issue(scope, issue, %{"parent_id" => issue_id})
     assert %{parent_id: ["can't be the issue itself"]} = errors_on(changeset)
 
-    assert %Issue{parent_external_id: nil} = Repo.get!(Issue, issue_id)
+    assert %Issue{parent_id: nil} = Repo.get!(Issue, issue_id)
   end
 
   test "a parent change also writes the fields beside it, or neither", %{local: local, issue: issue, scope: scope} do
@@ -129,22 +113,6 @@ defmodule Rail.Issues.Actions.EditIssueTest do
 
     assert {:error, _changeset} = Issues.edit_issue(scope, issue, %{"title" => "Renamed", "parent_id" => child.id})
     assert %Issue{title: "Filed as it was"} = Repo.get!(Issue, issue.id)
-  end
-
-  test "an issue Linear holds is not edited here", %{project: project} do
-    linear =
-      %Issue{}
-      |> Issue.tracker_changeset(%{
-        project_id: project.id,
-        external_id: "lin_edit_1",
-        identifier: "EDT-1",
-        title: "In Linear",
-        state: :todo
-      })
-      |> Repo.insert!()
-
-    assert {:error, :unsupported} = Issues.edit_issue(system_scope(), linear, %{"title" => "Renamed"})
-    assert %Issue{title: "In Linear"} = Repo.get!(Issue, linear.id)
   end
 
   test "someone who cannot open the project finds nothing", %{issue: issue} do

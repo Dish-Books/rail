@@ -17,7 +17,6 @@ defmodule RailWeb.Mcp.Tools.ListIssuesTest do
             name: name,
             github_repo: "example/#{key}",
             github_installation_id: 1,
-            tracker: :local,
             key: key,
             default_branch: "main",
             clone_path: "/tmp/#{key}"
@@ -91,10 +90,9 @@ defmodule RailWeb.Mcp.Tools.ListIssuesTest do
              call_mcp_tool(scope, "list_issues", %{"finished" => true, "offset" => 1})
   end
 
-  test "filters by cycle in a Rail-tracked project, and refuses a cycle anywhere else", %{
+  test "filters by cycle within one project, and asks for the project when none is named", %{
     local: local,
-    scope: scope,
-    project: linear
+    scope: scope
   } do
     # Cycle 1 runs Nov 10 to 23, then Cycle 2.
     :ok = Issues.close_cycle_day(~D[2026-11-10])
@@ -125,10 +123,7 @@ defmodule RailWeb.Mcp.Tools.ListIssuesTest do
                call_mcp_tool(scope, "list_issues", %{"project" => local.key, "cycle" => cycle})
     end
 
-    assert {:error, "Only a Rail-tracked project's tickets can be listed by cycle" <> _rest} =
+    assert {:error, "Tickets are listed by cycle within one project; name it with `project`."} =
              call_mcp_tool(scope, "list_issues", %{"cycle" => "current"})
-
-    assert {:error, "Only a Rail-tracked project's tickets can be listed by cycle" <> _rest} =
-             call_mcp_tool(user_scope(project_ids: [linear.id]), "list_issues", %{"project" => linear.key, "cycle" => "1"})
   end
 end

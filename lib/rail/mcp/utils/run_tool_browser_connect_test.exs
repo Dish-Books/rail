@@ -27,21 +27,6 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
     # would spawn git: these see no prompt file on the default branch, as when there is no clone.
     stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_btc_#{System.unique_integer([:positive])}",
-              "identifier" => "BTC-1",
-              "title" => "Sign in"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Sign in"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     # Out of the seeded project's clone, so making the worktree does not make the clone too.

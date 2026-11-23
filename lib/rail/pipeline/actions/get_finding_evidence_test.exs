@@ -7,17 +7,6 @@ defmodule Rail.Pipeline.Actions.GetFindingEvidenceTest do
   alias Rail.Pipeline.Schemas.FindingEvidence
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_gfe_1", "identifier" => "GFE-1", "title" => "Get Finding Evidence"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Get Finding Evidence"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     qa = Path.join(task.scratch_path, "qa")

@@ -33,8 +33,6 @@ config :rail, :cloudflare_access, req_options: [plug: {Req.Test, Rail.Users.Clie
 config :rail, :docker, req_options: [plug: {Req.Test, Rail.Tools.Clients.Docker}, retry: false]
 config :rail, :github, req_options: [plug: {Req.Test, Rail.GitHub.Client}]
 config :rail, :intercom, req_options: [plug: {Req.Test, Rail.Intercom}, retry: false]
-config :rail, :linear, req_options: [plug: {Req.Test, Rail.Linear}]
-config :rail, :linear_oauth, req_options: [plug: {Req.Test, Rail.Linear}]
 config :rail, :mcp, req_options: [plug: {Req.Test, Rail.Mcp}, retry: false]
 
 # Every test shares the seeded project, so a broadcast about it stays among the processes of the test that sent it.

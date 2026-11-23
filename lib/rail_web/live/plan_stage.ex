@@ -467,7 +467,6 @@ defmodule RailWeb.Live.PlanStage do
       <.markdown
         :if={@issue.description not in [nil, ""]}
         content={@issue.description}
-        assets_base={~p"/issues/#{@issue.id}/assets"}
         class="mt-3 text-[15px] leading-relaxed wrap-break-word"
       />
     </div>

@@ -29,7 +29,6 @@ defmodule Rail.Tools.Actions.GetUsageWaitTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: "lin_wait_#{unique}",
         identifier: "WAIT#{unique}-1",
         title: "Wait Issue",
         state: :backlog

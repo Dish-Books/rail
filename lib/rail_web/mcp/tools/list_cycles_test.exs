@@ -12,7 +12,6 @@ defmodule RailWeb.Mcp.Tools.ListCyclesTest do
         name: "Planned in cycles",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -42,14 +41,8 @@ defmodule RailWeb.Mcp.Tools.ListCyclesTest do
     assert {:ok, %{"current" => nil, "cycles" => []}} = call_mcp_tool(scope, "list_cycles", %{"project" => local.key})
   end
 
-  test "refuses a project kept in another tracker, and one the person cannot open", %{
-    local: local,
-    github_project: github
-  } do
-    assert {:error, "A GitHub project's cycles are kept in GitHub; open them there."} =
-             call_mcp_tool(user_scope(project_ids: [github.id]), "list_cycles", %{"project" => github.key})
-
+  test "refuses a project the person cannot open", %{local: local, github_project: other} do
     assert {:error, "No project you can open has that key or name. Yours are: " <> _keys} =
-             call_mcp_tool(user_scope(project_ids: [github.id]), "list_cycles", %{"project" => local.key})
+             call_mcp_tool(user_scope(project_ids: [other.id]), "list_cycles", %{"project" => local.key})
   end
 end

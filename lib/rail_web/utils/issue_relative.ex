@@ -14,7 +14,7 @@ defmodule RailWeb.Utils.IssueRelative do
 
     changed_issue_id in loaded or
       match?(
-        {:ok, %Issue{parent_external_id: external_id}} when external_id == issue.external_id,
+        {:ok, %Issue{parent_id: parent_id}} when parent_id == issue.id,
         Issues.get_issue(changed_issue_id, preload: [])
       )
   end

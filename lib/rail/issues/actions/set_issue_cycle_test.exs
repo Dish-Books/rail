@@ -14,7 +14,6 @@ defmodule Rail.Issues.Actions.SetIssueCycleTest do
         name: "Planned",
         github_repo: "example/#{local_key}",
         github_installation_id: 1,
-        tracker: :local,
         key: local_key,
         default_branch: "main",
         clone_path: "/tmp/#{local_key}"
@@ -27,7 +26,6 @@ defmodule Rail.Issues.Actions.SetIssueCycleTest do
         name: "Elsewhere",
         github_repo: "example/#{other_key}",
         github_installation_id: 2,
-        tracker: :local,
         key: other_key,
         default_branch: "main",
         clone_path: "/tmp/#{other_key}"
@@ -47,16 +45,16 @@ defmodule Rail.Issues.Actions.SetIssueCycleTest do
     issue: %{id: issue_id} = issue,
     cycles: [_first, %{id: second_id} | _later]
   } do
-    assert {:ok, %Issue{id: ^issue_id, cycle_external_id: ^second_id}} =
+    assert {:ok, %Issue{id: ^issue_id, cycle_id: ^second_id}} =
              Issues.set_issue_cycle(system_scope(), issue, second_id)
 
     assert_receive {:issue_changed, ^issue_id}
 
-    assert {:ok, %Issue{cycle_external_id: ^second_id}} = Issues.set_issue_cycle(system_scope(), issue, second_id)
+    assert {:ok, %Issue{cycle_id: ^second_id}} = Issues.set_issue_cycle(system_scope(), issue, second_id)
     refute_receive {:issue_changed, ^issue_id}
 
-    assert {:ok, %Issue{cycle_external_id: nil}} = Issues.set_issue_cycle(system_scope(), issue, nil)
-    assert %Issue{cycle_external_id: nil} = Repo.get!(Issue, issue_id)
+    assert {:ok, %Issue{cycle_id: nil}} = Issues.set_issue_cycle(system_scope(), issue, nil)
+    assert %Issue{cycle_id: nil} = Repo.get!(Issue, issue_id)
   end
 
   test "another project's cycle and an ended cycle are refused, and the issue keeps its cycle", %{
@@ -72,30 +70,17 @@ defmodule Rail.Issues.Actions.SetIssueCycleTest do
     {:ok, _issue} = Issues.set_issue_cycle(system_scope(), issue, second_id)
     assert {:error, :not_found} = Issues.set_issue_cycle(system_scope(), issue, first_id)
 
-    assert %Issue{cycle_external_id: ^second_id} = Repo.get!(Issue, issue_id)
+    assert %Issue{cycle_id: ^second_id} = Repo.get!(Issue, issue_id)
   end
 
-  test "a Linear issue, or a scope that cannot open the project, is not found", %{
-    project: linear,
+  test "a scope that cannot open the project is not found", %{
+    project: other,
     local: local,
     issue: issue,
     cycles: [%{id: first_id} | _later]
   } do
-    linear_issue =
-      %Issue{}
-      |> Issue.tracker_changeset(%{
-        project_id: linear.id,
-        external_id: "lin_sic",
-        identifier: "LIN-1",
-        title: "Linear",
-        state: :todo
-      })
-      |> Repo.insert!()
-
-    assert {:error, :not_found} = Issues.set_issue_cycle(system_scope(), linear_issue, nil)
-
     assert {:error, :not_found} =
-             Issues.set_issue_cycle(temp_user_scope(project_ids: [linear.id]), issue, first_id)
+             Issues.set_issue_cycle(temp_user_scope(project_ids: [other.id]), issue, first_id)
 
     assert {:ok, _issue} = Issues.set_issue_cycle(temp_user_scope(project_ids: [local.id]), issue, first_id)
   end

@@ -14,7 +14,6 @@ defmodule Rail.Issues.Workers.CloseCycleDayTest do
         name: "Nightly worker",
         github_repo: "example/#{local_key}",
         github_installation_id: 1,
-        tracker: :local,
         key: local_key,
         default_branch: "main",
         clone_path: "/tmp/#{local_key}"

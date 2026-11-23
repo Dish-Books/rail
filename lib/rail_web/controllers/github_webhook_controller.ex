@@ -2,7 +2,7 @@ defmodule RailWeb.GithubWebhookController do
   @moduledoc """
   Receives the GitHub App's webhooks: checks the HMAC-SHA256 signature against the App's webhook
   secret, finds the project for the payload's repository and installation, and hands a genuine event
-  to `Rail.Issues`: every one for a GitHub-tracked project, only `pull_request` for a Rail-tracked one.
+  to `Rail.Issues` when it is a `pull_request`.
   """
   use RailWeb, :controller
 
@@ -22,10 +22,9 @@ defmodule RailWeb.GithubWebhookController do
     repo = get_in(params, ["repository", "full_name"]) || ""
     event = List.first(get_req_header(conn, "x-github-event"))
 
-    # A Rail-tracked repository's GitHub issues are never mirrored, but its merged pull requests finish tickets.
-    with {:ok, %Project{tracker: tracker} = project}
-         when tracker == :github or (tracker == :local and event == "pull_request") <-
-           Projects.get_project(github_repo: repo),
+    # Only a merged pull request matters: it finishes the tickets it belongs to.
+    with "pull_request" <- event,
+         {:ok, %Project{} = project} <- Projects.get_project(github_repo: repo),
          true <- get_in(params, ["installation", "id"]) == project.github_installation_id do
       Issues.handle_github_webhook(project, event, params)
       json(conn, %{received: true})

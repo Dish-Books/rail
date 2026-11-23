@@ -47,7 +47,6 @@ defmodule Rail.Git.Actions.SaveEnvFileTest do
           Repo.insert!(
             Issue.changeset(%Issue{}, %{
               project_id: project_id,
-              external_id: "I_#{branch}",
               identifier: branch,
               title: branch,
               state: :backlog
@@ -180,7 +179,6 @@ defmodule Rail.Git.Actions.SaveEnvFileTest do
       Repo.insert!(
         Issue.changeset(%Issue{}, %{
           project_id: project.id,
-          external_id: "I_#{branch}",
           identifier: branch,
           title: branch,
           state: :backlog

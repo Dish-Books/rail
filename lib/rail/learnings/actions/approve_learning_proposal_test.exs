@@ -110,7 +110,7 @@ defmodule Rail.Learnings.Actions.ApproveLearningProposalTest do
     assert %Learning{status: :active} = Repo.reload!(rule)
   end
 
-  test "a promote opens a Linear issue and keeps the rule active", %{project: project, scope: scope} do
+  test "a promote opens an issue and keeps the rule active", %{project: project, scope: scope} do
     rule = learning(project, %{rule: "Context functions take Rail.Scope first", kind: :convention})
 
     proposal =
@@ -122,33 +122,23 @@ defmodule Rail.Learnings.Actions.ApproveLearningProposalTest do
         summary: "Broken 3 times"
       })
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
-      assert body =~ "Make a lint check of a rule that keeps being broken"
-      assert body =~ "Context functions take Rail.Scope first"
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_promote_1", "identifier" => "TST-91", "title" => "Make a lint check"}
-          }
-        }
-      })
-    end)
-
     assert {:ok, %LearningProposal{issue_id: issue_id}} = Learnings.approve_learning_proposal(scope, proposal)
-    assert %Issue{identifier: "TST-91"} = Repo.get!(Issue, issue_id)
+
+    assert %Issue{title: "Make a lint check of a rule that keeps being broken", description: description} =
+             Repo.get!(Issue, issue_id)
+
+    assert description =~ "Context functions take Rail.Scope first"
     assert %Learning{status: :active} = Repo.reload!(rule)
   end
 
-  test "a promote Linear refuses is not approved", %{project: project, scope: scope} do
+  test "a promote whose issue cannot be opened is not approved", %{project: project, scope: scope} do
     rule = learning(project, %{rule: "Broken rule", kind: :convention})
     proposal = Repo.insert!(%LearningProposal{project_id: project.id, action: :promote, learning_id: rule.id})
+    invalid = Ecto.Changeset.add_error(Ecto.Changeset.change(%Issue{}), :title, "can't be blank")
 
-    Req.Test.expect(Rail.Linear, &Req.Test.json(&1, %{"data" => %{"issueCreate" => %{"success" => false}}}))
+    expect(Rail.Issues, :create_issue, fn _scope, _project, _attrs -> {:error, invalid} end)
 
-    assert {:error, {:linear_mutation_failed, "issueCreate"}} = Learnings.approve_learning_proposal(scope, proposal)
+    assert {:error, ^invalid} = Learnings.approve_learning_proposal(scope, proposal)
     assert %LearningProposal{status: :pending} = Repo.reload!(proposal)
   end
 

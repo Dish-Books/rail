@@ -148,10 +148,6 @@ defmodule RailWeb.OverviewLive do
     {:noreply, load_overview_state(socket, socket.assigns.project_filter, socket.assigns.view == :everyone)}
   end
 
-  def handle_info({:issues_synced, _project_id}, socket) do
-    {:noreply, load_overview_state(socket, socket.assigns.project_filter, socket.assigns.view == :everyone)}
-  end
-
   # Neither moves a task.
   def handle_info({:issue_created, _issue_id}, socket), do: {:noreply, socket}
   def handle_info({:issue_comments_changed, _issue_id}, socket), do: {:noreply, socket}

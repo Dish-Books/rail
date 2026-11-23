@@ -19,23 +19,9 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_start_engineer_1",
-              "identifier" => "SEN-1",
-              "title" => "Invoice filters",
-              "description" => "Filter invoices by vendor."
-            }
-          }
-        }
-      })
-    end)
+    {:ok, issue} =
+      Issues.create_issue(scope, project, %{title: "Invoice filters", description: "Filter invoices by vendor."})
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Filter invoices by vendor."})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
@@ -66,6 +52,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     })
 
     commits_dir = Path.join(task.scratch_path, "commits")
+    {:ok, issue} = Issues.get_issue(task.issue_id)
     test_pid = self()
 
     # Each turn starts on a fresh default branch, committing as the ticket's owner, and opens on whether the
@@ -90,7 +77,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
       assert prompt =~ "A later round whose plan changes no code"
       assert prompt =~ "Rail sends the round to Review as it stands."
       assert prompt =~ "Your last message is what the human reads, not the commit body"
-      assert prompt =~ "End every commit message with the line `Ticket: SEN-1`."
+      assert prompt =~ "End every commit message with the line `Ticket: TST-1 #{issue.url}`."
       assert prompt =~ "Never merge `origin/main` in unless the plan says to, or to get CI passing as below"
       assert prompt =~ "a person brings the branch up to date with Update, which is a round of its own"
 
@@ -151,7 +138,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
         evidence: [%{name: "range", kind: :code, file: "lib/a.ex", line: 3}]
       })
 
-    path = Path.join([task.scratch_path, "fix_plans", "SEN-1.json"])
+    path = Path.join([task.scratch_path, "fix_plans", "TST-1.json"])
     File.mkdir_p!(Path.dirname(path))
 
     File.write!(
@@ -396,22 +383,6 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
   end
 
   test "carries every comment on the issue", %{task: task, run: run} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "commentCreate" => %{
-            "success" => true,
-            "comment" => %{
-              "id" => "lin_comment_1",
-              "body" => "Use the existing filter helper.",
-              "createdAt" => "2026-09-14T10:00:00.000Z",
-              "issue" => %{"id" => "lin_start_engineer_1"}
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.get_issue(task.issue_id)
     {:ok, _comment} = Issues.comment(system_scope(), issue, %{body: "Use the existing filter helper."})
 

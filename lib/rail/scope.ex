@@ -4,7 +4,7 @@ defmodule Rail.Scope do
 
   Implements scope without tenancy (D9): `%Rail.Scope{user: user, system: system}`.
   Actions take a scope, then a `%Project{}` or a project-owned struct.
-  `users.admin` boolean gates admin settings (Projects, Users, Roles, Linear workspace settings).
+  `users.admin` boolean gates admin settings (Projects, Users, Roles).
   """
 
   defstruct user: nil,
@@ -63,14 +63,6 @@ defmodule Rail.Scope do
   end
 
   @doc """
-  Returns true if the user in scope has linked a Linear account.
-  """
-  def linear_linked?(%__MODULE__{user: %{linear_access_token: token}}) when is_binary(token) and token != "", do: true
-
-  def linear_linked?(%__MODULE__{user: %{linear_linked: true}}), do: true
-  def linear_linked?(_scope), do: false
-
-  @doc """
   Returns true if the user in scope has linked a Slack account to post from triage as.
   """
   def slack_linked?(%__MODULE__{user: %{slack_access_token: token}}) when is_binary(token) and token != "", do: true
@@ -85,11 +77,10 @@ defmodule Rail.Scope do
 
   @doc """
   Helper to build a user scope.
-  Supports `:admin` (boolean), `:linear_linked` (boolean), `:project_ids` (list), and `:user` overrides.
+  Supports `:admin` (boolean), `:project_ids` (list), and `:user` overrides.
   """
   def user_scope(attrs \\ []) do
     admin = Keyword.get(attrs, :admin, false)
-    linear_linked = Keyword.get(attrs, :linear_linked, false)
 
     user =
       case Keyword.get(attrs, :user) do
@@ -100,7 +91,6 @@ defmodule Rail.Scope do
           %{
             id: UXID.generate!(prefix: "usr"),
             admin: admin,
-            linear_linked: linear_linked,
             project_ids: Keyword.get(attrs, :project_ids, []),
             email: "user@example.com",
             name: "Test User"

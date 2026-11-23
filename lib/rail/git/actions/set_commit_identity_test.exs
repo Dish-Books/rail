@@ -8,17 +8,6 @@ defmodule Rail.Git.Actions.SetCommitIdentityTest do
   alias Rail.Users.Schemas.User
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_sci_1", "identifier" => "SCI-1", "title" => "Set Commit Identity"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Set Commit Identity"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     clone = create_temp_git_repo()

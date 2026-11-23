@@ -2,6 +2,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
@@ -24,31 +25,33 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
   end
 
   test "list_issues narrows to a cycle before the priority counts are taken", %{project: %Project{id: project_id}} do
-    insert = fn external_id, cycle, priority ->
+    insert = fn identifier, cycle, priority ->
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project_id,
-        external_id: external_id,
-        identifier: external_id,
-        title: external_id,
+        identifier: identifier,
+        title: identifier,
         state: :todo,
         priority: priority,
-        cycle_external_id: cycle
+        cycle_id: cycle && cycle.id
       })
       |> Repo.insert!()
     end
 
-    %Issue{id: high_id} = insert.("lin_lc1", "cyc_list", :high)
-    %Issue{id: low_id} = insert.("lin_lc2", "cyc_list", :low)
-    insert.("lin_lc3", "cyc_other", :high)
-    insert.("lin_lc4", nil, :high)
+    listed = Repo.insert!(%Cycle{project_id: project_id, starts_on: ~D[2026-11-10], ends_on: ~D[2026-11-23]})
+    other = Repo.insert!(%Cycle{project_id: project_id, starts_on: ~D[2026-11-24], ends_on: ~D[2026-12-07]})
+
+    %Issue{id: high_id} = insert.("LC1", listed, :high)
+    %Issue{id: low_id} = insert.("LC2", listed, :low)
+    insert.("LC3", other, :high)
+    insert.("LC4", nil, :high)
 
     assert %{issues: [%Issue{id: ^high_id}], total: 1, priority_counts: %{high: 1, low: 1} = counts} =
-             Issues.list_issues(project_id: project_id, cycle_id: "cyc_list", priority: :high)
+             Issues.list_issues(project_id: project_id, cycle_id: listed.id, priority: :high)
 
     assert map_size(counts) == 2
 
-    assert %{total: 2, issues: issues} = Issues.list_issues(project_id: project_id, cycle_id: "cyc_list")
+    assert %{total: 2, issues: issues} = Issues.list_issues(project_id: project_id, cycle_id: listed.id)
     assert Enum.sort([high_id, low_id]) == issues |> Enum.map(& &1.id) |> Enum.sort()
   end
 
@@ -56,26 +59,29 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
     project: %Project{id: project_id},
     other_project: %Project{id: other_id}
   } do
-    insert = fn external_id, project_id, cycle ->
+    insert = fn identifier, project_id, cycle ->
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project_id,
-        external_id: external_id,
-        identifier: external_id,
-        title: external_id,
+        identifier: identifier,
+        title: identifier,
         state: :todo,
-        cycle_external_id: cycle
+        cycle_id: cycle && cycle.id
       })
       |> Repo.insert!()
     end
 
-    %Issue{id: here_id} = insert.("lin_lcl1", project_id, "cyc_here")
-    %Issue{id: there_id} = insert.("lin_lcl2", other_id, "cyc_there")
-    insert.("lin_lcl3", project_id, "cyc_elsewhere")
-    insert.("lin_lcl4", other_id, nil)
+    here = Repo.insert!(%Cycle{project_id: project_id, starts_on: ~D[2026-11-10], ends_on: ~D[2026-11-23]})
+    there = Repo.insert!(%Cycle{project_id: other_id, starts_on: ~D[2026-11-10], ends_on: ~D[2026-11-23]})
+    elsewhere = Repo.insert!(%Cycle{project_id: project_id, starts_on: ~D[2026-11-24], ends_on: ~D[2026-12-07]})
+
+    %Issue{id: here_id} = insert.("LCL1", project_id, here)
+    %Issue{id: there_id} = insert.("LCL2", other_id, there)
+    insert.("LCL3", project_id, elsewhere)
+    insert.("LCL4", other_id, nil)
 
     assert %{total: 2, issues: issues} =
-             Issues.list_issues(project_id: [project_id, other_id], cycle_id: ["cyc_here", "cyc_there"])
+             Issues.list_issues(project_id: [project_id, other_id], cycle_id: [here.id, there.id])
 
     assert Enum.sort([here_id, there_id]) == issues |> Enum.map(& &1.id) |> Enum.sort()
   end
@@ -88,7 +94,6 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project_id,
-        external_id: "lin_l1",
         identifier: "LI1-1",
         title: "Triage",
         state: :triage
@@ -99,7 +104,6 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project_id,
-        external_id: "lin_l2",
         identifier: "LI1-2",
         title: "Done",
         state: :done
@@ -109,7 +113,6 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
     %Issue{}
     |> Issue.changeset(%{
       project_id: other_project.id,
-      external_id: "lin_l3",
       identifier: "LI2-1",
       title: "Elsewhere",
       state: :in_progress
@@ -120,7 +123,6 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project_id,
-        external_id: "lin_l4",
         identifier: "LI1-3",
         title: "Duplicate",
         priority: :urgent,
@@ -158,7 +160,6 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: "lin_s1",
         identifier: "LI1-10",
         title: "Fix Login redirect",
         state: :triage
@@ -169,7 +170,6 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: "lin_s2",
         identifier: "LI1-20",
         title: "Show 100% width",
         state: :triage
@@ -179,7 +179,6 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
     %Issue{}
     |> Issue.changeset(%{
       project_id: project.id,
-      external_id: "lin_s3",
       identifier: "LI1-30",
       title: "Other",
       state: :triage
@@ -200,7 +199,6 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: "lin_exact",
         identifier: "LI1-2",
         title: "Named exactly",
         state: :triage
@@ -211,7 +209,6 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: "lin_prefixed_#{n}",
         identifier: "LI1-#{n}",
         title: "Prefixed #{n}",
         state: :triage
@@ -229,7 +226,6 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
         %Issue{}
         |> Issue.changeset(%{
           project_id: project.id,
-          external_id: "lin_p#{n}",
           identifier: "LI1-#{100 + n}",
           title: "Paged #{n}",
           priority: priority,
@@ -270,7 +266,6 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: "lin_t1",
         identifier: "LI1-40",
         title: "Tasked",
         state: :backlog
@@ -284,13 +279,12 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
   end
 
   test "list_issues narrows to the issues completed since a moment", %{project: project} do
-    completed = fn external_id, completed_at ->
+    completed = fn identifier, completed_at ->
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: external_id,
-        identifier: "LI1-#{external_id}",
-        title: external_id,
+        identifier: "LI1-#{identifier}",
+        title: identifier,
         state: :done,
         completed_at: completed_at
       })
@@ -306,13 +300,12 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
   end
 
   test "list_issues leaves out an archived issue no task holds, unless asked for every one", %{project: project} do
-    issue = fn external_id, archived_at ->
+    issue = fn identifier, archived_at ->
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: external_id,
-        identifier: "LI1-#{external_id}",
-        title: external_id,
+        identifier: "LI1-#{identifier}",
+        title: identifier,
         state: :done,
         archived_at: archived_at
       })
@@ -339,7 +332,6 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: "lin_o1",
         identifier: "LI1-50",
         title: "Mine",
         state: :backlog,
@@ -350,7 +342,6 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
     %Issue{}
     |> Issue.changeset(%{
       project_id: project.id,
-      external_id: "lin_o2",
       identifier: "LI1-51",
       title: "Not mine",
       state: :backlog
@@ -365,13 +356,12 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
     project: %Project{id: project_id},
     other_project: %Project{id: other_id}
   } do
-    done = fn external_id, project_id, completed_at ->
+    done = fn identifier, project_id, completed_at ->
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project_id,
-        external_id: external_id,
-        identifier: external_id,
-        title: external_id,
+        identifier: identifier,
+        title: identifier,
         state: :in_review
       })
       |> Repo.insert!()
@@ -379,32 +369,32 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       |> Repo.update!()
     end
 
-    %Issue{id: newer_id} = done.("lin_q1", project_id, ~U[2026-11-09 10:00:00Z])
-    %Issue{id: older_id} = done.("lin_q2", project_id, ~U[2026-11-08 10:00:00Z])
+    %Issue{id: newer_id} = done.("Q1", project_id, ~U[2026-11-09 10:00:00Z])
+    %Issue{id: older_id} = done.("Q2", project_id, ~U[2026-11-08 10:00:00Z])
 
     %Issue{id: archived_id} =
-      "lin_q3"
+      "Q3"
       |> done.(project_id, ~U[2026-11-09 12:00:00Z])
       |> Issue.tracker_changeset(%{archived_at: ~U[2026-11-10 00:00:00Z]})
       |> Repo.update!()
 
-    %Issue{id: testing_id} = done.("lin_q4", project_id, ~U[2026-11-09 11:00:00Z])
+    %Issue{id: testing_id} = done.("Q4", project_id, ~U[2026-11-09 11:00:00Z])
     {:ok, _noted} = Issues.save_testing_notes(system_scope(), %Issue{id: testing_id, project_id: project_id}, "Trying")
 
-    tested = done.("lin_q5", project_id, ~U[2026-11-07 10:00:00Z])
+    tested = done.("Q5", project_id, ~U[2026-11-07 10:00:00Z])
     {:ok, _tested} = Issues.mark_issue_tested(system_scope(), tested)
 
-    "lin_q6"
+    "Q6"
     |> done.(project_id, ~U[2026-11-07 10:00:00Z])
     |> Issue.tracker_changeset(%{state: :canceled})
     |> Repo.update!()
 
-    "lin_q7"
+    "Q7"
     |> done.(project_id, ~U[2026-11-07 10:00:00Z])
     |> Issue.tracker_changeset(%{state: :duplicate})
     |> Repo.update!()
 
-    done.("lin_q8", other_id, ~U[2026-11-07 10:00:00Z])
+    done.("Q8", other_id, ~U[2026-11-07 10:00:00Z])
 
     assert %{
              issues: [
@@ -428,7 +418,6 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
           name: "Listed cycles",
           github_repo: "example/#{key}",
           github_installation_id: 1,
-          tracker: :local,
           key: key,
           default_branch: "main",
           clone_path: "/tmp/#{key}"
@@ -463,7 +452,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       kept: %{id: kept_id}
     } do
       assert %{
-               issues: [%Issue{id: ^rolled_id, state: :done, state_name: "Done", cycle_state: :in_progress}],
+               issues: [%Issue{id: ^rolled_id, state: :done, cycle_state: :in_progress}],
                total: 1
              } = Issues.list_issues(project_id: local.id, cycle_id: first.id)
 
@@ -475,7 +464,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
                ^kept_id => {:todo, :done, nil}
              } = Map.new(issues, &{&1.id, {&1.state, &1.cycle_state, &1.task}})
 
-      assert %{issues: [%Issue{id: ^rolled_id, state: :done, cycle_state: :done, cycle_state_name: "Done"}]} =
+      assert %{issues: [%Issue{id: ^rolled_id, state: :done, cycle_state: :done}]} =
                Issues.list_issues(project_id: local.id, cycle_id: second.id, show_finished: true)
     end
   end

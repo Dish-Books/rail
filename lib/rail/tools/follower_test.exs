@@ -43,7 +43,6 @@ defmodule Rail.Tools.FollowerTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: "lin_follower_#{System.unique_integer([:positive])}",
         identifier: "FOL-#{System.unique_integer([:positive])}",
         title: "Follower Issue",
         state: :backlog
@@ -831,14 +830,9 @@ defmodule Rail.Tools.FollowerTest do
   end
 
   test "questions asked through the tool become the round, and park the run, when its process exits", %{
-    tmp_dir: tmp_dir,
-    project: %{linear_workspace_id: workspace_id}
+    tmp_dir: tmp_dir
   } do
     # Its own project, since the shared one already has an engineer role.
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Follower Project 12502",
@@ -846,15 +840,7 @@ defmodule Rail.Tools.FollowerTest do
         github_installation_id: 12_502,
         key: "P12502",
         default_branch: "main",
-        clone_path: "/tmp/repos/follower-12502",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        },
-        linear_workspace_id: workspace_id
+        clone_path: "/tmp/repos/follower-12502"
       })
 
     {:ok, role} =
@@ -865,21 +851,6 @@ defmodule Rail.Tools.FollowerTest do
         system_prompt: "You are an expert agent for role 12503.",
         stage: :engineer
       })
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_task_follower_12505",
-              "identifier" => "TSK-12505",
-              "title" => "Task 12505"
-            }
-          }
-        }
-      })
-    end)
 
     {:ok, issue_12505} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Task 12505"})
 

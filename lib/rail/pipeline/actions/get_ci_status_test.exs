@@ -36,7 +36,6 @@ defmodule Rail.Pipeline.Actions.GetCiStatusTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: "lin_cis",
         identifier: "CIS-1",
         title: "CI",
         state: :backlog

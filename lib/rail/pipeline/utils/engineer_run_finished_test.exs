@@ -18,17 +18,6 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_efn_1", "identifier" => "EFN-1", "title" => "Engineer Finished"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Engineer Finished"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     # Whether the turn committed or left work is asked of Rail.Git, so the worktree is a plain directory and each

@@ -1,6 +1,6 @@
 defmodule Rail.Issues.Actions.FindCycle do
   @moduledoc """
-  The cycle a person names for a Rail-tracked ticket the way an MCP tool takes it: a word or a number rather than an id.
+  The cycle a person names for a ticket the way an MCP tool takes it: a word or a number rather than an id.
   """
 
   alias Rail.Issues
@@ -9,10 +9,9 @@ defmodule Rail.Issues.Actions.FindCycle do
   @doc """
   Resolves `wanted` among `project`'s cycles: `"current"`, `"next"`, an open cycle's number, or `"none"`, in any case.
   Returns `{:ok, cycle_id}`, or `{:ok, nil}` for none. Anything else, an ended cycle among them, is
-  `{:error, {:invalid, :cycle, message}}` naming the open cycles. Another tracker's project keeps its own cycles, which
-  is `{:error, {:cycles_in_tracker, tracker}}`.
+  `{:error, {:invalid, :cycle, message}}` naming the open cycles.
   """
-  def find_cycle(%Project{tracker: :local} = project, wanted) do
+  def find_cycle(%Project{} = project, wanted) do
     wanted = wanted |> to_string() |> String.trim() |> String.downcase()
     {:ok, %{cycles: cycles}} = Issues.get_cycles(project)
     open = Enum.reject(cycles, &(&1.status == :ended))
@@ -37,8 +36,6 @@ defmodule Rail.Issues.Actions.FindCycle do
           "is not current, next, none or an open cycle's number: " <> Enum.map_join(open, ", ", &to_string(&1.number))}}
     end
   end
-
-  def find_cycle(%Project{tracker: tracker}, _wanted), do: {:error, {:cycles_in_tracker, tracker}}
 
   defp next_cycle(cycles, current_index) when is_integer(current_index) do
     case Enum.at(cycles, current_index + 1) do

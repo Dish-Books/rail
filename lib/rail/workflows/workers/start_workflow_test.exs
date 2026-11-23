@@ -30,19 +30,10 @@ defmodule Rail.Workflows.Workers.StartWorkflowTest do
   test "the job starts its workflow, and a later one finding its issue unfinished opens nothing", %{
     workflow: %{id: workflow_id}
   } do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_TST-84", "identifier" => "TST-84", "title" => "Dependency updates 2026-10-12"}
-          }
-        }
-      })
-    end)
-
     assert :ok = perform_job(StartWorkflow, %{workflow_id: workflow_id})
-    assert [%Issue{identifier: "TST-84"}] = Repo.all(from(i in Issue, where: i.workflow_id == ^workflow_id))
+
+    assert [%Issue{title: "Dependency updates 2026-10-12"}] =
+             Repo.all(from(i in Issue, where: i.workflow_id == ^workflow_id))
 
     stub(DateTime, :utc_now, fn -> ~U[2026-10-19 09:00:30.000000Z] end)
     assert :ok = perform_job(StartWorkflow, %{workflow_id: workflow_id})
@@ -58,12 +49,16 @@ defmodule Rail.Workflows.Workers.StartWorkflowTest do
     assert %Workflow{next_run_at: ~U[2026-10-12 09:00:00Z]} = Repo.get!(Workflow, workflow_id)
   end
 
-  test "a tracker error is logged, and the start waits for the next due time", %{workflow: %{id: workflow_id}} do
-    Req.Test.expect(Rail.Linear, fn conn -> conn |> Plug.Conn.put_status(500) |> Req.Test.json(%{}) end)
+  test "an issue that cannot be opened is logged, and the start waits for the next due time", %{
+    workflow: %{id: workflow_id}
+  } do
+    invalid = Ecto.Changeset.add_error(Ecto.Changeset.change(%Issue{}), :title, "can't be blank")
+    expect(Rail.Issues, :create_issue, fn _scope, _project, _attrs -> {:error, invalid} end)
 
     log = capture_log(fn -> assert :ok = perform_job(StartWorkflow, %{workflow_id: workflow_id}) end)
 
-    assert log =~ ".rail/workflows/dependency-updates.yml in Test Project opened nothing: {:linear_api_error, 500"
+    assert log =~ ".rail/workflows/dependency-updates.yml in Test Project opened nothing: #Ecto.Changeset<"
+    assert %Workflow{next_run_at: ~U[2026-10-19 09:00:00Z]} = Repo.get!(Workflow, workflow_id)
   end
 
   test "a second job for the same workflow is not queued while the first is pending", %{workflow: %{id: workflow_id}} do

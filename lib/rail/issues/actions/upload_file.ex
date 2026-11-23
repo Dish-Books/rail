@@ -16,7 +16,7 @@ defmodule Rail.Issues.Actions.UploadFile do
   }
 
   @doc """
-  Stores an image or a PDF a person put into a Rail-tracked issue's description and returns its URL. Only a PNG, JPEG,
+  Stores an image or a PDF a person put into an issue's description and returns its URL. Only a PNG, JPEG,
   GIF, WebP or PDF name is taken.
   """
   def upload_file(%Scope{} = scope, %Issue{} = issue, filename, data) when is_binary(filename) and is_binary(data) do
@@ -24,9 +24,8 @@ defmodule Rail.Issues.Actions.UploadFile do
 
     cond do
       not Scope.can_access_project?(scope, issue.project_id) -> {:error, :not_found}
-      issue.tracker != :local -> {:error, :unsupported}
       is_nil(content_type) -> {:error, :not_accepted}
-      true -> Tracker.tracker(issue).upload_asset(issue, filename, content_type, data)
+      true -> Tracker.upload_asset(issue, filename, content_type, data)
     end
   end
 end

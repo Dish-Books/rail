@@ -34,44 +34,17 @@ defmodule RailWeb.GithubWebhookControllerTest do
     assert json_response(forged, 401)["error"] == "Invalid signature"
   end
 
-  test "mirrors an issue a signed delivery reports for a GitHub-tracked project", %{
-    conn: conn,
-    sign: sign,
-    github_project: %{id: project_id}
-  } do
-    issue = github_issue_json(%{"number" => 77, "title" => "Filed on GitHub", "labels" => [%{"name" => "rail:todo"}]})
-
-    body =
-      Jason.encode!(%{
-        "action" => "opened",
-        "issue" => issue,
-        "repository" => %{"full_name" => "example/test-gh"},
-        "installation" => %{"id" => 1}
-      })
-
-    conn = conn |> sign.(body, "issues") |> post(~p"/webhooks/github", body)
-
-    assert json_response(conn, 200) == %{"received" => true}
-
-    assert %Issue{identifier: "tgh#77", state: :todo, project_id: ^project_id} =
-             Repo.get_by(Issue, external_id: issue["node_id"])
-  end
-
-  test "ignores a signed delivery for a repository, installation or tracker that is not one of Rail's", %{
-    conn: conn,
-    sign: sign,
-    project: project
-  } do
-    for {repo, installation} <- [{"example/unknown", 1}, {"example/test-gh", 999}, {project.github_repo, 1}] do
+  test "ignores a signed delivery for a repository or installation that is not one of Rail's", %{conn: conn, sign: sign} do
+    for {repo, installation} <- [{"example/unknown", 1}, {"example/test-gh", 999}] do
       body =
         Jason.encode!(%{
-          "action" => "opened",
-          "issue" => github_issue_json(),
+          "action" => "closed",
+          "pull_request" => %{"merged" => true, "number" => 12, "head" => %{"ref" => "x"}, "base" => %{"ref" => "main"}},
           "repository" => %{"full_name" => repo},
           "installation" => %{"id" => installation}
         })
 
-      assert conn |> sign.(body, "issues") |> post(~p"/webhooks/github", body) |> json_response(200) == %{
+      assert conn |> sign.(body, "pull_request") |> post(~p"/webhooks/github", body) |> json_response(200) == %{
                "ignored" => true
              }
     end
@@ -80,7 +53,7 @@ defmodule RailWeb.GithubWebhookControllerTest do
     assert conn |> sign.(ping, "ping") |> post(~p"/webhooks/github", ping) |> json_response(200) == %{"ignored" => true}
   end
 
-  test "hands a Rail-tracked project only its pull requests, so its GitHub issues are never mirrored", %{
+  test "hands a project only its pull requests, so its GitHub issues are never mirrored", %{
     conn: conn,
     sign: sign
   } do
@@ -88,10 +61,9 @@ defmodule RailWeb.GithubWebhookControllerTest do
 
     {:ok, project} =
       Projects.create_project(system_scope(), %{
-        name: "Rail-tracked",
+        name: "Hooked",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -119,19 +91,5 @@ defmodule RailWeb.GithubWebhookControllerTest do
            }
 
     assert %Issue{state: :done} = Repo.get!(Issue, issue_id)
-  end
-
-  test "ignores a Linear-tracked project's pull request", %{conn: conn, sign: sign, project: project} do
-    body =
-      Jason.encode!(%{
-        "action" => "closed",
-        "pull_request" => %{"merged" => true, "number" => 12, "head" => %{"ref" => "x"}, "base" => %{"ref" => "main"}},
-        "repository" => %{"full_name" => project.github_repo},
-        "installation" => %{"id" => project.github_installation_id}
-      })
-
-    assert conn |> sign.(body, "pull_request") |> post(~p"/webhooks/github", body) |> json_response(200) == %{
-             "ignored" => true
-           }
   end
 end

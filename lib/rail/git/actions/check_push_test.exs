@@ -7,17 +7,6 @@ defmodule Rail.Git.Actions.CheckPushTest do
   alias Rail.Pipeline
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_ckp_1", "identifier" => "CKP-1", "title" => "Check Push"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Check Push"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 

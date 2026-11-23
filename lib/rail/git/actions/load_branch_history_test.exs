@@ -6,17 +6,6 @@ defmodule Rail.Git.Actions.LoadBranchHistoryTest do
   alias Rail.Pipeline
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_lbh_1", "identifier" => "LBH-1", "title" => "Load Branch History"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Load Branch History"})
     {:ok, task} = Pipeline.create_task(issue, :review)
 

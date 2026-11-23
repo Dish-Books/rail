@@ -145,7 +145,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlan do
     :ok
   end
 
-  # A tracker that cannot hold the picture, such as GitHub Issues, still gets the design's text.
+  # A picture the file store refused still leaves the design's text.
   defp design_section(%Task{issue: %Issue{} = issue, project: project} = task) do
     case Pipeline.read_design(task, pages: false) do
       %{picked: key, options: options} when is_binary(key) ->
@@ -155,7 +155,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlan do
         image =
           case Issues.upload_asset(%{issue | project: project}, "#{issue.identifier}-#{key}.png", "image/png", screenshot) do
             {:ok, url} -> "\n\n![#{option.title}](#{url})"
-            {:error, _unsupported} -> ""
+            {:error, _store_failed} -> ""
           end
 
         "\n\n" <> String.trim("## Design: #{option.title}\n\n#{option.summary}") <> image

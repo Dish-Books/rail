@@ -15,21 +15,6 @@ defmodule Rail.Pipeline.Actions.GetTaskTest do
 
     {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_get_task_1",
-              "identifier" => "GTK-1",
-              "title" => "Get Task Issue"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Get Task Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :plan)

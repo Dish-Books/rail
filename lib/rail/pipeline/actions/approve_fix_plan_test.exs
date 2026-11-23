@@ -29,17 +29,6 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_afp_1", "identifier" => "AFP-1", "title" => "Approve Fix Plan"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Approve Fix Plan"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     # Git is stubbed, so the worktree is only ever looked for: a plain directory stands in for it.
@@ -170,7 +159,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
     assert [%Round{number: 1}, %Round{number: 2, plan: @plan}] = Pipeline.list_rounds(task)
   end
 
-  # Every agent after reads the criteria as they now stand, and the tracker's ticket keeps its design.
+  # Every agent after reads the criteria as they now stand, and the ticket keeps its design.
   test "a plan that changes the ticket puts it on the new round and the issue once approved", %{
     task: task,
     run: run,
@@ -224,7 +213,8 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
 
     amended = "### Changes to the plan\n\n- Design: chips become a menu, as Ada asked.\n\n" <> @plan
     {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => amended, "design_changed" => true})
-    expect(Issues, :upload_asset, fn %Issue{}, "AFP-1-chips.png", "image/png", "png bytes" -> {:ok, "new.png"} end)
+    name = "#{task.issue.identifier}-chips.png"
+    expect(Issues, :upload_asset, fn %Issue{}, ^name, "image/png", "png bytes" -> {:ok, "new.png"} end)
     reject(Tools, :start_os_process, 2)
 
     assert {:ok, %Run{}} = Pipeline.approve_fix_plan(ada, run, 2)
@@ -233,7 +223,29 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
              Repo.reload!(task.issue)
   end
 
-  test "a Rail-tracked issue's changed design replaces its picture with one at a new address", %{
+  test "a picture the file store refuses still leaves the design's text on the issue", %{task: task, run: run, ada: ada} do
+    dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(dir)
+    File.write!(Path.join(dir, "chips.png"), "png bytes")
+    File.write!(Path.join(dir, "chips.html"), "<h1>Chips</h1>")
+
+    File.write!(
+      Path.join(dir, "manifest.json"),
+      Jason.encode!(%{options: [%{key: "chips", title: "Chips", summary: "As a menu now."}]})
+    )
+
+    File.write!(Path.join(dir, "picked"), "chips")
+    {:ok, _old} = Issues.update_issue(task.issue, %{description: "Filter by vendor."})
+    amended = "### Changes to the plan\n\n- Design: chips become a menu, as Ada asked.\n\n" <> @plan
+    {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => amended, "design_changed" => true})
+    expect(Issues, :upload_asset, fn %Issue{}, _name, "image/png", "png bytes" -> {:error, {:r2_error, 500, ""}} end)
+    reject(Tools, :start_os_process, 2)
+
+    assert {:ok, %Run{}} = Pipeline.approve_fix_plan(ada, run, 2)
+    assert %{description: "Filter by vendor.\n\n## Design: Chips\n\nAs a menu now."} = Repo.reload!(task.issue)
+  end
+
+  test "a changed design replaces the issue's picture with one at a new address", %{
     task: %{issue_id: issue_id} = task,
     run: run,
     ada: ada
@@ -249,9 +261,9 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
     )
 
     File.write!(Path.join(dir, "picked"), "chips")
-    issue = Issue |> Repo.get!(issue_id) |> Ecto.Changeset.change(tracker: :local) |> Repo.update!()
+    %Issue{identifier: identifier} = issue = Repo.get!(Issue, issue_id)
     assets = "#{RailWeb.Endpoint.url()}/issues/#{issue_id}/assets/"
-    old = "#{assets}#{Ecto.UUID.generate()}-AFP-1-chips.png"
+    old = "#{assets}#{Ecto.UUID.generate()}-#{identifier}-chips.png"
 
     {:ok, _old} =
       Issues.update_issue(issue, %{description: "Filter by vendor.\n\n## Design: Chips\n\nChips.\n\n![Chips](#{old})"})
@@ -270,34 +282,11 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
     assert {:ok, %Run{}} = Pipeline.approve_fix_plan(ada, run, 2)
     assert_received {:stored, key}
     assert [^issue_id, name] = String.split(key, "/")
-    assert name =~ ~r/\A[0-9a-f-]{36}-AFP-1-chips\.png\z/
+    assert name =~ ~r/\A[0-9a-f-]{36}-#{identifier}-chips\.png\z/
     refute assets <> name == old
 
     description = "Filter by vendor.\n\n## Design: Chips\n\nAs a menu now.\n\n![Chips](#{assets}#{name})"
     assert %Issue{description: ^description} = Repo.get!(Issue, issue_id)
-  end
-
-  test "a tracker that cannot hold the picture gets the design's text", %{task: task, run: run, ada: ada} do
-    dir = Path.join(task.scratch_path, "design")
-    File.mkdir_p!(dir)
-    File.write!(Path.join(dir, "chips.png"), "png bytes")
-    File.write!(Path.join(dir, "chips.html"), "<h1>Chips</h1>")
-
-    File.write!(
-      Path.join(dir, "manifest.json"),
-      Jason.encode!(%{options: [%{key: "chips", title: "Chips", summary: "A menu."}]})
-    )
-
-    File.write!(Path.join(dir, "picked"), "chips")
-    {:ok, _old} = Issues.update_issue(task.issue, %{description: "Filter."})
-
-    amended = "### Changes to the plan\n\n- Design: a menu, as Ada asked.\n\n" <> @plan
-    {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => amended, "design_changed" => true})
-    expect(Issues, :upload_asset, fn %Issue{}, _name, _type, _bytes -> {:error, :unsupported} end)
-    reject(Tools, :start_os_process, 2)
-
-    assert {:ok, %Run{}} = Pipeline.approve_fix_plan(ada, run, 2)
-    assert %{description: "Filter.\n\n## Design: Chips\n\nA menu."} = Repo.reload!(task.issue)
   end
 
   test "a design changed with nothing picked puts no design section up", %{task: task, run: run, ada: ada} do
@@ -322,7 +311,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
     assert {:error, {:fix_plan_replaced, ^saved_at}} = Pipeline.approve_fix_plan(ada, run, 1)
 
     # A Send of a comment leaves the saved plan covering less than what was sent.
-    path = Path.join([task.scratch_path, "fix_plans", "AFP-1.json"])
+    path = Path.join([task.scratch_path, "fix_plans", "#{task.issue.identifier}.json"])
     fix_plan = path |> File.read!() |> Jason.decode!()
     File.write!(path, Jason.encode!(%{fix_plan | "comments" => [%{number: 1, kind: "diff", text: "Why?"}]}))
 
@@ -372,7 +361,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
     question = Repo.insert!(%Question{task_id: task.id, run_id: run.id, prompt: "Which cache?"})
     assert {:error, {:unanswered_questions, 1}} = Pipeline.approve_fix_plan(ada, idle, 1)
     Repo.update!(Question.changeset(question, %{status: :dismissed}))
-    path = Path.join([task.scratch_path, "fix_plans", "AFP-1.json"])
+    path = Path.join([task.scratch_path, "fix_plans", "#{task.issue.identifier}.json"])
     fix_plan = path |> File.read!() |> Jason.decode!()
     File.write!(path, Jason.encode!(%{fix_plan | "plan" => nil, "version" => 0}))
 

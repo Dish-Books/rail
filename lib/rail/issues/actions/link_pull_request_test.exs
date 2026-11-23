@@ -10,7 +10,6 @@ defmodule Rail.Issues.Actions.LinkPullRequestTest do
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project.id,
-        external_id: "lin_find_pr_1",
         identifier: "FPR-12",
         title: "Filter invoices by vendor",
         branch_name: "michael/fpr-12-filter-invoices-by-vendor",
@@ -102,30 +101,6 @@ defmodule Rail.Issues.Actions.LinkPullRequestTest do
       assert {:ok, pull_request} = Issues.link_pull_request(scope, issue)
       assert (pull_request && pull_request["number"]) == found
     end
-  end
-
-  test "names a GitHub issue by its key and number", %{github_project: project, scope: scope} do
-    issue =
-      %Issue{}
-      |> Issue.tracker_changeset(%{
-        project_id: project.id,
-        tracker: :github,
-        external_id: "gh_find_pr_1",
-        identifier: "tgh#31",
-        number: 31,
-        title: "Vendors",
-        state: :in_progress
-      })
-      |> Repo.insert!()
-
-    Req.Test.stub(Client, fn conn ->
-      case conn.request_path do
-        "/app/installations/" <> _id -> Req.Test.json(conn, %{"token" => "ghs_token"})
-        "/repos/example/test-gh/pulls" -> Req.Test.json(conn, [%{"number" => 9, "head" => %{"ref" => "tgh-31-vendors"}}])
-      end
-    end)
-
-    assert {:ok, %{"number" => 9}} = Issues.link_pull_request(scope, issue)
   end
 
   test "says what GitHub refused, and finds nothing for an issue the user cannot see", %{scope: scope, issue: issue} do

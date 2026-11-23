@@ -17,7 +17,7 @@ defmodule Rail.Issues.Actions.Comment do
   """
   def comment(%Scope{} = scope, %Issue{} = issue, %{body: body} = attrs) do
     with {:ok, parent} <- parent(issue, attrs[:parent_id]) do
-      Tracker.tracker(issue).create_comment(scope, issue, body, parent)
+      Tracker.create_comment(scope, issue, body, parent)
     end
   end
 

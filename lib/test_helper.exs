@@ -1,4 +1,3 @@
-alias Rail.Projects.Schemas.LinearWorkspace
 alias Rail.Projects.Schemas.Project
 alias Rail.Roles.Schemas.Role
 alias Rail.Tools.Schemas.Backend
@@ -56,8 +55,7 @@ Mimic.copy(Rail.Tools.Clients.Speech)
 Mimic.copy(RailWeb.Endpoint)
 Mimic.copy(RailWeb.Utils.MonotonicMs)
 Mimic.copy(Rail.Tools.FollowerSupervisor)
-Mimic.copy(Rail.Issues.Tracker.Linear)
-Mimic.copy(Rail.Issues.Tracker.Github)
+Mimic.copy(Rail.Issues.Tracker)
 
 # Ensure that all Req calls are mocked by default
 Req.default_options(adapter: fn req -> raise "Unmocked call to #{req.url}" end)
@@ -65,22 +63,10 @@ Req.default_options(adapter: fn req -> raise "Unmocked call to #{req.url}" end)
 # CI runners are slow enough that the default 100ms flakes; render_async reads it too.
 ExUnit.start(capture_log: true, assert_receive_timeout: 1_000)
 
-# One project on one workspace, with a role for every stage, that every test can hang its
+# One project, with a role for every stage, that every test can hang its
 # rows off; see `Rail.DataCase`. Tests only read the roles, so none races another inserting one.
 # Committed before the sandbox takes over, with fixed ids so a rerun rewrites the same rows.
 upsert = [on_conflict: {:replace_all_except, [:id, :inserted_at]}, conflict_target: :id]
-
-workspace =
-  Rail.Repo.insert!(
-    %LinearWorkspace{
-      id: "lw_test_seed",
-      name: "Test Workspace",
-      external_id: "lin_org_test_seed",
-      token: "lin_api_test_seed",
-      webhook_secret: "whsec_test_seed"
-    },
-    upsert
-  )
 
 project =
   Rail.Repo.insert!(
@@ -91,16 +77,6 @@ project =
       github_installation_id: 1,
       default_branch: "main",
       key: "TST",
-      linear_team_id: "lin_team_id",
-      linear_state_ids: %{
-        "triage" => "st_triage",
-        "backlog" => "st_backlog",
-        "todo" => "st_todo",
-        "in_progress" => "st_in_progress",
-        "done" => "st_done",
-        "canceled" => "st_canceled"
-      },
-      linear_workspace_id: "lw_test_seed",
       # Under the run's own directory: tasks' worktrees are named for their issue, so a fixed path
       # is one another suite on the same machine builds and removes too.
       clone_path: Path.join(run_tmp_dir, "repos/test-seed")
@@ -108,7 +84,7 @@ project =
     upsert
   )
 
-# The same, tracked in GitHub Issues instead of Linear.
+# A second project, for tests that need one beside the first.
 github_project =
   Rail.Repo.insert!(
     %Project{
@@ -117,7 +93,6 @@ github_project =
       github_repo: "example/test-gh",
       github_installation_id: 1,
       default_branch: "main",
-      tracker: :github,
       key: "tgh",
       clone_path: Path.join(run_tmp_dir, "repos/test-gh")
     },
@@ -158,7 +133,7 @@ for name <- ["License check", "Missing strings", "Schema review"] do
   {:ok, _role} = Rail.Roles.get_custom_stage_role(project.id, name)
 end
 
-:persistent_term.put({RailTest, :project}, %{project | linear_workspace: workspace})
+:persistent_term.put({RailTest, :project}, project)
 :persistent_term.put({RailTest, :github_project}, github_project)
 
 # A data migration run against a database already seeded queues jobs for the seeded projects, and a committed job

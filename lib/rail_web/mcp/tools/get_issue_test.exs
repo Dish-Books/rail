@@ -2,7 +2,6 @@ defmodule RailWeb.Mcp.Tools.GetIssueTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
-  alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
@@ -17,7 +16,6 @@ defmodule RailWeb.Mcp.Tools.GetIssueTest do
         name: "Opened",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -30,7 +28,7 @@ defmodule RailWeb.Mcp.Tools.GetIssueTest do
     %{local: local, user: user, scope: Scope.for_user(user)}
   end
 
-  test "a Rail-tracked ticket carries its assignee, cycle, parent, sub-issues, blockers and comments", %{
+  test "a ticket carries its assignee, cycle, parent, sub-issues, blockers and comments", %{
     local: local,
     user: %{login: login} = user,
     scope: scope
@@ -76,38 +74,12 @@ defmodule RailWeb.Mcp.Tools.GetIssueTest do
             }} = call_mcp_tool(scope, "get_issue", %{"identifier" => String.downcase(issue.identifier)})
   end
 
-  test "a Linear ticket says its cycle and blockers are kept in Linear", %{project: project} do
-    {:ok, issue} =
-      %Issue{}
-      |> Issue.tracker_changeset(%{
-        project_id: project.id,
-        external_id: "lin_mcp_get_1",
-        identifier: "#{project.key}-7301",
-        title: "In Linear",
-        state: :todo
-      })
-      |> Repo.insert()
+  test "a comment Rail posted itself is signed with Rail's name", %{local: local, scope: scope} do
+    {:ok, issue} = Issues.create_issue(system_scope(), local, %{title: "Commented by Rail"})
+    {:ok, _comment} = Issues.comment(system_scope(), issue, %{body: "Demo recorded."})
 
-    {:ok, _comment} =
-      %Comment{}
-      |> Comment.changeset(%{
-        issue_id: issue.id,
-        external_id: "lin_mcp_comment_1",
-        body: "From Linear",
-        author_name: "Lin"
-      })
-      |> Repo.insert()
-
-    assert {:ok,
-            %{
-              "issue" => %{
-                "title" => "In Linear",
-                "assignee" => nil,
-                "comments" => [%{"author" => "Lin", "body" => "From Linear"}],
-                "cycle_and_blockers" => "kept in Linear" <> _rest
-              }
-            }} =
-             call_mcp_tool(user_scope(project_ids: [project.id]), "get_issue", %{"identifier" => issue.identifier})
+    assert {:ok, %{"issue" => %{"comments" => [%{"author" => "Rail", "body" => "Demo recorded."}]}}} =
+             call_mcp_tool(scope, "get_issue", %{"identifier" => issue.identifier})
   end
 
   test "a ticket in a project the person cannot open answers as one that does not exist", %{local: local} do

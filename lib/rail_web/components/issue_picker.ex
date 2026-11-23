@@ -1,6 +1,6 @@
 defmodule RailWeb.Components.IssuePicker do
   @moduledoc """
-  A search over a Rail-tracked issue's project that picks its parent, or an issue it is blocked by or blocks, as `kind`
+  A search over an issue's project that picks its parent, or an issue it is blocked by or blocks, as `kind`
   says. A pick applies at once; one refused keeps the menu open with the reason.
   """
   use RailWeb, :live_component

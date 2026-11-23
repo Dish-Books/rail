@@ -2,7 +2,7 @@ defmodule Rail.Triage.Schemas.Item do
   @moduledoc """
   One bug or feature request a thread raised: the verdict a pass reached on it,
   the evidence and assumptions behind that, and the issue and reply it proposes.
-  Nothing it proposes reaches Linear or Slack until a person accepts it.
+  Nothing it proposes reaches the issues or Slack until a person accepts it.
   """
   use Rail.Schema
 
@@ -13,7 +13,7 @@ defmodule Rail.Triage.Schemas.Item do
   @kinds [:bug, :feature_request]
   @verdicts %{bug: [:confirmed, :not_reproduced, :already_fixed], feature_request: [:built, :partly_built, :not_built]}
   @all_verdicts [:confirmed, :not_reproduced, :already_fixed, :built, :partly_built, :not_built]
-  # Product's scale, so the agent, the person and Linear see the same points.
+  # Product's scale, so the agent and the person see the same points.
   @estimates [1, 2, 3, 5, 8]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "tit"}
