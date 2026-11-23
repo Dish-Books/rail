@@ -149,7 +149,6 @@ defmodule Rail.Todos.Actions.AddLinkTodoTest do
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: hidden.id,
-        external_id: "lin_hidden_#{hidden.id}",
         identifier: "HID-1",
         title: "Secret",
         state: :triage
@@ -187,7 +186,6 @@ defmodule Rail.Todos.Actions.AddLinkTodoTest do
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: hidden.id,
-        external_id: "lin_pr_#{hidden.id}",
         identifier: "HID-2",
         title: "Secret",
         state: :triage

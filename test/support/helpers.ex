@@ -13,7 +13,6 @@ defmodule RailTest.Helpers do
   defdelegate slack_user(team_id, name \\ "Michael"), to: RailTest.TriageHelpers
 
   defdelegate github_issue_json(overrides \\ %{}), to: RailTest.GithubHelpers
-  defdelegate github_comment_json(overrides \\ %{}), to: RailTest.GithubHelpers
   defdelegate github_issue(project, attrs \\ %{}), to: RailTest.GithubHelpers
 
   defdelegate stub_vertex(vectors \\ %{}), to: RailTest.LearningsHelpers

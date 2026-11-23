@@ -6,7 +6,6 @@ defmodule RailWeb.Components.Markdown do
 
   attr :content, :string, default: ""
   attr :class, :string, default: nil
-  attr :assets_base, :string, default: nil
 
   def markdown(assigns) do
     ~H"""
@@ -14,7 +13,7 @@ defmodule RailWeb.Components.Markdown do
       data-qa="markdown-body"
       class={["prose prose-slate dark:prose-invert max-w-none text-sm leading-relaxed", @class]}
     >
-      {raw(render_markdown(@content, @assets_base))}
+      {raw(render_markdown(@content))}
     </div>
     """
   end

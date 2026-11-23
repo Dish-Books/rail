@@ -7,17 +7,6 @@ defmodule Rail.Pipeline.Actions.SaveDesignOptionTest do
   alias Rail.Repo
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_sdo_1", "identifier" => "SDO-1", "title" => "Save Design Option"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Save Design Option"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     dir = Path.join(task.scratch_path, "design")

@@ -9,17 +9,6 @@ defmodule Rail.Mcp.Utils.RunToolQaPlanTest do
   setup %{project: project} do
     scope = system_scope()
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_qpl_1", "identifier" => "QPL-1", "title" => "Qa Plan"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Qa Plan"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)

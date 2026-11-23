@@ -5,7 +5,6 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
   alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Issues.Tracker
   alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline
@@ -20,17 +19,13 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
-  setup %{project: %{linear_workspace_id: workspace_id}} do
+  setup do
     scope = system_scope()
 
     # Git is only ever asked through Rail.Git, so the clone is a plain directory, and a worktree made from it one
     # under it.
     clone_path = Path.join(System.tmp_dir!(), "rail_adopt_#{System.unique_integer([:positive])}")
     on_exit(fn -> File.rm_rf(clone_path) end)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
 
     {:ok, %Project{id: project_id} = project} =
       Projects.create_project(scope, %{
@@ -39,9 +34,7 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
         github_installation_id: 7003,
         key: "ADP",
         default_branch: "main",
-        clone_path: clone_path,
-        linear_state_ids: %{"in_review" => "st_in_review"},
-        linear_workspace_id: workspace_id
+        clone_path: clone_path
       })
 
     for stage <- [:qa, :review, :review_lead] do
@@ -59,7 +52,6 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project.id,
-        external_id: "lin_adopt_1",
         identifier: "ADP-1",
         title: "Filter invoices by vendor",
         description: "Lets a person narrow the invoice list to one vendor.",
@@ -115,7 +107,6 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
       Users.register_oauth_user(%{github_id: "gh_adopter", login: "adopter", email: "adopter@example.com"})
 
     {:ok, starter} = Users.update_user(scope, starter, %{project_ids: [project.id]})
-    starter = starter |> Ecto.Changeset.change(linear_user_id: "lin_usr_adopter") |> Repo.update!()
 
     %{scope: scope, project: project, issue: issue, pull_request: pull_request, starter: starter}
   end
@@ -168,14 +159,14 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
     stub(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{run: run}} end)
 
-    expect(Tracker.Linear, :advance_issue, fn %Issue{id: ^issue_id, owner_user_id: ^starter_id}, :in_review -> :ok end)
-
     assert {:ok, %Task{stage: :review}} = Pipeline.adopt_pull_request(Scope.for_user(starter), issue)
 
     assert %Issue{owner_user_id: ^starter_id} = Repo.reload!(issue)
-    assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id, fields: ["owner_user_id"]})
+    assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id})
     assert_received {:issue_changed, ^issue_id}
+    assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: issue_id})
     assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+    assert %Issue{state: :in_review} = Repo.reload!(issue)
   end
 
   test "an issue a teammate owns keeps that owner, and the page still hears of the start", %{
@@ -215,23 +206,6 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
 
     assert {:ok, %Task{}} = Pipeline.adopt_pull_request(Scope.for_user(starter), issue)
     assert_received {:issue_changed, ^issue_id}
-  end
-
-  test "a person who never linked Linear adopts it with the issue left unassigned", %{
-    project: project,
-    issue: issue
-  } do
-    stub(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{run: run}} end)
-
-    {:ok, unlinked} =
-      Users.register_oauth_user(%{github_id: "gh_adopt_none", login: "adopt-none", email: "adopt-none@example.com"})
-
-    {:ok, unlinked} = Users.update_user(system_scope(), unlinked, %{project_ids: [project.id]})
-
-    assert {:ok, %Task{}} = Pipeline.adopt_pull_request(Scope.for_user(unlinked), issue)
-
-    assert %Issue{owner_user_id: nil} = Repo.reload!(issue)
-    refute_enqueued(worker: SyncIssue)
   end
 
   test "an adoption that fails claims nothing and leaves no task", %{
@@ -373,7 +347,6 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project.id,
-        external_id: "lin_adopt_2",
         identifier: "ADP-2",
         title: "The same branch",
         branch_name: "outside/vendor-filter",

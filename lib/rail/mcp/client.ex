@@ -3,7 +3,7 @@ defmodule Rail.Mcp.Client do
   The one client for remote MCP servers: OAuth discovery, client registration
   and tokens, and the Streamable HTTP calls the proxy forwards.
 
-  Like `Rail.Linear.Client`, it hands back what the server said. Every MCP
+  It hands back what the server said. Every MCP
   operation opens its own session (`initialize`, `notifications/initialized`,
   then the request), so a token refreshed between two calls is simply the next
   call's token. A 401 comes back as `{:error, :unauthorized}` so the caller can

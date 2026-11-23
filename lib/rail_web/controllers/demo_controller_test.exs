@@ -15,17 +15,6 @@ defmodule RailWeb.DemoControllerTest do
 
     {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_demo_controller_1", "identifier" => "DCT-1", "title" => "Demo Controller"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Demo Controller"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     demo_dir = Path.join(task.scratch_path, "demo")

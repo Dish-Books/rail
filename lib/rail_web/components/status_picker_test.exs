@@ -5,6 +5,7 @@ defmodule RailWeb.Components.StatusPickerTest do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Tracker
   alias Rail.Repo
   alias Rail.Users
 
@@ -35,12 +36,9 @@ defmodule RailWeb.Components.StatusPickerTest do
         Map.merge(
           %{
             project_id: project.id,
-            external_id: "lin_#{identifier}",
             identifier: identifier,
             title: "Title #{identifier}",
-            state: :in_progress,
-            state_name: "In Progress",
-            external_updated_at: ~U[2026-11-01 09:00:00.000000Z]
+            state: :in_progress
           },
           attrs
         )
@@ -48,23 +46,7 @@ defmodule RailWeb.Components.StatusPickerTest do
       |> Repo.insert!()
     end
 
-    answered = fn name, type ->
-      fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueUpdate" => %{
-              "success" => true,
-              "issue" => %{
-                "state" => %{"name" => name, "type" => type},
-                "updatedAt" => "2026-11-01T10:00:00.000Z"
-              }
-            }
-          }
-        })
-      end
-    end
-
-    %{conn: log_in_user(conn, user), insert: insert, issue: insert.("PIC-1", %{}), answered: answered}
+    %{conn: log_in_user(conn, user), insert: insert, issue: insert.("PIC-1", %{})}
   end
 
   describe "on a row" do
@@ -185,11 +167,11 @@ defmodule RailWeb.Components.StatusPickerTest do
       view |> element("#status-picker-#{id}-trigger") |> render_click()
       render_async(view)
 
-      # No Req.Test stub is set, so any request to Linear would raise here.
+      reject(Tracker, :set_status, 3)
       view |> element("#status-picker-#{id}-status-st_started") |> render_click()
 
       refute has_element?(view, "#status-picker-#{id}-menu")
-      assert %Issue{state_name: "In Progress"} = Repo.get!(Issue, id)
+      assert %Issue{state: :in_progress} = Repo.get!(Issue, id)
     end
 
     test "a status the menu never offered does nothing", %{conn: conn, issue: %{id: id}} do
@@ -204,7 +186,7 @@ defmodule RailWeb.Components.StatusPickerTest do
 
       view |> with_target("#status-picker-#{id}") |> render_click("pick", %{"status_id" => "st_other"})
       assert has_element?(view, "#status-picker-#{id}-menu")
-      assert %Issue{state_name: "In Progress"} = Repo.get!(Issue, id)
+      assert %Issue{state: :in_progress} = Repo.get!(Issue, id)
     end
 
     test "a refused pick keeps the menu open and says the status did not change, until it closes", %{
@@ -213,23 +195,22 @@ defmodule RailWeb.Components.StatusPickerTest do
     } do
       stub(Issues, :get_statuses, fn _scope, _project -> {:ok, @statuses} end)
       {:ok, view, _html} = live(conn, ~p"/issues")
-      Req.Test.allow(Rail.Linear, self(), view.pid)
 
       view |> element("#status-picker-#{id}-trigger") |> render_click()
       render_async(view)
 
-      Req.Test.expect(Rail.Linear, &Req.Test.json(&1, %{"data" => %{"issueUpdate" => %{"success" => false}}}))
+      expect(Tracker, :set_status, fn _scope, _issue, _status -> {:error, :db_down} end)
       view |> element("#status-picker-#{id}-status-st_review") |> render_click()
 
       assert has_element?(
                view,
                "#status-picker-#{id}-menu [role='alert']",
-               "Could not change the status in Linear. It is still In Progress."
+               "Could not change the status. It is still In Progress."
              )
 
       assert has_element?(view, "#status-picker-#{id}-status-st_started[aria-current='true']")
       assert has_element?(view, "#issue-card-#{id} [data-qa='issue-status-badge'][title='In Progress']")
-      assert %Issue{state_name: "In Progress"} = Repo.get!(Issue, id)
+      assert %Issue{state: :in_progress} = Repo.get!(Issue, id)
 
       view |> element("#status-picker-#{id}-trigger") |> render_click()
       view |> element("#status-picker-#{id}-trigger") |> render_click()
@@ -242,16 +223,15 @@ defmodule RailWeb.Components.StatusPickerTest do
     } do
       stub(Issues, :get_statuses, fn _scope, _project -> {:ok, @statuses} end)
       {:ok, view, _html} = live(conn, ~p"/issues")
-      Req.Test.allow(Rail.Linear, self(), view.pid)
 
       view |> element("#status-picker-#{id}-trigger") |> render_click()
       render_async(view)
 
-      Req.Test.expect(Rail.Linear, &Req.Test.json(&1, %{"data" => %{"issueUpdate" => %{"success" => false}}}))
+      expect(Tracker, :set_status, fn _scope, _issue, _status -> {:error, :db_down} end)
       view |> element("#status-picker-#{id}-status-st_review") |> render_click()
       assert has_element?(view, "#status-picker-#{id}-menu [role='alert']")
 
-      issue |> Issue.tracker_changeset(%{state: :in_review, state_name: "In Review"}) |> Repo.update!()
+      issue |> Issue.tracker_changeset(%{state: :in_review}) |> Repo.update!()
       Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, id})
 
       assert has_element?(view, "#status-picker-#{id}-status-st_review[aria-current='true']")
@@ -265,32 +245,29 @@ defmodule RailWeb.Components.StatusPickerTest do
     } do
       stub(Issues, :get_statuses, fn _scope, _project -> {:ok, @statuses} end)
       {:ok, view, _html} = live(conn, ~p"/issues")
-      Req.Test.allow(Rail.Linear, self(), view.pid)
 
       view |> element("#status-picker-#{id}-trigger") |> render_click()
       render_async(view)
 
-      Req.Test.expect(Rail.Linear, &Req.Test.json(&1, %{"data" => %{"issueUpdate" => %{"success" => false}}}))
+      expect(Tracker, :set_status, fn _scope, _issue, _status -> {:error, :db_down} end)
       view |> element("#status-picker-#{id}-status-st_review") |> render_click()
 
-      issue |> Issue.tracker_changeset(%{title: "Renamed in Linear"}) |> Repo.update!()
+      issue |> Issue.tracker_changeset(%{title: "Renamed elsewhere"}) |> Repo.update!()
       Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, id})
 
-      assert has_element?(view, "#issue-card-#{id}", "Renamed in Linear")
+      assert has_element?(view, "#issue-card-#{id}", "Renamed elsewhere")
       assert has_element?(view, "#status-picker-#{id}-menu [role='alert']", "It is still In Progress.")
     end
 
     test "a live update that moves a row leaves its menu, and a pick there acts on its own issue", %{
       conn: conn,
       issue: %{id: id},
-      insert: insert,
-      answered: answered
+      insert: insert
     } do
       %{id: other_id} = other = insert.("PIC-2", %{})
       stub(Issues, :get_statuses, fn _scope, _project -> {:ok, @statuses} end)
 
       {:ok, view, _html} = live(conn, ~p"/issues")
-      Req.Test.allow(Rail.Linear, self(), view.pid)
 
       view |> element("#status-picker-#{id}-trigger") |> render_click()
       render_async(view)
@@ -300,41 +277,31 @@ defmodule RailWeb.Components.StatusPickerTest do
       assert has_element?(view, "#issue-card-#{other_id}", "Moved to the top")
       assert has_element?(view, "#status-picker-#{id}-menu")
 
-      Req.Test.expect(Rail.Linear, fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
-        assert %{"id" => "lin_PIC-1"} = Jason.decode!(body)["variables"]
-        answered.("In Review", "started").(conn)
+      expect(Tracker, :set_status, fn scope, %Issue{id: ^id} = issue, status ->
+        call_original(Tracker, :set_status, [scope, issue, status])
       end)
 
       view |> element("#status-picker-#{id}-status-st_review") |> render_click()
 
-      assert %Issue{state_name: "In Review"} = Repo.get!(Issue, id)
-      assert %Issue{state_name: "In Progress"} = Repo.get!(Issue, other_id)
+      assert %Issue{state: :in_review} = Repo.get!(Issue, id)
+      assert %Issue{state: :in_progress} = Repo.get!(Issue, other_id)
     end
 
-    test "a pick queued behind the one that closed the menu still reaches the tracker", %{
+    test "a pick queued behind the one that closed the menu is still made", %{
       conn: conn,
-      issue: %{id: id},
-      answered: answered
+      issue: %{id: id}
     } do
       test = self()
       stub(Issues, :get_statuses, fn _scope, _project -> {:ok, @statuses} end)
 
       {:ok, view, _html} = live(conn, ~p"/issues")
-      Req.Test.allow(Rail.Linear, self(), view.pid)
 
       view |> element("#status-picker-#{id}-trigger") |> render_click()
       render_async(view)
 
-      Req.Test.expect(Rail.Linear, 2, fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
-        %{"input" => %{"stateId" => state_id}} = Jason.decode!(body)["variables"]
-        send(test, {:sent, state_id})
-
-        case state_id do
-          "st_review" -> answered.("In Review", "started").(conn)
-          "st_started" -> answered.("In Progress", "started").(conn)
-        end
+      expect(Tracker, :set_status, 2, fn scope, issue, %{id: status_id} = status ->
+        send(test, {:sent, status_id})
+        call_original(Tracker, :set_status, [scope, issue, status])
       end)
 
       view |> with_target("#status-picker-#{id}") |> render_click("pick", %{"status_id" => "st_review"})
@@ -342,7 +309,7 @@ defmodule RailWeb.Components.StatusPickerTest do
 
       assert_received {:sent, "st_review"}
       assert_received {:sent, "st_started"}
-      assert %Issue{state_name: "In Progress"} = Repo.get!(Issue, id)
+      assert %Issue{state: :in_progress} = Repo.get!(Issue, id)
     end
   end
 
@@ -362,7 +329,7 @@ defmodule RailWeb.Components.StatusPickerTest do
       assert has_element?(
                view,
                "#status-picker-#{id}-menu [role='alert']",
-               "Linear did not answer, so the statuses are not listed."
+               "The statuses could not be read."
              )
 
       refute has_element?(view, "#status-picker-#{id}-menu [role='menu']")
@@ -408,32 +375,23 @@ defmodule RailWeb.Components.StatusPickerTest do
       assert has_element?(view, "#status-picker-#{id}-status-st_review")
     end
 
-    test "a read that crashes is a failed read, and a GitHub issue names GitHub", %{
-      conn: conn,
-      github_project: project
-    } do
-      %{id: id} = github_issue(project, %{number: 401, state: :backlog, state_name: "Backlog"})
-      stub(Issues, :get_statuses, fn _scope, _project -> raise "GitHub is down" end)
+    test "a read that crashes is a failed read", %{conn: conn, issue: %{id: id}} do
+      stub(Issues, :get_statuses, fn _scope, _project -> raise "The database is down" end)
 
       {:ok, view, _html} = live(conn, ~p"/issues")
 
       view |> element("#status-picker-#{id}-trigger") |> render_click()
       render_async(view)
 
-      assert has_element?(view, "#status-picker-#{id}-menu [role='alert']", "GitHub did not answer")
+      assert has_element?(view, "#status-picker-#{id}-menu [role='alert']", "The statuses could not be read.")
     end
   end
 
   describe "in Properties" do
-    test "the Status line opens the same menu and reads as the owner line does", %{
-      conn: conn,
-      issue: %{id: id},
-      answered: answered
-    } do
+    test "the Status line opens the same menu and reads as the owner line does", %{conn: conn, issue: %{id: id}} do
       stub(Issues, :get_statuses, fn _scope, _project -> {:ok, @statuses} end)
 
-      {:ok, view, _html} = live(conn, ~p"/issues/PIC-1")
-      Req.Test.allow(Rail.Linear, self(), view.pid)
+      {:ok, view, _html} = live(conn, ~p"/issues/#{id}")
 
       assert has_element?(view, "button#issue-status[aria-haspopup='menu']", "In Progress")
 
@@ -441,7 +399,6 @@ defmodule RailWeb.Components.StatusPickerTest do
       render_async(view)
       assert has_element?(view, "#issue-status-picker-#{id}-menu[data-trigger='issue-status']")
 
-      Req.Test.expect(Rail.Linear, answered.("In Review", "started"))
       view |> element("#issue-status-picker-#{id}-status-st_review") |> render_click()
 
       assert has_element?(view, "#issue-status", "In Review")

@@ -41,17 +41,6 @@ defmodule Rail.Mcp.Utils.RunToolSavePlanTest do
   """
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_rt_plan_1", "identifier" => "RTP-1", "title" => "Tool Plan"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Tool Plan"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)

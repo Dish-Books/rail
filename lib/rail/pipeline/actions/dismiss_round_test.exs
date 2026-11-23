@@ -14,21 +14,6 @@ defmodule Rail.Pipeline.Actions.DismissRoundTest do
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_dismiss_round_1",
-              "identifier" => "DSR-1",
-              "title" => "Dismiss Round Issue"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Dismiss Round Issue"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 

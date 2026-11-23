@@ -56,7 +56,7 @@ defmodule RailWeb.Components.PlanCommentTray do
           id="send-plan-comments"
           data-qa="send_plan_comments"
           phx-click="send_plan_comments"
-          phx-disable-with="Sending…"
+          data-no-repeat
           phx-target={@target}
           title={hint(@agent, @plan_running)}
           class="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 shadow-xs whitespace-nowrap cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-50"

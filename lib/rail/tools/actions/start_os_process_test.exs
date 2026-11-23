@@ -79,7 +79,6 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: "lin_start_run_#{unique}",
         identifier: "SR#{unique}-1",
         title: "Start Run Issue",
         state: :backlog

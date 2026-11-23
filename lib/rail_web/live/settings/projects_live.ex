@@ -2,7 +2,6 @@ defmodule RailWeb.Settings.ProjectsLive do
   @moduledoc false
   use RailWeb, :live_view
 
-  alias Rail.Issues
   alias Rail.Projects
   alias Rail.Projects.Schemas.EnvFile
   alias Rail.Projects.Schemas.Project
@@ -12,13 +11,9 @@ defmodule RailWeb.Settings.ProjectsLive do
   alias RailWeb.Components.LearningsChannelPicker
 
   def mount(_params, _session, socket) do
-    if connected?(socket) do
-      Phoenix.PubSub.subscribe(Rail.PubSub, "projects")
-      Phoenix.PubSub.subscribe(Rail.PubSub, "tracker_moves")
-    end
+    if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "projects")
 
     projects = Projects.list_projects(socket.assigns.current_scope)
-    linear_workspaces = Projects.list_linear_workspaces()
     {:ok, users} = Users.list_users(socket.assigns.current_scope)
 
     socket =
@@ -26,7 +21,6 @@ defmodule RailWeb.Settings.ProjectsLive do
       |> assign(:page_title, "Projects")
       |> assign(:current_section, :projects)
       |> assign(:projects, projects)
-      |> assign(:linear_workspaces, linear_workspaces)
       |> assign(:users, users)
       |> assign(:slack_channel_options, [])
       |> assign(:channel_selection, %{})
@@ -40,9 +34,6 @@ defmodule RailWeb.Settings.ProjectsLive do
       |> assign(:selected_project, nil)
       |> assign_changeset(nil)
       |> assign_env_file(nil, nil, nil)
-      |> assign(:move_project, nil)
-      |> assign(:move_error, nil)
-      |> assign_move_rows()
 
     {:ok, socket}
   end
@@ -60,6 +51,7 @@ defmodule RailWeb.Settings.ProjectsLive do
       current_scope={@current_scope}
       attention_count={@attention_count}
       triage_count={@triage_count}
+      support_count={@support_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}
@@ -72,7 +64,7 @@ defmodule RailWeb.Settings.ProjectsLive do
             Projects
           </h1>
           <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Manage repositories, issue trackers, and project configurations.
+            Manage repositories and project configurations.
           </p>
         </div>
 
@@ -144,15 +136,6 @@ defmodule RailWeb.Settings.ProjectsLive do
                     >
                       Inactive
                     </span>
-                    <span
-                      :if={@move_rows[project.id].show_moving}
-                      role="status"
-                      class="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md bg-blue-50 dark:bg-blue-400/10 px-2 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 ring-1 ring-inset ring-blue-600/20 dark:ring-blue-400/30"
-                      id={"project-moving-#{project.id}"}
-                    >
-                      <.icon name="pi-circle-notch-bold" class="size-3.5 motion-safe:animate-spin" />
-                      {@move_rows[project.id].moving_label}
-                    </span>
                   </div>
                   <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
                     <span id={"project-repo-#{project.id}"}>
@@ -165,9 +148,6 @@ defmodule RailWeb.Settings.ProjectsLive do
                       <span class="font-semibold text-slate-900 dark:text-slate-100">
                         {project.key}
                       </span>
-                      <span class="text-slate-500 dark:text-slate-400">({tracker_label(
-                        project.tracker
-                      )})</span>
                     </span>
                     <span>•</span>
                     <span id={"project-branch-#{project.id}"}>
@@ -186,15 +166,6 @@ defmodule RailWeb.Settings.ProjectsLive do
 
                 <div class="flex items-center gap-2 shrink-0">
                   <.button
-                    :if={@move_rows[project.id].show_move}
-                    size="sm"
-                    phx-click="open_move"
-                    phx-value-project_id={project.id}
-                    id={"move-project-#{project.id}"}
-                  >
-                    <.icon name="pi-arrow-square-right" class="h-3.5 w-3.5" /> Move to Rail
-                  </.button>
-                  <.button
                     size="sm"
                     phx-click="open_env_file"
                     phx-value-project_id={project.id}
@@ -209,37 +180,6 @@ defmodule RailWeb.Settings.ProjectsLive do
                     id={"edit-project-#{project.id}"}
                   >
                     <.icon name="pi-pencil-simple" class="h-3.5 w-3.5" /> Edit
-                  </.button>
-                </div>
-              </div>
-              <div :if={@move_rows[project.id].stopped} class="px-6 pb-5 -mt-2">
-                <div
-                  role="alert"
-                  id={"project-move-stopped-#{project.id}"}
-                  class="flex items-start justify-between gap-4 rounded-md bg-red-50 dark:bg-red-400/10 ring-1 ring-inset ring-red-200 dark:ring-red-400/30 px-3 py-2.5 text-xs"
-                >
-                  <div class="flex gap-2 min-w-0">
-                    <.icon
-                      name="pi-warning-circle-fill"
-                      class="size-4 text-red-600 dark:text-red-400"
-                    />
-                    <div class="min-w-0">
-                      <p class="font-semibold text-red-700 dark:text-red-300 break-words">
-                        The move stopped. {project.name} is still on Linear, unchanged.
-                      </p>
-                      <p class="mt-0.5 text-slate-600 dark:text-slate-300 break-words">
-                        {@move_rows[project.id].stopped}
-                      </p>
-                    </div>
-                  </div>
-                  <.button
-                    size="sm"
-                    class="shrink-0"
-                    phx-click="confirm_move"
-                    phx-value-project_id={project.id}
-                    id={"retry-move-#{project.id}"}
-                  >
-                    <.icon name="pi-arrow-clockwise" class="h-3.5 w-3.5" /> Try again
                   </.button>
                 </div>
               </div>
@@ -353,53 +293,19 @@ defmodule RailWeb.Settings.ProjectsLive do
                 </div>
               </div>
 
-              <fieldset>
-                <legend class="block text-sm font-medium text-slate-900 dark:text-slate-100">
-                  Issue Tracker
-                </legend>
-                <div class="mt-1 flex items-center gap-6">
-                  <label
-                    :for={
-                      {value, label} <- [linear: "Linear", github: "GitHub Issues", local: "Rail"]
-                    }
-                    class="flex items-center gap-2 text-sm text-slate-900 dark:text-slate-100"
-                  >
-                    <input
-                      type="radio"
-                      name="project[tracker]"
-                      id={"project-tracker-#{value}-input"}
-                      value={value}
-                      checked={Ecto.Changeset.get_field(@changeset, :tracker) == value}
-                    />
-                    {label}
-                  </label>
-                </div>
-                <span
-                  :if={@changeset.errors[:tracker]}
-                  class="text-xs text-red-600"
-                  id="project-tracker-error"
-                >
-                  {elem(@changeset.errors[:tracker], 0)}
-                </span>
-              </fieldset>
-
               <div>
                 <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">
-                  {if @show_linear_fields, do: "Linear Team Key", else: "Key"}
+                  Key
                 </label>
                 <input
                   type="text"
                   name="project[key]"
                   id="project-key-input"
                   value={Ecto.Changeset.get_field(@changeset, :key)}
-                  placeholder={@key_placeholder}
+                  placeholder="e.g. RAIL"
                   class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 />
-                <p :if={@show_github_fields} class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  Names its issues, as in key#123. Fixed once the project has issues. The GitHub App needs Issues: read and write.
-                </p>
                 <p
-                  :if={@show_local_fields}
                   id="project-key-hint"
                   class="mt-1 text-xs text-slate-500 dark:text-slate-400"
                 >
@@ -652,50 +558,6 @@ defmodule RailWeb.Settings.ProjectsLive do
                 </label>
               </div>
 
-              <div
-                :if={@show_linear_fields}
-                class="pt-4 border-t border-slate-200 dark:border-slate-700"
-              >
-                <label
-                  for="project-linear-workspace-input"
-                  class="block text-sm font-medium text-slate-900 dark:text-slate-100"
-                >
-                  Linear Workspace
-                </label>
-                <select
-                  name="project[linear_workspace_id]"
-                  id="project-linear-workspace-input"
-                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                >
-                  <option value="">None</option>
-                  <option
-                    :for={workspace <- @linear_workspaces}
-                    value={workspace.id}
-                    selected={
-                      Ecto.Changeset.get_field(@changeset, :linear_workspace_id) == workspace.id
-                    }
-                  >
-                    {workspace.name}
-                  </option>
-                </select>
-                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  Its credentials sync this project's team.
-                  <.link
-                    navigate={~p"/settings/linear-workspaces"}
-                    class="text-indigo-600 hover:underline"
-                  >
-                    Manage Linear workspaces
-                  </.link>
-                </p>
-                <span
-                  :if={@changeset.errors[:linear_workspace_id]}
-                  class="text-xs text-red-600"
-                  id="project-linear-workspace-error"
-                >
-                  {elem(@changeset.errors[:linear_workspace_id], 0)}
-                </span>
-              </div>
-
               <div class="pt-4 border-t border-slate-200 dark:border-slate-700">
                 <label
                   for="project-triage-user-input"
@@ -900,8 +762,6 @@ defmodule RailWeb.Settings.ProjectsLive do
         </div>
       </div>
     </Layouts.app>
-
-    <.move_to_rail_dialog :if={@move_project} project={@move_project} error={@move_error} />
 
     <div
       :if={@env_project}
@@ -1267,7 +1127,6 @@ defmodule RailWeb.Settings.ProjectsLive do
             socket =
               socket
               |> assign(:projects, projects)
-              |> assign_move_rows()
               |> assign(:show_modal, nil)
               |> assign(:modal_title, nil)
               |> assign(:selected_project, nil)
@@ -1290,7 +1149,6 @@ defmodule RailWeb.Settings.ProjectsLive do
             socket =
               socket
               |> assign(:projects, projects)
-              |> assign_move_rows()
               |> assign(:show_modal, nil)
               |> assign(:modal_title, nil)
               |> assign(:selected_project, nil)
@@ -1362,51 +1220,13 @@ defmodule RailWeb.Settings.ProjectsLive do
     {:noreply, socket}
   end
 
-  def handle_event("open_move", %{"project_id" => project_id}, socket) do
-    socket =
-      socket
-      |> assign(:move_project, Enum.find(socket.assigns.projects, &(&1.id == project_id)))
-      |> assign(:move_error, nil)
-
-    {:noreply, socket}
-  end
-
-  def handle_event("close_move", _params, socket) do
-    socket = close_move(socket)
-    {:noreply, socket}
-  end
-
-  # Try again confirms straight from the row, with no dialog open.
-  def handle_event("confirm_move", %{"project_id" => project_id}, socket) do
-    project = Enum.find(socket.assigns.projects, &(&1.id == project_id))
-
-    socket =
-      case Issues.move_to_local_tracker(socket.assigns.current_scope, project) do
-        {:ok, %Oban.Job{}} ->
-          socket |> close_move() |> assign_move_rows()
-
-        {:error, :not_on_linear} ->
-          socket
-          |> assign(:move_project, project)
-          |> assign(:move_error, "#{project.name} is no longer on Linear. Another tab already moved it.")
-      end
-
-    {:noreply, socket}
-  end
-
   # An edit from anywhere, such as a learnings channel picked on the Learnings page, shows here too.
   def handle_info({:project_changed, project_id}, socket) do
     socket =
       if Enum.any?(socket.assigns.projects, &(&1.id == project_id)),
-        do: socket |> refresh_project(project_id) |> assign_move_rows(),
+        do: refresh_project(socket, project_id),
         else: socket
 
-    {:noreply, socket}
-  end
-
-  # Each file a move copies, so the row counts them as they go.
-  def handle_info({:tracker_move_progress, project_id}, socket) do
-    socket = if Enum.any?(socket.assigns.projects, &(&1.id == project_id)), do: assign_move_rows(socket), else: socket
     {:noreply, socket}
   end
 
@@ -1448,61 +1268,10 @@ defmodule RailWeb.Settings.ProjectsLive do
   defp saved_message(1), do: "Saved to the clone and 1 worktree"
   defp saved_message(worktrees), do: "Saved to the clone and #{worktrees} worktrees"
 
-  defp assign_changeset(socket, changeset) do
-    tracker = changeset && Ecto.Changeset.get_field(changeset, :tracker)
-
-    socket
-    |> assign(:changeset, changeset)
-    |> assign(:show_linear_fields, tracker == :linear)
-    |> assign(:show_github_fields, tracker == :github)
-    |> assign(:show_local_fields, tracker == :local)
-    |> assign(:key_placeholder, key_placeholder(tracker))
-  end
-
-  defp close_move(socket) do
-    socket
-    |> assign(:move_project, nil)
-    |> assign(:move_error, nil)
-  end
-
-  # Each row reads Move to Rail, Moving to Rail, or why the last move stopped; only a Linear project shows any of them.
-  defp assign_move_rows(socket) do
-    {:ok, moves} = Issues.list_tracker_moves(socket.assigns.current_scope, socket.assigns.projects)
-
-    rows =
-      Map.new(socket.assigns.projects, fn %Project{id: id, tracker: tracker} ->
-        linear? = tracker == :linear
-        move = moves[id]
-
-        {id,
-         %{
-           show_move: linear? and is_nil(move),
-           show_moving: linear? and moving_label(move) != nil,
-           moving_label: moving_label(move),
-           stopped: if(linear?, do: stopped_reason(move))
-         }}
-      end)
-
-    assign(socket, :move_rows, rows)
-  end
-
-  defp moving_label(:moving), do: "Moving to Rail"
-  defp moving_label({:copying, settled, total}), do: "Moving to Rail · #{settled} of #{total} files copied"
-  defp moving_label(_moved_stopped_or_none), do: nil
-
-  defp stopped_reason({:stopped, sentence}), do: sentence
-  defp stopped_reason(_moving_or_none), do: nil
+  defp assign_changeset(socket, changeset), do: assign(socket, :changeset, changeset)
 
   defp ci_reservation(%Project{ci_command: command}) when command in [nil, ""], do: "No CI"
   defp ci_reservation(%Project{ci_reserved_cpus: cpus}), do: format_reservation(%{reserved_cpus: cpus})
-
-  defp tracker_label(:github), do: "GitHub"
-  defp tracker_label(:linear), do: "Linear"
-  defp tracker_label(:local), do: "Rail"
-
-  defp key_placeholder(:linear), do: "e.g. DIS"
-  defp key_placeholder(:local), do: "e.g. RAIL"
-  defp key_placeholder(_github_or_none), do: "the repository's name"
 
   defp refresh_project(socket, project_id) do
     {:ok, project} = Projects.get_project(project_id)

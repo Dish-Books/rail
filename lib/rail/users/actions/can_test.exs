@@ -11,14 +11,12 @@ defmodule Rail.Users.Actions.CanTest do
       assert Users.can?(scope, :manage_projects)
       assert Users.can?(scope, :create_project)
       assert Users.can?(scope, :update_project)
-      assert Users.can?(scope, :upsert_linear_workspace)
       assert Users.can?(scope, :any_other_action)
     end
 
     test "nil or unauthenticated scope cannot do anything" do
       refute Users.can?(nil, :list_users)
       refute Users.can?(nil, :create_project)
-      refute Users.can?(nil, :upsert_linear_workspace)
       refute Users.can?(nil, :any_action)
       refute Users.can?(%Scope{user: nil}, :list_users)
       refute Users.can?(%Scope{user: nil}, :create_project)
@@ -34,8 +32,6 @@ defmodule Rail.Users.Actions.CanTest do
       assert Users.can?(scope, :update_project)
       assert Users.can?(scope, :delete_project)
       assert Users.can?(scope, :manage_roles)
-      assert Users.can?(scope, :manage_linear_workspace)
-      assert Users.can?(scope, :upsert_linear_workspace)
       assert Users.can?(scope, :create_task)
     end
 
@@ -48,8 +44,6 @@ defmodule Rail.Users.Actions.CanTest do
       refute Users.can?(scope, :update_project)
       refute Users.can?(scope, :delete_project)
       refute Users.can?(scope, :manage_roles)
-      refute Users.can?(scope, :manage_linear_workspace)
-      refute Users.can?(scope, :upsert_linear_workspace)
       refute Users.can?(scope, :create_task)
     end
   end
@@ -61,7 +55,6 @@ defmodule Rail.Users.Actions.CanTest do
       assert Users.can?(scope, :projects, :manage)
       assert Users.can?(scope, :projects, :create)
       assert Users.can?(scope, :projects, :update)
-      assert Users.can?(scope, :linear_workspace, :upsert)
       assert Users.can?(scope, :roles, :manage)
       assert Users.can?(scope, :tasks, :create)
     end
@@ -83,9 +76,6 @@ defmodule Rail.Users.Actions.CanTest do
       assert Users.can?(scope, :projects, :update)
       assert Users.can?(scope, :projects, :delete)
       assert Users.can?(scope, :roles, :manage)
-      assert Users.can?(scope, :linear_workspace, :manage)
-      assert Users.can?(scope, :linear_workspace, :upsert)
-      assert Users.can?(scope, :linear_workspace, :update)
       assert Users.can?(scope, :tasks, :manage)
     end
 
@@ -99,9 +89,6 @@ defmodule Rail.Users.Actions.CanTest do
       refute Users.can?(scope, :projects, :update)
       refute Users.can?(scope, :projects, :delete)
       refute Users.can?(scope, :roles, :manage)
-      refute Users.can?(scope, :linear_workspace, :manage)
-      refute Users.can?(scope, :linear_workspace, :upsert)
-      refute Users.can?(scope, :linear_workspace, :update)
     end
 
     test "only tech leads may merge tasks, and an admin without the setting is refused" do

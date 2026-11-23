@@ -1,6 +1,6 @@
 defmodule Rail.Issues.Schemas.Cycle do
   @moduledoc """
-  A Rail-tracked project's cycle, both of its dates included. Postgres numbers it as it is inserted, and keeps two cycles
+  A project's cycle, both of its dates included. Postgres numbers it as it is inserted, and keeps two cycles
   of one project from sharing a day.
   """
   use Rail.Schema
@@ -68,7 +68,7 @@ defmodule Rail.Issues.Schemas.Cycle do
     end
   end
 
-  @doc "The points an unestimated Rail-tracked issue counts."
+  @doc "The points an unestimated issue counts."
   def default_estimate, do: @default_estimate
 
   defp validate_dates(changeset) do

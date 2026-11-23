@@ -1,6 +1,6 @@
 defmodule Rail.Pipeline.Actions.HandleIssueFinished do
   @moduledoc """
-  Queues the split's next step when a child's issue finishes, so the Linear webhook answers without waiting on it.
+  Queues the split's next step when a child's issue finishes, so whatever finished it answers without waiting on it.
   """
 
   import Ecto.Query

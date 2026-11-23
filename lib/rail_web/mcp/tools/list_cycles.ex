@@ -1,6 +1,6 @@
 defmodule RailWeb.Mcp.Tools.ListCycles do
   @moduledoc """
-  Lists a Rail-tracked project's cycles that have not ended, oldest first, and names the current one: the cycle that is
+  Lists a project's cycles that have not ended, oldest first, and names the current one: the cycle that is
   running, or the next to start when none is. Any of them can be a ticket's cycle in create_issue and update_issue.
   """
 
@@ -15,7 +15,7 @@ defmodule RailWeb.Mcp.Tools.ListCycles do
   alias RailWeb.Mcp.CycleJSON
 
   schema do
-    field :project, {:required, :string}, description: "A Rail-tracked project's key or name, from list_projects."
+    field :project, {:required, :string}, description: "A project's key or name, from list_projects."
     field :ended, :boolean, default: false, description: "Include cycles that have ended."
   end
 
@@ -30,10 +30,8 @@ defmodule RailWeb.Mcp.Tools.ListCycles do
     end
   end
 
-  defp read_cycles(%Project{tracker: :local} = project) do
+  defp read_cycles(%Project{} = project) do
     {:ok, %{cycles: cycles}} = Issues.get_cycles(project)
     {:ok, cycles}
   end
-
-  defp read_cycles(%Project{tracker: tracker}), do: {:error, {:cycles_in_tracker, tracker}}
 end

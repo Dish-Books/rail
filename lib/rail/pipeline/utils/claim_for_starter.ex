@@ -16,7 +16,7 @@ defmodule Rail.Pipeline.Utils.ClaimForStarter do
   def claim_for_starter(%Scope{} = scope, %Issue{} = issue) do
     case Issues.claim_issue(scope, issue) do
       {:ok, %Issue{}} -> :ok
-      # Owned already, or the tracker cannot name this person: the task page still offers Claim.
+      # Owned already, or the person has not connected GitHub: the task page still offers Claim.
       {:error, _refused} -> :ok
     end
   end

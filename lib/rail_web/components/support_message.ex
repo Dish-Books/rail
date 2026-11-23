@@ -63,7 +63,6 @@ defmodule RailWeb.Components.SupportMessage do
           type="submit"
           id="support-message-send"
           disabled={!@linked}
-          phx-disable-with
           aria-label={"Send to #{@customer}"}
           title="Posts in Intercom now. The draft is left as it is."
           class="inline-flex items-center justify-center h-9 w-9 rounded-lg bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shrink-0 shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"

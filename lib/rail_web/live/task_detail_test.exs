@@ -6,6 +6,7 @@ defmodule RailWeb.Live.TaskDetailTest do
   import Rail.Git.Utils.ParseDiff
 
   alias Rail.Git
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Learnings
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline
@@ -569,31 +570,18 @@ defmodule RailWeb.Live.TaskDetailTest do
     assert has_element?(view, "#review-tray-new-issue-send-twice", "Send stays enabled while a round is on its way")
     assert has_element?(view, "#review-send-tray-hint", "and files 1 new issue.")
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_rst_2",
-              "identifier" => "RST-2",
-              "title" => "Send stays enabled while a round is on its way",
-              "url" => "https://linear.app/rst/issue/RST-2"
-            }
-          }
-        }
-      })
-    end)
-
     expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: %{spawned | status: :running}}} end)
     # Sent from this process, as another tab would, so the page hears of it only from the broadcast.
     {:ok, _started} = Pipeline.start_fix_round(system_scope(), run)
     _settled = render(view)
 
-    assert has_element?(view, "#finding-outcome", "New issue · filed as RST-2")
-    assert has_element?(view, "#finding-issue-link[href='https://linear.app/rst/issue/RST-2']", "RST-2")
+    %Finding{issue: %Issue{identifier: filed, url: url, title: "Send stays enabled while a round is on its way"}} =
+      Finding |> Repo.get_by!(task_id: task.id, key: "send-twice") |> Repo.preload(:issue)
+
+    assert has_element?(view, "#finding-outcome", "New issue · filed as #{filed}")
+    assert has_element?(view, "#finding-issue-link[href='#{url}']", filed)
     assert has_element?(view, "#finding-issue[data-filed=true]", "Its ruling can no longer change.")
-    assert has_element?(view, "#finding-send-twice [data-qa=review_finding_state]", "New issue · RST-2")
+    assert has_element?(view, "#finding-send-twice [data-qa=review_finding_state]", "New issue · #{filed}")
     refute has_element?(view, "#decide-fix-send-twice")
     refute has_element?(view, "#decide-new_issue-send-twice")
     refute has_element?(view, "#review-tray-new-issue-send-twice")

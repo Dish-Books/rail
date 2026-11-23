@@ -43,13 +43,12 @@ defmodule Rail.ScopeTest do
   end
 
   test "user_scope builds default user scope" do
-    assert %Scope{user: %{admin: false, linear_linked: false, id: id}, system: false} = Scope.user_scope()
+    assert %Scope{user: %{admin: false, id: id}, system: false} = Scope.user_scope()
     assert byte_size(id) > 0
   end
 
-  test "user_scope supports admin and linear_linked options" do
-    assert %Scope{user: %{admin: true, linear_linked: true}} =
-             Scope.user_scope(admin: true, linear_linked: true)
+  test "user_scope supports the admin option" do
+    assert %Scope{user: %{admin: true}} = Scope.user_scope(admin: true)
   end
 
   test "user_scope supports custom user struct or map" do
@@ -87,16 +86,6 @@ defmodule Rail.ScopeTest do
   test "user_scope accepts project ids" do
     assert %Scope{user: %{project_ids: []}} = Scope.user_scope()
     assert %Scope{user: %{project_ids: ["prj_a"]}} = Scope.user_scope(project_ids: ["prj_a"])
-  end
-
-  test "linear_linked? returns true when user has linear_access_token or linear_linked flag" do
-    assert Scope.linear_linked?(%Scope{user: %{linear_access_token: "lin_at_valid"}})
-    assert Scope.linear_linked?(%Scope{user: %{linear_linked: true}})
-    refute Scope.linear_linked?(%Scope{user: %{linear_access_token: nil}})
-    refute Scope.linear_linked?(%Scope{user: %{linear_access_token: ""}})
-    refute Scope.linear_linked?(%Scope{user: %{linear_linked: false}})
-    refute Scope.linear_linked?(%Scope{user: nil})
-    refute Scope.linear_linked?(nil)
   end
 
   test "slack_linked? is true only when the user has a Slack token" do

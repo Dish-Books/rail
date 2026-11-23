@@ -27,7 +27,7 @@ defmodule RailWeb.Components.DiscardDialogTest do
       worktree_name: "michael/rail-41-comments-left-on-diff-lines",
       pr_number: 212,
       pr_url: "https://github.com/org/rail/pull/212",
-      issue: %Issue{identifier: "RAIL-41", state: :in_review, state_name: "In Review"},
+      issue: %Issue{identifier: "RAIL-41", state: :in_review},
       runs: runs
     }
 

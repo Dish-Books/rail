@@ -102,13 +102,14 @@ defmodule RailWeb.Components.NavTest do
              ~s(id="triage-badge")
   end
 
-  test "the Support destination sits between Overview and Triage, with no badge, and is active on Support" do
+  test "the Support destination sits between Overview and Triage, with its own badge, and is active on Support" do
     html =
       render_component(&Nav.nav/1,
         current_scope: temp_user_scope(admin: true),
         current_section: :support,
         attention_count: 0,
-        triage_count: 0
+        triage_count: 0,
+        support_count: 4
       )
 
     assert [_before, after_overview] = String.split(html, ~s(id="nav-overview"))
@@ -116,7 +117,13 @@ defmodule RailWeb.Components.NavTest do
     assert between =~ ~r/id="nav-support"[^>]*data-active="true"/
     assert between =~ ~s(href="/support")
     assert between =~ ~s(aria-label="Support")
-    refute between =~ "badge"
+    assert between =~ ~r/id="support-badge"[^>]*>\s*4\s*</
+
+    refute render_component(&Nav.nav/1,
+             current_scope: temp_user_scope(admin: true),
+             current_section: :support,
+             support_count: 0
+           ) =~ "badge"
   end
 
   test "the Testing destination sits between Triage and Issues, with no badge" do
@@ -149,7 +156,7 @@ defmodule RailWeb.Components.NavTest do
     end
 
     # Test settings sub-sections highlight Settings nav
-    for sub <- [:connected_accounts, :projects, :workflows, :linear_workspaces, :slack_workspaces] do
+    for sub <- [:connected_accounts, :projects, :workflows, :slack_workspaces] do
       html =
         render_component(&Nav.nav/1,
           current_scope: temp_user_scope(admin: true),

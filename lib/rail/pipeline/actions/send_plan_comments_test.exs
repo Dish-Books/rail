@@ -61,17 +61,6 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_pcm_send_1", "identifier" => "PCS-1", "title" => "Plan Comments"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Plan Comments"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     # Git is stubbed, so the worktree is only ever looked for: a plain directory stands in for it.

@@ -5,28 +5,8 @@ defmodule Rail.Users.Actions.ListAssignableUsersTest do
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
-  test "for a Linear issue, lists only the users with a linked Linear account" do
-    {:ok, linked} =
-      Users.register_oauth_user(%{
-        github_id: "gh_linked",
-        login: "linked",
-        email: "linked-list-assignable-users@example.com"
-      })
-
-    {:ok, _unlinked} =
-      Users.register_oauth_user(%{
-        github_id: "gh_unlinked",
-        login: "unlinked-list-assignable-users",
-        email: "unlinked-list-assignable-users@example.com"
-      })
-
-    %User{id: linked_id} = linked |> Ecto.Changeset.change(linear_user_id: "lin_usr_linked") |> Repo.update!()
-
-    assert [%User{id: ^linked_id}] = Users.list_assignable_users()
-  end
-
   test "with a project, lists only admins and the users granted that project" do
-    linked = fn login, attrs ->
+    registered = fn login, attrs ->
       {:ok, user} =
         Users.register_oauth_user(%{
           github_id: "gh_#{login}_list-assignable-users",
@@ -34,13 +14,13 @@ defmodule Rail.Users.Actions.ListAssignableUsersTest do
           email: "#{login}-list-assignable-users@example.com"
         })
 
-      user |> Ecto.Changeset.change(Map.put(attrs, :linear_user_id, "lin_#{login}")) |> Repo.update!()
+      user |> Ecto.Changeset.change(attrs) |> Repo.update!()
     end
 
-    %User{id: granted_id} = linked.("granted", %{project_ids: ["prj_a"]})
-    %User{id: admin_id} = linked.("admin", %{admin: true})
-    %User{} = linked.("elsewhere", %{project_ids: ["prj_b"]})
-    %User{} = linked.("nowhere", %{})
+    %User{id: granted_id} = registered.("granted", %{project_ids: ["prj_a"]})
+    %User{id: admin_id} = registered.("admin", %{admin: true})
+    %User{} = registered.("elsewhere", %{project_ids: ["prj_b"]})
+    %User{} = registered.("nowhere", %{})
 
     assert Enum.sort([admin_id, granted_id]) ==
              [project_id: "prj_a"] |> Users.list_assignable_users() |> Enum.map(& &1.id) |> Enum.sort()
@@ -48,35 +28,23 @@ defmodule Rail.Users.Actions.ListAssignableUsersTest do
     assert length(Users.list_assignable_users()) == 4
   end
 
-  test "for a GitHub issue, lists everyone with GitHub" do
+  test "lists everyone with GitHub" do
     {:ok, %User{id: user_id}} =
       Users.register_oauth_user(%{github_id: "gh_assignable", login: "assignable", email: "assignable@example.com"})
 
-    assert user_id in Enum.map(Users.list_assignable_users(tracker: :github), & &1.id)
-    refute user_id in Enum.map(Users.list_assignable_users(), & &1.id)
+    assert user_id in Enum.map(Users.list_assignable_users(), & &1.id)
   end
 
-  test "for a Rail-tracked issue, lists everyone with GitHub, whether or not they linked Linear" do
-    {:ok, %User{id: user_id}} =
-      Users.register_oauth_user(%{github_id: "gh_assignable_local", login: "assignable-local", email: "al@example.com"})
-
-    assert user_id in Enum.map(Users.list_assignable_users(tracker: :local), & &1.id)
-    refute user_id in Enum.map(Users.list_assignable_users(tracker: :linear), & &1.id)
-  end
-
-  test "someone who disconnected GitHub is assignable on no tracker, Linear linked or not" do
+  test "someone who disconnected GitHub is not assignable" do
     {:ok, user} =
       Users.register_oauth_user(%{github_id: "gh_assignable_gone", login: "assignable-gone", email: "ag@example.com"})
 
-    user |> Ecto.Changeset.change(linear_user_id: "lin_usr_gone") |> Repo.update!()
     {:ok, %User{id: user_id}} = Users.unlink_github(Rail.Scope.for_user(user))
 
-    for tracker <- [:local, :github, :linear] do
-      refute user_id in Enum.map(Users.list_assignable_users(tracker: tracker), & &1.id)
-    end
+    refute user_id in Enum.map(Users.list_assignable_users(), & &1.id)
   end
 
-  test "a support person is assignable on no tracker, while a tester is" do
+  test "a support person is not assignable, while a tester is" do
     register = fn login, role ->
       {:ok, user} =
         Users.register_oauth_user(%{
@@ -85,19 +53,15 @@ defmodule Rail.Users.Actions.ListAssignableUsersTest do
           email: "#{login}-assignable-role@example.com"
         })
 
-      {:ok, user} =
-        Users.update_user(system_scope(), user, %{role: role, linear_user_id: "lin_#{login}_assignable_role"})
-
+      {:ok, user} = Users.update_user(system_scope(), user, %{role: role})
       user
     end
 
     %User{id: support_id} = register.("support", :support)
     %User{id: tester_id} = register.("tester", :tester)
 
-    for tracker <- [:local, :github, :linear] do
-      ids = Enum.map(Users.list_assignable_users(tracker: tracker), & &1.id)
-      refute support_id in ids
-      assert tester_id in ids
-    end
+    ids = Enum.map(Users.list_assignable_users(), & &1.id)
+    refute support_id in ids
+    assert tester_id in ids
   end
 end

@@ -1,6 +1,6 @@
 defmodule RailWeb.Components.DescriptionEditor do
   @moduledoc """
-  A Rail-tracked issue's description, edited in place by the `IssueDescription` hook and saved as the person goes.
+  An issue's description, edited in place by the `IssueDescription` hook and saved as the person goes.
   Images and PDFs dropped or pasted into it go up through this component, one async task each, so the page stays live.
   """
   use RailWeb, :live_component
@@ -56,7 +56,6 @@ defmodule RailWeb.Components.DescriptionEditor do
         <.markdown
           :if={@issue.description not in [nil, ""]}
           content={@issue.description}
-          assets_base={~p"/issues/#{@issue.id}/assets"}
           class="text-slate-700 dark:text-slate-300"
         />
         <p :if={@issue.description in [nil, ""]} class="text-sm text-slate-400 dark:text-slate-500">

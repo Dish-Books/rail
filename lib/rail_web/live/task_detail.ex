@@ -132,7 +132,7 @@ defmodule RailWeb.Live.TaskDetail do
             phx-click="approve_fix_plan"
             phx-value-version={@fix_plan.version}
             phx-target={@myself}
-            phx-disable-with="Starting…"
+            data-no-repeat
             class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
           >
             <%!-- Not the PR's Approve, which sits in the same place at Finalize --%>
@@ -146,7 +146,7 @@ defmodule RailWeb.Live.TaskDetail do
             data-qa="approve_custom_stage"
             phx-click="approve_stage_output"
             phx-target={@myself}
-            phx-disable-with="Approving…"
+            data-no-repeat
             disabled={@stage_unsent > 0}
             title={@stage_unsent > 0 && unsent(@stage_unsent)}
             class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"

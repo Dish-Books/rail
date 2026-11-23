@@ -1,6 +1,6 @@
 defmodule Rail.Issues.Actions.CloseCycleDay do
   @moduledoc """
-  The nightly run over every active Rail-tracked project's cycles, and the one place they are created.
+  The nightly run over every active project's cycles, and the one place they are created.
   """
 
   import Ecto.Query
@@ -18,12 +18,12 @@ defmodule Rail.Issues.Actions.CloseCycleDay do
   @ahead 2
 
   @doc """
-  For each active Rail-tracked project, in a transaction of its own: records every finished day not yet recorded, keeps
+  For each active project, in a transaction of its own: records every finished day not yet recorded, keeps
   two cycles scheduled after the current one, and closes each cycle whose last day it just recorded, rolling its
   unfinished issues over. Each project's pages hear `{:cycles_changed, project_id}` on `"cycles"` once it commits.
   """
   def close_cycle_day(%Date{} = today) do
-    project_ids = Repo.all(from(p in Project, where: p.active and p.tracker == :local, select: p.id))
+    project_ids = Repo.all(from(p in Project, where: p.active, select: p.id))
 
     for project_id <- project_ids do
       {:ok, _closed} = Repo.transaction(fn -> run_day(project_id, today) end)
@@ -113,7 +113,7 @@ defmodule Rail.Issues.Actions.CloseCycleDay do
     held =
       Repo.all(
         from(i in Issue,
-          where: i.project_id == ^project_id and i.cycle_external_id == ^cycle_id,
+          where: i.project_id == ^project_id and i.cycle_id == ^cycle_id,
           lock: "FOR UPDATE",
           select: {i.id, i.state}
         )
@@ -138,7 +138,7 @@ defmodule Rail.Issues.Actions.CloseCycleDay do
     unfinished = for {issue_id, state} <- held, not Issue.finished_state?(state), do: issue_id
 
     Repo.update_all(from(i in Issue, where: i.project_id == ^project_id and i.id in ^unfinished),
-      set: [cycle_external_id: next.id, updated_at: now]
+      set: [cycle_id: next.id, updated_at: now]
     )
   end
 end

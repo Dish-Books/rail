@@ -14,10 +14,9 @@ defmodule RailWeb.Components.IssuePickerTest do
 
     {:ok, local} =
       Projects.create_project(system_scope(), %{
-        name: "Rail-tracked",
+        name: "Kept in Rail",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -84,7 +83,7 @@ defmodule RailWeb.Components.IssuePickerTest do
 
   test "Blocks makes the page's issue the blocker, and the menu closes on the pick", %{
     conn: conn,
-    issue: %Issue{id: issue_id, external_id: external_id} = issue,
+    issue: %Issue{id: issue_id} = issue,
     local: local,
     triage: %Issue{id: triage_id}
   } do
@@ -96,7 +95,7 @@ defmodule RailWeb.Components.IssuePickerTest do
 
     refute has_element?(view, "#{picker}-menu")
 
-    assert %{^external_id => %{blocks: [%{issue: %Issue{id: ^triage_id}}], blocked_by: []}} =
+    assert %{^issue_id => %{blocks: [%{issue: %Issue{id: ^triage_id}}], blocked_by: []}} =
              Issues.get_blockers([%{issue | project: local}])
   end
 

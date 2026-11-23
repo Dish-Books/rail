@@ -49,7 +49,6 @@ defmodule RailWeb.Router do
   scope "/webhooks", RailWeb do
     pipe_through :api
 
-    post "/linear", LinearWebhookController, :handle
     post "/github", GithubWebhookController, :handle
     post "/intercom", IntercomWebhookController, :handle
   end
@@ -87,13 +86,6 @@ defmodule RailWeb.Router do
     live_session :mcp_authorize, on_mount: [{RailWeb.UserAuth, :require_authenticated}] do
       live "/authorize", McpAuthorizeLive
     end
-  end
-
-  scope "/auth/linear", RailWeb do
-    pipe_through [:browser, :require_authenticated_user]
-
-    get "/", LinearAuthController, :request
-    get "/callback", LinearAuthController, :callback
   end
 
   scope "/auth/slack", RailWeb do
@@ -171,7 +163,6 @@ defmodule RailWeb.Router do
         NavHook
       ] do
       live "/settings/projects", Settings.ProjectsLive
-      live "/settings/linear-workspaces", Settings.LinearWorkspacesLive
       live "/settings/slack-workspaces", Settings.SlackWorkspacesLive
       live "/settings/intercom-workspaces", Settings.IntercomWorkspacesLive
       live "/settings/users", Settings.UsersLive

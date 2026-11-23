@@ -13,17 +13,6 @@ defmodule Rail.Pipeline.Actions.SetDiffCommentResolvedTest do
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_dcm_resolve_1", "identifier" => "DCR-1", "title" => "Diff Comments"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Diff Comments"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)

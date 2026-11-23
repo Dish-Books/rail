@@ -42,8 +42,6 @@ defmodule RailWeb.IssuesLive do
     # The navigation only selects a project it lists, so the selection is always one of these.
     project = Enum.find(socket.assigns.projects, &(&1.id == socket.assigns.current_project_id))
     cycle_projects = if project, do: [project], else: Enum.filter(socket.assigns.projects, & &1.active)
-    # Rail's own tracker has nothing to pull, and would never say it finished.
-    sync_projects = Enum.reject(if(project, do: [project], else: socket.assigns.projects), &(&1.tracker == :local))
     %User{issues_filters: saved_filters} = socket.assigns.current_scope.user
 
     socket =
@@ -51,10 +49,6 @@ defmodule RailWeb.IssuesLive do
       |> assign(:page_title, "Issues")
       |> assign(:current_section, :issues)
       |> assign(:current_project, project)
-      |> assign(:sync_projects, sync_projects)
-      |> assign(:show_sync_button, sync_projects != [])
-      |> assign(:syncing_project_ids, MapSet.new())
-      |> assign(:is_syncing, false)
       |> assign(:saved_filters, saved_filters)
       |> assign(:restore_filters, true)
       |> assign(:blockers, %{})
@@ -108,6 +102,7 @@ defmodule RailWeb.IssuesLive do
       current_scope={@current_scope}
       attention_count={@attention_count}
       triage_count={@triage_count}
+      support_count={@support_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}
@@ -135,28 +130,6 @@ defmodule RailWeb.IssuesLive do
           </div>
 
           <div class="flex items-center gap-3">
-            <!-- Sync Issues button -->
-            <button
-              :if={@show_sync_button}
-              type="button"
-              id="sync-issues-button"
-              data-qa="sync-issues-button"
-              phx-click="sync_issues"
-              disabled={@is_syncing}
-              title="Pulls issues from the tracker"
-              class={[
-                "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer",
-                @is_syncing && "opacity-50 cursor-not-allowed"
-              ]}
-            >
-              <.icon :if={not @is_syncing} name="pi-arrows-clockwise" class="h-4 w-4" />
-              <span
-                :if={@is_syncing}
-                class="inline-block animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full mr-1"
-              ></span>
-              <span>{if @is_syncing, do: "Syncing...", else: "Sync Issues"}</span>
-            </button>
-
             <!-- New Issue button -->
             <button
               type="button"
@@ -390,7 +363,7 @@ defmodule RailWeb.IssuesLive do
               cycle={hd(@sections).cycle}
               progress={hd(@sections).progress}
               owner={@owner}
-              editable={@current_project.tracker == :local}
+              editable
             />
             <.cycle_panels
               :if={is_nil(@current_project)}
@@ -547,7 +520,8 @@ defmodule RailWeb.IssuesLive do
 
   # Only a cycle of the project on show that has not ended, as the panel offers.
   def handle_event("edit_cycle_dates", %{"cycle_id" => cycle_id}, socket) do
-    entry = socket.assigns.current_project && Enum.find(socket.assigns.cycles || [], &(&1.project.tracker == :local))
+    project = socket.assigns.current_project
+    entry = project && Enum.find(socket.assigns.cycles || [], &(&1.project.id == project.id))
 
     case entry && Enum.find(entry.cycles, &(&1.id == cycle_id and &1.status != :ended)) do
       %{} = cycle ->
@@ -585,24 +559,6 @@ defmodule RailWeb.IssuesLive do
 
   def handle_event("close_cycle_dates", _params, socket), do: {:noreply, assign(socket, :cycle_dates, nil)}
 
-  # The pull runs in the background a page at a time; the button stays busy
-  # until every project it started has said it is done.
-  def handle_event("sync_issues", _params, socket) do
-    projects = socket.assigns.sync_projects
-    Enum.each(projects, &Issues.sync_issues/1)
-
-    ids = MapSet.union(socket.assigns.syncing_project_ids, MapSet.new(projects, & &1.id))
-
-    {:noreply, assign_syncing(socket, ids)}
-  end
-
-  def handle_info({:issues_synced, project_id}, socket) do
-    ids = MapSet.delete(socket.assigns.syncing_project_ids, project_id)
-
-    socket = socket |> assign_syncing(ids) |> reload_data()
-    {:noreply, socket}
-  end
-
   # Newest first, so a created issue lands at the top of the first page.
   def handle_info({:issue_created, _issue_id}, socket), do: {:noreply, reload_data(socket)}
 
@@ -622,7 +578,7 @@ defmodule RailWeb.IssuesLive do
     {:noreply, socket}
   end
 
-  # Only a relation change reads blockers again, so a Linear project's list is not asked about on every change.
+  # Only a relation change reads blockers again, so the list is not asked about on every change.
   def handle_info({:issue_relations_changed, ids}, socket) do
     issues = shown_issues(socket.assigns)
 
@@ -706,8 +662,8 @@ defmodule RailWeb.IssuesLive do
   end
 
   # An answer for issues the page no longer shows is dropped: a newer read is under way.
-  def handle_async(:blockers, {:ok, {external_ids, blockers}}, socket) do
-    if external_ids == socket.assigns.blockers_for,
+  def handle_async(:blockers, {:ok, {issue_ids, blockers}}, socket) do
+    if issue_ids == socket.assigns.blockers_for,
       do: {:noreply, assign(socket, :blockers, blockers)},
       else: {:noreply, socket}
   end
@@ -814,7 +770,7 @@ defmodule RailWeb.IssuesLive do
         >
           <.project_badge project={section.project} />
           <.icon name="pi-warning-circle" class="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
-          <span class="min-w-0">Linear did not answer, so these issues are not listed.</span>
+          <span class="min-w-0">The cycle could not be read, so these issues are not listed.</span>
         </p>
       <% end %>
     </aside>
@@ -834,25 +790,21 @@ defmodule RailWeb.IssuesLive do
   defp stage_run(%Task{} = task), do: Task.stage_run(task)
   defp stage_run(nil), do: nil
 
-  # A cycle the page has not read, such as an old Linear one, goes unnamed.
-  defp row_cycle(cycles, on_view, %Issue{cycle_external_id: cycle_id}),
+  # A cycle the page has not read goes unnamed.
+  defp row_cycle(cycles, on_view, %Issue{cycle_id: cycle_id}),
     do: if(cycle_id in on_view, do: nil, else: cycles[cycle_id])
 
-  defp open_blockers(blockers, %Issue{external_id: external_id}),
-    do: Issue.calculate_open_blockers(get_in(blockers, [external_id, :blocked_by]) || [])
+  defp open_blockers(blockers, %Issue{id: issue_id}),
+    do: Issue.calculate_open_blockers(get_in(blockers, [issue_id, :blocked_by]) || [])
 
   defp project_subtitle(nil), do: "Issues across all projects"
 
-  defp project_subtitle(%{tracker: tracker, name: name} = project),
-    do: "#{Issue.tracker_label(tracker)} issues in #{project.key} (#{name})"
+  defp project_subtitle(%{name: name} = project), do: "Issues in #{project.key} (#{name})"
 
   # --- Private Helpers ---
 
-  # Linear and Rail's own tracker keep cycles, each project's asked for in a read of its own so one failing loses no
-  # other's answer. GitHub keeps none.
-  defp load_cycles(socket, projects) do
-    with_cycles = for %Project{tracker: tracker} = project <- projects, tracker in [:linear, :local], do: project
-
+  # Each project's cycles are asked for in a read of its own, so one failing loses no other's answer.
+  defp load_cycles(socket, with_cycles) do
     socket =
       socket
       |> assign(:cycle_projects, with_cycles)
@@ -865,7 +817,7 @@ defmodule RailWeb.IssuesLive do
 
   defp read_cycles(project, socket), do: start_async(socket, {:cycles, project.id}, fn -> Issues.get_cycles(project) end)
 
-  # A section is one project's cycle on show, if any, beside what its tracker answered for it.
+  # A section is one project's cycle on show, if any, beside what its read answered for it.
   defp reload_data(socket) do
     assigns = socket.assigns
     entries = assigns.cycles || []
@@ -1032,23 +984,23 @@ defmodule RailWeb.IssuesLive do
     |> assign(:next_path, if(offset + @page_size < total, do: issues_path(assigns, page: assigns.page + 1)))
   end
 
-  # Linear sends nothing when a relation changes, so blockers are read again whenever the rows on the page change.
+  # Blockers are read again whenever the rows on the page change.
   defp watch_blockers(socket) do
     issues = shown_issues(socket.assigns)
-    external_ids = issues |> Enum.map(& &1.external_id) |> Enum.uniq() |> Enum.sort()
+    issue_ids = issues |> Enum.map(& &1.id) |> Enum.uniq() |> Enum.sort()
 
-    if external_ids == socket.assigns.blockers_for,
+    if issue_ids == socket.assigns.blockers_for,
       do: socket,
-      else: read_blockers(socket, external_ids, issues)
+      else: read_blockers(socket, issue_ids, issues)
   end
 
   defp read_blockers(socket, [], _issues), do: socket |> assign(:blockers_for, []) |> assign(:blockers, %{})
 
-  defp read_blockers(socket, external_ids, issues) do
-    socket = assign(socket, :blockers_for, external_ids)
+  defp read_blockers(socket, issue_ids, issues) do
+    socket = assign(socket, :blockers_for, issue_ids)
 
     if connected?(socket),
-      do: start_async(socket, :blockers, fn -> {external_ids, Issues.get_blockers(issues)} end),
+      do: start_async(socket, :blockers, fn -> {issue_ids, Issues.get_blockers(issues)} end),
       else: socket
   end
 
@@ -1171,12 +1123,6 @@ defmodule RailWeb.IssuesLive do
           do: {key, value}
 
     params_path(params)
-  end
-
-  defp assign_syncing(socket, ids) do
-    socket
-    |> assign(:syncing_project_ids, ids)
-    |> assign(:is_syncing, MapSet.size(ids) > 0)
   end
 
   defp page_number(value) when is_binary(value) do

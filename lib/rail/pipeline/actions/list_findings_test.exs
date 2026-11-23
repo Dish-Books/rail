@@ -6,17 +6,6 @@ defmodule Rail.Pipeline.Actions.ListFindingsTest do
   alias Rail.Pipeline.Schemas.Finding
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_lsf_1", "identifier" => "LSF-1", "title" => "List Findings"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "List Findings"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)

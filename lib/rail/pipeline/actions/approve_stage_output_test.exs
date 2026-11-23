@@ -21,17 +21,6 @@ defmodule Rail.Pipeline.Actions.ApproveStageOutputTest do
   alias Rail.Users
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_aso_1", "identifier" => "ASO-1", "title" => "Translation sync"}
-          }
-        }
-      })
-    end)
-
     stages = [
       %IssueStage{stage: :custom, name: "Missing strings", prompt: "List the keys with no translation."},
       %IssueStage{stage: :plan},

@@ -9,17 +9,6 @@ defmodule Rail.Git.Actions.LoadDiffHunksTest do
   setup %{project: project} do
     scope = system_scope()
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_dhk_1", "identifier" => "DHK-1", "title" => "Diff Hunk"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Diff Hunk"})
     {:ok, task} = Pipeline.create_task(issue, :review)
 

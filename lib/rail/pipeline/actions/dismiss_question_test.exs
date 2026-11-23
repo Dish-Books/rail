@@ -17,28 +17,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
     stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_dismiss_question_1",
-              "identifier" => "DSQ-1",
-              "title" => "Dismiss Question Issue"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Dismiss Question Issue"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{"issueUpdate" => %{"success" => true, "issue" => %{"id" => "lin_dismiss_question_1"}}}
-      })
-    end)
 
     roles =
       Map.new([:plan, :engineer, :review, :qa, :demo], fn stage ->

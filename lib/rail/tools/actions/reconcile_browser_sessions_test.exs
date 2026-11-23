@@ -15,17 +15,6 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
 
     scope = system_scope()
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_rcb_1", "identifier" => "RCB-1", "title" => "Reconcile Browsers"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Reconcile Browsers"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)

@@ -8,7 +8,7 @@ defmodule RailWeb.IssueAssetController do
   def show(conn, %{"issue_id" => issue_id, "path" => segments}) do
     with {:ok, issue} <- Issues.get_issue(issue_id),
          true <- Scope.can_access_project?(conn.assigns.current_scope, issue.project_id),
-         {:ok, content_type, body} <- Issues.get_asset(issue, asset_path(segments, conn.query_string)) do
+         {:ok, content_type, body} <- Issues.get_asset(issue, Enum.join(segments, "/")) do
       conn
       |> put_resp_content_type(content_type)
       |> put_resp_header("cache-control", "private, max-age=3600")
@@ -25,8 +25,4 @@ defmodule RailWeb.IssueAssetController do
   # The sandbox keeps a browser from showing a PDF in place, so it is downloaded.
   defp download_pdf(conn, "application/pdf"), do: put_resp_header(conn, "content-disposition", "attachment")
   defp download_pdf(conn, _shown), do: conn
-
-  # Linear signs some of its file URLs, so the query has to travel with the path.
-  defp asset_path(segments, ""), do: Enum.join(segments, "/")
-  defp asset_path(segments, query), do: "#{Enum.join(segments, "/")}?#{query}"
 end

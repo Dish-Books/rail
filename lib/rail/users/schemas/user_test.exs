@@ -88,38 +88,6 @@ defmodule Rail.Users.Schemas.UserTest do
     assert %{email: ["has already been taken"]} = errors_on(changeset3)
   end
 
-  test "changeset clears every Linear credential at once" do
-    user = %User{
-      github_id: "g",
-      login: "l",
-      email: "e",
-      linear_user_id: "lin_usr_1",
-      linear_name: "Lin Name",
-      linear_access_token: "lin_at",
-      linear_refresh_token: "lin_rt",
-      linear_token_expires_at: DateTime.utc_now()
-    }
-
-    changeset =
-      User.changeset(user, %{
-        linear_user_id: nil,
-        linear_name: nil,
-        linear_access_token: nil,
-        linear_refresh_token: nil,
-        linear_token_expires_at: nil
-      })
-
-    assert changeset.valid?
-
-    assert changeset.changes == %{
-             linear_user_id: nil,
-             linear_name: nil,
-             linear_access_token: nil,
-             linear_refresh_token: nil,
-             linear_token_expires_at: nil
-           }
-  end
-
   describe "Slack notifications" do
     setup do
       unique = System.unique_integer([:positive])
@@ -188,30 +156,6 @@ defmodule Rail.Users.Schemas.UserTest do
     inspected = inspect(user)
     refute String.contains?(inspected, "super-secret-token")
     refute String.contains?(inspected, "github_token:")
-  end
-
-  test "redacts linear tokens on inspect" do
-    assert {:ok, user} =
-             Users.register_oauth_user(%{
-               github_id: "redact_linear_gh",
-               login: "redact_linear_test",
-               email: "redact_linear@example.com"
-             })
-
-    assert {:ok, linked_user} =
-             user
-             |> User.changeset(%{
-               linear_access_token: "secret-linear-access-token",
-               linear_refresh_token: "secret-linear-refresh-token",
-               linear_token_expires_at: DateTime.utc_now()
-             })
-             |> Repo.update()
-
-    inspected = inspect(linked_user)
-    refute String.contains?(inspected, "secret-linear-access-token")
-    refute String.contains?(inspected, "secret-linear-refresh-token")
-    refute String.contains?(inspected, "linear_access_token:")
-    refute String.contains?(inspected, "linear_refresh_token:")
   end
 
   test "the signing fingerprint is the one GitHub shows for the key" do

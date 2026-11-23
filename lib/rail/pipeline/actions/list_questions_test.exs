@@ -18,21 +18,6 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
         {stage, role}
       end)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_list_questions_1",
-              "identifier" => "LQS-1",
-              "title" => "List Questions Issue"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "List Questions Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :plan)

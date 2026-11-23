@@ -25,7 +25,6 @@ defmodule RailWeb.TestingLiveTest do
             name: name,
             github_repo: "example/#{key}",
             github_installation_id: 1,
-            tracker: :local,
             key: key,
             default_branch: "main",
             clone_path: "/tmp/#{key}"
@@ -44,7 +43,7 @@ defmodule RailWeb.TestingLiveTest do
 
     {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [here.id, there.id]})
 
-    # Blockers are read from the tracker, which no test here asks unless it says.
+    # Blockers are read only when a test here asks.
     stub(Issues, :get_blockers, fn _issues -> %{} end)
 
     done = fn project, title ->
@@ -96,6 +95,16 @@ defmodule RailWeb.TestingLiveTest do
     assert has_element?(view, "#testing-row-#{issue.id}", "Here")
     assert has_element?(view, "#testing-queue-split", "1 waiting · 0 in testing")
     assert has_element?(view, "#testing-bar", issue.identifier)
+  end
+
+  test "a Done ticket with no completed time is queued with no age", %{conn: conn, done: done, here: here} do
+    issue = done.(here, "Finished before times were kept")
+    issue |> Ecto.Changeset.change(completed_at: nil) |> Repo.update!()
+
+    {:ok, view, _html} = live(conn, ~p"/testing")
+
+    assert has_element?(view, "#testing-row-#{issue.id}", "Finished before times were kept")
+    refute has_element?(view, "#testing-row-#{issue.id}", " ago")
   end
 
   test "a ticket reopened before it was tested comes back with its notes, and a Tested one stays out", %{
@@ -161,10 +170,10 @@ defmodule RailWeb.TestingLiveTest do
     {:ok, child} = Issues.create_issue(system_scope(), here, %{title: "A part of it", parent: issue})
     {:ok, _comment} = Issues.comment(Rail.Scope.for_user(user), issue, %{body: "Tried it on staging"})
 
-    blocker = %Issue{external_id: "lin_tl_b", identifier: "BLK-1", title: "Blocking it", state: :todo, id: "iss_tl_b"}
+    blocker = %Issue{identifier: "BLK-1", title: "Blocking it", state: :todo, id: "iss_tl_b"}
 
-    stub(Issues, :get_blockers, fn [%Issue{id: id, external_id: external_id}] when id == issue.id ->
-      %{external_id => %{blocked_by: [%{issue: blocker, in_project: true}], blocks: []}}
+    stub(Issues, :get_blockers, fn [%Issue{id: id}] when id == issue.id ->
+      %{id => %{blocked_by: [%{issue: blocker, in_project: true}], blocks: []}}
     end)
 
     assert :ok =
@@ -284,14 +293,12 @@ defmodule RailWeb.TestingLiveTest do
     assert %Issue{testing_images: []} = Repo.get!(Issue, issue.id)
   end
 
-  test "a picture the box cannot take, or the tracker cannot hold, says why and is not kept", %{
+  test "a file the box cannot take says why and is not kept", %{
     conn: conn,
     done: done,
     here: here
   } do
     issue = done.(here, "Refused")
-    # A tracker that holds no files, as GitHub's does not.
-    {:ok, _github} = issue |> Ecto.Changeset.change(tracker: :github) |> Repo.update()
     {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
     form = "#testing-notes-form-#{issue.id}"
 
@@ -302,18 +309,6 @@ defmodule RailWeb.TestingLiveTest do
     view |> element(form) |> render_change(%{"_target" => ["testing_images"]})
 
     assert has_element?(view, "#testing-image-error", "notes.txt is not a PNG, JPEG, GIF or WebP picture.")
-    refute has_element?(view, "#testing-images")
-
-    shot = file_input(view, form, :testing_images, [%{name: "row.png", content: "PNG_BYTES", type: "image/png"}])
-    render_upload(shot, "row.png")
-    render_async(view)
-
-    assert has_element?(
-             view,
-             "#testing-image-error",
-             "row.png was not added: this ticket's tracker cannot hold pictures."
-           )
-
     refute has_element?(view, "#testing-images")
   end
 
@@ -335,7 +330,7 @@ defmodule RailWeb.TestingLiveTest do
     assert has_element?(view, "#testing-image-error", "Up to 10 pictures go at a time, so shot11.png was not added.")
   end
 
-  test "a picture the tracker fails to store, or one for a ticket finished meanwhile, says so", %{
+  test "a picture R2 fails to store, or one for a ticket finished meanwhile, says so", %{
     conn: conn,
     done: done,
     here: here
@@ -384,20 +379,20 @@ defmodule RailWeb.TestingLiveTest do
     assert %Issue{testing_images: [%TestingImage{name: "a.png"}]} = Repo.get!(Issue, issue.id)
   end
 
-  test "a Linear picture is read through the ticket's asset route, and a finished ticket's cannot be removed", %{
+  test "a picture shows from its address, and a finished ticket's cannot be removed", %{
     conn: conn,
     done: done,
     here: here
   } do
-    issue = done.(here, "Linear pictured")
+    issue = done.(here, "Pictured")
 
     {:ok, _pictured} =
       issue
-      |> Issue.testing_images_changeset([%TestingImage{url: "https://uploads.linear.app/a/b/shot.png", name: "shot.png"}])
+      |> Issue.testing_images_changeset([%TestingImage{url: "https://x/a/b/shot.png", name: "shot.png"}])
       |> Repo.update()
 
     {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
-    assert has_element?(view, "#testing-image-0 img[src='/issues/#{issue.id}/assets/a/b/shot.png']")
+    assert has_element?(view, "#testing-image-0 img[src='https://x/a/b/shot.png']")
     assert has_element?(view, "#testing-image-0 [data-qa='image-chip-remove']")
 
     {:ok, _tested} = Issues.mark_issue_tested(system_scope(), issue)
@@ -590,13 +585,7 @@ defmodule RailWeb.TestingLiveTest do
     assert has_element?(view, "#testing-notes-#{issue.id}[data-rev='1']", "Theirs, saved last")
   end
 
-  test "a Rail-tracked ticket shows its cycle with no cycle menu, and a Linear one shows none", %{
-    conn: conn,
-    done: done,
-    here: here,
-    project: project,
-    user: user
-  } do
+  test "a ticket shows its cycle with no cycle menu", %{conn: conn, done: done, here: here} do
     # Cycle 1 runs Nov 10 to 23.
     :ok = Issues.close_cycle_day(~D[2026-11-10])
     stub(Date, :utc_today, fn -> ~D[2026-11-12] end)
@@ -604,21 +593,6 @@ defmodule RailWeb.TestingLiveTest do
     planned = done.(here, "Planned")
     {:ok, _planned} = Issues.set_issue_cycle(system_scope(), planned, cycle.id)
     unplanned = done.(here, "Unplanned")
-    {:ok, _user} = Users.update_user(system_scope(), user, %{project_ids: [here.id, project.id]})
-
-    linear =
-      %Issue{}
-      |> Issue.tracker_changeset(%{
-        project_id: project.id,
-        external_id: "lin_tl_cycle",
-        identifier: "TLC-1",
-        title: "On Linear",
-        url: "https://linear.app/issue/TLC-1",
-        state: :in_review
-      })
-      |> Repo.insert!()
-      |> Issue.tracker_changeset(%{state: :done})
-      |> Repo.update!()
 
     {:ok, view, _html} = live(conn, ~p"/testing/#{planned.id}")
 
@@ -632,51 +606,6 @@ defmodule RailWeb.TestingLiveTest do
 
     render_patch(view, ~p"/testing/#{unplanned.id}")
     assert has_element?(view, "#issue-cycle", "No cycle")
-
-    render_patch(view, ~p"/testing/#{linear.id}")
-    assert has_element?(view, "#testing-bar", "TLC-1")
-    refute has_element?(view, "#issue-cycle")
-  end
-
-  test "a Linear ticket labeled Test done in Linear leaves an open queue and reads Tested, its notes kept", %{
-    conn: conn,
-    done: done,
-    here: here,
-    project: project,
-    user: user
-  } do
-    {:ok, _user} = Users.update_user(system_scope(), user, %{project_ids: [here.id, project.id]})
-    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
-    open = done.(here, "Still to test")
-
-    label = fn labels ->
-      Issues.handle_linear_webhook(workspace, %{
-        "type" => "Issue",
-        "action" => "update",
-        "data" => %{
-          "id" => "lin_tl_label",
-          "teamId" => project.linear_team_id,
-          "identifier" => "TLL-1",
-          "title" => "Checked before merge",
-          "state" => %{"id" => "st_done", "name" => "Done", "type" => "completed"},
-          "labels" => Enum.map(labels, &%{"id" => "lbl_#{&1}", "name" => &1})
-        }
-      })
-    end
-
-    {:ok, linear} = label.([])
-    {:ok, _noted} = Issues.save_testing_notes(system_scope(), linear, "Looked at the merge")
-    {:ok, view, _html} = live(conn, ~p"/testing/#{open.id}")
-    assert has_element?(view, "#testing-row-#{linear.id} [data-testing-state='testing']")
-
-    {:ok, _tested} = label.(["Test done"])
-
-    refute has_element?(view, "#testing-row-#{linear.id}")
-    assert has_element?(view, "#testing-bar", open.identifier)
-    assert %Issue{testing_state: :tested, testing_notes: "Looked at the merge"} = Repo.get!(Issue, linear.id)
-
-    {:ok, view, _html} = live(conn, ~p"/issues/#{linear.identifier}")
-    assert has_element?(view, "#issue-testing [data-testing-state='tested']", "Tested")
   end
 
   test "an action on a ticket another tab already finished says so and changes nothing", %{
@@ -737,44 +666,23 @@ defmodule RailWeb.TestingLiveTest do
     assert %Issue{testing_state: :waiting} = Repo.get!(Issue, issue.id)
   end
 
-  test "a tracker that refuses the new ticket names why and leaves the ticket in the queue", %{
+  test "a follow-up that cannot be filed names why and leaves the ticket in the queue", %{
     conn: conn,
-    project: project
+    done: done,
+    here: here
   } do
-    {:ok, user} =
-      Users.register_oauth_user(%{github_id: "gh_tl_linear", login: "tl_linear", email: "tl_linear@example.com"})
-
-    {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
-
-    issue =
-      %Issue{}
-      |> Issue.tracker_changeset(%{
-        project_id: project.id,
-        external_id: "lin_tl_refused",
-        identifier: "TLR-1",
-        title: "Refused",
-        url: "https://linear.app/issue/TLR-1",
-        state: :in_review
-      })
-      |> Repo.insert!()
-      |> Issue.tracker_changeset(%{state: :done})
-      |> Repo.update!()
-
+    issue = done.(here, "Refused")
     {:ok, _noted} = Issues.save_testing_notes(system_scope(), issue, "Broken")
+    expect(Issues, :create_issue, fn _scope, _project, _attrs -> {:error, :db_down} end)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => false}}})
-    end)
-
-    conn = conn |> log_in_user(user) |> Plug.Conn.put_session(:selected_project_id, project.id)
     {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
     view |> element("#testing-send-to-triage") |> render_click()
 
-    assert has_element?(view, "#testing-notice", "That did not work: {:linear_mutation_failed, \"issueCreate\"}")
+    assert has_element?(view, "#testing-notice", "That did not work: :db_down")
     assert has_element?(view, "#testing-row-#{issue.id} [data-testing-state='testing']")
   end
 
-  test "the open ticket follows its comments, its project's syncs and its blockers, and other news leaves it", %{
+  test "the open ticket follows its comments, its changes and its blockers, and other news leaves it", %{
     conn: conn,
     done: done,
     here: here,
@@ -796,12 +704,6 @@ defmodule RailWeb.TestingLiveTest do
     {:ok, _comment} = Issues.comment(Rail.Scope.for_user(user), issue, %{body: "Left after opening"})
     assert has_element?(view, "#issue-comments", "Left after opening")
 
-    issue |> Issue.tracker_changeset(%{title: "Renamed by a sync"}) |> Repo.update!()
-    send(view.pid, {:issues_synced, there.id})
-    refute has_element?(view, "#issue-title", "Renamed by a sync")
-    send(view.pid, {:issues_synced, here.id})
-    assert has_element?(view, "#issue-title", "Renamed by a sync")
-
     send(view.pid, {:issue_comments_changed, "iss_other"})
     send(view.pid, {:testing_notes_changed, "iss_other"})
     send(view.pid, {:nav_something, "unrelated"})
@@ -810,8 +712,10 @@ defmodule RailWeb.TestingLiveTest do
     render_async(view)
     refute_received {:blockers_read, _id}
 
+    issue |> Issue.tracker_changeset(%{title: "Renamed elsewhere"}) |> Repo.update!()
     Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
     render_async(view)
+    assert has_element?(view, "#issue-title", "Renamed elsewhere")
     assert_received {:blockers_read, _id}
 
     {:ok, blocker} = Issues.create_issue(system_scope(), here, %{title: "Blocks the open ticket"})
@@ -828,13 +732,12 @@ defmodule RailWeb.TestingLiveTest do
     assert_received {:blockers_read, _id}
   end
 
-  test "a page with nothing open opens the first ticket a sync or a move brings in", %{
+  test "a page with nothing open opens the first ticket that arrives", %{
     conn: conn,
     done: done,
     here: here
   } do
     {:ok, view, _html} = live(conn, ~p"/testing")
-    send(view.pid, {:issues_synced, here.id})
     refute has_element?(view, "#testing-bar")
 
     issue = done.(here, "Arrived")
@@ -842,13 +745,13 @@ defmodule RailWeb.TestingLiveTest do
   end
 
   test "a blocker read that fails leaves the ticket without blocker sections", %{conn: conn, done: done, here: here} do
-    issue = done.(here, "Linear down")
-    stub(Issues, :get_blockers, fn _issues -> raise "Linear is down" end)
+    issue = done.(here, "Blockers down")
+    stub(Issues, :get_blockers, fn _issues -> raise "The blockers are down" end)
 
     {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
     render_async(view)
 
-    assert has_element?(view, "#issue-title", "Linear down")
+    assert has_element?(view, "#issue-title", "Blockers down")
     refute has_element?(view, "#issue-blocked-by")
   end
 end

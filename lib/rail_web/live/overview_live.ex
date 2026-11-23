@@ -56,6 +56,7 @@ defmodule RailWeb.OverviewLive do
       current_scope={@current_scope}
       attention_count={@attention_count}
       triage_count={@triage_count}
+      support_count={@support_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}
@@ -147,10 +148,6 @@ defmodule RailWeb.OverviewLive do
   end
 
   def handle_info({:issue_changed, _issue_id}, socket) do
-    {:noreply, load_overview_state(socket, socket.assigns.project_filter, socket.assigns.view == :everyone)}
-  end
-
-  def handle_info({:issues_synced, _project_id}, socket) do
     {:noreply, load_overview_state(socket, socket.assigns.project_filter, socket.assigns.view == :everyone)}
   end
 

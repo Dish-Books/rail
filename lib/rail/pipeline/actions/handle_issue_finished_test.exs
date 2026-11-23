@@ -9,19 +9,6 @@ defmodule Rail.Pipeline.Actions.HandleIssueFinishedTest do
   alias Rail.Pipeline.Workers.AdvanceSplit
 
   setup %{project: project} do
-    for {id, identifier} <- [{"lin_hif_1", "HIF-1"}, {"lin_hif_2", "HIF-2"}] do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueCreate" => %{
-              "success" => true,
-              "issue" => %{"id" => id, "identifier" => identifier, "title" => identifier}
-            }
-          }
-        })
-      end)
-    end
-
     {:ok, parent_issue} = Issues.create_issue(system_scope(), project, %{title: "HIF-1"})
     {:ok, parent} = Pipeline.create_task(parent_issue, :split)
     {:ok, child_issue} = Issues.create_issue(system_scope(), project, %{title: "HIF-2", parent: parent_issue})

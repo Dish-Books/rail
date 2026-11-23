@@ -14,21 +14,6 @@ defmodule Rail.Pipeline.Actions.StopAndSendMessageTest do
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_stop_and_send_1",
-              "identifier" => "SAS-1",
-              "title" => "Stop And Send Issue"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Stop And Send Issue"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 

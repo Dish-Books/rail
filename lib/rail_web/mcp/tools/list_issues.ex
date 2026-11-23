@@ -33,7 +33,7 @@ defmodule RailWeb.Mcp.Tools.ListIssues do
 
     field :state, {:enum, Map.keys(@states)}, description: "Only tickets in this state."
     field :assignee, :string, description: "`me`, or a GitHub login."
-    field :cycle, :string, description: "`current`, `next` or a cycle's number, in a Rail-tracked project."
+    field :cycle, :string, description: "`current`, `next` or a cycle's number, in a project."
     field :query, :string, description: "Words in the title or identifier."
     field :finished, :boolean, default: false, description: "Include done and canceled tickets."
     field :limit, :integer, default: 50, description: "How many to return."
@@ -72,7 +72,7 @@ defmodule RailWeb.Mcp.Tools.ListIssues do
 
   defp find_cycle(_project, nil), do: {:ok, nil}
 
-  defp find_cycle(%Project{tracker: :local} = project, wanted) do
+  defp find_cycle(%Project{} = project, wanted) do
     {:ok, %{cycles: cycles}} = Issues.get_cycles(project)
     current_index = Enum.find_index(cycles, & &1.current)
 

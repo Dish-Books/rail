@@ -8,14 +8,13 @@ defmodule Rail.Git.Actions.DeleteViewedFilesTest do
 
   setup %{project: project} do
     [task, other] =
-      for external_id <- ["lin_dvf_1", "lin_dvf_2"] do
+      for identifier <- ["DVF-1", "DVF-2"] do
         {:ok, task} =
           %Issue{}
           |> Issue.tracker_changeset(%{
             project_id: project.id,
-            external_id: external_id,
-            identifier: external_id,
-            title: external_id,
+            identifier: identifier,
+            title: identifier,
             state: :in_progress
           })
           |> Repo.insert!()

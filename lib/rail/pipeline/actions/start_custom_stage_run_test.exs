@@ -13,17 +13,6 @@ defmodule Rail.Pipeline.Actions.StartCustomStageRunTest do
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_scsr_1", "identifier" => "SCSR-1", "title" => "Dependency updates"}
-          }
-        }
-      })
-    end)
-
     stages = [
       %IssueStage{stage: :custom, name: "Missing strings", prompt: "List the keys."},
       %IssueStage{stage: :plan},

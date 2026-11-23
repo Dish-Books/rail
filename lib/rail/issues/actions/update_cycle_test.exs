@@ -13,7 +13,6 @@ defmodule Rail.Issues.Actions.UpdateCycleTest do
         name: "Dated",
         github_repo: "example/#{local_key}",
         github_installation_id: 1,
-        tracker: :local,
         key: local_key,
         default_branch: "main",
         clone_path: "/tmp/#{local_key}"
@@ -131,12 +130,12 @@ defmodule Rail.Issues.Actions.UpdateCycleTest do
 
   test "a cycle of another project, or a project the scope cannot open, is not found", %{
     local: local,
-    project: linear,
+    project: other,
     cycles: [%{id: first_id} | _later]
   } do
-    assert {:error, :not_found} = Issues.update_cycle(system_scope(), linear, first_id, %{"ends_on" => "2026-11-30"})
+    assert {:error, :not_found} = Issues.update_cycle(system_scope(), other, first_id, %{"ends_on" => "2026-11-30"})
 
     assert {:error, :not_found} =
-             Issues.update_cycle(temp_user_scope(project_ids: [linear.id]), local, first_id, %{"ends_on" => "2026-11-30"})
+             Issues.update_cycle(temp_user_scope(project_ids: [other.id]), local, first_id, %{"ends_on" => "2026-11-30"})
   end
 end

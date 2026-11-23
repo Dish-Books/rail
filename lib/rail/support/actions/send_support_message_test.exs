@@ -9,7 +9,7 @@ defmodule Rail.Support.Actions.SendSupportMessageTest do
 
   setup do
     Req.Test.verify_on_exit!()
-    %{project: project} = triage_project(tracker: :local)
+    %{project: project} = triage_project()
     unique = System.unique_integer([:positive])
     app_id = "app#{unique}"
     external_id = "#{unique}"

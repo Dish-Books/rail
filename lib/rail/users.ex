@@ -40,10 +40,6 @@ defmodule Rail.Users do
   defdelegate link_github(scope, auth), to: Actions.LinkGitHub
   defdelegate unlink_github(scope), to: Actions.UnlinkGitHub
 
-  defdelegate linear_token(scope), to: Actions.LinearToken
-  defdelegate link_linear(scope, code), to: Actions.LinkLinear
-  defdelegate unlink_linear(scope), to: Actions.UnlinkLinear
-
   defdelegate slack_token(scope), to: Actions.SlackToken
   defdelegate link_slack(scope, code), to: Actions.LinkSlack
   defdelegate unlink_slack(scope), to: Actions.UnlinkSlack

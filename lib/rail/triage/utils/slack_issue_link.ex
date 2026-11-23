@@ -4,8 +4,7 @@ defmodule Rail.Triage.Utils.SlackIssueLink do
   alias Rail.Issues.Schemas.Issue
 
   @doc """
-  How an issue is linked in a Slack post: its identifier, as a link when Linear gave it a URL.
+  How an issue is linked in a Slack post: its identifier, linking to its page.
   """
-  def slack_issue_link(%Issue{url: url, identifier: identifier}) when is_binary(url), do: "<#{url}|#{identifier}>"
-  def slack_issue_link(%Issue{identifier: identifier}), do: identifier
+  def slack_issue_link(%Issue{url: url, identifier: identifier}), do: "<#{url}|#{identifier}>"
 end

@@ -24,8 +24,6 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
       |> assign(:access?, Rail.cloudflare_access() != nil)
       |> assign(:github_error, Phoenix.Flash.get(socket.assigns.flash, :github_error))
       |> apply_user(user)
-      |> assign(:linear_connected, linear_connected?(user))
-      |> assign(:linear_name, user.linear_name)
       |> assign(:slack_connected, Scope.slack_linked?(current_scope))
       |> assign(:slack_name, user.slack_name)
       |> assign(:slack_notifications_error, nil)
@@ -55,6 +53,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
       current_scope={@current_scope}
       attention_count={@attention_count}
       triage_count={@triage_count}
+      support_count={@support_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}
@@ -294,56 +293,6 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
                   </div>
                 </div>
               </div>
-            </div>
-
-            <div
-              id="linear-account-section"
-              class="flex items-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 p-4"
-            >
-              <.account_avatar label="L" src={nil} id="linear-avatar" />
-
-              <div class="min-w-0 flex-1">
-                <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Linear</h3>
-
-                <p
-                  :if={@linear_connected}
-                  id="linear-connected-details"
-                  class="mt-0.5 text-sm text-slate-500 dark:text-slate-400 truncate"
-                >
-                  <span id="linear-user-name">{@linear_name || "Linear User"}</span>
-                  · issues and comments attributed to you
-                </p>
-
-                <p
-                  :if={!@linear_connected}
-                  id="linear-disconnected-message"
-                  class="mt-0.5 text-sm text-slate-500 dark:text-slate-400"
-                >
-                  Not connected - issues and comments go out as the workspace.
-                </p>
-              </div>
-
-              <span :if={@linear_connected} class="text-sm text-emerald-600 dark:text-emerald-400">
-                Connected
-              </span>
-
-              <.button
-                :if={@linear_connected}
-                variant="secondary"
-                phx-click="disconnect"
-                id="disconnect-linear-button"
-              >
-                Disconnect
-              </.button>
-
-              <.button
-                :if={!@linear_connected}
-                variant="primary"
-                href={~p"/auth/linear"}
-                id="connect-linear-button"
-              >
-                Connect
-              </.button>
             </div>
 
             <div
@@ -793,25 +742,6 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
     {:noreply, socket}
   end
 
-  def handle_event("disconnect", _params, socket) do
-    case Users.unlink_linear(socket.assigns.current_scope) do
-      {:ok, updated_user} ->
-        updated_scope = Scope.for_user(updated_user)
-
-        socket =
-          socket
-          |> assign(:current_scope, updated_scope)
-          |> assign(:current_user, updated_user)
-          |> assign(:linear_connected, false)
-          |> assign(:linear_name, nil)
-
-        {:noreply, socket}
-
-      {:error, _reason} ->
-        {:noreply, socket}
-    end
-  end
-
   def handle_event("disconnect_slack", _params, socket) do
     case Users.unlink_slack(socket.assigns.current_scope) do
       {:ok, updated_user} ->
@@ -1033,6 +963,4 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
   defp mcp_connected_ids(scope) do
     scope |> Mcp.list_connections() |> MapSet.new(& &1.mcp_server_id)
   end
-
-  defp linear_connected?(%User{linear_access_token: token}), do: is_binary(token) and token != ""
 end

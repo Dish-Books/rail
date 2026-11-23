@@ -40,7 +40,6 @@ defmodule Rail.Mcp.Actions.AuthenticateRunTokenTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: "lin_run_token_#{unique}",
         identifier: "RT#{unique}-1",
         title: "Run token issue",
         state: :backlog,
@@ -179,7 +178,7 @@ defmodule Rail.Mcp.Actions.AuthenticateRunTokenTest do
 
   describe "a support pass's token" do
     setup do
-      %{project: project, role: %{id: triage_role_id}} = triage_project(tracker: :local)
+      %{project: project, role: %{id: triage_role_id}} = triage_project()
       unique = System.unique_integer([:positive])
 
       {:ok, %{id: triage_user_id} = triage_user} =

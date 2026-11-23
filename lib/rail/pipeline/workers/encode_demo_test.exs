@@ -7,8 +7,8 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
   alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Issues
+  alias Rail.Issues.Clients.R2
   alias Rail.Issues.Schemas.Comment
-  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DemoBeat
   alias Rail.Pipeline.Workers.EncodeDemo
@@ -19,17 +19,6 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
     stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :demo)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_edm_1", "identifier" => "EDM-1", "title" => "Encode Demo"}
-          }
-        }
-      })
-    end)
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Encode Demo"})
     {:ok, task} = Pipeline.create_task(issue, :review)
@@ -142,57 +131,24 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
     assert "[rail] The demo has no voice-over: ffmpeg is not installed on this machine." in lines
   end
 
-  test "a recorded demo is posted on the ticket and linked from the pull request", %{
-    task: task,
+  test "a recorded demo is posted on the ticket and linked from the pull request at the issue's address on Rail", %{
+    task: %{issue_id: issue_id} = task,
     run: run,
     demo_dir: demo_dir
   } do
     {:ok, task} = Pipeline.update_task(task, %{pr_number: 7, pr_is_draft: true})
     File.mkdir_p!(Path.join(demo_dir, "frames"))
-    File.write!(Path.join(demo_dir, "EDM-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
+    File.write!(Path.join(demo_dir, "TST-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
     File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
 
     expect(Tools, :encode_recording, fn ^demo_dir, [], :reading -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "fileUpload" => %{
-            "success" => true,
-            "uploadFile" => %{
-              "uploadUrl" => "https://uploads.linear.app/put/edm-1",
-              "assetUrl" => "https://uploads.linear.app/assets/EDM-1-demo.webm",
-              "headers" => []
-            }
-          }
-        }
-      })
-    end)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
+    Req.Test.expect(R2, fn conn ->
+      assert %Plug.Conn{method: "PUT", request_path: "/r2_bucket/" <> key} = conn
+      assert ["video/webm"] = Plug.Conn.get_req_header(conn, "content-type")
       assert {:ok, "webm bytes", conn} = Plug.Conn.read_body(conn)
+      send(self(), {:stored, key})
       Plug.Conn.send_resp(conn, 200, "")
-    end)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
-      comment = "## Demo: Filters\n\nIt filters.\n\n[Watch the demo](https://uploads.linear.app/assets/EDM-1-demo.webm)"
-      assert %{"variables" => %{"input" => %{"body" => ^comment}}} = Jason.decode!(body)
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "commentCreate" => %{
-            "success" => true,
-            "comment" => %{
-              "id" => "comment_demo",
-              "body" => comment,
-              "createdAt" => "2026-09-22T10:00:00.000Z",
-              "issue" => %{"id" => "lin_edm_1"},
-              "botActor" => %{"name" => "Rail"}
-            }
-          }
-        }
-      })
     end)
 
     # A re-recorded demo replaces the link rather than adding another under it.
@@ -206,51 +162,6 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
 
         {"PATCH", "/repos/example/test-seed/pulls/7"} ->
           {:ok, body, conn} = Plug.Conn.read_body(conn)
-
-          assert %{
-                   "body" =>
-                     "Opened by Rail.\n\n## Demo\n\n[Watch the demo](https://uploads.linear.app/assets/EDM-1-demo.webm)"
-                 } = Jason.decode!(body)
-
-          Req.Test.json(conn, %{"number" => 7})
-      end
-    end)
-
-    assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
-    assert [] = Pipeline.list_run_events(run)
-  end
-
-  test "a Rail-tracked task's demo comment and pull request link the video at the issue's address on Rail", %{
-    task: %{issue_id: issue_id} = task,
-    run: run,
-    demo_dir: demo_dir
-  } do
-    {:ok, task} = Pipeline.update_task(task, %{pr_number: 7, pr_is_draft: true})
-    Issue |> Repo.get!(issue_id) |> Ecto.Changeset.change(tracker: :local) |> Repo.update!()
-    File.mkdir_p!(Path.join(demo_dir, "frames"))
-    File.write!(Path.join(demo_dir, "EDM-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
-    File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
-
-    expect(Tools, :encode_recording, fn ^demo_dir, [], :reading -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
-
-    Req.Test.expect(Rail.Issues.Clients.R2, fn conn ->
-      assert %Plug.Conn{method: "PUT", request_path: "/r2_bucket/" <> key} = conn
-      assert ["video/webm"] = Plug.Conn.get_req_header(conn, "content-type")
-      assert {:ok, "webm bytes", conn} = Plug.Conn.read_body(conn)
-      send(self(), {:stored, key})
-      Plug.Conn.send_resp(conn, 200, "")
-    end)
-
-    Req.Test.expect(Client, 3, fn conn ->
-      case {conn.method, conn.request_path} do
-        {"POST", "/app/installations/" <> _id} ->
-          Req.Test.json(conn, %{"token" => "ghs_token"})
-
-        {"GET", "/repos/example/test-seed/pulls/7"} ->
-          Req.Test.json(conn, %{"number" => 7, "body" => "Opened by Rail."})
-
-        {"PATCH", "/repos/example/test-seed/pulls/7"} ->
-          {:ok, body, conn} = Plug.Conn.read_body(conn)
           send(self(), {:pull_request, Jason.decode!(body)["body"]})
           Req.Test.json(conn, %{"number" => 7})
       end
@@ -260,7 +171,7 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
     assert [] = Pipeline.list_run_events(run)
     assert_received {:stored, key}
     assert [^issue_id, name] = String.split(key, "/")
-    assert name =~ ~r/\A[0-9a-f-]{36}-EDM-1-demo\.webm\z/
+    assert name =~ ~r/\A[0-9a-f-]{36}-TST-1-demo\.webm\z/
     url = "#{RailWeb.Endpoint.url()}/issues/#{issue_id}/assets/#{name}"
 
     comment = "## Demo: Filters\n\nIt filters.\n\n[Watch the demo](#{url})"
@@ -275,49 +186,20 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
     demo_dir: demo_dir
   } do
     File.mkdir_p!(Path.join(demo_dir, "frames"))
-    File.write!(Path.join(demo_dir, "EDM-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
+    File.write!(Path.join(demo_dir, "TST-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
     File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
 
     expect(Tools, :encode_recording, fn ^demo_dir, [], :reading -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "fileUpload" => %{
-            "success" => true,
-            "uploadFile" => %{
-              "uploadUrl" => "https://uploads.linear.app/put/edm-1",
-              "assetUrl" => "https://uploads.linear.app/a.webm",
-              "headers" => []
-            }
-          }
-        }
-      })
-    end)
-
-    Req.Test.expect(Rail.Linear, &Plug.Conn.send_resp(&1, 200, ""))
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "commentCreate" => %{
-            "success" => true,
-            "comment" => %{
-              "id" => "comment_demo_2",
-              "body" => "## Demo: Filters",
-              "createdAt" => "2026-09-22T10:00:00.000Z",
-              "issue" => %{"id" => "lin_edm_1"},
-              "botActor" => %{"name" => "Rail"}
-            }
-          }
-        }
-      })
-    end)
+    Req.Test.expect(R2, &Plug.Conn.send_resp(&1, 200, ""))
 
     Req.Test.stub(Client, fn _conn -> flunk("asked GitHub about a pull request the task does not have") end)
 
     assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
     assert [] = Pipeline.list_run_events(run)
+
+    assert [%Comment{body: "## Demo: Filters\n\nIt filters.\n\n[Watch the demo](" <> _url}] =
+             Repo.all(from c in Comment, where: c.issue_id == ^task.issue_id)
   end
 
   # A demo is not a reason to fail the review, so what went wrong is said where the human reads the run.
@@ -327,11 +209,11 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
     demo_dir: demo_dir
   } do
     File.mkdir_p!(Path.join(demo_dir, "frames"))
-    File.write!(Path.join(demo_dir, "EDM-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
+    File.write!(Path.join(demo_dir, "TST-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
     File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
 
     expect(Tools, :encode_recording, fn ^demo_dir, [], :reading -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
-    Req.Test.expect(Rail.Linear, &Req.Test.json(&1, %{"data" => %{"fileUpload" => %{"success" => false}}}))
+    Req.Test.expect(R2, &Plug.Conn.send_resp(&1, 500, "down"))
 
     assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
     assert [%{line: "[rail] Could not publish the demo: " <> _reason}] = Pipeline.list_run_events(run)

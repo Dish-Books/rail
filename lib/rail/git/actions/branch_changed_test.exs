@@ -6,17 +6,6 @@ defmodule Rail.Git.Actions.BranchChangedTest do
   alias Rail.Pipeline
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_bch_1", "identifier" => "BCH-1", "title" => "Branch Changed"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Branch Changed"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 

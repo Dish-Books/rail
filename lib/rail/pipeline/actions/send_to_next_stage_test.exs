@@ -23,17 +23,6 @@ defmodule Rail.Pipeline.Actions.SendToNextStageTest do
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_str_1", "identifier" => "STR-1", "title" => "Send To Review"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Send To Review"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)

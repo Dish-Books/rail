@@ -6,17 +6,6 @@ defmodule Rail.Pipeline.Actions.FileFindingIssuesTest do
   alias Rail.Pipeline.Schemas.Finding
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_ffi_1", "identifier" => "FFI-1", "title" => "File Finding Issues"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "File Finding Issues"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     task = Repo.preload(task, [:issue, :project])
@@ -43,47 +32,33 @@ defmodule Rail.Pipeline.Actions.FileFindingIssuesTest do
     {:ok, first} = Pipeline.decide_finding(system_scope(), first, :new_issue)
     {:ok, second} = Pipeline.decide_finding(system_scope(), second, :new_issue)
 
-    %{
-      task: task,
-      first: first,
-      second: second,
-      filed: fn identifier ->
-        fn conn ->
-          assert %{"variables" => %{"input" => %{"title" => title, "stateId" => "st_triage"}}} =
-                   conn |> Req.Test.raw_body() |> Jason.decode!()
-
-          Req.Test.json(conn, %{
-            "data" => %{
-              "issueCreate" => %{
-                "success" => true,
-                "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
-              }
-            }
-          })
-        end
-      end
-    }
+    %{task: task, first: first, second: second}
   end
 
   test "files one issue per finding, oldest first, and a second filing of the same findings files none", %{
     task: %{id: task_id} = task,
     first: first,
-    second: second,
-    filed: filed
+    second: second
   } do
-    Req.Test.expect(Rail.Linear, filed.("FFI-2"))
-    Req.Test.expect(Rail.Linear, filed.("FFI-3"))
     Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
 
     assert {:ok,
             [
-              %Finding{key: "branch-overflow", issue: %{identifier: "FFI-2", title: "The branch overflows"}},
-              %Finding{key: "resort", issue: %{identifier: "FFI-3"}}
+              %Finding{
+                key: "branch-overflow",
+                issue: %{
+                  identifier: "TST-" <> _first,
+                  number: first_number,
+                  title: "The branch overflows",
+                  state: :triage
+                }
+              },
+              %Finding{key: "resort", issue: %{number: second_number, title: "The list re-sorts", state: :triage}}
             ]} = Pipeline.file_finding_issues(system_scope(), task, [second, first])
 
+    assert first_number < second_number
     assert_received {:output_saved, ^task_id}
 
-    # Each tracker call above was expected once, so another would fail the test.
     assert {:ok, []} = Pipeline.file_finding_issues(system_scope(), task, [first, second])
     refute_received {:output_saved, ^task_id}
   end
@@ -91,11 +66,13 @@ defmodule Rail.Pipeline.Actions.FileFindingIssuesTest do
   test "a refusal stops the filing there, and the issue already filed stays", %{
     task: %{id: task_id} = task,
     first: %{id: first_id} = first,
-    second: %{id: second_id} = second,
-    filed: filed
+    second: %{id: second_id} = second
   } do
-    Req.Test.expect(Rail.Linear, filed.("FFI-2"))
-    Req.Test.expect(Rail.Linear, &Plug.Conn.send_resp(&1, 500, "down"))
+    expect(Issues, :create_issue, fn scope, project, attrs ->
+      call_original(Issues, :create_issue, [scope, project, attrs])
+    end)
+
+    expect(Issues, :create_issue, fn _scope, _project, _attrs -> {:error, %Ecto.Changeset{}} end)
     Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
 
     assert {:error, {:issue_not_filed, "The list re-sorts"}, [%Finding{id: ^first_id}]} =
@@ -107,7 +84,7 @@ defmodule Rail.Pipeline.Actions.FileFindingIssuesTest do
   end
 
   test "a refusal with nothing filed says nothing to the page", %{task: %{id: task_id} = task, second: second} do
-    Req.Test.expect(Rail.Linear, &Plug.Conn.send_resp(&1, 500, "down"))
+    expect(Issues, :create_issue, fn _scope, _project, _attrs -> {:error, %Ecto.Changeset{}} end)
     Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
 
     assert {:error, {:issue_not_filed, "The list re-sorts"}, []} =

@@ -20,19 +20,6 @@ defmodule Rail.Pipeline.Workers.CleanupMergedTaskTest do
     stub(Git, :remove_worktree, fn _repo_path, _worktree_path -> :ok end)
     stub(Git, :delete_branch, fn _repo_path, _branch -> :ok end)
 
-    Req.Test.stub(Rail.Linear, fn conn ->
-      n = System.unique_integer([:positive])
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_cmt_#{n}", "identifier" => "CMT-#{n}", "title" => "Cleanup Merged #{n}"}
-          }
-        }
-      })
-    end)
-
     {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Cleanup Merged"})
     {:ok, task} = Pipeline.create_task(issue, :finalize)

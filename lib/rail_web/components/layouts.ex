@@ -24,6 +24,7 @@ defmodule RailWeb.Layouts do
   attr :current_scope, Rail.Scope, required: true
   attr :attention_count, :integer, required: true
   attr :triage_count, :integer, required: true
+  attr :support_count, :integer, required: true
   attr :current_project_id, :string, required: true
   attr :projects, :list, required: true
   attr :theme, :string, required: true
@@ -41,6 +42,7 @@ defmodule RailWeb.Layouts do
         current_scope={@current_scope}
         attention_count={@attention_count}
         triage_count={@triage_count}
+        support_count={@support_count}
       />
 
       <div class="flex flex-col flex-1 min-w-0 h-full overflow-hidden">

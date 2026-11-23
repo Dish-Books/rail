@@ -3,7 +3,7 @@ defmodule Rail.Mcp.Utils.ToolAllowed do
 
   @doc """
   Whether a role's `mcp_tools` allow `tool` on the server `server_name`: named exactly
-  (`linear__get_issue`) or through the server wildcard (`linear__*`).
+  (`sentry__get_issue`) or through the server wildcard (`sentry__*`).
   """
   def tool_allowed?(mcp_tools, server_name, tool)
       when is_list(mcp_tools) and is_binary(server_name) and is_binary(tool) do

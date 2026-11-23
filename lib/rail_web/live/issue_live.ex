@@ -1,9 +1,8 @@
 defmodule RailWeb.IssueLive do
   @moduledoc """
-  One issue, laid out the way Linear lays it out: the title and description on
+  One issue: the title and description on
   the left with its comment threads beneath, its properties down the right. The
-  status and assignee can be changed and comments posted here, and all three reach
-  the tracker. A Rail-tracked issue is edited here in full, its cycle included; any other is edited in its tracker.
+  issue is edited here in full, its cycle included.
   """
   use RailWeb, :live_view
 
@@ -53,7 +52,7 @@ defmodule RailWeb.IssueLive do
 
     socket =
       if issue = socket.assigns.issue,
-        do: assign(socket, :assignees, Users.list_assignable_users(project_id: issue.project_id, tracker: issue.tracker)),
+        do: assign(socket, :assignees, Users.list_assignable_users(project_id: issue.project_id)),
         else: socket
 
     socket = socket |> link_pull_request() |> read_blockers() |> read_cycles()
@@ -100,13 +99,6 @@ defmodule RailWeb.IssueLive do
     {:noreply, handle_issue_event(event, params, socket, &load_issue(&1, &1.assigns.issue.id))}
   end
 
-  # A sync may have changed what the tracker says about this issue.
-  def handle_info({:issues_synced, project_id}, %{assigns: %{issue: %{project_id: project_id}}} = socket) do
-    {:noreply, load_issue(socket, socket.assigns.issue.id)}
-  end
-
-  def handle_info({:issues_synced, _other_project_id}, socket), do: {:noreply, socket}
-
   def handle_info({:issue_comments_changed, issue_id}, %{assigns: %{issue: %{id: issue_id}}} = socket) do
     {:noreply, load_issue(socket, issue_id)}
   end
@@ -121,7 +113,7 @@ defmodule RailWeb.IssueLive do
   def handle_info({:pipeline_changed, _other_task_id}, socket), do: {:noreply, socket}
 
   # The tracker may have closed the issue, which takes away the offer to start it, or changed its parent, a sub-issue
-  # or a blocker. Linear sends nothing for a relation, so blockers are read again when this issue or one changes.
+  # or a blocker. Blockers are read again when this issue or one of them changes.
   def handle_info({event, changed_id}, %{assigns: %{issue: %Issue{} = issue, blockers: blockers}} = socket)
       when event in [:issue_changed, :issue_created] do
     socket = if issue_relative?(issue, blockers, changed_id), do: load_issue(socket, issue.id), else: socket
@@ -219,7 +211,7 @@ defmodule RailWeb.IssueLive do
   defp read_blockers(%{assigns: %{issue: %Issue{} = issue}} = socket) do
     if connected?(socket) do
       start_async(socket, :blockers, fn ->
-        {issue.id, Map.get(Issues.get_blockers([issue]), issue.external_id, %{blocked_by: [], blocks: []})}
+        {issue.id, Map.get(Issues.get_blockers([issue]), issue.id, %{blocked_by: [], blocks: []})}
       end)
     else
       socket
@@ -228,8 +220,7 @@ defmodule RailWeb.IssueLive do
 
   defp read_blockers(socket), do: socket
 
-  # Only Rail schedules cycles an issue can be put in from here.
-  defp read_cycles(%{assigns: %{issue: %Issue{tracker: :local, project: project}}} = socket) do
+  defp read_cycles(%{assigns: %{issue: %Issue{project: project}}} = socket) do
     {:ok, %{cycles: cycles}} = Issues.get_cycles(project)
     assign(socket, :cycles, cycles)
   end

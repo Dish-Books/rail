@@ -251,24 +251,17 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
 
     stub(DateTime, :utc_now, fn -> ~U[2026-10-14 10:00:00.000000Z] end)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_TST-84", "identifier" => "TST-84", "title" => "Dependency updates 2026-10-14"}
-          }
-        }
-      })
-    end)
+    html = view |> element("#run-now-#{id}") |> render_click()
 
-    assert view |> element("#run-now-#{id}") |> render_click() =~ "Dependency updates opened TST-84."
-    assert [%Issue{title: "Dependency updates 2026-10-14"}] = Repo.all(from(i in Issue, where: i.workflow_id == ^id))
+    assert [%Issue{title: "Dependency updates 2026-10-14", identifier: identifier}] =
+             Repo.all(from(i in Issue, where: i.workflow_id == ^id))
+
+    assert html =~ "Dependency updates opened #{identifier}."
     assert has_element?(view, "#workflow-next-#{id}", "None while paused")
 
     # Jobs do not run here, so the issue still has no task.
     assert view |> element("#run-now-#{id}") |> render_click() =~
-             "Dependency updates opened nothing: TST-84 is still unfinished and has no task yet. " <>
+             "Dependency updates opened nothing: #{identifier} is still unfinished and has no task yet. " <>
                "You can start it from its page."
 
     assert [_one] = Repo.all(from(i in Issue, where: i.workflow_id == ^id))
@@ -295,7 +288,6 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
       |> Issue.tracker_changeset(%{
         project_id: project.id,
         workflow_id: id,
-        external_id: "lin_TST-84",
         identifier: "TST-84",
         title: "Dependency updates 2026-10-12",
         state: :in_progress
@@ -366,7 +358,7 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
     assert render_click(view, "run_now", %{"id" => id}) =~ "Dependency updates opened nothing: its file is invalid."
   end
 
-  test "Run now says what the tracker answered when it opened nothing", %{conn: conn, project: project} do
+  test "Run now says why when the issue could not be opened", %{conn: conn, project: project} do
     %Workflow{id: id} =
       Repo.insert!(%Workflow{
         project_id: project.id,
@@ -380,10 +372,9 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
       })
 
     {:ok, view, _html} = live(conn, ~p"/settings/workflows")
-    Req.Test.expect(Rail.Linear, fn conn -> conn |> Plug.Conn.put_status(500) |> Req.Test.json(%{}) end)
+    expect(Rail.Issues, :create_issue, fn _scope, _project, _attrs -> {:error, :db_down} end)
 
-    assert view |> element("#run-now-#{id}") |> render_click() =~
-             "Dependency updates opened nothing: {:linear_api_error, 500"
+    assert view |> element("#run-now-#{id}") |> render_click() =~ "Dependency updates opened nothing: :db_down"
   end
 
   test "a sync shows on the open page without a reload", %{conn: conn, project: project} do
@@ -479,18 +470,9 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
 
     stub(DateTime, :utc_now, fn -> ~U[2026-10-14 10:00:00.000000Z] end)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_TST-87", "identifier" => "TST-87", "title" => "Dependency updates 2026-10-14"}
-          }
-        }
-      })
-    end)
-
-    assert view |> element("#run-now-#{id}") |> render_click() =~ "Dependency updates opened TST-87."
+    html = view |> element("#run-now-#{id}") |> render_click()
+    assert [%Issue{identifier: identifier}] = Repo.all(from(i in Issue, where: i.workflow_id == ^id))
+    assert html =~ "Dependency updates opened #{identifier}."
     assert has_element?(view, "#workflow-next-#{id}", "None while paused")
 
     # A workflow the page does not list fails at its lookup, and the page restarts.

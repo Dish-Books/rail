@@ -19,8 +19,7 @@ defmodule RailWeb.LearningsLive do
   @errors %{
     already_decided: "Someone already decided this proposal.",
     not_found: "Someone already decided this proposal.",
-    retired: "This rule was retired, so it cannot be made active again.",
-    linear_team_not_found: "This project has no Linear team to open the issue in."
+    retired: "This rule was retired, so it cannot be made active again."
   }
 
   def mount(_params, _session, socket) do
@@ -87,6 +86,7 @@ defmodule RailWeb.LearningsLive do
       current_scope={@current_scope}
       attention_count={@attention_count}
       triage_count={@triage_count}
+      support_count={@support_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}

@@ -1,6 +1,6 @@
 defmodule Rail.Issues.Actions.UpdateCycle do
   @moduledoc """
-  A person's edit of a Rail-tracked cycle's dates, which moves every later cycle by as many days as its end moved.
+  A person's edit of a cycle's dates, which moves every later cycle by as many days as its end moved.
   """
 
   import Rail.Issues.Utils.LockCycles

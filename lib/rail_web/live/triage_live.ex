@@ -82,6 +82,7 @@ defmodule RailWeb.TriageLive do
       current_scope={@current_scope}
       attention_count={@attention_count}
       triage_count={@triage_count}
+      support_count={@support_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}
@@ -142,7 +143,7 @@ defmodule RailWeb.TriageLive do
                 variant="primary"
                 size="sm"
                 phx-click="create_forwarded"
-                phx-disable-with="Creating…"
+                data-no-repeat
                 id="create-forwarded-button"
               >
                 <.icon name="pi-check-bold" class="size-3.5" />Create {@create_count} {if @create_count ==

@@ -5,10 +5,14 @@ defmodule RailWeb.Hooks.NavHook do
   alias Rail.Pipeline
   alias Rail.Projects
   alias Rail.Scope
+  alias Rail.Support
   alias Rail.Tools
   alias Rail.Triage
   alias Rail.Users
   alias RailWeb.Components.TodosPanel
+
+  # An import broadcasts once per conversation, so the Support badge recounts at most once a second.
+  @support_recount_after 1_000
 
   def on_mount(:default, _params, session, socket) do
     scope = socket.assigns.current_scope
@@ -18,6 +22,10 @@ defmodule RailWeb.Hooks.NavHook do
 
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Rail.PubSub, "todos:#{scope.user.id}")
+
+      if support_listener?(socket) and Users.can?(scope, :support, :view),
+        do: Phoenix.PubSub.subscribe(Rail.PubSub, "support")
+
       params = get_connect_params(socket)
 
       # Handled once this mount has rendered, when the panel exists; a reconnect joins again and sends it again.
@@ -48,6 +56,8 @@ defmodule RailWeb.Hooks.NavHook do
           else: 0
         )
       )
+      |> assign(:support_count, count_support(scope))
+      |> assign(:support_recount_scheduled, false)
       |> assign(:current_project_id, current_project_id)
       # What a page lists: the selected project, or else every project the user can see.
       |> assign(:project_filter, current_project_id || Scope.project_ids(scope))
@@ -56,8 +66,17 @@ defmodule RailWeb.Hooks.NavHook do
       |> attach_hook(:nav_handle_params, :handle_params, &handle_nav_params/3)
       |> attach_hook(:nav_handle_events, :handle_event, &handle_nav_events/3)
       |> attach_hook(:nav_todos, :handle_info, &handle_todos_info/2)
+      |> attach_support_hook()
 
     {:cont, socket}
+  end
+
+  # The badge is what the Support queue's Waiting filter lists, across every project the user can see. A role without
+  # the tab never sees it, so it is not counted.
+  def count_support(scope) do
+    if Users.can?(scope, :support, :view),
+      do: Support.count_support_conversations(project_id: Scope.project_ids(scope)).waiting,
+      else: 0
   end
 
   defp handle_nav_params(params, uri, socket) do
@@ -106,4 +125,33 @@ defmodule RailWeb.Hooks.NavHook do
   end
 
   defp handle_todos_info(_message, socket), do: {:cont, socket}
+
+  # The Support page listens and recounts on each load itself: a second subscription would deliver twice, and this
+  # hook would take its messages.
+  defp support_listener?(socket), do: socket.view != RailWeb.SupportLive
+
+  defp attach_support_hook(socket) do
+    if support_listener?(socket),
+      do: attach_hook(socket, :nav_support, :handle_info, &handle_support_info/2),
+      else: socket
+  end
+
+  defp handle_support_info({:support_changed, _conversation_id}, %{assigns: %{support_recount_scheduled: true}} = socket),
+    do: {:halt, socket}
+
+  defp handle_support_info({:support_changed, _conversation_id}, socket) do
+    Process.send_after(self(), :nav_support_recount, @support_recount_after)
+    {:halt, assign(socket, :support_recount_scheduled, true)}
+  end
+
+  defp handle_support_info(:nav_support_recount, socket) do
+    socket =
+      socket
+      |> assign(:support_recount_scheduled, false)
+      |> assign(:support_count, count_support(socket.assigns.current_scope))
+
+    {:halt, socket}
+  end
+
+  defp handle_support_info(_message, socket), do: {:cont, socket}
 end

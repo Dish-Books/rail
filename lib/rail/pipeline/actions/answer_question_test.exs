@@ -16,21 +16,6 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_answer_question_1",
-              "identifier" => "ANS-1",
-              "title" => "Answer Question Issue"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Answer Question Issue"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 

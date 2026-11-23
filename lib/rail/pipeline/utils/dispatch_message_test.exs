@@ -20,21 +20,6 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_dispatch_message_1",
-              "identifier" => "DSP-1",
-              "title" => "Dispatch Message Issue"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Dispatch Message Issue"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)

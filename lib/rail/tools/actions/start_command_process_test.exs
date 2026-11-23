@@ -44,7 +44,6 @@ defmodule Rail.Tools.Actions.StartCommandProcessTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: "lin_command_#{System.unique_integer([:positive])}",
         identifier: "CMD-1",
         title: "Command Issue",
         state: :backlog

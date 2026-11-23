@@ -4,26 +4,28 @@ defmodule Rail.Issues.Actions.AdvanceIssueStateTest do
 
   alias Rail.Issues
   alias Rail.Issues.Workers.AdvanceTrackerState
+  alias Rail.Projects
   alias Rail.Repo
 
-  setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_advance_action_1", "identifier" => "ADA-1", "title" => "Advance Action Issue"}
-          }
-        }
+  setup do
+    key = "Ais#{System.unique_integer([:positive])}"
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Advanced",
+        github_repo: "example/#{key}",
+        github_installation_id: 1,
+        key: key,
+        default_branch: "main",
+        clone_path: "/tmp/#{key}"
       })
-    end)
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Advance Action Issue"})
 
     %{issue: issue}
   end
 
-  test "queues the Linear move rather than making it", %{issue: issue} do
+  test "queues the move rather than making it", %{issue: issue} do
     assert {:ok, %Oban.Job{}} = Issues.advance_issue_state(issue)
 
     assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: issue.id})
@@ -48,7 +50,7 @@ defmodule Rail.Issues.Actions.AdvanceIssueStateTest do
     assert next_id != finished_id
   end
 
-  # A job left retrying through a Linear outage is older than Oban's default window.
+  # A job left retrying for a day is older than Oban's default window.
   test "a move queued long ago still blocks a second one", %{issue: issue} do
     {:ok, %Oban.Job{id: job_id} = queued} = Issues.advance_issue_state(issue)
 

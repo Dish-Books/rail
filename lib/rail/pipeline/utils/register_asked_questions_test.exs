@@ -18,21 +18,6 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_run_finished_1",
-              "identifier" => "RFN-1",
-              "title" => "Run Finished Issue"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Run Finished Issue"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
 

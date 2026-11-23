@@ -1,6 +1,6 @@
 defmodule RailWeb.Utils.HandleIssueEvent do
   @moduledoc """
-  The events `RailWeb.Components.IssueView` raises for its owner menu, cycle menu, comments and a Rail-tracked
+  The events `RailWeb.Components.IssueView` raises for its owner menu, cycle menu, comments and the
   issue's properties and relations, for every LiveView that renders it. Each passes how it reloads the issue afterwards.
   """
   import Phoenix.Component, only: [assign: 3, update: 3]

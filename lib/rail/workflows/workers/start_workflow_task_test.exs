@@ -39,7 +39,6 @@ defmodule Rail.Workflows.Workers.StartWorkflowTaskTest do
       |> Issue.tracker_changeset(%{
         project_id: project.id,
         workflow_id: workflow.id,
-        external_id: "lin_TST-84",
         identifier: "TST-84",
         title: "Dependency updates 2026-10-12",
         description: "Update the dependencies.",

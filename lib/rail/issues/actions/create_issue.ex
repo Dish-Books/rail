@@ -1,15 +1,13 @@
 defmodule Rail.Issues.Actions.CreateIssue do
   @moduledoc """
-  Opens a ticket in the project's tracker and records it locally.
+  Opens a ticket.
 
-  Creating stays synchronous, unlike every later write. The tracker, or Postgres for Rail's own, names an
+  Postgres names an
   issue (`identifier`, `branch_name`, the URL), and the pipeline uses those the
   moment the row exists: the branch a worktree is cut on and the scratch file a
   product run writes its ticket into are both named after them. An issue that had
   to wait for them would be an issue nothing could act on yet.
   """
-
-  import Ecto.Query
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Tracker
@@ -20,72 +18,55 @@ defmodule Rail.Issues.Actions.CreateIssue do
   @doc """
   Creates the ticket and inserts the issue it came back as.
 
-  A blank title or an estimate below 0 is the changeset's error, before the tracker is asked.
+  A blank title or an estimate below 0 is the changeset's error.
 
   `attrs` carries `:title` and `:description`, and optionally `:priority`, `:estimate`,
   `:owner_user_id`, `:workflow_id`, the workflow opening it, `:skipped_steps`, the steps its file
   turned off, `:stages`, the `IssueStage`s its file named, `:parent`, the issue it is a sub-issue of, and `:cycle_id`,
-  the cycle a Rail-tracked ticket opens in, which the caller has already checked. The ticket is opened in triage, or in
+  the cycle the ticket opens in, which the caller has already checked. The ticket is opened in triage, or in
   Todo for a sub-issue, whose work is already planned. Broadcasts `{:issue_created, issue_id}` on `"issues"`.
   """
-  def create_issue(%Scope{} = scope, %Project{id: project_id} = project, %{} = attrs) do
-    # Read again, so a form opened before the project moved off Linear files its ticket where the project is now.
-    project = %{project | tracker: Repo.one!(from(p in Project, where: p.id == ^project_id, select: p.tracker))}
+  def create_issue(%Scope{} = scope, %Project{} = project, %{} = attrs) do
     state = if attrs[:parent], do: :todo, else: :triage
 
-    with %Ecto.Changeset{valid?: true} <- Issue.edit_changeset(%Issue{}, Map.take(attrs, [:title, :estimate])),
-         {:ok, tracked} <- Tracker.tracker(project).create_issue(scope, project, Map.put(attrs, :state, state)) do
-      local =
-        Map.merge(tracked, %{
-          tracker: project.tracker,
-          project_id: project.id,
-          owner_user_id: attrs[:owner_user_id],
-          priority: attrs[:priority] || :medium,
-          estimate: attrs[:estimate],
-          workflow_id: attrs[:workflow_id]
-        })
+    case Issue.edit_changeset(%Issue{}, Map.take(attrs, [:title, :estimate])) do
+      %Ecto.Changeset{valid?: true} ->
+        {:ok, tracked} = Tracker.create_issue(scope, project, Map.put(attrs, :state, state))
 
-      # A tracker's webhook can announce the ticket before this insert, so the row it saved is kept, with its testing.
-      # Set on the struct rather than cast, so no tracker write can change the steps after; `Issue.changeset/2`
-      # takes no cycle or parent, which GitHub never sends.
-      %Issue{
-        skipped_steps: attrs[:skipped_steps] || [],
-        stages: attrs[:stages] || [],
-        cycle_external_id: tracked[:cycle_external_id],
-        parent_external_id: tracked[:parent_external_id]
-      }
-      |> Issue.changeset(local)
-      # Rail's own tracker draws the id its URL names. On the struct it would make the insert read as an update.
-      |> Ecto.Changeset.put_change(:id, tracked[:id])
-      |> Repo.insert(
-        on_conflict:
-          {:replace_all_except,
-           [
-             :id,
-             :branch_name,
-             :inserted_at,
-             :cycle_external_id,
-             :parent_external_id,
-             :testing_state,
-             :testing_notes,
-             :testing_images
-           ]},
-        conflict_target: :external_id,
-        returning: true
-      )
-      |> case do
-        # The project is what the caller already handed us: carry it on the issue so
-        # nothing downstream has to fetch it again.
-        {:ok, %Issue{} = issue} ->
-          Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_created, issue.id})
-          {:ok, %{issue | project: project}}
+        local =
+          Map.merge(tracked, %{
+            project_id: project.id,
+            owner_user_id: attrs[:owner_user_id],
+            priority: attrs[:priority] || :medium,
+            estimate: attrs[:estimate],
+            workflow_id: attrs[:workflow_id]
+          })
 
-        {:error, changeset} ->
-          {:error, changeset}
-      end
-    else
-      %Ecto.Changeset{} = changeset -> {:error, changeset}
-      {:error, _reason} = error -> error
+        # Set on the struct rather than cast, so no later write can change the steps; `Issue.changeset/2` takes no cycle
+        # or parent.
+        %Issue{
+          skipped_steps: attrs[:skipped_steps] || [],
+          stages: attrs[:stages] || [],
+          cycle_id: tracked[:cycle_id],
+          parent_id: tracked[:parent_id]
+        }
+        |> Issue.changeset(local)
+        # The tracker draws the id its URL names. On the struct it would make the insert read as an update.
+        |> Ecto.Changeset.put_change(:id, tracked[:id])
+        |> Repo.insert(returning: true)
+        |> case do
+          # The project is what the caller already handed us: carry it on the issue so
+          # nothing downstream has to fetch it again.
+          {:ok, %Issue{} = issue} ->
+            Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_created, issue.id})
+            {:ok, %{issue | project: project}}
+
+          {:error, changeset} ->
+            {:error, changeset}
+        end
+
+      %Ecto.Changeset{} = changeset ->
+        {:error, changeset}
     end
   end
 end

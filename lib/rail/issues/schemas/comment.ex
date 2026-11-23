@@ -1,7 +1,7 @@
 defmodule Rail.Issues.Schemas.Comment do
   @moduledoc """
-  A comment on an issue, mirrored from its tracker. A reply points at the top-level
-  comment it answers; Linear threads only one level deep.
+  A comment on an issue. A reply points at the top-level
+  comment it answers; threads go only one level deep.
   """
   use Rail.Schema
 
@@ -10,7 +10,6 @@ defmodule Rail.Issues.Schemas.Comment do
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "com"}
   schema "issue_comments" do
-    field :external_id, :string
     field :body, :string, default: ""
     field :author_name, :string
     field :author_avatar_url, :string
@@ -29,7 +28,6 @@ defmodule Rail.Issues.Schemas.Comment do
     :author_name,
     :author_user_id,
     :body,
-    :external_id,
     :inserted_at,
     :issue_id,
     :parent_id,
@@ -39,8 +37,7 @@ defmodule Rail.Issues.Schemas.Comment do
   def changeset(comment, attrs) do
     comment
     |> cast(attrs, @cast_fields)
-    |> validate_required([:issue_id, :external_id])
-    |> unique_constraint(:external_id)
+    |> validate_required([:issue_id])
     |> foreign_key_constraint(:issue_id)
     |> foreign_key_constraint(:parent_id)
     |> foreign_key_constraint(:author_user_id)

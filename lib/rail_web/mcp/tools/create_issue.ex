@@ -1,7 +1,7 @@
 defmodule RailWeb.Mcp.Tools.CreateIssue do
   @moduledoc """
   Files a ticket in a project, or a sub-issue under one of its tickets, as you. It is assigned to you unless you name
-  someone else, or no one with an empty assignee. A Rail-tracked project's ticket can open in a cycle; list_cycles shows
+  someone else, or no one with an empty assignee. A project's ticket can open in a cycle; list_cycles shows
   which is current.
   """
 
@@ -28,8 +28,7 @@ defmodule RailWeb.Mcp.Tools.CreateIssue do
     field :estimate, :integer, description: "Points."
     field :parent, :string, description: "The identifier of the ticket this is a sub-issue of."
 
-    field :cycle, :string,
-      description: "`current`, `next` or an open cycle's number, in a Rail-tracked project. Left out, no cycle."
+    field :cycle, :string, description: "`current`, `next` or an open cycle's number, in a project. Left out, no cycle."
 
     field :assignee, :string, description: "A GitHub login, or empty for no one. Left out, you."
   end
@@ -65,7 +64,6 @@ defmodule RailWeb.Mcp.Tools.CreateIssue do
   end
 
   defp find_parent(_scope, %Project{}, nil), do: {:ok, nil}
-  defp find_parent(_scope, %Project{tracker: :github}, _parent), do: {:error, :parent_on_github}
 
   defp find_parent(scope, %Project{id: project_id}, identifier) do
     case Issues.find_issue(scope, identifier) do
@@ -77,16 +75,15 @@ defmodule RailWeb.Mcp.Tools.CreateIssue do
   defp find_cycle(%Project{}, nil), do: {:ok, nil}
   defp find_cycle(%Project{} = project, wanted), do: Issues.find_cycle(project, wanted)
 
-  # Where the tracker cannot assign the person, such as Linear before they connect it, the ticket is filed unassigned.
+  # Someone who can't be assigned tickets, such as before they connect GitHub, files it unassigned.
   defp find_owner(scope, %Project{} = project, params) do
-    assignable = Users.list_assignable_users(project_id: project.id, tracker: project.tracker)
+    assignable = Users.list_assignable_users(project_id: project.id)
 
     case params |> Map.get(:assignee, :me) |> then(&if(is_binary(&1), do: String.trim(&1), else: &1)) do
       :me ->
         if Enum.any?(assignable, &(&1.id == scope.user.id)),
           do: {:ok, scope.user.id, %{}},
-          else:
-            {:ok, nil, %{note: "Filed unassigned: #{Issue.tracker_label(project.tracker)} can't assign it to you yet."}}
+          else: {:ok, nil, %{note: "Filed unassigned: you can't be assigned tickets in this project yet."}}
 
       "" ->
         {:ok, nil, %{}}

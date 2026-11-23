@@ -24,7 +24,6 @@ defmodule Rail.Pipeline.Actions.PurgeTaskTest do
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project.id,
-        external_id: "lin_purge_runs",
         identifier: "PRG-1",
         title: "Purged",
         state: :in_progress
@@ -57,7 +56,6 @@ defmodule Rail.Pipeline.Actions.PurgeTaskTest do
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project.id,
-        external_id: "lin_purge_browser",
         identifier: "PRG-3",
         title: "Purged browser",
         state: :in_progress
@@ -80,13 +78,12 @@ defmodule Rail.Pipeline.Actions.PurgeTaskTest do
   # Runs have no foreign key to tasks, so nothing else would take them.
   test "deletes the task's runs with their processes and events", %{project: project} do
     [{:ok, %Task{id: task_id} = task}, {:ok, %Task{id: other_task_id}}] =
-      for external_id <- ["lin_purge_rows", "lin_purge_neighbor"] do
+      for identifier <- ["lin_purge_rows", "lin_purge_neighbor"] do
         %Issue{}
         |> Issue.tracker_changeset(%{
           project_id: project.id,
-          external_id: external_id,
-          identifier: external_id,
-          title: external_id,
+          identifier: identifier,
+          title: identifier,
           state: :in_progress
         })
         |> Repo.insert!()
@@ -134,7 +131,6 @@ defmodule Rail.Pipeline.Actions.PurgeTaskTest do
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project.id,
-        external_id: "lin_purge_files",
         identifier: "PRG-2",
         title: "Purged with its files",
         state: :in_progress

@@ -16,7 +16,7 @@ defmodule Rail.Issues.Workers.LinkTrackerUrl do
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"issue_id" => issue_id, "url" => url, "title" => title}}) do
     case Repo.get(Issue, issue_id) do
-      %Issue{} = issue -> issue |> Repo.preload(:project) |> then(&Tracker.tracker(&1).link_url(&1, url, title))
+      %Issue{} = issue -> issue |> Repo.preload(:project) |> Tracker.link_url(url, title)
       nil -> :ok
     end
   end

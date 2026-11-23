@@ -14,7 +14,6 @@ defmodule Rail.Issues.Actions.SendIssueToTriageTest do
         name: "Sending",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -94,57 +93,19 @@ defmodule Rail.Issues.Actions.SendIssueToTriageTest do
     assert {:error, :not_found} = Issues.send_issue_to_triage(system_scope(), issue)
   end
 
-  test "a tracker that refuses leaves the ticket in the queue as it was", %{project: project} do
-    %Issue{id: issue_id} =
-      linear =
-      %Issue{}
-      |> Issue.tracker_changeset(%{
-        project_id: project.id,
-        external_id: "lin_sent_back",
-        identifier: "TST-90",
-        title: "Refused",
-        url: "https://linear.app/issue/TST-90",
-        state: :in_review
-      })
-      |> Repo.insert!()
-      |> Issue.tracker_changeset(%{state: :done})
-      |> Repo.update!()
+  test "a send cut off while the new ticket is opened leaves the ticket in the queue with its notes", %{
+    local_project: %{id: project_id},
+    issue: %Issue{id: issue_id} = issue,
+    scope: scope
+  } do
+    {:ok, _noted} = Issues.save_testing_notes(scope, issue, "Broken after the merge")
+    expect(Rail.Issues.Tracker, :create_issue, fn _scope, _project, _attrs -> raise "the node restarted" end)
 
-    {:ok, _noted} = Issues.save_testing_notes(system_scope(), linear, "Still broken")
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => false}}})
-    end)
-
-    assert {:error, {:linear_mutation_failed, "issueCreate"}} = Issues.send_issue_to_triage(system_scope(), linear)
-    assert %Issue{state: :done, testing_state: :testing, testing_notes: "Still broken"} = Repo.get!(Issue, issue_id)
-    assert %{issues: [%Issue{id: ^issue_id}]} = Issues.list_issues(project_id: project.id, testing: true)
-  end
-
-  test "a send cut off during the tracker call leaves the ticket in the queue with its notes", %{project: project} do
-    %Issue{id: issue_id} =
-      linear =
-      %Issue{}
-      |> Issue.tracker_changeset(%{
-        project_id: project.id,
-        external_id: "lin_cut_off",
-        identifier: "TST-91",
-        title: "Cut off",
-        url: "https://linear.app/issue/TST-91",
-        state: :in_review
-      })
-      |> Repo.insert!()
-      |> Issue.tracker_changeset(%{state: :done})
-      |> Repo.update!()
-
-    {:ok, _noted} = Issues.save_testing_notes(system_scope(), linear, "Broken after the merge")
-    Req.Test.expect(Rail.Linear, fn _conn -> raise "the node restarted" end)
-
-    assert_raise RuntimeError, "the node restarted", fn -> Issues.send_issue_to_triage(system_scope(), linear) end
+    assert_raise RuntimeError, "the node restarted", fn -> Issues.send_issue_to_triage(scope, issue) end
 
     assert %Issue{state: :done, testing_state: :testing, testing_notes: "Broken after the merge"} =
              Repo.get!(Issue, issue_id)
 
-    assert %{issues: [%Issue{id: ^issue_id}]} = Issues.list_issues(project_id: project.id, testing: true)
+    assert %{issues: [%Issue{id: ^issue_id}]} = Issues.list_issues(project_id: project_id, testing: true)
   end
 end

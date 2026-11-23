@@ -1,6 +1,6 @@
 defmodule Rail.Issues.Actions.SetIssueCycle do
   @moduledoc """
-  A person's move of a Rail-tracked issue into a cycle that has not ended, or out of its cycle.
+  A person's move of an issue into a cycle that has not ended, or out of its cycle.
   """
 
   import Ecto.Query
@@ -20,17 +20,17 @@ defmodule Rail.Issues.Actions.SetIssueCycle do
     cycle = cycle_id && Repo.one(from(c in Cycle, where: c.id == ^cycle_id and c.project_id == ^project_id))
 
     cond do
-      is_nil(current) or current.tracker != :local or not Scope.can_access_project?(scope, project_id) ->
+      is_nil(current) or not Scope.can_access_project?(scope, project_id) ->
         {:error, :not_found}
 
       is_binary(cycle_id) and (is_nil(cycle) or Cycle.calculate_status(cycle, Date.utc_today()) == :ended) ->
         {:error, :not_found}
 
-      current.cycle_external_id == cycle_id ->
+      current.cycle_id == cycle_id ->
         {:ok, current}
 
       true ->
-        with {:ok, issue} <- current |> Issue.tracker_changeset(%{cycle_external_id: cycle_id}) |> Repo.update() do
+        with {:ok, issue} <- current |> Issue.tracker_changeset(%{cycle_id: cycle_id}) |> Repo.update() do
           Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, id})
           {:ok, issue}
         end

@@ -10,17 +10,6 @@ defmodule Rail.Pipeline.Actions.SaveDemoTest do
   alias Rail.Tools
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_svd_1", "identifier" => "SVD-1", "title" => "Save Demo"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Save Demo"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
@@ -62,7 +51,7 @@ defmodule Rail.Pipeline.Actions.SaveDemoTest do
     assert_enqueued(worker: EncodeDemo, args: %{task_id: task_id})
   end
 
-  # The encode publishes to Linear, so a take already encoded is posted again only when there is a new one.
+  # The encode publishes it on the issue, so a take already encoded is posted again only when there is a new one.
   test "a write-up saved over a take already encoded queues no encode", %{task: %{id: task_id} = task} do
     File.mkdir_p!(Path.join(task.scratch_path, "demo"))
     File.write!(Path.join([task.scratch_path, "demo", "demo.webm"]), "webm bytes")

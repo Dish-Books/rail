@@ -44,13 +44,4 @@ defmodule RailWeb.Utils.RenderMarkdownTest do
 
     refute html =~ "javascript:"
   end
-
-  test "images Linear holds are pointed at where Rail will serve them" do
-    markdown = "![a shot](https://uploads.linear.app/ws/issue/shot.png)"
-
-    assert render_markdown(markdown, "/issues/iss_1/assets") =~
-             ~s(src="/issues/iss_1/assets/ws/issue/shot.png")
-
-    assert render_markdown(markdown) =~ ~s(src="https://uploads.linear.app/ws/issue/shot.png")
-  end
 end

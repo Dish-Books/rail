@@ -3,10 +3,10 @@ defmodule Rail.Issues.Schemas.Issue do
   use Rail.Schema
 
   alias Rail.Issues.Schemas.Comment
+  alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.IssueLink
   alias Rail.Issues.Schemas.IssueStage
   alias Rail.Issues.Schemas.TestingImage
-  alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -24,26 +24,20 @@ defmodule Rail.Issues.Schemas.Issue do
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "iss"}
   schema "issues" do
-    field :external_id, :string
     field :identifier, :string
     field :title, :string
     field :description, :string
     field :priority, Ecto.Enum, values: @priorities, default: :medium
     field :estimate, :integer
     field :state, Ecto.Enum, values: @states
-    field :state_name, :string
     field :branch_name, :string
     field :url, :string
     field :completed_at, :utc_datetime
 
     # Set while the tracker has it archived. It still counts as shipped, but leaves the Issues list unless a task holds it.
     field :archived_at, :utc_datetime
-    # Copied from the project when the issue is made, so it keeps talking to the tracker it came from.
-    field :tracker, Ecto.Enum, values: [:linear, :github, :local], default: :linear
-    # GitHub's issue number, which its REST paths take, or the one Postgres assigns a Rail-tracked issue; nil for Linear.
+    # The number Postgres assigns the issue as it inserts it, which its identifier is named by.
     field :number, :integer
-    # The tracker's own updated_at: where a poll resumes, and how a stale webhook is told apart.
-    field :external_updated_at, :utc_datetime_usec
     # The open pull request its work was opened as outside Rail, kept once found so it is not looked up again.
     field :pr_number, :integer
     field :pr_url, :string
@@ -56,25 +50,17 @@ defmodule Rail.Issues.Schemas.Issue do
     field :testing_state, Ecto.Enum, values: @testing_states, default: :waiting
     field :testing_notes, :string
     embeds_many :testing_images, TestingImage, on_replace: :delete
-    # Its cycle's id, Linear's or a Rail cycle's for a Rail-tracked issue, which Rail sets itself.
-    field :cycle_external_id, :string
-    # The state and status name a cycle's listing reads the issue in; set only by `list_issues/1` with `:cycle_id`.
+    # The state a cycle's listing reads the issue in; set only by `list_issues/1` with `:cycle_id`.
     field :cycle_state, Ecto.Enum, values: @states, virtual: true
-    field :cycle_state_name, :string, virtual: true
     # Written only by `Workers.EmbedIssues`, and left out of every query, so lists and broadcasts carry no vector.
     field :embedding, Pgvector.Ecto.Vector, load_in_query: false
     # The md5 of the title and description the embedding was made from, so an edit since shows as stale.
     field :embedding_digest, :string
 
-    belongs_to :parent, __MODULE__,
-      foreign_key: :parent_external_id,
-      references: :external_id,
-      type: :string
-
-    has_many :children, __MODULE__,
-      foreign_key: :parent_external_id,
-      references: :external_id,
-      preload_order: [asc: :inserted_at, asc: :id]
+    # Its cycle, which Rail sets itself.
+    belongs_to :cycle, Cycle
+    belongs_to :parent, __MODULE__
+    has_many :children, __MODULE__, foreign_key: :parent_id, preload_order: [asc: :inserted_at, asc: :id]
 
     belongs_to :project, Project
     belongs_to :owner_user, User
@@ -86,7 +72,6 @@ defmodule Rail.Issues.Schemas.Issue do
     # The task it merged with, which `task` drops once it is cleaned up, right after the merge.
     has_one :merged_task, Task, where: [stage: :merged]
     has_many :comments, Comment
-    # Only Rail-tracked issues keep links here; other trackers hold their own.
     has_many :links, IssueLink, preload_order: [asc: :inserted_at, asc: :id]
 
     timestamps()
@@ -98,24 +83,19 @@ defmodule Rail.Issues.Schemas.Issue do
     :completed_at,
     :description,
     :estimate,
-    :external_id,
-    :external_updated_at,
     :identifier,
     :number,
     :owner_user_id,
     :priority,
     :project_id,
-    :state_name,
     :state,
     :title,
-    :tracker,
     :url,
     :workflow_id
   ]
 
   @required_fields [
     :project_id,
-    :external_id,
     :identifier,
     :title,
     :state
@@ -124,34 +104,32 @@ defmodule Rail.Issues.Schemas.Issue do
   def changeset(issue, attrs) do
     issue
     |> base_changeset(attrs)
-    |> sync_to_tracker()
+    |> announce_change()
   end
 
   @doc """
-  For what the tracker itself reports: `changeset/2` with nothing queued to push back, plus the cycle and the parent,
-  which Rail never sends, and Rail sets the cycle of a Rail-tracked issue through it. Either one, giving an unowned
-  issue an owner, queues `Workers.AdvanceTrackerState`.
+  `changeset/2` with no change announced, plus the cycle and the parent, which Rail sets through it.
   """
   def tracker_changeset(issue, attrs) do
     issue
-    |> cast(attrs, [:cycle_external_id, :parent_external_id])
+    |> cast(attrs, [:cycle_id, :parent_id])
     |> base_changeset(attrs)
   end
 
   @doc """
   A changeset moving the ticket back to `state`, `:todo` for Discard or `:in_progress` for Back to Plan. Forced, so
-  the tracker is told even when Rail's copy already reads it, and its name waits for the tracker's own.
+  open pages hear of it even when the row already reads it.
   """
   def reset_changeset(issue, state) when state in [:todo, :in_progress] do
     issue
-    |> change(state_name: nil)
+    |> change()
     |> force_change(:state, state)
-    |> sync_to_tracker()
+    |> announce_change()
   end
 
   @doc """
   A changeset linking the issue to the pull request found for it, or clearing it with nils. It is Rail's own
-  record, so nothing goes to the tracker.
+  record, so no change is announced.
   """
   def pull_request_changeset(issue, attrs), do: cast(issue, attrs, [:pr_number, :pr_url, :pr_title])
 
@@ -174,8 +152,8 @@ defmodule Rail.Issues.Schemas.Issue do
   end
 
   @doc """
-  A person's edit of a Rail-tracked issue's text and properties. Rail is its tracker, so nothing is queued to push;
-  `Rail.Issues.edit_issue/3` broadcasts the change itself, and sets the parent apart from the cast.
+  A person's edit of an issue's text and properties. `Rail.Issues.edit_issue/3` broadcasts the change itself, and sets
+  the parent apart from the cast.
   """
   def edit_changeset(issue, attrs) do
     issue
@@ -193,10 +171,6 @@ defmodule Rail.Issues.Schemas.Issue do
   def priority_label(:medium), do: "Medium"
   def priority_label(:low), do: "Low"
   def priority_label(_other), do: nil
-
-  def tracker_label(:github), do: "GitHub"
-  def tracker_label(:linear), do: "Linear"
-  def tracker_label(:local), do: "Rail"
 
   def state_label(:backlog), do: "Backlog"
   def state_label(:triage), do: "Triage"
@@ -284,7 +258,7 @@ defmodule Rail.Issues.Schemas.Issue do
   def calculate_status_groups(issues, statuses, default_estimates) when is_list(issues) do
     names = MapSet.new(statuses, & &1.name)
     held = Enum.map(issues, &{as_cycle_holds(&1), &1})
-    # By the shown name, since Discard and a closed cycle leave a Rail-tracked issue with none of its own.
+    # By the shown name, since Discard and a closed cycle leave an issue with none of its own.
     {named, unnamed} =
       Enum.split_with(held, fn {as_held, _live} -> MapSet.member?(names, calculate_status_name(as_held)) end)
 
@@ -312,18 +286,11 @@ defmodule Rail.Issues.Schemas.Issue do
     end)
   end
 
-  @doc """
-  The state an issue's status icon shows: In Review for one Rail holds as In Progress under a status named In Review,
-  since Linear gives both the same type.
-  """
-  def calculate_shown_state(%__MODULE__{state: :in_progress, state_name: name}) when is_binary(name) do
-    if String.downcase(name) == "in review", do: :in_review, else: :in_progress
-  end
-
+  @doc "The state an issue's status icon shows."
   def calculate_shown_state(%__MODULE__{state: state}), do: state
 
-  @doc "The tracker's name for the issue's status, or Rail's label for its state when the tracker gave none."
-  def calculate_status_name(%__MODULE__{state_name: name, state: state}), do: name || state_label(state)
+  @doc "The name of the issue's status."
+  def calculate_status_name(%__MODULE__{state: state}), do: state_label(state)
 
   @doc "The entries of a blocked-by list whose issue is not finished yet."
   def calculate_open_blockers(entries) when is_list(entries), do: Enum.reject(entries, &finished_state?(&1.issue.state))
@@ -343,59 +310,29 @@ defmodule Rail.Issues.Schemas.Issue do
     issue
     |> cast(attrs, @cast_fields)
     |> validate_required_fields()
-    |> unique_constraint(:external_id)
     |> unique_constraint(:number, name: :issues_project_id_number_index)
     |> foreign_key_constraint(:project_id)
     |> foreign_key_constraint(:owner_user_id)
     |> foreign_key_constraint(:workflow_id)
-    |> advance_when_claimed()
   end
 
-  # Postgres names a Rail-tracked issue as it inserts it, from the number it assigns.
-  defp validate_required_fields(%Ecto.Changeset{data: %__MODULE__{id: nil}} = changeset) do
-    if get_field(changeset, :tracker) == :local,
-      do: validate_required(changeset, List.delete(@required_fields, :identifier)),
-      else: validate_required(changeset, @required_fields)
-  end
+  # Postgres names an issue as it inserts it, from the number it assigns.
+  defp validate_required_fields(%Ecto.Changeset{data: %__MODULE__{id: nil}} = changeset),
+    do: validate_required(changeset, List.delete(@required_fields, :identifier))
 
   defp validate_required_fields(changeset), do: validate_required(changeset, @required_fields)
 
-  # Every write goes up to the tracker, so no caller can forget to say so. This runs
-  # inside the write's own transaction, which is what makes the job and the row
-  # land together or not at all. An insert has nothing to sync back: the ticket
-  # is opened in the tracker first and the row is what came back from it.
-  defp sync_to_tracker(%Ecto.Changeset{data: %__MODULE__{id: id}, changes: changes} = changeset)
+  # Every write tells the pages showing the issue, so no caller can forget to. The job is queued inside the write's own
+  # transaction, so it runs only once the change is there to read. An insert announces itself where it is made.
+  defp announce_change(%Ecto.Changeset{data: %__MODULE__{id: id}, changes: changes} = changeset)
        when is_binary(id) and changes != %{} do
     prepare_changes(changeset, fn prepared ->
-      # GitHub unassigns by login, so the job carries who held the issue before.
-      %{issue_id: id, fields: Map.keys(prepared.changes), previous_owner_user_id: prepared.data.owner_user_id}
-      |> SyncIssue.new()
-      |> Oban.insert!()
-
+      %{issue_id: id} |> SyncIssue.new() |> Oban.insert!()
       prepared
     end)
   end
 
-  defp sync_to_tracker(%Ecto.Changeset{} = changeset), do: changeset
-
-  # An unowned ticket's tracker status is held back while its task runs, so whatever
-  # gives it an owner also queues the move that catches it up. Here, for the same
-  # reason as the sync above: no way of setting the owner can forget to.
-  defp advance_when_claimed(
-         %Ecto.Changeset{data: %__MODULE__{id: id, owner_user_id: nil}, changes: %{owner_user_id: owner_user_id}} =
-           changeset
-       )
-       when is_binary(id) and is_binary(owner_user_id) do
-    prepare_changes(changeset, fn prepared ->
-      %{issue_id: id}
-      |> AdvanceTrackerState.new()
-      |> Oban.insert!()
-
-      prepared
-    end)
-  end
-
-  defp advance_when_claimed(%Ecto.Changeset{} = changeset), do: changeset
+  defp announce_change(%Ecto.Changeset{} = changeset), do: changeset
 
   defp build_tree(issues, prefix) do
     by_id = Map.new(issues, &{&1.id, &1})
@@ -439,8 +376,7 @@ defmodule Rail.Issues.Schemas.Issue do
 
   defp as_cycle_holds(%__MODULE__{cycle_state: nil} = issue), do: issue
 
-  defp as_cycle_holds(%__MODULE__{cycle_state: state, cycle_state_name: name} = issue),
-    do: %{issue | state: state, state_name: name}
+  defp as_cycle_holds(%__MODULE__{cycle_state: state} = issue), do: %{issue | state: state}
 
   defp status_rank(%{type: "started", position: position}), do: {0, -position}
   defp status_rank(%{type: type, position: position}), do: {type_rank(type), position}

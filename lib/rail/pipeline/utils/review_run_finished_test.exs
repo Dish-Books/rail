@@ -18,17 +18,6 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
   setup %{project: project} do
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_rfn_1", "identifier" => "RFN-1", "title" => "Review Finished"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Review Finished"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     # HEAD is asked of Rail.Git, so the worktree is a plain directory and the stub says which commit it is on.
@@ -230,17 +219,6 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
     assert %Run{error: nil} = review_run_finished(run, [])
     assert [%{finished_at: nil}] = Pipeline.read_review(task)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_rrf_2", "identifier" => "RRF-2", "title" => "t"}
-          }
-        }
-      })
-    end)
-
     {:ok, [_filed]} = Pipeline.file_finding_issues(system_scope(), Repo.preload(task, [:issue, :project]), [ruled])
     {:ok, task} = Pipeline.update_task(task, %{pr_is_draft: false})
 
@@ -283,7 +261,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
   describe "a turn on a fix round's plan" do
     setup %{task: task, head: head} do
       {:ok, _closed} = Pipeline.save_review(task)
-      path = Path.join([task.scratch_path, "fix_plans", "RFN-1.json"])
+      path = Path.join([task.scratch_path, "fix_plans", "TST-1.json"])
       File.mkdir_p!(Path.dirname(path))
       # As a Send of one comment leaves it.
       File.write!(

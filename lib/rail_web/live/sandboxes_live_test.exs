@@ -17,8 +17,8 @@ defmodule RailWeb.SandboxesLiveTest do
 
   setup %{conn: conn, project: project} do
     # A role's prompt is read from the project's clone, which another test may have made, so reading it here
-    # would spawn git: these see no prompt file on the default branch, as when there is no clone. A task Linear
-    # deletes takes its worktree and branch in that clone with it.
+    # would spawn git: these see no prompt file on the default branch, as when there is no clone. A deleted task
+    # takes its worktree and branch in that clone with it.
     stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
     stub(Rail.Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
     stub(Rail.Git, :delete_branch, fn _clone_path, _branch -> :ok end)
@@ -43,7 +43,6 @@ defmodule RailWeb.SandboxesLiveTest do
       issue =
         Repo.insert!(%Issue{
           project_id: project.id,
-          external_id: "lin_sbx_#{System.unique_integer([:positive])}",
           identifier: "DISH-#{System.unique_integer([:positive])}",
           title: title,
           state: :backlog
@@ -109,7 +108,7 @@ defmodule RailWeb.SandboxesLiveTest do
         queued_at: DateTime.shift(now, second: -252)
       })
 
-    {setup_run, _issue} = run_on.("Linear comments sync edits made after posting")
+    {setup_run, _issue} = run_on.("Comments keep edits made after posting")
 
     behind =
       sandbox.(setup_run, %{kind: :setup, status: :waiting_for_resources, queued_at: DateTime.shift(now, second: -48)})
@@ -172,33 +171,6 @@ defmodule RailWeb.SandboxesLiveTest do
 
       assert {:error, {:redirect, %{to: ^home}}} = live(log_in_user(conn, user), ~p"/sandboxes")
     end
-  end
-
-  test "a turn whose issue Linear deletes leaves an open page, and the page still loads", %{
-    conn: conn,
-    project: project,
-    run_on: run_on,
-    sandbox: sandbox
-  } do
-    {run, issue} = run_on.("Deleted in Linear mid-turn")
-    %OsProcess{id: sandbox_id} = sandbox.(run, %{})
-    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
-
-    {:ok, view, _html} = live(conn, ~p"/sandboxes")
-    assert has_element?(view, "#running-#{sandbox_id}")
-
-    assert {:ok, %Issue{}} =
-             Rail.Issues.handle_linear_webhook(workspace, %{
-               "type" => "Issue",
-               "action" => "remove",
-               "data" => %{"id" => issue.external_id}
-             })
-
-    refute has_element?(view, "#running-#{sandbox_id}")
-    refute has_element?(view, "#ended-#{sandbox_id}")
-
-    {:ok, reloaded, _html} = live(conn, ~p"/sandboxes")
-    refute has_element?(reloaded, "#ended-#{sandbox_id}")
   end
 
   test "a turn whose task is gone shows no row, and the page still loads", %{
@@ -411,7 +383,6 @@ defmodule RailWeb.SandboxesLiveTest do
     issue =
       Repo.insert!(%Issue{
         project_id: hidden_project.id,
-        external_id: "lin_sbx_hidden",
         identifier: "HSB-1",
         title: "A secret sandbox",
         state: :backlog

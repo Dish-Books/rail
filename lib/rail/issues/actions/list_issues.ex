@@ -12,17 +12,15 @@ defmodule Rail.Issues.Actions.ListIssues do
   Lists a page of issues, most recently updated first, along with how many
   match in all. A search puts the issue whose identifier it names first.
 
-  Options: `:project_id` (one id or a list), `:owner_user_id`, `:cycle_id` (the tracker's id for a cycle of those projects,
-  Rail's own for a Rail-tracked one, or a list), `:state`, `:show_finished`, `:search`, `:completed_after`, `:archived`,
+  Options: `:project_id` (one id or a list), `:owner_user_id`, `:cycle_id` (a cycle of those projects, or a list), `:state`, `:show_finished`, `:search`, `:completed_after`, `:archived`,
   `:priority`, `:exclude_ids`, `:testing`, `:limit`, `:offset` and `:preload`.
 
   With `:cycle_id`, each issue is filtered and counted as its cycle holds it, so one a cycle held when it closed counts in
-  the state it closed in. Each comes back live, with the cycle's state and status name in `cycle_state` and
-  `cycle_state_name`.
+  the state it closed in. Each comes back live, with the cycle's state in `cycle_state`.
 
   `testing: true` narrows to the testing queue, archived tickets included, oldest Done first.
 
-  An issue archived in its tracker is left out unless a task holds it, or
+  An issue archived in Linear before it moved is left out unless a task holds it, or
   `archived: true` asks for every one.
 
   Returns `%{issues: [...], total: n, priority_counts: %{priority => n}}`.
@@ -139,7 +137,7 @@ defmodule Rail.Issues.Actions.ListIssues do
     from([i] in query,
       join: live in Issue,
       on: live.id == i.id,
-      select: merge(live, %{cycle_state: i.state, cycle_state_name: i.state_name})
+      select: merge(live, %{cycle_state: i.state})
     )
   end
 
