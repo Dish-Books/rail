@@ -73,7 +73,9 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     retiring = learning(project, %{rule: "Use SyncIssues", kind: :environment})
     test = self()
 
-    expect(Tools, :run_agent, fn _role, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, argv, opts ->
+      assert Enum.any?(argv, &(&1 =~ Learning.writing_guide()))
+
       send(
         test,
         {:read, File.read!(Path.join(opts[:cd], "observations.md")), File.read!(Path.join(opts[:cd], "rules.md"))}

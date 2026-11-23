@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Actions.StartCuratorRun do
   person approves or rejects beside its conversation, before a tech lead can approve or merge.
   """
 
+  alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -58,6 +59,8 @@ defmodule Rail.Pipeline.Actions.StartCuratorRun do
     - proposals.md, what you or an earlier curator proposed on this task and how each was decided. Do not propose a rejected one again.
 
     The worktree is #{task.worktree_path}. Read it to check whether the code a rule names still exists. Change nothing in it or in #{dir}.
+
+    #{Learning.writing_guide()}
 
     Save each proposal with `save_learning_proposal`:
 

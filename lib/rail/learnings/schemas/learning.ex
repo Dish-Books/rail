@@ -90,6 +90,18 @@ defmodule Rail.Learnings.Schemas.Learning do
   def roles_label(%__MODULE__{roles: []}), do: "Every role"
   def roles_label(%__MODULE__{roles: roles}), do: Enum.map_join(roles, ", ", &role_label/1)
 
+  @doc "What makes a rule good, as every curator brief that proposes one says it."
+  def writing_guide do
+    String.trim("""
+    A good rule:
+
+    - is one instruction an agent can follow without having seen the task it came from: "context functions take the scope first", not "the scope was wrong on the last task";
+    - reads in one pass: it starts with what to do, adds at most one condition, and leaves the mechanism (locks, function names, which code already does it right) to its why;
+    - is scoped as narrowly as it holds, to the roles that act on it and, where it is about some files and not others, a path glob;
+    - says in its why what breaks without it, so an agent can tell when it does not apply.
+    """)
+  end
+
   @doc "What is embedded for a rule, and what a search is matched against."
   def embedding_text(%__MODULE__{rule: rule, why: why}) when is_binary(why), do: "#{rule}\n\n#{why}"
   def embedding_text(%__MODULE__{rule: rule}), do: rule

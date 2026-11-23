@@ -139,7 +139,7 @@ defmodule Rail.Triage.Actions.CreateForwardedThreadTest do
                issue_title: "The allergen sheet lists sesame",
                issue_priority: :urgent,
                issue_estimate: 2,
-               reply_text: nil
+               ignored: false
              },
              %Item{key: "pdf", position: 2, kind: :feature_request, verdict: :partly_built}
            ] = Repo.all(from i in Item, where: i.thread_id == ^thread_id, order_by: i.position)

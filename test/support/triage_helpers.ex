@@ -179,7 +179,7 @@ defmodule RailTest.TriageHelpers do
   end
 
   @doc """
-  A bug item as an agent writes one, with an issue and a reply drafted.
+  A bug item as an agent writes one, with an issue drafted.
   """
   def triage_bug(overrides \\ %{}) do
     Map.merge(
@@ -192,8 +192,23 @@ defmodule RailTest.TriageHelpers do
         "evidence" => [%{"file" => "lib/enter_stage.ex", "lines" => "42", "excerpt" => "Roles.get_role", "holds" => true}],
         "assumptions" => [%{"text" => "Billing is the BILL project."}],
         "issue_note" => "No existing issue covers this.",
-        "issue" => %{"title" => "Approve leaves tasks at Design", "description" => "Root cause.", "priority" => "high"},
-        "reply" => "Thanks Priya, we reproduced this. Filed as {issue link}."
+        "issue" => %{"title" => "Approve leaves tasks at Design", "description" => "Root cause.", "priority" => "high"}
+      },
+      overrides
+    )
+  end
+
+  @doc """
+  A whole result as an agent writes one: `items`, with the thread's reply and the agent's chat answer.
+  """
+  def triage_result(items, overrides \\ %{}) do
+    Map.merge(
+      %{
+        "title" => "Approved tasks stuck at Design",
+        "message" => "One bug, confirmed. I drafted a ticket and a reply.",
+        "reply" => "Thanks Priya, we reproduced this and filed it.",
+        "messages" => [],
+        "items" => items
       },
       overrides
     )

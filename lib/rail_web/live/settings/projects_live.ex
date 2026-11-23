@@ -722,7 +722,7 @@ defmodule RailWeb.Settings.ProjectsLive do
                 >
                   Removing #{removal.name} deletes {removal.threads} triage {if removal.threads == 1,
                     do: "thread",
-                    else: "threads"}, along with their items, notes and the record of what was posted.
+                    else: "threads"}, along with their items, chat and the record of what was posted.
                 </p>
                 <div class="flex justify-end gap-2">
                   <.button
