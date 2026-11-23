@@ -4,6 +4,7 @@ defmodule RailWeb.Components.TriageReply do
   """
   use RailWeb, :html
 
+  alias Rail.Triage.Schemas.Item
   alias Rail.Triage.Schemas.Thread
 
   attr :thread, Thread, required: true
@@ -32,6 +33,7 @@ defmodule RailWeb.Components.TriageReply do
       |> assign(:show_forwarded, forwarded)
       # A reply a person emptied, or one the agent never drafted beside its tickets, still has a box to write in.
       |> assign(:show_reply, not forwarded and (posted or is_binary(thread.reply_text) or thread.items != []))
+      |> assign(:show_links, not posted and links_coming?(thread))
 
     ~H"""
     <div id="triage-reply-panel" class="space-y-4">
@@ -125,12 +127,23 @@ defmodule RailWeb.Components.TriageReply do
           readonly={@locked or @posted}
           class="block w-full resize-y border-0 bg-transparent px-3 py-2 text-[13px] leading-relaxed break-words text-slate-900 dark:text-slate-100 focus:outline-none"
         >{@thread.reply_text}</textarea>
-        <p :if={!@posted} class="px-3 pb-2 text-[11px] text-slate-500 dark:text-slate-400">
+        <p
+          :if={@show_links}
+          id="triage-reply-links"
+          class="px-3 pb-2 text-[11px] text-slate-500 dark:text-slate-400"
+        >
           Rail adds the new tickets' links when it posts.
         </p>
       </form>
     </div>
     """
+  end
+
+  # Send links the tickets of the round it closes, created now or by a Send that stopped before the reply.
+  # It links none in a channel people outside the team read, and sends nothing on a dismissed thread.
+  defp links_coming?(%Thread{} = thread) do
+    is_nil(thread.dismissed_at) and not Thread.external?(thread) and
+      Enum.any?(thread.items, &(is_nil(&1.sent_at) and (Item.to_create?(&1) or is_binary(&1.created_issue_id))))
   end
 
   defp name(%{name: name}) when is_binary(name) and name != "", do: name

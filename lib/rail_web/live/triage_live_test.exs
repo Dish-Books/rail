@@ -11,6 +11,7 @@ defmodule RailWeb.TriageLiveTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects.Schemas.SlackChannel
   alias Rail.Repo
   alias Rail.Support
   alias Rail.Support.Schemas.Conversation
@@ -162,6 +163,20 @@ defmodule RailWeb.TriageLiveTest do
     assert has_element?(view, "#triage-chat")
   end
 
+  test "the reply promises the new tickets' links, except in a channel people outside the team read", %{
+    conn: conn,
+    channel: %{id: channel_id},
+    thread: %Thread{id: thread_id}
+  } do
+    {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}")
+    assert has_element?(view, "#triage-reply-links", "Rail adds the new tickets' links when it posts.")
+
+    Repo.update_all(from(c in SlackChannel, where: c.id == ^channel_id), set: [external: true])
+    Phoenix.PubSub.broadcast(Rail.PubSub, "triage", {:triage_changed, thread_id})
+    assert has_element?(view, "#triage-reply-form")
+    refute has_element?(view, "#triage-reply-links")
+  end
+
   test "the reply and a card's fields save as typed, survive a reload, and a changed kind hides its verdict", %{
     conn: conn,
     thread: %Thread{id: thread_id, items: [bug, _request, _covered]}
@@ -278,6 +293,10 @@ defmodule RailWeb.TriageLiveTest do
       assert has_element?(tab, "#triage-send-hint", "Send waits until the agent finishes.")
     end
 
+    # A reconnect sends the disabled chat box back with no text.
+    render_change(view, "chat_change", %{"_target" => ["chat_message", "text"]})
+    assert has_element?(view, "#triage-chat-running", "Running")
+
     render_click(view, "toggle_ignore", %{"item_id" => covered.id})
     assert has_element?(view, "#triage-refused", "The agent is still working on this thread.")
     assert %Item{ignored: false} = Repo.get!(Item, covered.id)
@@ -366,6 +385,9 @@ defmodule RailWeb.TriageLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}")
     assert has_element?(view, "#triage-sent", "Sent: 2 tickets created, 1 follow-up added.")
+    # The round's tickets are out, so a reply typed now goes without links.
+    assert has_element?(view, "#triage-reply-form")
+    refute has_element?(view, "#triage-reply-links")
 
     {:ok, %Task{id: task_id}} = Pipeline.create_task(Repo.preload(Repo.get!(Issue, issue_id), :project), :plan)
     Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, task_id})
@@ -449,6 +471,8 @@ defmodule RailWeb.TriageLiveTest do
 
     refute has_element?(view, "#triage-refused")
     assert has_element?(view, "#triage-send-error", "Slack did not take the reply.")
+    # Every ticket is made, and Send again still ends the reply with their links.
+    assert has_element?(view, "#triage-reply-links")
   end
 
   test "a sent thread names who posted it, by login without a name, and as someone once they are gone", %{
@@ -491,6 +515,8 @@ defmodule RailWeb.TriageLiveTest do
 
     triage_with(thread, triage_result([], %{"reply" => "Open the task and press Retry."}))
     {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+    assert has_element?(view, "#triage-reply-form")
+    refute has_element?(view, "#triage-reply-links")
     Req.Test.allow(Rail.Slack, self(), view.pid)
     Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000600.000600"}))
 
@@ -587,6 +613,8 @@ defmodule RailWeb.TriageLiveTest do
 
     assert %Thread{status: :done, dismissed_at: %DateTime{}} = Repo.get!(Thread, thread_id)
     assert has_element?(view, "#triage-reply[readonly]")
+    assert has_element?(view, "#triage-reply-form")
+    refute has_element?(view, "#triage-reply-links")
     assert has_element?(view, "#triage-ticket-ignore-#{bug.id}[disabled]")
     refute has_element?(view, "#triage-send-button")
 

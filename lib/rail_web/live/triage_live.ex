@@ -196,6 +196,9 @@ defmodule RailWeb.TriageLive do
   def handle_event("chat_change", %{"chat_message" => attrs}, socket),
     do: {:noreply, assign(socket, :chat_form, Ecto.Changeset.change(%ChatMessage{}, text: attrs["text"]))}
 
+  # A reconnect while the agent works recovers the disabled chat box with no text: nothing changed.
+  def handle_event("chat_change", _params, socket), do: {:noreply, socket}
+
   def handle_event("chat", %{"chat_message" => attrs}, socket) do
     socket =
       case Triage.send_triage_chat(socket.assigns.current_scope, socket.assigns.thread, attrs) do
