@@ -651,12 +651,16 @@ defmodule RailWeb.TaskLiveTest do
              live(conn, ~p"/tasks/#{task.id}")
   end
 
-  test "an open task page sends its person to connect GitHub once they disconnect it", %{
+  test "an open task page sends its person to connect GitHub once they disconnect it, and no one else's change does", %{
     conn: conn,
     scope: scope,
     task: task
   } do
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    send(view.pid, {:users_changed, "usr_someone_else"})
+    send(view.pid, {:users_changed, scope.user.id})
+    assert render(view) =~ "Task Live Issue"
 
     {:ok, _user} = Users.unlink_github(scope)
     assert_redirect(view, "/settings/connected-accounts")
