@@ -45,7 +45,7 @@ defmodule RailWeb.SandboxesLiveTest do
           project_id: project.id,
           identifier: "DISH-#{System.unique_integer([:positive])}",
           title: title,
-          state: :backlog
+          state: :todo
         })
 
       task =
@@ -385,7 +385,7 @@ defmodule RailWeb.SandboxesLiveTest do
         project_id: hidden_project.id,
         identifier: "HSB-1",
         title: "A secret sandbox",
-        state: :backlog
+        state: :todo
       })
 
     task =

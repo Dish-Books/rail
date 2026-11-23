@@ -221,7 +221,7 @@ defmodule RailWeb.IssuesLiveTest do
     {:ok, issue_urgent} =
       Issues.update_issue(issue_urgent, %{
         priority: :urgent,
-        state: :backlog
+        state: :todo
       })
 
     {:ok, issue_high_1} = Issues.create_issue(system_scope(), project, %{title: "High issue 1"})
@@ -229,7 +229,7 @@ defmodule RailWeb.IssuesLiveTest do
     {:ok, issue_high_1} =
       Issues.update_issue(issue_high_1, %{
         priority: :high,
-        state: :backlog
+        state: :todo
       })
 
     {:ok, issue_high_2} = Issues.create_issue(system_scope(), project, %{title: "High issue 2"})
@@ -237,7 +237,7 @@ defmodule RailWeb.IssuesLiveTest do
     {:ok, issue_high_2} =
       Issues.update_issue(issue_high_2, %{
         priority: :high,
-        state: :backlog
+        state: :todo
       })
 
     {:ok, issue_low} = Issues.create_issue(system_scope(), project, %{title: "Low issue"})
@@ -245,7 +245,7 @@ defmodule RailWeb.IssuesLiveTest do
     {:ok, issue_low} =
       Issues.update_issue(issue_low, %{
         priority: :low,
-        state: :backlog
+        state: :todo
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
@@ -308,7 +308,7 @@ defmodule RailWeb.IssuesLiveTest do
         project_id: project.id,
         identifier: "MIN-1",
         title: "Mine",
-        state: :backlog,
+        state: :todo,
         owner_user_id: user.id
       })
       |> Repo.insert!()
@@ -319,7 +319,7 @@ defmodule RailWeb.IssuesLiveTest do
         project_id: project.id,
         identifier: "MIN-2",
         title: "Theirs",
-        state: :backlog
+        state: :todo
       })
       |> Repo.insert!()
 
@@ -364,7 +364,7 @@ defmodule RailWeb.IssuesLiveTest do
           project_id: project_id,
           identifier: "GRA-#{n}",
           title: "Granted #{n}",
-          state: :backlog
+          state: :todo
         })
         |> Repo.insert!()
       end
@@ -408,7 +408,7 @@ defmodule RailWeb.IssuesLiveTest do
           workflow_id: workflow_id,
           identifier: "WFC-#{n}",
           title: "Card #{n}",
-          state: :triage
+          state: :todo
         })
         |> Repo.insert!()
       end
@@ -461,7 +461,7 @@ defmodule RailWeb.IssuesLiveTest do
         project_id: project.id,
         identifier: "FIN-3",
         title: "Duplicate task",
-        state: :duplicate
+        state: :canceled
       })
       |> Repo.insert!()
 
@@ -511,7 +511,7 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#issue-card-#{issue.id}")
 
     assert {:ok, _issue} =
-             Issues.set_issue_status(system_scope(), issue, %{id: "duplicate", name: "Duplicate", state: :duplicate})
+             Issues.set_issue_status(system_scope(), issue, %{id: "duplicate", name: "Duplicate", state: :canceled})
 
     refute has_element?(view, "#issue-card-#{issue.id}")
   end
@@ -531,7 +531,7 @@ defmodule RailWeb.IssuesLiveTest do
 
     {:ok, issue} =
       Issues.update_issue(issue, %{
-        state: :backlog
+        state: :todo
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
@@ -627,7 +627,7 @@ defmodule RailWeb.IssuesLiveTest do
       })
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Retry after failure"})
-    {:ok, issue} = Issues.update_issue(issue, %{state: :backlog})
+    {:ok, issue} = Issues.update_issue(issue, %{state: :todo})
     {:ok, task} = Pipeline.create_task(issue, :review)
     {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
     now = DateTime.utc_now()
@@ -665,7 +665,7 @@ defmodule RailWeb.IssuesLiveTest do
       })
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Findings to rule"})
-    {:ok, issue} = Issues.update_issue(issue, %{state: :backlog})
+    {:ok, issue} = Issues.update_issue(issue, %{state: :todo})
     {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
@@ -697,7 +697,7 @@ defmodule RailWeb.IssuesLiveTest do
       })
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Finished review"})
-    {:ok, issue} = Issues.update_issue(issue, %{state: :backlog})
+    {:ok, issue} = Issues.update_issue(issue, %{state: :todo})
     {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
@@ -738,7 +738,7 @@ defmodule RailWeb.IssuesLiveTest do
           project_id: project_id,
           identifier: "PAGE-#{n}",
           title: if(n == 1, do: "Fix login redirect", else: "Paged issue #{n}"),
-          state: :backlog
+          state: :todo
         })
         |> Repo.insert!()
       end)
@@ -1107,7 +1107,7 @@ defmodule RailWeb.IssuesLiveTest do
               project_id: project.id,
               identifier: identifier,
               title: "Title #{identifier}",
-              state: :backlog
+              state: :todo
             },
             attrs
           )
@@ -1151,11 +1151,11 @@ defmodule RailWeb.IssuesLiveTest do
           }),
         ready:
           insert.("CYC-3", %{
-            state: :backlog,
+            state: :todo,
             cycle_id: "cyc_12",
             owner_user_id: ana.id
           }),
-        outside: insert.("CYC-4", %{state: :backlog})
+        outside: insert.("CYC-4", %{state: :todo})
       }
     end
 
@@ -1180,9 +1180,9 @@ defmodule RailWeb.IssuesLiveTest do
       assert has_element?(view, "#cycle-issues section[aria-label='In Review'] #issue-card-#{reviewing.id}")
       assert has_element?(view, "#issue-card-#{reviewing.id} .text-emerald-500")
       assert has_element?(view, "#cycle-issues section[aria-label='In Progress'] #issue-card-#{working.id}")
-      assert has_element?(view, "#cycle-issues section[aria-label='Backlog'] #issue-card-#{ready.id}")
-      assert has_element?(view, "#cycle-issues section[aria-label='Backlog'] > div:first-child .pi-circle-dashed")
-      assert has_element?(view, "#issue-card-#{ready.id} .pi-circle-dashed")
+      assert has_element?(view, "#cycle-issues section[aria-label='Todo'] #issue-card-#{ready.id}")
+      assert has_element?(view, "#cycle-issues section[aria-label='Todo'] > div:first-child .pi-circle")
+      assert has_element?(view, "#issue-card-#{ready.id} .pi-circle")
       refute has_element?(view, "#issue-card-#{outside.id}")
       refute has_element?(view, "#issues-pagination")
 
@@ -1190,7 +1190,7 @@ defmodule RailWeb.IssuesLiveTest do
       [_before, after_review] = String.split(html, ~s(aria-label="In Review"), parts: 2)
       assert after_review =~ ~s(aria-label="In Progress")
       [_before, after_progress] = String.split(after_review, ~s(aria-label="In Progress"), parts: 2)
-      assert after_progress =~ ~s(aria-label="Backlog")
+      assert after_progress =~ ~s(aria-label="Todo")
 
       # Three, two and the team's default of one.
       assert has_element?(view, "#cycle-panel[aria-label='Cycle 12']")
@@ -1215,7 +1215,7 @@ defmodule RailWeb.IssuesLiveTest do
       ready: %{id: ready_id}
     } do
       statuses = [
-        %{id: "st_ready", name: "Backlog", state: :backlog},
+        %{id: "st_ready", name: "Backlog", state: :todo},
         %{id: "st_started", name: "In Progress", state: :in_progress},
         %{id: "st_review", name: "In Review", state: :in_review},
         %{id: "st_done", name: "Done", state: :done}
@@ -1341,7 +1341,7 @@ defmodule RailWeb.IssuesLiveTest do
       insert: insert,
       outside: outside
     } do
-      only = insert.("CYC-6", %{state: :backlog, cycle_id: "cyc_13"})
+      only = insert.("CYC-6", %{state: :todo, cycle_id: "cyc_13"})
 
       {:ok, view, _html} = live(conn, ~p"/issues?cycle=13")
       render_async(view)
@@ -1461,7 +1461,7 @@ defmodule RailWeb.IssuesLiveTest do
 
       waiting =
         insert.("CYC-9", %{
-          state: :backlog,
+          state: :todo,
           cycle_id: "cyc_12",
           parent_id: parent.id
         })
@@ -1474,7 +1474,7 @@ defmodule RailWeb.IssuesLiveTest do
       render_async(view)
       render_async(view)
 
-      for {group, child} <- [{"In Progress", started}, {"Backlog", waiting}] do
+      for {group, child} <- [{"In Progress", started}, {"Todo", waiting}] do
         copy = "#cycle-issues section[aria-label='#{group}'] [data-context='true'][data-qa~='issue-card-#{parent.id}']"
         assert has_element?(view, copy)
         assert has_element?(view, "#{copy} [data-qa='issue-sub-issue-count']", "0/2")
@@ -1651,8 +1651,8 @@ defmodule RailWeb.IssuesLiveTest do
       ready: ready,
       insert: insert
     } do
-      triage = insert.("ROW-T1", %{state: :triage, cycle_id: "cyc_12"})
-      backlog = insert.("ROW-T2", %{state: :backlog, cycle_id: "cyc_12"})
+      triage = insert.("ROW-T1", %{state: :todo, cycle_id: "cyc_12"})
+      backlog = insert.("ROW-T2", %{state: :todo, cycle_id: "cyc_12"})
       todo = insert.("ROW-T3", %{state: :todo, cycle_id: "cyc_12"})
 
       {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
@@ -1679,7 +1679,7 @@ defmodule RailWeb.IssuesLiveTest do
 
       waiting =
         insert.("ROW-S2", %{
-          state: :backlog,
+          state: :todo,
           cycle_id: "cyc_12",
           parent_id: parent.id
         })
@@ -2154,7 +2154,7 @@ defmodule RailWeb.IssuesLiveTest do
       insert: insert
     } do
       %{id: issue_id} =
-        issue = insert.("ROW-S", %{state: :backlog, cycle_id: "cyc_12"})
+        issue = insert.("ROW-S", %{state: :todo, cycle_id: "cyc_12"})
 
       {:ok, starter} =
         Users.register_oauth_user(%{github_id: "gh_row_start", login: "row_start", email: "row_start@example.com"})
@@ -2273,7 +2273,7 @@ defmodule RailWeb.IssuesLiveTest do
       assert has_element?(view, "#issue-start-#{ready.id}:not([aria-disabled])", "Start")
       refute has_element?(view, "#issue-no-task-#{ready.id}")
       refute Repo.get_by(Task, issue_id: ready.id)
-      assert %Issue{state: :backlog} = Repo.reload!(ready)
+      assert %Issue{state: :todo} = Repo.reload!(ready)
 
       view |> element("#issue-start-#{spawning.id}") |> render_click()
       render_async(view)
@@ -2613,7 +2613,7 @@ defmodule RailWeb.IssuesLiveTest do
               project_id: project_id,
               identifier: identifier,
               title: "Title #{identifier}",
-              state: :backlog
+              state: :todo
             },
             attrs
           )
@@ -2660,9 +2660,9 @@ defmodule RailWeb.IssuesLiveTest do
             cycle_id: "cyc_t12",
             owner_user_id: bo.id
           }),
-        outside: insert.("TST-3", project.id, %{state: :backlog}),
-        off_issue: insert.("OFF-1", off.id, %{state: :backlog, cycle_id: "cyc_t12"}),
-        github_issue: insert.("tgh-1", github_project.id, %{state: :backlog})
+        outside: insert.("TST-3", project.id, %{state: :todo}),
+        off_issue: insert.("OFF-1", off.id, %{state: :todo, cycle_id: "cyc_t12"}),
+        github_issue: insert.("tgh-1", github_project.id, %{state: :todo})
       }
     end
 

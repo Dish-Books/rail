@@ -62,7 +62,7 @@ defmodule Rail.Pipeline.Workers.AdvanceSplit do
   # A canceled child will never merge, so it is no reason for its parent to stay open.
   defp canceled(children) do
     for %Task{issue: issue, split_position: position} = child <- children,
-        child.merged_at == nil and issue.completed_at == nil and issue.state in [:canceled, :duplicate],
+        child.merged_at == nil and issue.completed_at == nil and issue.state == :canceled,
         into: MapSet.new(),
         do: position
   end

@@ -41,8 +41,7 @@ defmodule Rail.Pipeline.Actions.CountAttention do
   end
 
   # Only its owner canceling it too lets its split finish, so it waits on them as a run would.
-  defp blocked?(%Task{runs: [], issue: %Issue{completed_at: nil, state: state}} = child)
-       when state not in [:canceled, :duplicate] do
+  defp blocked?(%Task{runs: [], issue: %Issue{completed_at: nil, state: state}} = child) when state != :canceled do
     Task.split_blockers(child, child.parent_task.children) != {[], []}
   end
 

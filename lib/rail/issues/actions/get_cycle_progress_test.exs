@@ -52,8 +52,8 @@ defmodule Rail.Issues.Actions.GetCycleProgressTest do
     insert.("CP-3", cycle_p, :in_review, 2, bo)
     insert.("CP-4", cycle_p, :todo, 2, cy)
     insert.("CP-5", cycle_p, :canceled, 8, ana)
-    insert.("CP-6", cycle_p, :duplicate, 8, bo)
-    insert.("CP-7", cycle_p, :backlog, 1, nil)
+    insert.("CP-6", cycle_p, :canceled, 8, bo)
+    insert.("CP-7", cycle_p, :todo, 1, nil)
     insert.("CP-8", other, :done, 5, ana)
 
     cycle = %{id: cycle_p.id, default_estimate: 2, scope_history: [8.0, 9.0]}

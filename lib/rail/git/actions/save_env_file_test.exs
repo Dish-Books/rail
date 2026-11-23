@@ -49,7 +49,7 @@ defmodule Rail.Git.Actions.SaveEnvFileTest do
               project_id: project_id,
               identifier: branch,
               title: branch,
-              state: :backlog
+              state: :todo
             })
           )
 
@@ -181,7 +181,7 @@ defmodule Rail.Git.Actions.SaveEnvFileTest do
           project_id: project.id,
           identifier: branch,
           title: branch,
-          state: :backlog
+          state: :todo
         })
       )
 

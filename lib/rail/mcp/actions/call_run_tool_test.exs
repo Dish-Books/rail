@@ -568,7 +568,7 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
 
       Repo.update_all(from(i in Issue, where: i.id == ^done_id), set: [state: :done])
       stub_vertex(%{"waiting" => vector([1.0])})
-      expected = "- `#{near}` Rows show no wait time · Triage\n- `#{done}` Queue order by age · Done"
+      expected = "- `#{near}` Rows show no wait time · Todo\n- `#{done}` Queue order by age · Done"
 
       assert {:ok, %{"content" => [%{"type" => "text", "text" => ^expected}]}} =
                Mcp.call_run_tool(triage, "search_issues", %{"query" => "how long each item has been waiting"})
@@ -607,7 +607,7 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
       assert String.starts_with?(text, """
              # `#{identifier}` Rows show no wait time
 
-             - Status: Triage
+             - Status: Todo
              - Priority: High
              - Estimate: 3
              - URL: #{url}

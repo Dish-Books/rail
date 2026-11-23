@@ -147,7 +147,7 @@ defmodule RailWeb.UserAuth do
       else: {:halt, Phoenix.LiveView.redirect(socket, to: home_path(scope))}
   end
 
-  # Issue and task pages: someone without GitHub is sent to connect it, and so is an open page once they disconnect.
+  # The task page: someone without GitHub is sent to connect it, and so is an open page once they disconnect.
   def on_mount(
         :require_github,
         _params,

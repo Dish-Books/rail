@@ -43,7 +43,7 @@ defmodule RailWeb.Utils.ChildStatus do
 
     cond do
       child.merged_at != nil or issue.completed_at != nil -> Map.merge(base, merged(child))
-      issue.state in [:canceled, :duplicate] -> Map.merge(base, canceled(issue))
+      issue.state == :canceled -> Map.merge(base, canceled(issue))
       blocked_by != {[], []} -> Map.merge(base, blocked(blocked_by))
       waiting_on != [] -> Map.merge(base, waiting(waiting_on))
       child.stage == :finalize -> Map.merge(base, finalizing(child, run))
@@ -276,7 +276,7 @@ defmodule RailWeb.Utils.ChildStatus do
   defp action(:done, %Task{} = child), do: approval_label(child)
   defp action(_stalled, _child), do: "Fix"
 
-  defp canceled?(%Task{issue: %Issue{state: state}}), do: state in [:canceled, :duplicate]
+  defp canceled?(%Task{issue: %Issue{state: state}}), do: state == :canceled
 
   defp join_and([one]), do: one
   defp join_and(names), do: Enum.join(Enum.drop(names, -1), ", ") <> " and " <> List.last(names)

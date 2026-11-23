@@ -56,7 +56,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         project_id: project.id,
         identifier: "TST-1",
         title: "Issue in the selected project",
-        state: :triage
+        state: :todo
       })
       |> Repo.insert!()
 
@@ -66,7 +66,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         project_id: other_project.id,
         identifier: "OTHNH-1",
         title: "Issue in the other project",
-        state: :triage
+        state: :todo
       })
       |> Repo.insert!()
       |> Repo.preload(:project)

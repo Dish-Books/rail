@@ -107,6 +107,17 @@ defmodule RailWeb.Components.FixPlanSheetTest do
     assert Floki.find(doc, "[data-qa=plan_card_reviewed]") == []
   end
 
+  test "its File-level changes heading has Show all code for every card's sketch", %{sheet: sheet} do
+    doc = (&FixPlanSheet.fix_plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
+
+    assert [toggle] = Floki.find(doc, "#fix-plan-files > div button[data-qa=plan_sketches_toggle]")
+    assert Floki.text(Floki.find(doc, "#fix-plan-files > div")) =~ "File-level changes"
+    assert Floki.attribute(toggle, "id") == ["fix-plan-sketches-toggle"]
+    assert Floki.attribute(toggle, "aria-controls") == ["fix-plan-files"]
+    assert Floki.attribute(toggle, "phx-hook") == ["SketchesToggle"]
+    assert [_first, _second, _third, _fourth] = Floki.find(doc, "#fix-plan-files [data-qa=plan_card_sketch]")
+  end
+
   test "a file the task already changed opens in Diff rather than GitHub, new or on the default branch", %{sheet: sheet} do
     project = %Project{github_repo: "example/rail", default_branch: "main"}
 

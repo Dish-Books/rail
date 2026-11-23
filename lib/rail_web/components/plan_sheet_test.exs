@@ -241,6 +241,71 @@ defmodule RailWeb.Components.PlanSheetTest do
     assert [^id] = Floki.attribute(html, "#plan-card-2 [data-qa='plan_card_sketch']", "id")
   end
 
+  test "Show all code sits in the Changes heading, closed, and is left to the browser to switch", %{sheet: sheet} do
+    html = (&PlanSheet.plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
+
+    assert [toggle] = Floki.find(html, "#plan-changes > div button#plan-sketches-toggle")
+    assert Floki.attribute(toggle, "type") == ["button"]
+    assert Floki.attribute(toggle, "aria-expanded") == ["false"]
+    assert Floki.attribute(toggle, "aria-controls") == ["plan-changes"]
+    assert Floki.attribute(toggle, "phx-hook") == ["SketchesToggle"]
+    assert Floki.attribute(toggle, "phx-click") == []
+    assert [mounted] = Floki.attribute(toggle, "phx-mounted")
+    assert Jason.decode!(mounted) == [["ignore_attrs", %{"attrs" => ["aria-expanded"]}]]
+    assert Floki.text(toggle, sep: " ") =~ ~r/Show all code\s+Hide all code/
+    assert [_icon] = Floki.find(toggle, "[class*='pi-code-bold']")
+
+    part = (&PlanSheet.plan_sheet/1) |> render_component(sheet: sheet, part: 2) |> Floki.parse_fragment!()
+    assert ["plan-2-sketches-toggle"] = Floki.attribute(part, "[data-qa='plan_sketches_toggle']", "id")
+  end
+
+  test "Show all code comes before the reviewed count, a dot between them, and the count keeps the edge alone", %{
+    sheet: sheet
+  } do
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: sheet, reviewed: %{})
+      |> Floki.parse_fragment!()
+
+    assert Floki.text(Floki.find(html, "#plan-changes > div"), sep: " ") =~
+             ~r/Show all code\s+Hide all code\s+·\s+0\s+of\s+5\s+reviewed/
+
+    assert [class] = Floki.attribute(html, "#plan-reviewed-count", "class")
+    refute class =~ "ml-auto"
+
+    reviewed = sheet.cards |> Enum.filter(&(&1.sketch != [])) |> Map.new(&{&1.path, &1.digest})
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: sheet, reviewed: reviewed)
+      |> Floki.parse_fragment!()
+
+    assert [_unsketched] = Floki.find(html, "[data-qa='plan_card']:not([data-state='reviewed'])")
+    assert Floki.find(html, "[data-qa='plan_sketches_toggle']") == []
+    refute Floki.text(Floki.find(html, "#plan-changes > div")) =~ "·"
+    assert [class] = Floki.attribute(html, "#plan-reviewed-count", "class")
+    assert class =~ "ml-auto"
+  end
+
+  test "no Show all code is drawn when no card has a sketch to open", %{sheet: sheet} do
+    plan = String.replace(sheet_plan(), ~r/```\w+ sketch\n.*?```\n/s, "")
+    html = (&PlanSheet.plan_sheet/1) |> render_component(sheet: build_plan_sheet(plan)) |> Floki.parse_fragment!()
+
+    assert [_card | _rest] = Floki.find(html, "[data-qa='plan_card']")
+    assert Floki.find(html, "[data-qa='plan_card_sketch']") == []
+    assert Floki.find(html, "[data-qa='plan_sketches_toggle']") == []
+
+    [sketched | _rest] = Enum.filter(sheet.cards, &(&1.sketch != []))
+    reviewed = Map.new(Enum.reject(sheet.cards, &(&1.path == sketched.path)), &{&1.path, &1.digest})
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: sheet, reviewed: reviewed)
+      |> Floki.parse_fragment!()
+
+    assert [_toggle] = Floki.find(html, "[data-qa='plan_sketches_toggle']")
+  end
+
   test "the Changes header and each group's header count the cards the reader marked reviewed", %{sheet: sheet} do
     [first, second | _rest] = sheet.cards
     reviewed = %{first.path => first.digest, second.path => "an older digest"}

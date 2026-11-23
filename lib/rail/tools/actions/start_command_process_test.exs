@@ -46,7 +46,7 @@ defmodule Rail.Tools.Actions.StartCommandProcessTest do
         project_id: project.id,
         identifier: "CMD-1",
         title: "Command Issue",
-        state: :backlog
+        state: :todo
       })
       |> Repo.insert!()
 

@@ -48,17 +48,46 @@ defmodule RailWeb.Components.PlanCards do
       |> assign(:reviewed_count, reviewed_count(assigns.cards, assigns.reviewed))
       |> assign(:groups, groups(assigns))
       |> assign(:subtitle, subtitle(assigns))
+      |> assign(
+        :show_code_toggle,
+        Enum.any?(assigns.cards, &(&1.sketch != [] and state(&1, assigns.reviewed) != :reviewed))
+      )
 
     ~H"""
     <section id={@id}>
       <.line line={@title_line} on={@on} target={@target} class="mb-2">
         <div class="flex items-baseline gap-2">
           {render_slot(@heading, @subtitle)}
+          <button
+            :if={@show_code_toggle}
+            type="button"
+            id={"#{@base}-sketches-toggle"}
+            aria-expanded="false"
+            aria-controls={@id}
+            data-qa="plan_sketches_toggle"
+            phx-hook="SketchesToggle"
+            phx-mounted={JS.ignore_attributes(["aria-expanded"])}
+            class="group/all ml-auto shrink-0 inline-flex items-baseline gap-1 rounded-sm text-[12px] font-semibold text-indigo-600 dark:text-indigo-300 hover:text-indigo-500 dark:hover:text-indigo-200 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+          >
+            <.icon name="pi-code-bold" class="size-[13px] self-center" />
+            <span class="group-aria-expanded/all:hidden">Show all code</span>
+            <span class="hidden group-aria-expanded/all:inline">Hide all code</span>
+          </button>
+          <span
+            :if={@show_code_toggle && @reviewed}
+            aria-hidden="true"
+            class="text-[13px] text-slate-400 dark:text-slate-600"
+          >
+            ·
+          </span>
           <span
             :if={@reviewed}
             id={"#{@base}-reviewed-count"}
             data-qa="plan_reviewed_count"
-            class="ml-auto shrink-0 text-[13px] font-semibold text-slate-900 dark:text-slate-100"
+            class={[
+              "shrink-0 text-[13px] font-semibold text-slate-900 dark:text-slate-100",
+              !@show_code_toggle && "ml-auto"
+            ]}
           >
             {@reviewed_count} of {length(@cards)} reviewed
           </span>

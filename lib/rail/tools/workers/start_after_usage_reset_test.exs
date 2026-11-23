@@ -49,7 +49,7 @@ defmodule Rail.Tools.Workers.StartAfterUsageResetTest do
           project_id: project.id,
           identifier: "JOB#{n}-1",
           title: "Job",
-          state: :backlog
+          state: :todo
         })
       )
 

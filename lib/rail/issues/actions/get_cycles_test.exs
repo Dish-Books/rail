@@ -22,19 +22,16 @@ defmodule Rail.Issues.Actions.GetCyclesTest do
     %{local: local}
   end
 
-  test "a project with no cycles yet has none, and Rail's eight statuses, each with its state", %{local: local} do
+  test "a project with no cycles yet has none, and Rail's five statuses, each with its state", %{local: local} do
     assert {:ok,
             %{
               cycles: [],
               statuses: [
-                %{name: "Triage", type: "triage", position: 0, state: :triage},
-                %{name: "Backlog", type: "backlog", position: 1, state: :backlog},
-                %{name: "Todo", type: "unstarted", position: 2, state: :todo},
-                %{name: "In Progress", type: "started", position: 3, state: :in_progress},
-                %{name: "In Review", type: "started", position: 4, state: :in_review},
-                %{name: "Done", type: "completed", position: 5, state: :done},
-                %{name: "Canceled", type: "canceled", position: 6, state: :canceled},
-                %{name: "Duplicate", type: "canceled", position: 7, state: :duplicate}
+                %{name: "Todo", type: "unstarted", position: 0, state: :todo},
+                %{name: "In Progress", type: "started", position: 1, state: :in_progress},
+                %{name: "In Review", type: "started", position: 2, state: :in_review},
+                %{name: "Done", type: "completed", position: 3, state: :done},
+                %{name: "Canceled", type: "canceled", position: 4, state: :canceled}
               ]
             }} = Issues.get_cycles(local)
   end

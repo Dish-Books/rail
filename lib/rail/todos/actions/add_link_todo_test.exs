@@ -151,7 +151,7 @@ defmodule Rail.Todos.Actions.AddLinkTodoTest do
         project_id: hidden.id,
         identifier: "HID-1",
         title: "Secret",
-        state: :triage
+        state: :todo
       })
       |> Repo.insert!()
       |> Repo.preload(:project)
@@ -188,7 +188,7 @@ defmodule Rail.Todos.Actions.AddLinkTodoTest do
         project_id: hidden.id,
         identifier: "HID-2",
         title: "Secret",
-        state: :triage
+        state: :todo
       })
       |> Repo.insert!()
       |> Repo.preload(:project)

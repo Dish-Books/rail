@@ -8,7 +8,7 @@ defmodule RailWeb.Components.IssueIconsTest do
   test "a status icon is drawn for every state an issue can be in" do
     assert render_component(&IssueIcons.status_icon/1, state: :in_review) =~ "pi-circle-half-tilt-fill"
     assert render_component(&IssueIcons.status_icon/1, state: :canceled) =~ "pi-x-circle-fill"
-    assert render_component(&IssueIcons.status_icon/1, state: :duplicate) =~ "pi-x-circle-fill"
+    assert render_component(&IssueIcons.status_icon/1, state: :canceled) =~ "pi-x-circle-fill"
   end
 
   test "In Review is green and In Progress amber, so the two read apart" do

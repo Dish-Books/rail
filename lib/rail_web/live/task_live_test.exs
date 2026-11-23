@@ -108,7 +108,7 @@ defmodule RailWeb.TaskLiveTest do
         identifier: "TLV-1",
         title: "Task Live Issue",
         description: "Task Live Issue",
-        state: :triage
+        state: :todo
       })
       |> Repo.insert!()
       |> Map.put(:project, project)
@@ -676,12 +676,16 @@ defmodule RailWeb.TaskLiveTest do
              live(conn, ~p"/tasks/#{task.id}")
   end
 
-  test "an open task page sends its person to connect GitHub once they disconnect it", %{
+  test "an open task page sends its person to connect GitHub once they disconnect it, and no one else's change does", %{
     conn: conn,
     scope: scope,
     task: task
   } do
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    send(view.pid, {:users_changed, "usr_someone_else"})
+    send(view.pid, {:users_changed, scope.user.id})
+    assert render(view) =~ "Task Live Issue"
 
     {:ok, _user} = Users.unlink_github(scope)
     assert_redirect(view, "/settings/connected-accounts")
@@ -7193,7 +7197,7 @@ defmodule RailWeb.TaskLiveTest do
         |> Map.put(:project, project)
       end
 
-      parent_issue = insert.("TLV-10", "Work on TLV-10", %{state: :triage})
+      parent_issue = insert.("TLV-10", "Work on TLV-10", %{state: :todo})
       {:ok, parent} = Pipeline.create_task(parent_issue, :split)
       parent = Repo.preload(parent, [:issue, :project])
 

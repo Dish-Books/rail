@@ -18,8 +18,6 @@ defmodule RailWeb.Mcp.Tools.ListIssues do
   alias RailWeb.Mcp.IssueJSON
 
   @states %{
-    "triage" => :triage,
-    "backlog" => :backlog,
     "todo" => :todo,
     "in_progress" => :in_progress,
     "in_review" => :in_review,

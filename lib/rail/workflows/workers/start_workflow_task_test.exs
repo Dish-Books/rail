@@ -42,7 +42,7 @@ defmodule Rail.Workflows.Workers.StartWorkflowTaskTest do
         identifier: "TST-84",
         title: "Dependency updates 2026-10-12",
         description: "Update the dependencies.",
-        state: :triage
+        state: :todo
       })
       |> Repo.insert!()
 
