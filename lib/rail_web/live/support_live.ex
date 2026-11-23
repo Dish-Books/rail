@@ -8,6 +8,7 @@ defmodule RailWeb.SupportLive do
   alias Rail.Support.Schemas.ChatMessage
   alias Rail.Support.Schemas.Message
   alias Rail.Users
+  alias RailWeb.Hooks.NavHook
 
   @filters ["waiting", "drafting", "done"]
   # An import broadcasts once per conversation, so an open page reloads at most once a second.
@@ -66,6 +67,7 @@ defmodule RailWeb.SupportLive do
       current_scope={@current_scope}
       attention_count={@attention_count}
       triage_count={@triage_count}
+      support_count={@support_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}
@@ -304,6 +306,7 @@ defmodule RailWeb.SupportLive do
     |> assign(:now, DateTime.utc_now())
     |> assign(:conversations, conversations)
     |> assign(:counts, Support.count_support_conversations(project_id: project_filter))
+    |> assign(:support_count, NavHook.count_support(scope))
     |> assign(:workspace_names, Enum.map(Support.list_intercom_workspaces(project_id: project_filter), & &1.name))
     |> assign(:author_name, scope.user.intercom_name || scope.user.name || scope.user.login)
     |> assign(:conversation, conversation)

@@ -10,6 +10,7 @@ defmodule RailWeb.Components.Nav do
   attr :current_section, :atom, required: true
   attr :attention_count, :integer, default: 0
   attr :triage_count, :integer, default: 0
+  attr :support_count, :integer, default: 0
 
   def nav(assigns) do
     ~H"""
@@ -68,7 +69,8 @@ defmodule RailWeb.Components.Nav do
             icon_active="pi-headset-fill"
             icon_inactive="pi-headset"
             href={~p"/support"}
-            attention_count={0}
+            attention_count={@support_count}
+            badge_id="support-badge"
           />
 
           <.nav_item
