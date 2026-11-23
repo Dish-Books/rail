@@ -5,7 +5,14 @@ defmodule Rail.Issues.Clients.R2 do
 
   @doc "Stores `body` under `key` as `content_type`."
   def put_object(key, content_type, body) when is_binary(key) and is_binary(body) do
-    case request(method: :put, url: key, headers: [content_type: content_type], body: body) do
+    # R2 answers a large file's upload only once it has all of it, which takes longer than Req's 15 seconds.
+    case request(
+           method: :put,
+           url: key,
+           headers: [content_type: content_type],
+           body: body,
+           receive_timeout: to_timeout(minute: 2)
+         ) do
       {:ok, %{status: 200}} -> :ok
       {:ok, %{status: status, body: body}} -> {:error, {:r2_error, status, body}}
       {:error, reason} -> {:error, reason}
