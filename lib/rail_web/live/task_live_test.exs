@@ -13,6 +13,7 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Issues
+  alias Rail.Issues.Clients.R2
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueStage
   alias Rail.Learnings
@@ -82,7 +83,7 @@ defmodule RailWeb.TaskLiveTest do
     # A task discarded, cleaned up or sent back to Plan takes its worktree and branch in that clone with it.
     stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
     stub(Git, :delete_branch, fn _clone_path, _branch -> :ok end)
-    # The Issue tab reads blockers from Linear, which no test here asks unless it says.
+    # The Issue tab reads blockers only when a test here asks.
     stub(Issues, :get_blockers, fn _issues -> %{} end)
 
     {:ok, user} =
@@ -99,22 +100,19 @@ defmodule RailWeb.TaskLiveTest do
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_task_live_1",
-              "identifier" => "TLV-1",
-              "title" => "Task Live Issue"
-            }
-          }
-        }
+    # Inserted with the identifier the tests name it by.
+    issue =
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project.id,
+        identifier: "TLV-1",
+        title: "Task Live Issue",
+        description: "Task Live Issue",
+        state: :triage
       })
-    end)
+      |> Repo.insert!()
+      |> Map.put(:project, project)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Task Live Issue"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     File.mkdir_p!(Path.join(task.scratch_path, "tickets"))
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
@@ -264,7 +262,7 @@ defmodule RailWeb.TaskLiveTest do
     refute has_element?(view, "#task-stage-sequence")
   end
 
-  test "the header's identifier opens the issue in its tracker in a new tab, and stays text with no address", %{
+  test "the header's identifier opens the issue in a new tab, and stays text with no address", %{
     conn: conn,
     task: task,
     issue: issue
@@ -273,29 +271,17 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "span#task-issue-identifier", "TLV-1")
     refute has_element?(view, "#task-issue-link")
 
-    issue |> Issue.tracker_changeset(%{url: "https://linear.app/tlv/issue/TLV-1"}) |> Repo.update!()
+    issue |> Issue.tracker_changeset(%{url: "https://rail.test/issues/#{issue.id}"}) |> Repo.update!()
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
     assert has_element?(
              view,
-             "a#task-issue-link[href='https://linear.app/tlv/issue/TLV-1'][target='_blank'][rel='noopener noreferrer'][title='Open TLV-1 in Linear']",
+             "a#task-issue-link[href='https://rail.test/issues/#{issue.id}'][target='_blank'][rel='noopener noreferrer'][title='Open TLV-1']",
              "TLV-1"
            )
 
     refute has_element?(view, "#task-issue-identifier")
     assert has_element?(view, "span[data-qa='task_branch_name']", task.worktree_name)
-
-    issue
-    |> Issue.tracker_changeset(%{tracker: :github, url: "https://github.com/org/app/issues/7"})
-    |> Repo.update!()
-
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-    assert has_element?(
-             view,
-             "a#task-issue-link[href='https://github.com/org/app/issues/7'][title='Open TLV-1 in GitHub']",
-             "TLV-1"
-           )
   end
 
   test "the header reads the task's own stage, not the tab a stage with no run falls back to", %{
@@ -597,8 +583,6 @@ defmodule RailWeb.TaskLiveTest do
   end
 
   test "an unassigned issue is claimed from the task page", %{conn: conn, task: task, scope: scope} do
-    scope.user |> Ecto.Changeset.change(linear_user_id: "lin_usr_task_live") |> Repo.update!()
-
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
     view |> element("#claim-task") |> render_click()
@@ -612,41 +596,12 @@ defmodule RailWeb.TaskLiveTest do
     project: project,
     scope: scope
   } do
-    starter = scope.user |> Ecto.Changeset.change(linear_user_id: "lin_usr_task_live") |> Repo.update!()
-
     issue =
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project.id,
-        external_id: "lin_task_live_started",
         identifier: "TLV-20",
         title: "Started from its issue page",
-        state: :todo
-      })
-      |> Repo.insert!()
-
-    expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
-    expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
-
-    {:ok, %Task{id: task_id}} = Pipeline.start_task(Scope.for_user(starter), issue)
-
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task_id}")
-
-    refute has_element?(view, "#claim-task")
-  end
-
-  test "a person who never linked Linear starts the issue and the task page still offers Claim", %{
-    conn: conn,
-    project: project,
-    scope: scope
-  } do
-    issue =
-      %Issue{}
-      |> Issue.tracker_changeset(%{
-        project_id: project.id,
-        external_id: "lin_task_live_unlinked",
-        identifier: "TLV-21",
-        title: "Started by somebody unlinked",
         state: :todo
       })
       |> Repo.insert!()
@@ -658,17 +613,10 @@ defmodule RailWeb.TaskLiveTest do
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task_id}")
 
-    assert has_element?(view, "#claim-task")
+    refute has_element?(view, "#claim-task")
   end
 
-  test "claiming an issue somebody claimed since the page loaded says so", %{
-    conn: conn,
-    task: task,
-    scope: scope,
-    issue: issue
-  } do
-    scope.user |> Ecto.Changeset.change(linear_user_id: "lin_usr_task_live") |> Repo.update!()
-
+  test "claiming an issue somebody claimed since the page loaded says so", %{conn: conn, task: task, issue: issue} do
     {:ok, rival} =
       Users.register_oauth_user(%{github_id: "gh_task_rival", login: "task_rival", email: "task_rival@example.com"})
 
@@ -712,15 +660,6 @@ defmodule RailWeb.TaskLiveTest do
 
     {:ok, _user} = Users.unlink_github(scope)
     assert_redirect(view, "/settings/connected-accounts")
-  end
-
-  test "claiming without a linked Linear account says what to do", %{conn: conn, task: task} do
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-    view |> element("#claim-task") |> render_click()
-
-    assert has_element?(view, "#flash-error", "Link your Linear account in Settings before claiming an issue")
-    assert has_element?(view, "#claim-task")
   end
 
   test "a run that recorded an error shows it", %{conn: conn, task: task, run: run} do
@@ -1644,17 +1583,6 @@ defmodule RailWeb.TaskLiveTest do
       scope: scope,
       project: project
     } do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueCreate" => %{
-              "success" => true,
-              "issue" => %{"id" => "lin_task_live_license", "identifier" => "TLV-3", "title" => "Dependency updates"}
-            }
-          }
-        })
-      end)
-
       stages = [
         %IssueStage{stage: :plan},
         %IssueStage{stage: :engineer},
@@ -1833,7 +1761,7 @@ defmodule RailWeb.TaskLiveTest do
     task: task,
     project: project
   } do
-    linked = fn login, attrs ->
+    person = fn login, attrs ->
       {:ok, user} =
         Users.register_oauth_user(%{
           github_id: "gh_#{login}_task-live",
@@ -1842,12 +1770,12 @@ defmodule RailWeb.TaskLiveTest do
           email: "#{login}-task-live@example.com"
         })
 
-      user |> Ecto.Changeset.change(Map.put(attrs, :linear_user_id, "lin_#{login}")) |> Repo.update!()
+      user |> Ecto.Changeset.change(attrs) |> Repo.update!()
     end
 
-    granted = linked.("granted_teammate", %{project_ids: [project.id]})
-    elsewhere = linked.("elsewhere_teammate", %{project_ids: ["prj_other"]})
-    admin = linked.("admin_teammate", %{admin: true})
+    granted = person.("granted_teammate", %{project_ids: [project.id]})
+    elsewhere = person.("elsewhere_teammate", %{project_ids: ["prj_other"]})
+    admin = person.("admin_teammate", %{admin: true})
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
 
@@ -1864,10 +1792,9 @@ defmodule RailWeb.TaskLiveTest do
     {:ok, %{id: teammate_id} = teammate} =
       Users.register_oauth_user(%{github_id: "gh_tab_owner", login: "tab_owner", name: "Paulo Tab", email: "tab@x.io"})
 
-    teammate |> Ecto.Changeset.change(linear_user_id: "lin_tab_owner", project_ids: [project.id]) |> Repo.update!()
+    teammate |> Ecto.Changeset.change(project_ids: [project.id]) |> Repo.update!()
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
-    Req.Test.allow(Rail.Linear, self(), view.pid)
 
     view |> element("#issue-owner-search-form") |> render_change(%{"q" => "nobody"})
     refute has_element?(view, "#issue-assign-#{teammate_id}")
@@ -1887,32 +1814,20 @@ defmodule RailWeb.TaskLiveTest do
 
     view |> element("#issue-comment-form") |> render_change(%{"body" => "draft"})
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "commentCreate" => %{
-            "success" => true,
-            "comment" => %{"id" => "lin_tab_comment", "body" => "From the task", "issue" => %{"id" => "lin_task_live_1"}}
-          }
-        }
-      })
-    end)
-
     view |> element("#issue-comment-form") |> render_submit(%{"body" => "From the task"})
 
     assert has_element?(view, "#issue-comments", "From the task")
     assert has_element?(view, "#task-page")
   end
 
-  test "the Issue tab edits a Rail-tracked issue's priority and follows its blockers without a reload", %{conn: conn} do
+  test "the Issue tab edits the issue's priority and follows its blockers without a reload", %{conn: conn} do
     key = "Tab#{System.unique_integer([:positive])}"
 
     {:ok, local} =
       Projects.create_project(system_scope(), %{
-        name: "Rail-tracked",
+        name: "Edited from a task",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -1958,30 +1873,15 @@ defmodule RailWeb.TaskLiveTest do
     end)
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
-    Req.Test.allow(Rail.Linear, self(), view.pid)
 
     view |> element("#issue-status") |> render_click()
     render_async(view)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueUpdate" => %{
-            "success" => true,
-            "issue" => %{
-              "state" => %{"name" => "In Review", "type" => "started"},
-              "updatedAt" => "2026-11-01T10:00:00.000Z"
-            }
-          }
-        }
-      })
-    end)
 
     view |> element("#issue-status-picker-#{issue_id}-status-st_review") |> render_click()
 
     assert has_element?(view, "#issue-status", "In Review")
     assert has_element?(view, "#task-page")
-    assert %Issue{state_name: "In Review"} = Repo.get!(Issue, issue_id)
+    assert %Issue{state: :in_review} = Repo.get!(Issue, issue_id)
     assert %Task{id: ^task_id, stage: ^stage} = Repo.get!(Task, task_id)
   end
 
@@ -2010,23 +1910,21 @@ defmodule RailWeb.TaskLiveTest do
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project.id,
-        external_id: "lin_task_live_sub",
         identifier: "TLV-2",
         title: "A piece of it",
         state: :todo,
-        parent_external_id: issue.external_id
+        parent_id: issue.id
       })
       |> Repo.insert!()
 
     test_pid = self()
 
-    stub(Issues, :get_blockers, fn [%Issue{external_id: external_id}] ->
+    stub(Issues, :get_blockers, fn [%Issue{id: id}] ->
       send(test_pid, :blockers_read)
-      blocker = %Issue{id: "iss_tlv_b", external_id: "lin_tlv_b", identifier: "TLV-9", title: "First", state: :todo}
-      %{external_id => %{blocked_by: [%{issue: blocker, in_project: true}], blocks: []}}
+      blocker = %Issue{id: "iss_tlv_b", identifier: "TLV-9", title: "First", state: :todo}
+      %{id => %{blocked_by: [%{issue: blocker, in_project: true}], blocks: []}}
     end)
 
-    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
     render_async(view)
     assert_received :blockers_read
@@ -2041,17 +1939,7 @@ defmodule RailWeb.TaskLiveTest do
     refute_received :blockers_read
 
     assert {:ok, _issue} =
-             Issues.handle_linear_webhook(workspace, %{
-               "type" => "Issue",
-               "action" => "update",
-               "data" => %{
-                 "id" => sub_issue.external_id,
-                 "teamId" => "lin_team_id",
-                 "identifier" => "TLV-2",
-                 "title" => "A piece of it",
-                 "state" => %{"name" => "Done", "type" => "completed"}
-               }
-             })
+             Issues.set_issue_status(system_scope(), sub_issue, %{id: "done", name: "Done", state: :done})
 
     assert has_element?(view, "#issue-sub-issues", "1/1")
     refute_received :blockers_read
@@ -2068,29 +1956,21 @@ defmodule RailWeb.TaskLiveTest do
     assert_received :blockers_read
     assert has_element?(view, "#issue-blocked-by")
 
-    # Linear failing leaves the last answer where it was.
-    stub(Issues, :get_blockers, fn _issues -> raise "Linear is down" end)
+    # A read that fails leaves the last answer where it was.
+    stub(Issues, :get_blockers, fn _issues -> raise "The blockers are down" end)
     send(view.pid, {:issue_changed, task.issue_id})
     render_async(view)
     assert has_element?(view, "#issue-blocked-by")
   end
 
-  test "the Issue tab lands on the cleaned-up page when Linear deletes its issue", %{
-    conn: conn,
-    task: task,
-    project: project
-  } do
-    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+  test "the Issue tab lands on the cleaned-up page when its issue is gone", %{conn: conn, task: task} do
     assert {:ok, %{pid: view_pid} = view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
     render_async(view)
     assert has_element?(view, "#issue-page")
 
-    assert {:ok, %Issue{}} =
-             Issues.handle_linear_webhook(workspace, %{
-               "type" => "Issue",
-               "action" => "remove",
-               "data" => %{"id" => "lin_task_live_1"}
-             })
+    # As a project's removal takes its issues.
+    Repo.delete_all(from(i in Issue, where: i.id == ^task.issue_id))
+    Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, task.issue_id})
 
     assert has_element?(view, "#task-cleaned-up")
     refute has_element?(view, "#issue-page")
@@ -2099,11 +1979,9 @@ defmodule RailWeb.TaskLiveTest do
 
   test "an Issue tab whose task another tab discarded stays cleaned up when the issue then changes", %{
     conn: conn,
-    task: task,
-    project: project
+    task: task
   } do
     stub(Git, :delete_remote_branch, fn _project, _branch -> :ok end)
-    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
     assert {:ok, %{pid: view_pid} = view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
     render_async(view)
     assert {:ok, other, _html} = live(conn, ~p"/tasks/#{task.id}")
@@ -2114,17 +1992,7 @@ defmodule RailWeb.TaskLiveTest do
     eventually(fn -> assert has_element?(view, "#task-cleaned-up") end)
 
     assert {:ok, %Issue{}} =
-             Issues.handle_linear_webhook(workspace, %{
-               "type" => "Issue",
-               "action" => "update",
-               "data" => %{
-                 "id" => "lin_task_live_1",
-                 "teamId" => "lin_team_id",
-                 "identifier" => "TLV-1",
-                 "title" => "Retitled after the discard",
-                 "state" => %{"name" => "Todo", "type" => "unstarted"}
-               }
-             })
+             Issues.edit_issue(system_scope(), Repo.get!(Issue, task.issue_id), %{"title" => "Retitled after the discard"})
 
     assert has_element?(view, "#task-cleaned-up")
     assert Process.alive?(view_pid)
@@ -2145,7 +2013,6 @@ defmodule RailWeb.TaskLiveTest do
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project.id,
-        external_id: "lin_task_live_other",
         identifier: "TLV-2",
         title: "Another task's issue",
         state: :todo
@@ -2235,12 +2102,8 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#review-item-conversation")
     end
 
-    test "the issue item reads the ticket Linear has", %{conn: conn, task: task, issue: issue} do
-      {:ok, _described} =
-        Issues.update_issue(issue, %{
-          description: "What the human asked for.\n\n![a shot](https://uploads.linear.app/ws/shot.png)",
-          url: "https://linear.app/tlv/issue/TLV-1"
-        })
+    test "the issue item reads the ticket", %{conn: conn, task: task, issue: issue} do
+      {:ok, _described} = Issues.update_issue(issue, %{description: "What the human asked for."})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -2248,10 +2111,6 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "[data-qa='issue-description']", "What the human asked for.")
       assert_patch(view, ~p"/tasks/#{task.id}?item=issue")
-
-      # Linear serves its own images only to a token, so they come back through Rail.
-      assert render(view) =~ ~s(src="/issues/#{issue.id}/assets/ws/shot.png")
-      assert has_element?(view, "#issue-tracker-link[href='https://linear.app/tlv/issue/TLV-1']")
 
       # The issue is read on its own, and the task it is already on is not a link.
       refute has_element?(view, "[data-qa='plan-stage']")
@@ -2866,24 +2725,16 @@ defmodule RailWeb.TaskLiveTest do
       save_plan.("table")
       send(view.pid, {:output_saved, task.id})
       _settled = render(view)
-      assert has_element?(view, "#task-approve-plan[phx-disable-with='Approving…']", "Approve plan")
+      # A double click approves once, and the button keeps its icon after the click is answered.
+      assert has_element?(view, "#task-approve-plan[data-no-repeat]", "Approve plan")
+      refute has_element?(view, "#task-approve-plan[phx-disable-with]")
+      assert has_element?(view, "#task-approve-plan .pi-check")
 
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "fileUpload" => %{
-              "success" => true,
-              "uploadFile" => %{
-                "uploadUrl" => "https://uploads.linear.app/put/tlv-1",
-                "assetUrl" => "https://uploads.linear.app/assets/tlv-1-table.png",
-                "headers" => []
-              }
-            }
-          }
-        })
+      # The picked design's image goes up beside the issue.
+      Req.Test.expect(R2, fn r2 ->
+        assert %Plug.Conn{method: "PUT"} = r2
+        Plug.Conn.send_resp(r2, 200, "")
       end)
-
-      Req.Test.expect(Rail.Linear, fn conn -> Plug.Conn.send_resp(conn, 200, "") end)
 
       view |> element("#task-approve-plan") |> render_click()
 
@@ -7286,34 +7137,28 @@ defmodule RailWeb.TaskLiveTest do
       stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
       roles = Map.new([:plan, :engineer, :review], &{&1, elem(Roles.get_role(project_id: project.id, stage: &1), 1)})
 
-      # 1 waits on a person, 2 waits on 1, 3 failed.
-      for {identifier, title} <- [
-            {"TLV-10", "Work on TLV-10"},
-            {"TLV-11", "Child TLV-11"},
-            {"TLV-12", "Child TLV-12"},
-            {"TLV-13", "Child TLV-13"}
-          ] do
-        Req.Test.expect(Rail.Linear, fn conn ->
-          Req.Test.json(conn, %{
-            "data" => %{
-              "issueCreate" => %{
-                "success" => true,
-                "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
-              }
-            }
-          })
-        end)
+      # Inserted with the identifiers the tests name them by. 1 waits on a person, 2 waits on 1, 3 failed.
+      insert = fn identifier, title, attrs ->
+        %Issue{}
+        |> Issue.tracker_changeset(
+          Map.merge(
+            %{project_id: project.id, identifier: identifier, title: title},
+            attrs
+          )
+        )
+        |> Repo.insert!()
+        |> Map.put(:project, project)
       end
 
-      {:ok, parent_issue} = Issues.create_issue(system_scope(), project, %{title: "Work on TLV-10"})
+      parent_issue = insert.("TLV-10", "Work on TLV-10", %{state: :triage})
       {:ok, parent} = Pipeline.create_task(parent_issue, :split)
       parent = Repo.preload(parent, [:issue, :project])
 
       [first, second, third] =
         children =
         for {{identifier, builds_on}, number} <- Enum.with_index([{"TLV-11", []}, {"TLV-12", [1]}, {"TLV-13", []}], 1) do
-          attrs = %{title: "Child #{identifier}", parent: parent_issue}
-          {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
+          issue =
+            insert.(identifier, "Child #{identifier}", %{state: :todo, parent_id: parent_issue.id})
 
           {:ok, child} =
             issue.project
@@ -7526,20 +7371,20 @@ defmodule RailWeb.TaskLiveTest do
       third: third
     } do
       for child <- [first, third] do
-        url = "https://linear.app/tlv/issue/#{child.issue.identifier}"
+        url = "https://rail.test/issues/#{child.issue.identifier}"
         child.issue |> Issue.tracker_changeset(%{url: url}) |> Repo.update!()
       end
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-13")
       assert has_element?(view, "[data-qa='task_status_chip']", "failed")
-      assert has_element?(view, "#task-issue-link[href='https://linear.app/tlv/issue/TLV-13']", "TLV-13")
+      assert has_element?(view, "#task-issue-link[href='https://rail.test/issues/TLV-13']", "TLV-13")
 
       view |> element("#review-item-plan") |> render_click()
-      assert has_element?(view, "#task-issue-link[href='https://linear.app/tlv/issue/TLV-13']", "TLV-13")
+      assert has_element?(view, "#task-issue-link[href='https://rail.test/issues/TLV-13']", "TLV-13")
 
       view |> element("#child-switcher-TLV-11") |> render_click()
       assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-11")
-      assert has_element?(view, "#task-issue-link[href='https://linear.app/tlv/issue/TLV-11']", "TLV-11")
+      assert has_element?(view, "#task-issue-link[href='https://rail.test/issues/TLV-11']", "TLV-11")
     end
 
     test "a waiting child's Plan item shows its approved part with no conversation and no branch", %{
@@ -7959,25 +7804,6 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "[data-qa='task_branch_name']")
     end
 
-    test "a child removed in Linear leaves the split counted as it was approved", %{
-      conn: conn,
-      project: project,
-      parent: parent,
-      first: first
-    } do
-      {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
-      remove = %{"type" => "Issue", "action" => "remove", "data" => %{"id" => first.issue.external_id}}
-      assert {:ok, _removed} = Issues.handle_linear_webhook(workspace, remove)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?item=children")
-      assert has_element?(view, "#split-row-TLV-12", "after child 1")
-      refute has_element?(view, "#split-row-TLV-12", "starts at once")
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-13&item=plan")
-      assert has_element?(view, "#child-plan-approved", "part 3 of 3")
-      assert has_element?(view, "#child-switcher-button", "3 of 3")
-    end
-
     test "a task with no split has no Children item and no switcher", %{conn: conn, task: task} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -7989,17 +7815,6 @@ defmodule RailWeb.TaskLiveTest do
 
   describe "a custom stage" do
     setup %{project: project} do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueCreate" => %{
-              "success" => true,
-              "issue" => %{"id" => "lin_task_live_custom", "identifier" => "TLV-2", "title" => "Translation sync"}
-            }
-          }
-        })
-      end)
-
       stages = [
         %IssueStage{stage: :custom, name: "Missing strings", prompt: "List the keys with no translation."},
         %IssueStage{stage: :plan},

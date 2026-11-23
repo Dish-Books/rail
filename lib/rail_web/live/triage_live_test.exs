@@ -29,7 +29,7 @@ defmodule RailWeb.TriageLiveTest do
     stub(Git, :checkout_detached_worktree, fn _project, worktree_path -> {:ok, worktree_path} end)
     stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
 
-    %{project: project} = triage_project(tracker: :local)
+    %{project: project} = triage_project()
     %{workspace: workspace, channel: channel} = connect_slack_channel(project, users: %{"U_PRIYA" => "Priya Natarajan"})
 
     {:ok, %Issue{identifier: tracked} = existing} =
@@ -390,7 +390,7 @@ defmodule RailWeb.TriageLiveTest do
 
     expect(Issues, :create_issue, 2, fn scope, project, attrs ->
       if attrs.title == "Every Up next row shows its wait",
-        do: {:error, :tracker_down},
+        do: {:error, :db_down},
         else: call_original(Issues, :create_issue, [scope, project, attrs])
     end)
 
@@ -426,7 +426,7 @@ defmodule RailWeb.TriageLiveTest do
     allow(Issues, self(), view.pid)
 
     stub(Issues, :comment, fn scope, issue, attrs -> call_original(Issues, :comment, [scope, issue, attrs]) end)
-    expect(Issues, :comment, fn _scope, _issue, _attrs -> {:error, :tracker_down} end)
+    expect(Issues, :comment, fn _scope, _issue, _attrs -> {:error, :db_down} end)
     view |> element("#triage-send-button") |> render_click()
     assert has_element?(view, "#triage-send-error", "Could not add the follow-up on item 3")
 

@@ -1,13 +1,13 @@
 defmodule RailWeb.Components.IssueView do
   @moduledoc """
-  One issue, laid out the way Linear lays it out: the title and description on
+  One issue: the title and description on
   the left with its comment threads beneath, its properties down the right.
 
   The issue page and the task page's first tab are the same view of the same
   thing, so both render this; the task page hides the section pointing at the
   task the reader is already on. The testing page renders it read-only, raising no events. The events it raises - `assign`,
-  `filter_assignees`, `set_cycle`, `comment`, `draft_comment`, `start_task`, `adopt_pull_request`, and for a
-  Rail-tracked issue `edit_issue` and `remove_relation` - belong to whichever LiveView renders it.
+  `filter_assignees`, `set_cycle`, `comment`, `draft_comment`, `start_task`, `adopt_pull_request`, `edit_issue` and
+  `remove_relation` - belong to whichever LiveView renders it.
   """
   use RailWeb, :html
 
@@ -34,9 +34,9 @@ defmodule RailWeb.Components.IssueView do
   attr :owner_editable, :boolean, default: true
   # The workflow that opened the issue, named under its title and linked to Settings › Workflows.
   attr :workflow, :any, default: nil
-  # What blocks the issue and what it blocks, as `Rail.Issues.get_blockers/1` reads them; nil until Linear answers.
+  # What blocks the issue and what it blocks, as `Rail.Issues.get_blockers/1` reads them; nil until they are read.
   attr :blockers, :any, default: nil
-  # A Rail-tracked issue's project's cycles, as `Rail.Issues.get_cycles/1` reads them; nil shows no Cycle row.
+  # An issue's project's cycles, as `Rail.Issues.get_cycles/1` reads them; nil shows no Cycle row.
   attr :cycles, :list, default: nil
 
   def issue_view(assigns) do
@@ -55,7 +55,7 @@ defmodule RailWeb.Components.IssueView do
 
     assigns =
       assigns
-      |> assign(:editable, issue.tracker == :local and !assigns.read_only)
+      |> assign(:editable, !assigns.read_only)
       |> assign(:parent, Issue.calculate_parent(issue))
       |> assign(:blocked_by, blocked_by)
       |> assign(:open_blocker_count, length(Issue.calculate_open_blockers(blocked_by)))
@@ -65,9 +65,7 @@ defmodule RailWeb.Components.IssueView do
       |> assign(:parent_exclude_ids, [issue_id | Enum.map(sub_issues, & &1.issue.id)])
       |> assign(:links, if(is_list(issue.links), do: issue.links, else: []))
       |> assign(:sub_issue_count, "#{done}/#{total}")
-      # A Rail-tracked issue's link is this page.
-      |> assign(:show_tracker_link, assigns.issue.url not in [nil, ""] and assigns.issue.tracker != :local)
-      |> assign(:cycle, Enum.find(assigns.cycles || [], &(&1.id == assigns.issue.cycle_external_id)))
+      |> assign(:cycle, Enum.find(assigns.cycles || [], &(&1.id == assigns.issue.cycle_id)))
       # An ended cycle keeps what it held as it closed, so nothing more is put in one.
       |> assign(:cycle_options, Enum.reject(assigns.cycles || [], &(&1.status == :ended)))
 
@@ -155,7 +153,6 @@ defmodule RailWeb.Components.IssueView do
             <.markdown
               :if={@issue.description not in [nil, ""]}
               content={@issue.description}
-              assets_base={~p"/issues/#{@issue.id}/assets"}
               class="text-slate-700 dark:text-slate-300"
             />
             <p
@@ -229,9 +226,9 @@ defmodule RailWeb.Components.IssueView do
               class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
             >
               <div class="p-4 space-y-5">
-                <.comment comment={thread} assets_base={~p"/issues/#{@issue.id}/assets"} />
+                <.comment comment={thread} />
                 <div :for={reply <- by_time(thread.replies)} id={"comment-#{reply.id}"}>
-                  <.comment comment={reply} assets_base={~p"/issues/#{@issue.id}/assets"} />
+                  <.comment comment={reply} />
                 </div>
               </div>
 
@@ -547,7 +544,7 @@ defmodule RailWeb.Components.IssueView do
                         class="h-4 w-4 text-slate-500 dark:text-slate-400"
                       />
                       <span class="flex-1 text-left">No cycle</span>
-                      <.icon :if={!@issue.cycle_external_id} name="pi-check" class="h-4 w-4" />
+                      <.icon :if={!@issue.cycle_id} name="pi-check" class="h-4 w-4" />
                     </button>
                   </li>
                   <li :for={cycle <- @cycle_options}>
@@ -575,7 +572,7 @@ defmodule RailWeb.Components.IssueView do
                         </span>
                       </span>
                       <.icon
-                        :if={@issue.cycle_external_id == cycle.id}
+                        :if={@issue.cycle_id == cycle.id}
                         name="pi-check"
                         class="h-4 w-4"
                       />
@@ -616,7 +613,7 @@ defmodule RailWeb.Components.IssueView do
             <p id="issue-project">{@issue.project.name}</p>
           </section>
 
-          <section :if={@show_tracker_link or @links != [] or @issue.branch_name} class="space-y-3">
+          <section :if={@links != [] or @issue.branch_name} class="space-y-3">
             <h2 class="text-xs font-medium text-slate-500 dark:text-slate-400">Links</h2>
 
             <a
@@ -631,19 +628,6 @@ defmodule RailWeb.Components.IssueView do
               <.icon name={link_icon(link.url)} class="h-4 w-4 text-slate-500 dark:text-slate-400" />
               <span class="flex-1 min-w-0 truncate">{link.title}</span>
               <.icon name="pi-arrow-square-out" class="h-4 w-4 text-slate-400 dark:text-slate-500" />
-            </a>
-
-            <a
-              :if={@show_tracker_link}
-              href={@issue.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              id="issue-tracker-link"
-              data-qa="issue-tracker-link"
-              class="flex items-center gap-2.5 text-slate-900 dark:text-slate-100 hover:underline"
-            >
-              <.icon name="pi-arrow-square-out" class="h-4 w-4 text-slate-500 dark:text-slate-400" />
-              <span>Open in {Issue.tracker_label(@issue.tracker)}</span>
             </a>
 
             <button
@@ -771,7 +755,6 @@ defmodule RailWeb.Components.IssueView do
   end
 
   attr :comment, :map, required: true
-  attr :assets_base, :string, required: true
 
   defp comment(assigns) do
     assigns = assign(assigns, :author, comment_author(assigns.comment))
@@ -790,7 +773,6 @@ defmodule RailWeb.Components.IssueView do
       </div>
       <.markdown
         content={@comment.body}
-        assets_base={@assets_base}
         class="pl-8.5 text-slate-700 dark:text-slate-300"
       />
     </div>
@@ -867,7 +849,7 @@ defmodule RailWeb.Components.IssueView do
   defp comment_author(%{author_user: %{} = user}), do: user
 
   defp comment_author(comment) do
-    name = comment.author_name || "Linear"
+    name = comment.author_name || "Rail"
     %{name: name, login: name, avatar_url: comment.author_avatar_url}
   end
 

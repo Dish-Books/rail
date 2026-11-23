@@ -6,17 +6,6 @@ defmodule Rail.Pipeline.Actions.ListRoundsTest do
   alias Rail.Pipeline.Schemas.Round
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_list_rounds_1", "identifier" => "LSR-1", "title" => "Rounds"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Rounds"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)

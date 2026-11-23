@@ -20,17 +20,6 @@ defmodule Rail.Pipeline.Workers.StartEngineerTest do
     stub(Git, :branch_fingerprint, fn _worktree_path -> nil end)
     stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_start_engineer_1", "identifier" => "STE-1", "title" => "Start Engineer"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Start Engineer"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)

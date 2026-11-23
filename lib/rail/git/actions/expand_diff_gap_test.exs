@@ -8,17 +8,6 @@ defmodule Rail.Git.Actions.ExpandDiffGapTest do
   setup %{project: project} do
     scope = system_scope()
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_exg_1", "identifier" => "EXG-1", "title" => "Expand Gap"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Expand Gap"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     repo = create_temp_git_repo()

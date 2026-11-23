@@ -3,7 +3,6 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
-  alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Projects.Schemas.SlackChannel
   alias Rail.Projects.Schemas.SlackWorkspace
@@ -31,10 +30,10 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
              })
   end
 
-  test "a project's tracker and key are fixed once it has issues", %{github_project: github_project} do
+  test "a project's key is fixed once it has issues", %{github_project: github_project} do
     admin_scope = Scope.for_user(%{admin: true})
 
-    assert {:ok, %Project{tracker: :linear} = project} =
+    assert {:ok, %Project{} = project} =
              Projects.create_project(admin_scope, %{
                name: "Tracked",
                github_repo: "example/tracked-#{System.unique_integer([:positive])}",
@@ -44,24 +43,19 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                clone_path: "/tmp/tracked"
              })
 
-    assert {:ok, %Project{tracker: :github, key: "trk"} = project} =
-             Projects.update_project(admin_scope, project, %{tracker: "github", key: "trk"})
+    assert {:ok, %Project{key: "trk"} = project} = Projects.update_project(admin_scope, project, %{key: "trk"})
 
     %Issue{}
     |> Issue.changeset(%{
       project_id: project.id,
-      external_id: "I_trk1",
-      identifier: "trk#1",
+      identifier: "trk-1",
       title: "One",
       state: :backlog
     })
     |> Repo.insert!()
 
-    assert {:error, changeset} = Projects.update_project(admin_scope, project, %{tracker: "linear"})
-    assert %{tracker: ["cannot change once the project has issues"]} = errors_on(changeset)
-
     assert {:error, changeset} = Projects.update_project(admin_scope, project, %{key: "other"})
-    assert %{tracker: ["cannot change once the project has issues"]} = errors_on(changeset)
+    assert %{key: ["cannot change once the project has issues"]} = errors_on(changeset)
 
     assert {:ok, %Project{name: "Renamed"}} = Projects.update_project(admin_scope, project, %{name: "Renamed"})
 
@@ -70,56 +64,12 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                name: "Same Key",
                github_repo: "example/same-key-#{System.unique_integer([:positive])}",
                github_installation_id: 55_670,
-               tracker: "github",
                key: github_project.key,
                default_branch: "main",
                clone_path: "/tmp/same-key"
              })
 
     assert %{key: ["has already been taken"]} = errors_on(changeset)
-  end
-
-  test "moving a project to another workspace looks its team up through that one" do
-    admin_scope = Scope.for_user(%{admin: true})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_api_old"]
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_old"}]}}})
-    end)
-
-    workspace = fn key ->
-      {:ok, workspace} =
-        Projects.create_linear_workspace(admin_scope, %{
-          name: key,
-          external_id: "lin_org_#{key}",
-          token: "lin_api_#{key}",
-          webhook_secret: "wh"
-        })
-
-      workspace
-    end
-
-    %LinearWorkspace{id: old_id} = workspace.("old")
-    %LinearWorkspace{id: new_id} = workspace.("new")
-
-    assert {:ok, %Project{linear_team_id: "lin_team_old"} = project} =
-             Projects.create_project(admin_scope, %{
-               name: "Moving Project",
-               github_repo: "example/moving-#{System.unique_integer([:positive])}",
-               github_installation_id: 55_668,
-               key: "MOV",
-               default_branch: "main",
-               clone_path: "/tmp/move",
-               linear_workspace_id: old_id
-             })
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_api_new"]
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_new"}]}}})
-    end)
-
-    assert {:ok, %Project{linear_team_id: "lin_team_new", linear_workspace: %LinearWorkspace{id: ^new_id}}} =
-             Projects.update_project(admin_scope, project, %{linear_workspace_id: new_id})
   end
 
   test "returns validation error changeset for invalid attributes" do

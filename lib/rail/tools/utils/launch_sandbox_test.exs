@@ -59,7 +59,6 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: "lin_launch_#{System.unique_integer([:positive])}",
         identifier: "LCH-1",
         title: "Launch Issue",
         state: :backlog

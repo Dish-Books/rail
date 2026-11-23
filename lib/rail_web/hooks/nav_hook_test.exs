@@ -37,7 +37,6 @@ defmodule RailWeb.Hooks.NavHookTest do
         key: "OTHNH",
         default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-other",
-        linear_state_ids: %{"triage" => "st_triage"},
         active: true
       })
 
@@ -55,7 +54,6 @@ defmodule RailWeb.Hooks.NavHookTest do
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project.id,
-        external_id: "lin_nav_hook_1",
         identifier: "TST-1",
         title: "Issue in the selected project",
         state: :triage
@@ -66,7 +64,6 @@ defmodule RailWeb.Hooks.NavHookTest do
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: other_project.id,
-        external_id: "lin_nav_hook_2",
         identifier: "OTHNH-1",
         title: "Issue in the other project",
         state: :triage

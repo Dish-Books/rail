@@ -25,16 +25,13 @@ defmodule Rail.Mcp.Utils.RunToolGetIssue do
 
   defp open(%Role{project_id: project_id}, identifier) do
     with {:ok, project} <- Projects.get_project(project_id),
-         {:ok, %Issue{id: id}} <- Issues.import_issue(project, identifier),
+         {:ok, %Issue{id: id}} <- Issues.get_project_issue(project, identifier),
          {:ok, issue} <-
            Issues.get_issue(id, preload: [comments: from(c in Comment, order_by: [asc: c.inserted_at, asc: c.id])]) do
       {:ok, render(issue)}
     else
       {:error, :not_found} ->
         {:ok, "No ticket #{identifier} in this project."}
-
-      {:error, _tracker_failed} ->
-        {:ok, "Rail could not fetch #{identifier} from the project's tracker. Try again later."}
     end
   end
 

@@ -10,17 +10,6 @@ defmodule Rail.Git.Actions.SetFileViewedTest do
   setup %{project: project} do
     scope = system_scope()
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_vwf_1", "identifier" => "VWF-1", "title" => "Viewed Files"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Viewed Files"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)

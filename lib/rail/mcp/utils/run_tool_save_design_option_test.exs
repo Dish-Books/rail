@@ -8,17 +8,6 @@ defmodule Rail.Mcp.Utils.RunToolSaveDesignOptionTest do
   alias Rail.Tools.Schemas.BrowserSession
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_rtdo_1", "identifier" => "RTDO-1", "title" => "Run Tool Design"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Run Tool Design"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     dir = Path.join(task.scratch_path, "design")

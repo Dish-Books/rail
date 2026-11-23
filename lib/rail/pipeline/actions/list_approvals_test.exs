@@ -8,19 +8,6 @@ defmodule Rail.Pipeline.Actions.ListApprovalsTest do
   alias Rail.Users.Schemas.User
 
   setup %{project: project} do
-    Req.Test.stub(Rail.Linear, fn conn ->
-      n = System.unique_integer([:positive])
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_la_#{n}", "identifier" => "LA-#{n}", "title" => "List Approvals #{n}"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "List Approvals"})
     {:ok, task} = Pipeline.create_task(issue, :finalize)
     {:ok, task} = Pipeline.update_task(task, %{pr_number: 151, marked_ready_at: DateTime.utc_now()})

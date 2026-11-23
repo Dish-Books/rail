@@ -1,7 +1,6 @@
 defmodule RailWeb.Mcp.Tools.UpdateIssue do
   @moduledoc """
-  Changes a ticket. Send only the fields to change. A Linear or GitHub ticket takes only a status and an assignee here;
-  its other fields are edited in its tracker.
+  Changes a ticket. Send only the fields to change.
   """
 
   use Anubis.Server.Component, type: :tool

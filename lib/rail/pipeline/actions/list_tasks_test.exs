@@ -15,21 +15,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   alias Rail.Users
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_list_tasks_1",
-              "identifier" => "LTS-1",
-              "title" => "List Tasks Issue"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "List Tasks Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :plan)
@@ -59,21 +44,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         stage: :plan
       })
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_task_list_tasks_7103",
-              "identifier" => "TSK-7103",
-              "title" => "Task 7103"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue_7103} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Task 7103"})
 
     {:ok, %Task{id: eng_q_id}} = Pipeline.create_task(issue_7103, :plan)
@@ -82,21 +52,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
       Pipeline.update_task(Repo.get!(Task, eng_q_id), %{
         stage: :engineer
       })
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_task_list_tasks_7104",
-              "identifier" => "TSK-7104",
-              "title" => "Task 7104"
-            }
-          }
-        }
-      })
-    end)
 
     {:ok, issue_7104} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Task 7104"})
 
@@ -116,21 +71,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     {:ok, %Task{id: id1}} =
       Pipeline.update_task(task, %{})
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_task_list_tasks_7105",
-              "identifier" => "TSK-7105",
-              "title" => "Beta"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue_7105} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Beta"})
 
     {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7105, :plan)
@@ -143,47 +83,20 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     project: project,
     task: task
   } do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
     {:ok, p2} =
       Projects.create_project(system_scope(), %{
-        linear_workspace_id: project.linear_workspace_id,
         name: "List Tasks Project 7108",
         github_repo: "org/list-tasks-7108",
         github_installation_id: 7108,
         key: "P7108",
         default_branch: "main",
-        clone_path: "/tmp/repos/list-tasks-7108",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
+        clone_path: "/tmp/repos/list-tasks-7108"
       })
 
     Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, task.id).issue_id), set: [title: "P1 Task"])
 
     {:ok, %Task{id: id1}} =
       Pipeline.update_task(task, %{})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_task_list_tasks_7106",
-              "identifier" => "TSK-7106",
-              "title" => "P2 Task"
-            }
-          }
-        }
-      })
-    end)
 
     {:ok, issue_7106} = Issues.create_issue(system_scope(), p2, %{title: "Issue", description: "P2 Task"})
 
@@ -226,17 +139,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     [%Task{id: mine_id}, %Task{id: theirs_id}] =
       for {owner_id, n} <- [{user_id, 7110}, {rival_id, 7111}] do
-        Req.Test.expect(Rail.Linear, fn conn ->
-          Req.Test.json(conn, %{
-            "data" => %{
-              "issueCreate" => %{
-                "success" => true,
-                "issue" => %{"id" => "lin_task_list_tasks_#{n}", "identifier" => "TSK-#{n}", "title" => "Task #{n}"}
-              }
-            }
-          })
-        end)
-
         {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Task #{n}"})
         {:ok, issue} = Issues.update_issue(issue, %{owner_user_id: owner_id})
         {:ok, task} = Pipeline.create_task(issue, :plan)
@@ -260,19 +162,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     parent = learnings_task(project, "LTS-10", :split)
     other = learnings_task(project, "LTS-20", :split)
 
-    for identifier <- ["LTS-11", "LTS-12", "LTS-21"] do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueCreate" => %{
-              "success" => true,
-              "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => identifier}
-            }
-          }
-        })
-      end)
-    end
-
     [%Task{id: first_id} = first, %Task{id: second_id}, _other_child] =
       for {owner, number} <- [{parent, 1}, {parent, 2}, {other, 1}] do
         {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Child", parent: owner.issue})
@@ -294,19 +183,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   # The review queue: what a teammate marked ready at Finalize and nobody has merged, the oldest mark first.
   test "ready: true keeps tasks at Finalize marked ready and unmerged, Merging and refused included, oldest first",
        %{project: project, task: unmarked} do
-    Req.Test.stub(Rail.Linear, fn conn ->
-      n = System.unique_integer([:positive])
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_ready_#{n}", "identifier" => "RDY-#{n}", "title" => "Ready #{n}"}
-          }
-        }
-      })
-    end)
-
     now = DateTime.utc_now()
 
     task = fn stage, attrs ->
@@ -327,25 +203,12 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
              Pipeline.list_tasks(project_id: project.id, ready: true)
   end
 
-  # Merged on GitHub, Linear completes the issue and Overview drops it, so the queue does too.
-  test "ready: true leaves out tasks whose issue Linear completed, canceled or marked duplicate", %{
+  # Merged on GitHub, the issue moves to Done and Overview drops it, so the queue does too.
+  test "ready: true leaves out tasks whose issue is done, canceled or marked duplicate", %{
     project: project,
     issue: open_issue,
     task: %Task{id: open_id} = open
   } do
-    Req.Test.stub(Rail.Linear, fn conn ->
-      n = System.unique_integer([:positive])
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_closed_#{n}", "identifier" => "CLS-#{n}", "title" => "Closed #{n}"}
-          }
-        }
-      })
-    end)
-
     now = DateTime.utc_now()
     {:ok, _open} = Pipeline.update_task(open, %{stage: :finalize, marked_ready_at: now})
     open_issue |> Issue.tracker_changeset(%{state: :in_review}) |> Repo.update!()
@@ -362,17 +225,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   end
 
   test "ready: true breaks a tie in the time marked by id", %{project: project, task: first} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_ready_tie", "identifier" => "RDY-T", "title" => "Tie"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Tie"})
     {:ok, second} = Pipeline.create_task(issue, :finalize)
     marked = DateTime.utc_now()

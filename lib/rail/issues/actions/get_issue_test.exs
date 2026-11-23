@@ -7,7 +7,7 @@ defmodule Rail.Issues.Actions.GetIssueTest do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
 
-  test "get_issue/1 finds an issue by Rail's id or Linear's, with its project" do
+  test "get_issue/1 finds an issue by Rail's id or its identifier, with its project" do
     {:ok, %Project{id: project_id}} =
       Projects.create_project(system_scope(), %{
         name: "Get Issue Project",
@@ -22,7 +22,6 @@ defmodule Rail.Issues.Actions.GetIssueTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project_id,
-        external_id: "lin_get_1",
         identifier: "GTI-1",
         title: "Get Issue Test",
         state: :triage
@@ -30,7 +29,6 @@ defmodule Rail.Issues.Actions.GetIssueTest do
       |> Repo.insert!()
 
     assert {:ok, %Issue{id: ^issue_id, project: %Project{id: ^project_id}}} = Issues.get_issue(issue_id)
-    assert {:ok, %Issue{id: ^issue_id}} = Issues.get_issue("lin_get_1")
     assert {:ok, %Issue{id: ^issue_id}} = Issues.get_issue("GTI-1")
 
     assert {:ok, %Issue{task: nil, owner_user: nil}} = Issues.get_issue(issue_id, preload: [:task, :owner_user])

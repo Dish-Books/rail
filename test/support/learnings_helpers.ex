@@ -5,7 +5,7 @@ defmodule RailTest.LearningsHelpers do
 
   import Ecto.Query
 
-  alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Learnings
   alias Rail.Learnings.Clients.Vertex
   alias Rail.Learnings.Schemas.Learning
@@ -76,21 +76,17 @@ defmodule RailTest.LearningsHelpers do
   A task on a new issue in `project`, at `stage`, with `identifier`.
   """
   def learnings_task(project, identifier, stage \\ :engineer) do
-    external_id = "lin_#{System.unique_integer([:positive])}"
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => external_id, "identifier" => identifier, "title" => "Work on #{identifier}"}
-          }
-        }
+    issue =
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project.id,
+        identifier: identifier,
+        title: "Work on #{identifier}",
+        description: "The ticket.",
+        state: :todo
       })
-    end)
-
-    {:ok, issue} =
-      Issues.create_issue(Scope.for_system(), project, %{title: "Work on #{identifier}", description: "The ticket."})
+      |> Repo.insert!()
+      |> Map.put(:project, project)
 
     {:ok, task} = Pipeline.create_task(issue, stage)
     Repo.preload(task, [:issue, :project])

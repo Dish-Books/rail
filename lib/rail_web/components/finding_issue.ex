@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.FindingIssue do
   @moduledoc """
   The card at the top of a finding ruled or recommended New issue: the issue a Send files, as it will be filed, and
-  once filed the issue it became, linked in its tracker.
+  once filed the issue it became, linked.
   """
   use RailWeb, :html
 
@@ -16,9 +16,8 @@ defmodule RailWeb.Components.FindingIssue do
     assigns =
       assigns
       |> assign(:issue, issue)
-      |> assign(:state, issue.state_name || Issue.state_label(issue.state))
+      |> assign(:state, Issue.state_label(issue.state))
       |> assign(:priority, priority(issue.priority))
-      |> assign(:tracker, Issue.tracker_label(issue.tracker))
 
     ~H"""
     <section
@@ -44,7 +43,7 @@ defmodule RailWeb.Components.FindingIssue do
           rel="noopener noreferrer"
           class="ml-auto inline-flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 rounded-sm"
         >
-          Open in {@tracker}<.icon name="pi-arrow-up-right" class="size-3" />
+          Open issue<.icon name="pi-arrow-up-right" class="size-3" />
         </a>
       </div>
       <div class="px-4 py-3">

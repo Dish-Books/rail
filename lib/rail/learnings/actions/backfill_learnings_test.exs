@@ -18,16 +18,6 @@ defmodule Rail.Learnings.Actions.BackfillLearningsTest do
   setup do
     unique = System.unique_integer([:positive])
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "teams" => %{
-            "nodes" => [%{"id" => "lin_team_bfl", "states" => %{"nodes" => [%{"id" => "st_bfl", "type" => "triage"}]}}]
-          }
-        }
-      })
-    end)
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Backfill #{unique}",
@@ -35,7 +25,6 @@ defmodule Rail.Learnings.Actions.BackfillLearningsTest do
         github_installation_id: 1,
         default_branch: "main",
         key: "BFL",
-        linear_workspace_id: "lw_test_seed",
         clone_path: "/tmp/repos/backfill.#{unique}"
       })
 

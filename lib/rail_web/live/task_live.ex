@@ -635,8 +635,8 @@ defmodule RailWeb.TaskLive do
 
   def handle_info({:learnings_changed, _another_project}, socket), do: {:noreply, socket}
 
-  # A child's issue completing in Linear is what merges it. The open Issue tab follows its parent, sub-issues and
-  # blockers, and reads blockers again when its issue or one of them changes, since Linear sends nothing for those.
+  # A child's issue completing is what merges it. The open Issue tab follows its parent, sub-issues and
+  # blockers, and reads blockers again when its issue or one of them changes.
   def handle_info({event, issue_id}, socket) when event in [:issue_changed, :issue_created] do
     %{family_issue_ids: family, issue: issue, blockers: blockers} = socket.assigns
 
@@ -666,7 +666,7 @@ defmodule RailWeb.TaskLive do
 
   def handle_info({:issue_relations_changed, _ids}, socket), do: {:noreply, socket}
 
-  def handle_info({event, _id}, socket) when event in [:issue_comments_changed, :issues_synced] do
+  def handle_info({event, _id}, socket) when event in [:issue_comments_changed] do
     {:noreply, socket}
   end
 
@@ -999,8 +999,7 @@ defmodule RailWeb.TaskLive do
     do: socket
 
   defp load_assignees(socket, %Task{} = task),
-    do:
-      assign(socket, :assignees, Users.list_assignable_users(project_id: task.project_id, tracker: task.project.tracker))
+    do: assign(socket, :assignees, Users.list_assignable_users(project_id: task.project_id))
 
   defp apply_task(socket, %Task{} = task) do
     roles = if task.project_id, do: Rail.Roles.list_roles(task.project_id), else: []
@@ -1175,7 +1174,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:blockers, if(read_for == issue.id, do: socket.assigns.blockers))
       |> assign(:blockers_for, issue.id)
       |> start_async(:blockers, fn ->
-        {issue.id, Map.get(Issues.get_blockers([issue]), issue.external_id, %{blocked_by: [], blocks: []})}
+        {issue.id, Map.get(Issues.get_blockers([issue]), issue.id, %{blocked_by: [], blocks: []})}
       end)
     else
       socket
@@ -1330,7 +1329,7 @@ defmodule RailWeb.TaskLive do
   # "You" is said only to the split's owner, which every child shares.
   defp viewer_owns?(socket, %Task{issue: issue}), do: issue.owner_user_id == socket.assigns.current_scope.user.id
 
-  # A split is as big as it was approved, so a child deleted in Linear since does not shrink it.
+  # A split is as big as it was approved, so a child deleted since does not shrink it.
   defp split_total(statuses), do: statuses |> Enum.map(& &1.task.split_position) |> Enum.max()
 
   # A child is shown on its parent's page, so the child goes in the URL with the item.
@@ -1516,6 +1515,5 @@ defmodule RailWeb.TaskLive do
   defp again(:discard), do: "Discard again"
 
   defp claim_error(:already_assigned), do: "Somebody else claimed this issue first"
-  defp claim_error(:linear_not_linked), do: "Link your Linear account in Settings before claiming an issue"
   defp claim_error(:github_not_linked), do: "Connect GitHub in Connected accounts before claiming an issue"
 end

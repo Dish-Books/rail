@@ -8,19 +8,6 @@ defmodule Rail.Mcp.Utils.RunToolBrowserCloseTest do
   alias Rail.Tools.Schemas.BrowserSession
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      n = System.unique_integer([:positive])
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_bcl_#{n}", "identifier" => "BCL-#{n}", "title" => "Close Browsers"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Close Browsers"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)

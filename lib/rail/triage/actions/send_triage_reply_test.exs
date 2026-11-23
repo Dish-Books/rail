@@ -23,7 +23,7 @@ defmodule Rail.Triage.Actions.SendTriageReplyTest do
     stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
     stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
 
-    %{project: project} = triage_project(tracker: :local)
+    %{project: project} = triage_project()
     %{workspace: workspace, channel: channel} = connect_slack_channel(project, external: context[:external] == true)
     {:ok, thread} = Triage.handle_slack_event(workspace, slack_message_event(channel, %{}))
     {:ok, user} = Users.update_user(system_scope(), slack_user(workspace.external_id), %{project_ids: [project.id]})
@@ -124,7 +124,7 @@ defmodule Rail.Triage.Actions.SendTriageReplyTest do
   } do
     expect(Issues, :create_issue, 2, fn scope, project, attrs ->
       if attrs.title == "Rule several findings at once",
-        do: {:error, :tracker_down},
+        do: {:error, :db_down},
         else: call_original(Issues, :create_issue, [scope, project, attrs])
     end)
 
@@ -146,10 +146,9 @@ defmodule Rail.Triage.Actions.SendTriageReplyTest do
              %Item{key: "fix-enabled"}
            ] = Repo.all(from i in Item, where: i.thread_id == ^thread_id, order_by: i.position)
 
-    # A tracker that gave no URL is named by its identifier alone.
     %Item{created_issue_id: slot_id} = Repo.get_by!(Item, thread_id: thread_id, key: "slot-held")
-    %Issue{identifier: slot} = Repo.get!(Issue, slot_id)
-    Repo.update_all(from(i in Issue, where: i.id == ^slot_id), set: [url: nil])
+    %Issue{identifier: slot, url: slot_url} = Repo.get!(Issue, slot_id)
+    slot_link = "<#{slot_url}|#{slot}>"
 
     expect(Issues, :create_issue, fn scope, project, %{title: "Rule several findings at once"} = attrs ->
       call_original(Issues, :create_issue, [scope, project, attrs])
@@ -159,7 +158,7 @@ defmodule Rail.Triage.Actions.SendTriageReplyTest do
 
     Req.Test.expect(Rail.Slack, fn conn ->
       assert %{"text" => "Thanks both.\n\nFiled as " <> links} = conn |> Req.Test.raw_body() |> Jason.decode!()
-      assert [^slot, "<" <> _bulk] = String.split(links, ", ")
+      assert [^slot_link, "<" <> _bulk] = String.split(links, ", ")
       Req.Test.json(conn, %{"ok" => true, "ts" => "1790000700.000200"})
     end)
 
@@ -171,7 +170,7 @@ defmodule Rail.Triage.Actions.SendTriageReplyTest do
     thread: %{id: thread_id} = thread,
     scope: scope
   } do
-    expect(Issues, :comment, fn _scope, _issue, _attrs -> {:error, :tracker_down} end)
+    expect(Issues, :comment, fn _scope, _issue, _attrs -> {:error, :db_down} end)
     reject(&Issues.create_issue/3)
 
     assert {:error, {:not_updated, [1]}} = Triage.send_triage_reply(scope, thread)

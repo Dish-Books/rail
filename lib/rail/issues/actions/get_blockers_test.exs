@@ -4,137 +4,69 @@ defmodule Rail.Issues.Actions.GetBlockersTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
-  alias Rail.Repo
 
-  setup %{project: project, github_project: github_project} do
-    insert = fn target, external_id, identifier, state ->
-      %Issue{}
-      |> Issue.tracker_changeset(%{
-        project_id: target.id,
-        external_id: external_id,
-        identifier: identifier,
-        title: "Title of #{identifier}",
-        state: state
-      })
-      |> Repo.insert!()
-      |> Map.put(:project, target)
-    end
-
-    %{
-      issue: insert.(project, "lin_gb_a", "TST-10", :todo),
-      held: insert.(project, "lin_gb_b", "TST-12", :todo),
-      elsewhere: insert.(github_project, "lin_gb_d", "OTH-3", :in_progress)
-    }
-  end
-
-  test "reads what blocks an issue and what it blocks, open blockers first, keeping only blocks relations", %{
-    issue: issue,
-    held: %Issue{id: held_id},
-    elsewhere: %Issue{id: elsewhere_id},
-    project: %{id: project_id}
-  } do
-    related = fn id, identifier, state_type, title ->
-      %{
-        "id" => id,
-        "identifier" => identifier,
-        "title" => title,
-        "url" => "https://linear.app/issue/#{identifier}",
-        "state" => %{"name" => state_type, "type" => state_type}
-      }
-    end
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
-      assert %{"variables" => %{"ids" => ["lin_gb_a"]}} = Jason.decode!(body)
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issues" => %{
-            "nodes" => [
-              %{
-                "id" => "lin_gb_a",
-                "relations" => %{
-                  "nodes" => [
-                    %{"type" => "blocks", "relatedIssue" => related.("lin_gb_e", "TST-20", "unstarted", "Waits on it")},
-                    %{"type" => "related", "relatedIssue" => related.("lin_gb_x", "TST-21", "unstarted", "Related")}
-                  ]
-                },
-                "inverseRelations" => %{
-                  "nodes" => [
-                    %{"type" => "blocks", "issue" => related.("lin_gb_c", "TST-11", "completed", "Finished one")},
-                    %{"type" => "blocks", "issue" => related.("lin_gb_b", "TST-12", "started", "Held one")},
-                    %{"type" => "blocks", "issue" => related.("lin_gb_d", "OTH-3", "started", "Secret title")},
-                    %{"type" => "duplicate", "issue" => related.("lin_gb_y", "TST-22", "started", "Duplicate")}
-                  ]
-                }
-              }
-            ]
-          }
-        }
-      })
-    end)
-
-    assert %{
-             "lin_gb_a" => %{
-               blocked_by: [
-                 %{
-                   issue: %Issue{identifier: "OTH-3", title: nil, id: ^elsewhere_id, state: :in_progress},
-                   in_project: false
-                 },
-                 %{issue: %Issue{identifier: "TST-12", id: ^held_id, project_id: ^project_id}, in_project: true},
-                 %{issue: %Issue{identifier: "TST-11", id: nil, title: nil, state: :done}, in_project: false}
-               ],
-               blocks: [%{issue: %Issue{identifier: "TST-20", url: "https://linear.app/issue/TST-20"}, in_project: false}]
-             }
-           } = Issues.get_blockers([issue, issue])
-  end
-
-  test "a project whose tracker fails adds nothing, and a GitHub one has nothing to add", %{
-    issue: issue,
-    elsewhere: elsewhere
-  } do
-    Req.Test.expect(Rail.Linear, fn conn -> conn |> Plug.Conn.put_status(500) |> Req.Test.json(%{}) end)
-
-    assert %{} == Issues.get_blockers([issue, elsewhere])
-  end
-
-  test "a Rail-tracked issue's blockers and what it blocks come from its relations, each in the project" do
+  setup do
     key = "Gbl#{System.unique_integer([:positive])}"
 
     {:ok, local} =
       Projects.create_project(system_scope(), %{
-        name: "Rail-tracked",
+        name: "Blocked",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
       })
 
-    {:ok, %Issue{id: issue_id, external_id: external_id} = issue} =
+    %{local: local}
+  end
+
+  test "an issue's blockers and what it blocks come from its relations, each in the project", %{local: local} do
+    {:ok, %Issue{id: issue_id} = issue} =
       Issues.create_issue(system_scope(), local, %{title: "In the middle"})
 
     {:ok, %Issue{id: first_id} = first} = Issues.create_issue(system_scope(), local, %{title: "Goes first"})
 
-    {:ok, %Issue{id: later_id, external_id: later_external_id} = later} =
+    {:ok, %Issue{id: later_id} = later} =
       Issues.create_issue(system_scope(), local, %{title: "Waits"})
 
-    {:ok, %Issue{external_id: unrelated_external_id} = unrelated} =
+    {:ok, %Issue{id: unrelated_id} = unrelated} =
       Issues.create_issue(system_scope(), local, %{title: "Unrelated"})
 
     :ok = Issues.block_issue(system_scope(), first, issue)
     :ok = Issues.block_issue(system_scope(), issue, later)
 
     assert %{
-             ^external_id => %{
+             ^issue_id => %{
                blocked_by: [%{issue: %Issue{id: ^first_id, title: "Goes first"}, in_project: true}],
                blocks: [%{issue: %Issue{id: ^later_id, title: "Waits"}, in_project: true}]
              },
-             ^unrelated_external_id => %{blocked_by: [], blocks: []}
+             ^unrelated_id => %{blocked_by: [], blocks: []}
            } = Issues.get_blockers([%{issue | project: local}, %{unrelated | project: local}])
 
-    assert %{^later_external_id => %{blocked_by: [%{issue: %Issue{id: ^issue_id}}], blocks: []}} =
+    assert %{^later_id => %{blocked_by: [%{issue: %Issue{id: ^issue_id}}], blocks: []}} =
              Issues.get_blockers([%{later | project: local}])
+  end
+
+  test "open blockers come before finished ones, and an issue asked for twice is read once", %{local: local} do
+    {:ok, %Issue{id: issue_id} = issue} = Issues.create_issue(system_scope(), local, %{title: "Held"})
+    {:ok, %Issue{id: finished_id} = finished} = Issues.create_issue(system_scope(), local, %{title: "Finished one"})
+    {:ok, %Issue{id: open_id} = open} = Issues.create_issue(system_scope(), local, %{title: "Open one"})
+    {:ok, _done} = Issues.set_issue_status(system_scope(), finished, %{id: "done", name: "Done", state: :done})
+
+    :ok = Issues.block_issue(system_scope(), finished, issue)
+    :ok = Issues.block_issue(system_scope(), open, issue)
+
+    issue = %{issue | project: local}
+
+    assert %{
+             ^issue_id => %{
+               blocked_by: [
+                 %{issue: %Issue{id: ^open_id, state: :triage}, in_project: true},
+                 %{issue: %Issue{id: ^finished_id, state: :done}, in_project: true}
+               ],
+               blocks: []
+             }
+           } = Issues.get_blockers([issue, issue])
   end
 end

@@ -1,13 +1,9 @@
 defmodule Rail.Issues.Workers.AdvanceTrackerState do
   @moduledoc """
-  Moves a ticket's status forward in its tracker to where its task's stage has reached.
+  Moves a ticket's status forward to where its task's stage has reached.
 
-  Only ever forward, judged against the tracker's live state: somebody may have moved
+  Only ever forward, judged against the row as it is now: somebody may have moved
   the ticket further by hand, and a send-back to the engineer must not undo In Review.
-
-  Only once the issue has an owner: an unowned ticket stays where it is, and the write
-  that gives it one, `Rail.Issues.Schemas.Issue`'s changeset or the full sync, queues
-  this job to catch it up with its task. A Rail-tracked issue has nobody else to move it, so it moves owned or not.
 
   One job per issue at a time, so two can never race their writes. That job covers
   any later stage: it reads the stage when it runs, and runs again if it moved meanwhile.
@@ -34,9 +30,8 @@ defmodule Rail.Issues.Workers.AdvanceTrackerState do
 
   # The target comes from where the task is now, not from when the job was queued,
   # so jobs for one issue that run together all aim at the same status.
-  defp advance(%Issue{owner_user_id: owner_user_id, tracker: tracker, task: %Task{stage: stage} = task} = issue)
-       when (is_binary(owner_user_id) or tracker == :local) and
-              stage in [:plan, :custom, :engineer, :review, :finalize, :merged] do
+  defp advance(%Issue{task: %Task{stage: stage} = task} = issue)
+       when stage in [:plan, :custom, :engineer, :review, :finalize, :merged] do
     target =
       case stage do
         :merged -> :done
@@ -45,7 +40,7 @@ defmodule Rail.Issues.Workers.AdvanceTrackerState do
         _plan_custom_or_engineer -> :in_progress
       end
 
-    result = Tracker.tracker(issue).advance_issue(issue, target)
+    result = Tracker.advance_issue(issue, target)
 
     # A stage entered while this ran was refused a job of its own, so run again for it.
     # An error needs no check: Oban's retry reads the stage afresh anyway.

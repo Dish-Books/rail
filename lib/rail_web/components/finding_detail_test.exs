@@ -203,11 +203,10 @@ defmodule RailWeb.Components.FindingDetailTest do
   test "once filed, the header links the issue it became and the ruling buttons are gone" do
     issue = %Issue{
       identifier: "RAIL-152",
-      url: "https://linear.app/x/issue/RAIL-152",
+      url: "https://rail.test/issues/iss_152",
       title: "Send twice",
       state: :triage,
-      priority: :low,
-      tracker: :linear
+      priority: :low
     }
 
     doc =
@@ -217,7 +216,7 @@ defmodule RailWeb.Components.FindingDetailTest do
 
     assert [] = Floki.find(doc, "[data-qa^=decide_]")
     assert "New issue · filed as RAIL-152" = doc |> Floki.find("[data-qa=finding_state]") |> Floki.text() |> String.trim()
-    assert ["https://linear.app/x/issue/RAIL-152"] = doc |> Floki.find("#finding-issue-link") |> Floki.attribute("href")
+    assert ["https://rail.test/issues/iss_152"] = doc |> Floki.find("#finding-issue-link") |> Floki.attribute("href")
     assert [_card] = Floki.find(doc, "[data-qa=finding_issue][data-filed=true]")
   end
 

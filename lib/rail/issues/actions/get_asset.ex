@@ -7,5 +7,5 @@ defmodule Rail.Issues.Actions.GetAsset do
   @doc """
   Fetches a file the tracker holds for `issue`, as the credentials that can read it.
   """
-  def get_asset(%Issue{} = issue, path) when is_binary(path), do: Tracker.tracker(issue).get_asset(issue, path)
+  def get_asset(%Issue{} = issue, path) when is_binary(path), do: Tracker.get_asset(issue, path)
 end

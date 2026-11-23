@@ -7,17 +7,6 @@ defmodule Rail.Pipeline.Actions.SaveStageOutputTest do
   alias Rail.Pipeline.Schemas.Task
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_sso_1", "identifier" => "SSO-1", "title" => "Dependency updates"}
-          }
-        }
-      })
-    end)
-
     stages = [
       %IssueStage{stage: :plan},
       %IssueStage{stage: :engineer},

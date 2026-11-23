@@ -81,7 +81,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
           <div :if={@created} id="capture-created" role="status" class="space-y-4">
             <p class="flex items-center gap-2 text-[13px] font-medium text-slate-800 dark:text-slate-200">
               <.icon name="pi-check-circle-fill" class="size-4 text-emerald-500" />
-              <span>Created in {@created.state_name || Issue.state_label(@created.state)}</span>
+              <span>Created in {Issue.state_label(@created.state)}</span>
             </p>
             <div class="min-w-0 space-y-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-3">
               <.link
@@ -115,7 +115,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
               class="inline-flex items-center gap-2 rounded-sm text-sm text-slate-900 dark:text-slate-100 hover:underline outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:focus-visible:outline-blue-400"
             >
               <.icon name="pi-arrow-square-out" class="size-4 text-slate-500 dark:text-slate-400" />
-              <span>Open in {Issue.tracker_label(@created.tracker)}</span>
+              <span>Open issue</span>
             </a>
             <div class="flex items-center justify-end gap-3 border-t border-slate-200 dark:border-slate-700 pt-3">
               <button
@@ -355,26 +355,4 @@ defmodule RailWeb.Components.CaptureIssueModal do
   defp project_label(%{name: name} = project), do: "#{name} (#{project.key})"
 
   defp error_message(%Ecto.Changeset{}), do: "Could not create the issue"
-
-  defp error_message(:github_issues_permission_missing),
-    do: "The GitHub App needs Issues: read and write on this repository"
-
-  defp error_message(:github_issues_disabled), do: "Issues are turned off on this repository"
-
-  defp error_message({:linear_graphql_error, [%{"message" => message} | _rest]}) when is_binary(message),
-    do: "Linear refused the issue: #{message}"
-
-  defp error_message({:linear_api_error, _status, %{"errors" => [%{"message" => message} | _rest]}})
-       when is_binary(message), do: "Linear refused the issue: #{message}"
-
-  defp error_message({:linear_api_error, status, _body}), do: "Linear could not create the issue (#{status})"
-  defp error_message({:linear_mutation_failed, _mutation}), do: "Linear did not create the issue"
-  defp error_message(:linear_team_not_found), do: "This project has no Linear team"
-  defp error_message(:no_workspace_token), do: "Rail is not connected to this project's Linear workspace"
-  defp error_message({:github_api_error, status, _body}), do: "GitHub could not create the issue (#{status})"
-
-  defp error_message(%Req.TransportError{} = error), do: "Could not reach the tracker (#{Exception.message(error)})"
-
-  defp error_message(reason) when is_binary(reason), do: reason
-  defp error_message(reason), do: inspect(reason)
 end

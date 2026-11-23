@@ -19,7 +19,6 @@ defmodule Rail.Issues.Actions.AssignIssueTest do
         name: "Assigned here",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -34,7 +33,7 @@ defmodule Rail.Issues.Actions.AssignIssueTest do
     %{local: local, teammate: teammate, issue: issue, scope: user_scope(project_ids: [local.id])}
   end
 
-  test "assigns someone the owner menu offers, queues the tracker's sync, and unassigns with nil", %{
+  test "assigns someone the owner menu offers, queues the sync that tells open pages, and unassigns with nil", %{
     teammate: %{id: teammate_id},
     issue: %Issue{id: issue_id} = issue,
     scope: scope

@@ -136,5 +136,5 @@ defmodule RailWeb.Components.IssueRelationList do
     """
   end
 
-  defp status_label(%Issue{state_name: name, state: state}), do: name || Issue.state_label(state)
+  defp status_label(%Issue{state: state}), do: Issue.state_label(state)
 end

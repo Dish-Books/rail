@@ -12,7 +12,7 @@ defmodule Rail.Triage.Schemas.Item do
   @kinds [:bug, :feature_request]
   @verdicts %{bug: [:confirmed, :not_reproduced, :already_fixed], feature_request: [:built, :partly_built, :not_built]}
   @all_verdicts [:confirmed, :not_reproduced, :already_fixed, :built, :partly_built, :not_built]
-  # Product's scale, so the agent, the person and Linear see the same points.
+  # Product's scale, so the agent and the person see the same points.
   @estimates [1, 2, 3, 5, 8]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "tit"}

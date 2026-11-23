@@ -1,7 +1,7 @@
 defmodule Rail.Issues.Actions.SetIssueStatus do
   @moduledoc """
-  A person's status change: the tracker hears first and the row is written from its answer. The row is locked for the
-  write, as the Linear webhook locks it, so whichever of the two finishes the issue is the one that says so.
+  A person's status change. The row is locked for the write, so of two writes finishing the issue together only one
+  says so.
   """
 
   import Ecto.Query
@@ -11,8 +11,6 @@ defmodule Rail.Issues.Actions.SetIssueStatus do
   alias Rail.Issues.Tracker
   alias Rail.Repo
   alias Rail.Scope
-
-  @written [:state, :state_name, :completed_at, :external_updated_at]
 
   @doc """
   Moves `issue` to `status`, one `Rail.Issues.get_statuses/2` returned, and broadcasts `{:issue_changed, issue_id}` on
@@ -30,15 +28,8 @@ defmodule Rail.Issues.Actions.SetIssueStatus do
         {:ok, current}
 
       true ->
-        with {:ok, attrs} <- Tracker.tracker(current).set_status(scope, current, status),
-             do: write_issue_status(current, &calculate_written(&1, attrs))
+        with {:ok, attrs} <- Tracker.set_status(scope, current, status),
+             do: write_issue_status(current, fn _locked -> attrs end)
     end
   end
-
-  # A webhook newer than this answer has already said where the ticket went.
-  defp calculate_written(%Issue{external_updated_at: %DateTime{} = held}, %{external_updated_at: answered} = attrs) do
-    if DateTime.before?(answered, held), do: %{}, else: Map.take(attrs, @written)
-  end
-
-  defp calculate_written(%Issue{}, attrs), do: Map.take(attrs, @written)
 end

@@ -77,7 +77,7 @@ defmodule RailWeb.Components.TriageSendBar do
             :if={@send_label}
             variant="primary"
             phx-click="send"
-            phx-disable-with="Sending…"
+            data-no-repeat
             id="triage-send-button"
             disabled={@send_disabled}
             title={@send_label}

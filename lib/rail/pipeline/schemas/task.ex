@@ -279,7 +279,7 @@ defmodule Rail.Pipeline.Schemas.Task do
 
   @doc """
   The siblings a child of a split builds on that will never merge: `{canceled, removed}`, the canceled
-  ones by identifier and those deleted in Linear, task and all, as `child N`. Needs the siblings' issues.
+  ones by identifier and those deleted, task and all, as `child N`. Needs the siblings' issues.
   """
   def split_blockers(%__MODULE__{builds_on: builds_on}, siblings) do
     by_position = Map.new(siblings, &{&1.split_position, &1})

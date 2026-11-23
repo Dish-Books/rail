@@ -10,22 +10,19 @@ defmodule Rail.Issues.Actions.ChangeIssue do
   alias Rail.Users
 
   @edit_fields [:title, :description, :priority, :estimate, :parent]
-  @tracker_fields [:status, :assignee]
 
   @doc """
   Changes any of `:title`, `:description`, `:priority`, `:estimate`, `:parent` (an identifier, or `""` for none),
   `:status` (a status name), `:cycle` (`"current"`, `"next"`, a number or `"none"`), `:assignee` (a GitHub login, `"me"`,
   or `""` for none) and `:blocked_by` (identifiers), counting only the keys `attrs` holds.
 
-  Returns the ticket as it now reads. A ticket another tracker holds takes only a status and an assignee, and anything
-  else is `{:error, {:edited_in_tracker, tracker, fields}}` with nothing written. A field that does not resolve is
+  Returns the ticket as it now reads. A field that does not resolve is
   `{:error, {:invalid, field, message}}` or the changeset's error, with nothing written. A write that fails after others
   is `{:error, {:partly_saved, saved_fields, failed_fields, reason}}`, and the first to fail is its own error.
   """
   def change_issue(%Scope{} = scope, %Issue{id: id, project_id: project_id}, %{} = attrs) do
     with {:ok, %Issue{project_id: ^project_id} = issue} <- Issues.get_issue(id),
          true <- Scope.can_access_project?(scope, project_id) || {:error, :not_found},
-         :ok <- check_tracker(issue, attrs),
          {:ok, steps} <- resolve(scope, issue, attrs) do
       steps
       |> Enum.reduce_while({:ok, issue, []}, fn {fields, write}, {:ok, issue, saved} ->
@@ -42,15 +39,6 @@ defmodule Rail.Issues.Actions.ChangeIssue do
     else
       {:ok, %Issue{}} -> {:error, :not_found}
       {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp check_tracker(%Issue{tracker: :local}, _attrs), do: :ok
-
-  defp check_tracker(%Issue{tracker: tracker}, attrs) do
-    case attrs |> Map.keys() |> Enum.reject(&(&1 in @tracker_fields)) |> Enum.sort() do
-      [] -> :ok
-      fields -> {:error, {:edited_in_tracker, tracker, fields}}
     end
   end
 
@@ -128,7 +116,7 @@ defmodule Rail.Issues.Actions.ChangeIssue do
   defp resolve_cycle(_issue, _attrs), do: {:ok, nil}
 
   defp resolve_assignee(scope, %Issue{} = issue, %{assignee: login}) when is_binary(login) do
-    assignable = Users.list_assignable_users(project_id: issue.project_id, tracker: issue.tracker)
+    assignable = Users.list_assignable_users(project_id: issue.project_id)
     wanted = login |> String.trim() |> String.downcase()
 
     found =
@@ -152,7 +140,7 @@ defmodule Rail.Issues.Actions.ChangeIssue do
     found = Enum.map(identifiers, &{&1, find_in_project(scope, issue, &1)})
 
     blocks =
-      issue |> List.wrap() |> Issues.get_blockers() |> Map.get(issue.external_id, %{blocks: []}) |> Map.get(:blocks)
+      issue |> List.wrap() |> Issues.get_blockers() |> Map.get(issue.id, %{blocks: []}) |> Map.get(:blocks)
 
     blocked_ids = for %{issue: %Issue{id: blocked_id}} <- blocks, do: blocked_id
 

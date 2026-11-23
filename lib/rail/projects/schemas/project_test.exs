@@ -51,26 +51,11 @@ defmodule Rail.Projects.Schemas.ProjectTest do
     assert %{ci_reserved_cpus: ["must be at least 1 CPU"]} = errors_on(changeset)
   end
 
-  test "a GitHub project needs no Linear team, and is keyed by its repo's name unless given one" do
-    attrs = %{
-      name: "Foo",
-      github_repo: "example/foo",
-      github_installation_id: 1,
-      default_branch: "main",
-      clone_path: "/tmp/foo",
-      tracker: :github
-    }
-
-    assert %Ecto.Changeset{valid?: true} = changeset = Project.changeset(%Project{}, attrs)
-    assert get_field(changeset, :key) == "foo"
-    assert get_field(Project.changeset(%Project{}, Map.put(attrs, :key, "pst")), :key) == "pst"
-  end
-
   test "a key is short and made of letters, digits, - and _" do
-    changeset = Project.changeset(%Project{tracker: :github}, %{key: "foo#1"})
+    changeset = Project.changeset(%Project{}, %{key: "foo#1"})
     assert %{key: ["use letters, digits, - and _"]} = errors_on(changeset)
 
-    changeset = Project.changeset(%Project{tracker: :github}, %{key: String.duplicate("k", 21)})
+    changeset = Project.changeset(%Project{}, %{key: String.duplicate("k", 21)})
     assert %{key: ["should be at most 20 character(s)"]} = errors_on(changeset)
   end
 
@@ -109,133 +94,5 @@ defmodule Rail.Projects.Schemas.ProjectTest do
              |> Repo.insert()
 
     assert %{github_repo: ["has already been taken"]} = errors_on(changeset)
-  end
-
-  test "looks the Linear team and its states up from the key, through the workspace, as the row is written", %{
-    project: %{linear_workspace_id: workspace_id}
-  } do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
-
-      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_api_test_seed"]
-      assert %{"teamKey" => "DIS"} = Jason.decode!(body)["variables"]
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "teams" => %{
-            "nodes" => [
-              %{
-                "id" => "lin_team_dis",
-                "states" => %{
-                  "nodes" => [
-                    %{"id" => "st_todo_late", "type" => "unstarted", "position" => 3},
-                    %{"id" => "st_triage", "type" => "triage", "position" => 0},
-                    %{"id" => "st_todo", "type" => "unstarted", "position" => 2},
-                    %{"id" => "st_backlog", "type" => "backlog", "position" => 1},
-                    %{"id" => "st_started", "type" => "started", "position" => 4},
-                    %{"id" => "st_done", "type" => "completed", "position" => 5},
-                    %{"id" => "st_canceled", "type" => "canceled", "position" => 6},
-                    %{"id" => "st_unknown", "type" => "duplicate", "position" => 7}
-                  ]
-                }
-              }
-            ]
-          }
-        }
-      })
-    end)
-
-    changeset =
-      Project.changeset(%Project{}, %{
-        name: "Team Lookup",
-        github_repo: "example/team-lookup",
-        github_installation_id: 99_010,
-        default_branch: "main",
-        key: "DIS",
-        clone_path: "/tmp/team-lookup",
-        linear_workspace_id: workspace_id
-      })
-
-    # Building the changeset asks Linear nothing; only writing it does.
-    # A type with several states resolves to the first of them.
-    # A type Rail has no word for is left out.
-    state_ids = %{
-      "triage" => "st_triage",
-      "backlog" => "st_backlog",
-      "todo" => "st_todo",
-      "in_progress" => "st_started",
-      "done" => "st_done",
-      "canceled" => "st_canceled"
-    }
-
-    assert {:ok, %Project{linear_team_id: "lin_team_dis", linear_state_ids: ^state_ids} = project} =
-             Repo.insert(changeset)
-
-    # A change that leaves the key and the workspace alone asks again for nothing.
-    assert {:ok, %Project{linear_team_id: "lin_team_dis"}} =
-             project |> Project.changeset(%{name: "Renamed"}) |> Repo.update()
-  end
-
-  test "a key Linear has no team for is an error on the key and nothing is written", %{
-    project: %{linear_workspace_id: workspace_id}
-  } do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => []}}})
-    end)
-
-    assert {:error, changeset} =
-             %Project{}
-             |> Project.changeset(%{
-               name: "Unknown Team",
-               github_repo: "example/unknown-team",
-               github_installation_id: 99_011,
-               default_branch: "main",
-               key: "NOPE",
-               clone_path: "/tmp/unknown-team",
-               linear_workspace_id: workspace_id
-             })
-             |> Repo.insert()
-
-    assert %{key: ["no Linear team has this key"]} = errors_on(changeset)
-    refute Repo.get_by(Project, github_repo: "example/unknown-team")
-  end
-
-  test "a key Linear could not be asked about is an error on the key and nothing is written", %{
-    project: %{linear_workspace_id: workspace_id}
-  } do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      conn |> Plug.Conn.put_status(400) |> Req.Test.json(%{"error" => "bad request"})
-    end)
-
-    assert {:error, changeset} =
-             %Project{}
-             |> Project.changeset(%{
-               name: "Unchecked Team",
-               github_repo: "example/unchecked-team",
-               github_installation_id: 99_013,
-               default_branch: "main",
-               key: "ERR",
-               clone_path: "/tmp/unchecked-team",
-               linear_workspace_id: workspace_id
-             })
-             |> Repo.insert()
-
-    assert %{key: ["could not be checked with Linear"]} = errors_on(changeset)
-    refute Repo.get_by(Project, github_repo: "example/unchecked-team")
-  end
-
-  test "a project with no workspace yet has no team id to look up" do
-    # No Linear stub is queued, so a request would raise.
-    assert {:ok, %Project{linear_team_id: nil}} =
-             %Project{}
-             |> Project.changeset(%{
-               name: "No Workspace",
-               github_repo: "example/no-workspace",
-               github_installation_id: 99_012,
-               default_branch: "main",
-               key: "DIS",
-               clone_path: "/tmp/no-workspace"
-             })
-             |> Repo.insert()
   end
 end

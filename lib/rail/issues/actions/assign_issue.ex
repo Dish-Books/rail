@@ -34,7 +34,7 @@ defmodule Rail.Issues.Actions.AssignIssue do
 
       is_binary(owner_user_id) and
           not Enum.any?(
-            Users.list_assignable_users(project_id: project_id, tracker: current.tracker),
+            Users.list_assignable_users(project_id: project_id),
             &(&1.id == owner_user_id)
           ) ->
         {:error, :not_assignable}

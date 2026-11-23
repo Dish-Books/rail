@@ -25,21 +25,6 @@ defmodule Rail.Tools.BrowserSessionTest do
   setup %{project: project} do
     scope = system_scope()
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_brs_#{System.unique_integer([:positive])}",
-              "identifier" => "BRS-1",
-              "title" => "Browser Session"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Browser Session"})
     {:ok, task} = Pipeline.create_task(issue, :review)
 
@@ -135,17 +120,6 @@ defmodule Rail.Tools.BrowserSessionTest do
   # One Chrome between them, and nothing signed into one task's app is visible
   # to another's.
   test "two tasks share one Chrome and nothing else", %{task: task, project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_brs_other", "identifier" => "BRS-2", "title" => "Other"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Other"})
     {:ok, other} = Pipeline.create_task(issue, :review)
 

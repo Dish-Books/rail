@@ -107,9 +107,8 @@ defmodule RailWeb.Settings.UsersLiveTest do
 
     assert has_element?(view, "#user-role-badge-#{admin_user.id}", "Admin")
     assert has_element?(view, "#user-role-badge-#{regular_user.id}", "User")
-    assert has_element?(view, "#user-accounts-#{regular_user.id}[aria-label='Connected: GitHub, no Linear']")
+    assert has_element?(view, "#user-accounts-#{regular_user.id}[aria-label='Connected: GitHub']")
     assert has_element?(view, "#user-github-chip-#{regular_user.id}[data-connected='true']", "GitHub")
-    assert has_element?(view, "#user-linear-chip-#{regular_user.id}[data-connected='false']", "Linear")
     refute has_element?(view, "#user-sheet")
   end
 
@@ -121,7 +120,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/users")
 
-    assert has_element?(view, "#user-accounts-#{regular_user.id}[aria-label='Connected: no GitHub, no Linear']")
+    assert has_element?(view, "#user-accounts-#{regular_user.id}[aria-label='Connected: no GitHub']")
     assert has_element?(view, "#user-github-chip-#{regular_user.id}[data-connected='false']")
     assert has_element?(view, "#user-login-#{regular_user.id}", regular_user.email)
     refute has_element?(view, "#user-login-#{regular_user.id}", "·")
@@ -147,7 +146,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
     assert has_element?(view, "#user-sheet[aria-label='#{regular_user.name}']")
     assert has_element?(view, "#user-sheet", "@#{regular_user.login} · #{regular_user.email}")
     assert has_element?(view, "#user-sheet", "Every project, and the settings screens.")
-    assert has_element?(view, "#sheet-accounts-#{regular_user.id}[aria-label='Connected: GitHub, no Linear']")
+    assert has_element?(view, "#sheet-accounts-#{regular_user.id}[aria-label='Connected: GitHub']")
     refute has_element?(view, "#user-sheet-admin[checked]")
     assert has_element?(view, "#user-sheet-project-#{project.id}[checked]")
     refute has_element?(view, "#user-sheet-project-#{second_project.id}[checked]")
@@ -314,7 +313,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
     refute has_element?(view, "#users-error-banner")
   end
 
-  test "renders Linear Linked fallback and initials fallback", %{conn: conn} do
+  test "renders the initials fallback for a person with no name or login", %{conn: conn} do
     id = System.unique_integer([:positive])
 
     assert {:ok, %User{} = user} =
@@ -326,14 +325,12 @@ defmodule RailWeb.Settings.UsersLiveTest do
                admin: true
              })
 
-    # Add linear_user_id without linear_name and clear name/login
     {:ok, %User{id: updated_user_id} = updated_user} =
-      Repo.update(Ecto.Changeset.change(user, linear_user_id: "lin_#{id}", linear_name: nil, name: nil, login: ""))
+      Repo.update(Ecto.Changeset.change(user, name: nil, login: ""))
 
     user_conn = log_in_user(conn, updated_user)
 
     assert {:ok, view, _html} = live(user_conn, ~p"/settings/users")
-    assert has_element?(view, "#user-linear-chip-#{updated_user_id}[data-connected='true']", "Linear")
     assert has_element?(view, "#user-placeholder-#{updated_user_id}", "U")
   end
 

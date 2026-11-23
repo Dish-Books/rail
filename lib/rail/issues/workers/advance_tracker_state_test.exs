@@ -4,10 +4,10 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
 
   import Rail.Pipeline.Utils.BuildTask
 
-  alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Tracker
   alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Learnings.Workers.IssueFinished
   alias Rail.Pipeline
@@ -15,10 +15,9 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
   alias Rail.Pipeline.Workers.AdvanceSplit
   alias Rail.Projects
   alias Rail.Repo
-  alias Rail.Users
 
-  # DataCase verifies Mimic, not Req.Test: without this a move that never went out would pass.
-  setup {Req.Test, :verify_on_exit!}
+  @todo %{id: "todo", name: "Todo", state: :todo}
+  @in_progress %{id: "in_progress", name: "In Progress", state: :in_progress}
 
   # A cleaned-up task's worktree and branch are removed from the project's clone through Rail.Git.
   setup do
@@ -28,824 +27,235 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
     :ok
   end
 
-  describe "a Linear issue" do
-    setup %{project: project} do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueCreate" => %{
-              "success" => true,
-              "issue" => %{
-                "id" => "lin_advance_1",
-                "identifier" => "ADV-1",
-                "title" => "Advance Issue",
-                "state" => %{"id" => "st_triage", "name" => "Triage", "type" => "triage"}
-              }
-            }
-          }
-        })
-      end)
+  setup do
+    key = "Adv#{System.unique_integer([:positive])}"
 
-      {:ok, owner} =
-        Users.register_oauth_user(%{
-          github_id: "gh_owner",
-          login: "owner",
-          email: "owner-advance-tracker-state@example.com"
-        })
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Advanced",
+        github_repo: "example/#{key}",
+        github_installation_id: 1,
+        key: key,
+        default_branch: "main",
+        clone_path: "/tmp/#{key}"
+      })
 
-      {:ok, issue} =
-        Issues.create_issue(system_scope(), project, %{
-          title: "Issue",
-          description: "Advance Issue",
-          owner_user_id: owner.id
-        })
+    {:ok, %Issue{owner_user_id: nil} = issue} = Issues.create_issue(system_scope(), project, %{title: "Unowned"})
+    {:ok, task} = Pipeline.create_task(issue, :plan)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
 
-      {:ok, task} = Pipeline.create_task(issue, :plan)
+    %{project: project, issue: issue, task: task}
+  end
 
-      # In Review comes before In Progress, so the started pick has to go by position,
-      # not by the order sent.
-      nodes = [
-        %{"id" => "st_triage", "name" => "Triage", "type" => "triage", "position" => 0.0},
-        %{"id" => "st_backlog", "name" => "Backlog", "type" => "backlog", "position" => 0.0},
-        %{"id" => "st_ready", "name" => "Ready for Dev", "type" => "unstarted", "position" => 1.0},
-        %{"id" => "st_todo", "name" => "Todo", "type" => "unstarted", "position" => 0.0},
-        %{"id" => "st_in_review", "name" => "In Review", "type" => "started", "position" => 1.0},
-        %{"id" => "st_in_progress", "name" => "In Progress", "type" => "started", "position" => 0.0},
-        %{"id" => "st_done", "name" => "Done", "type" => "completed", "position" => 0.0},
-        %{"id" => "st_canceled", "name" => "Canceled", "type" => "canceled", "position" => 1.0}
-      ]
+  test "follows its task with nobody owning it: In Progress at Plan, In Review at Review, Done at Merged", %{
+    issue: %{id: issue_id},
+    task: task
+  } do
+    assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+    assert %Issue{state: :in_progress, completed_at: nil} = Repo.get!(Issue, issue_id)
+    assert_receive {:issue_changed, ^issue_id}
+    refute_enqueued(worker: IssueFinished)
 
-      %{project: project, issue: issue, task: task, nodes: nodes, states: Map.new(nodes, &{&1["id"], &1})}
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+    assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+    assert %Issue{state: :in_review} = Repo.get!(Issue, issue_id)
+    assert_receive {:issue_changed, ^issue_id}
+
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :merged})
+    assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+    assert %Issue{state: :done, completed_at: %DateTime{}} = Repo.get!(Issue, issue_id)
+    assert_receive {:issue_changed, ^issue_id}
+    assert [_once] = all_enqueued(worker: IssueFinished, args: %{issue_id: issue_id})
+  end
+
+  test "Start puts an issue in no cycle in the running one as it moves it to In Progress", %{
+    project: project,
+    issue: %{id: issue_id}
+  } do
+    :ok = Issues.close_cycle_day(Date.utc_today())
+
+    [%Cycle{id: running_id} | _later] =
+      Repo.all(from(c in Cycle, where: c.project_id == ^project.id, order_by: c.number))
+
+    assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+    assert %Issue{state: :in_progress, cycle_id: ^running_id} = Repo.get!(Issue, issue_id)
+  end
+
+  test "never moves back, so the engineer leaves In Review where it is", %{issue: %{id: issue_id} = issue, task: task} do
+    {:ok, _review} =
+      Issues.set_issue_status(system_scope(), issue, %{id: "in_review", name: "In Review", state: :in_review})
+
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
+
+    assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+    assert %Issue{state: :in_review} = Repo.get!(Issue, issue_id)
+  end
+
+  test "a move that fails returns its error, for Oban to try again", %{issue: %{id: issue_id}, task: task} do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
+    expect(Tracker, :advance_issue, fn %Issue{id: ^issue_id}, :in_progress -> {:error, :not_found} end)
+
+    assert {:error, :not_found} = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+  end
+
+  test "a canceled issue stays canceled when its task merges", %{issue: %{id: issue_id} = issue, task: task} do
+    {:ok, _canceled} =
+      Issues.set_issue_status(system_scope(), issue, %{id: "canceled", name: "Canceled", state: :canceled})
+
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :merged})
+
+    assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+    assert %Issue{state: :canceled, completed_at: nil} = Repo.get!(Issue, issue_id)
+    assert [_once] = all_enqueued(worker: IssueFinished, args: %{issue_id: issue_id})
+  end
+
+  test "a split child reaching Done moves its parent's split on", %{project: project, issue: parent_issue, task: task} do
+    Repo.delete!(task)
+    {:ok, %Task{id: parent_task_id}} = Pipeline.create_task(parent_issue, :split)
+
+    {:ok, %Issue{id: child_id} = child} =
+      Issues.create_issue(system_scope(), project, %{title: "A part", parent: parent_issue})
+
+    project
+    |> build_task(child, %{stage: :merged, split_position: 1})
+    |> Ecto.Changeset.put_change(:parent_task_id, parent_task_id)
+    |> Repo.insert!()
+
+    assert :ok = perform_job(AdvanceTrackerState, %{issue_id: child_id})
+    assert %Issue{state: :done} = Repo.get!(Issue, child_id)
+    assert_enqueued(worker: AdvanceSplit, args: %{parent_task_id: parent_task_id})
+    assert_enqueued(worker: IssueFinished, args: %{issue_id: child_id})
+  end
+
+  test "Plan, a custom stage and the engineer move a Todo issue to In Progress, and Finalize moves it to In Review", %{
+    issue: %{id: issue_id} = issue,
+    task: task
+  } do
+    for stage <- [:plan, :custom, :engineer] do
+      {:ok, _todo} = Issues.set_issue_status(system_scope(), Repo.get!(Issue, issue_id), @todo)
+      {:ok, _task} = Pipeline.update_task(task, %{stage: stage, custom_stage: "License check"})
+
+      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+      assert %Issue{state: :in_progress} = Repo.get!(Issue, issue_id)
     end
 
-    test "product moves a ticket still in Triage, where Rail opens them, to In Progress", %{
-      issue: issue,
-      nodes: nodes,
-      states: states
-    } do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{"issue" => %{"state" => states["st_triage"], "team" => %{"states" => %{"nodes" => nodes}}}}
-        })
-      end)
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :finalize})
+    assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
+    assert %Issue{state: :in_review} = Repo.get!(Issue, issue_id)
+  end
 
-      Req.Test.expect(Rail.Linear, fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
-        assert %{"input" => %{"stateId" => "st_in_progress"}} = Jason.decode!(body)["variables"]
-        Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
-      end)
+  # Two jobs running together must not let the earlier stage's write land last.
+  test "a job queued at the engineer stage aims at In Review once the task has moved to review", %{
+    issue: %{id: issue_id} = issue,
+    task: task
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
+    {:ok, %Oban.Job{args: args}} = Issues.advance_issue_state(issue)
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :review})
 
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
+    assert :ok = perform_job(AdvanceTrackerState, args)
+    assert %Issue{state: :in_review} = Repo.get!(Issue, issue_id)
+  end
 
-    test "product moves a Backlog ticket to In Progress", %{issue: issue, nodes: nodes, states: states} do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{"issue" => %{"state" => states["st_backlog"], "team" => %{"states" => %{"nodes" => nodes}}}}
-        })
-      end)
+  # The stage entered mid-run was refused a job of its own, because this one was executing.
+  test "a job whose task moves on while it writes runs again for the new stage", %{issue: issue, task: task} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
 
-      Req.Test.expect(Rail.Linear, fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
-        assert %{"input" => %{"stateId" => "st_in_progress"}} = Jason.decode!(body)["variables"]
-        Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
-      end)
-
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "design moves a Triage ticket to In Progress", %{
-      issue: issue,
-      task: task,
-      nodes: nodes,
-      states: states
-    } do
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :plan})
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{"issue" => %{"state" => states["st_triage"], "team" => %{"states" => %{"nodes" => nodes}}}}
-        })
-      end)
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
-        assert %{"input" => %{"stateId" => "st_in_progress"}} = Jason.decode!(body)["variables"]
-        Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
-      end)
-
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "architect moves a Backlog ticket to the team's first started state", %{
-      issue: issue,
-      task: task,
-      nodes: nodes,
-      states: states
-    } do
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :plan})
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{"issue" => %{"state" => states["st_backlog"], "team" => %{"states" => %{"nodes" => nodes}}}}
-        })
-      end)
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
-
-        assert %{"id" => "lin_advance_1", "input" => %{"stateId" => "st_in_progress"}} =
-                 Jason.decode!(body)["variables"]
-
-        Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
-      end)
-
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "Plan and a custom stage each move a Todo ticket to In Progress", %{
-      issue: issue,
-      task: task,
-      nodes: nodes,
-      states: states
-    } do
-      for stage <- [:plan, :custom] do
-        {:ok, _task} = Pipeline.update_task(task, %{stage: stage, custom_stage: "License check"})
-
-        Req.Test.expect(Rail.Linear, fn conn ->
-          Req.Test.json(conn, %{
-            "data" => %{"issue" => %{"state" => states["st_todo"], "team" => %{"states" => %{"nodes" => nodes}}}}
-          })
-        end)
-
-        Req.Test.expect(Rail.Linear, fn conn ->
-          {:ok, body, conn} = Plug.Conn.read_body(conn)
-          assert %{"input" => %{"stateId" => "st_in_progress"}} = Jason.decode!(body)["variables"]
-          Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
-        end)
-
-        assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-      end
-    end
-
-    test "the engineer moves a Todo ticket to In Progress", %{issue: issue, task: task, nodes: nodes, states: states} do
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{"issue" => %{"state" => states["st_todo"], "team" => %{"states" => %{"nodes" => nodes}}}}
-        })
-      end)
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
-        assert %{"input" => %{"stateId" => "st_in_progress"}} = Jason.decode!(body)["variables"]
-        Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
-      end)
-
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "review moves an In Progress ticket to In Review", %{issue: issue, task: task, nodes: nodes, states: states} do
+    expect(Tracker, :advance_issue, fn %Issue{} = advanced, :in_progress ->
       {:ok, _task} = Pipeline.update_task(task, %{stage: :review})
+      Mimic.call_original(Tracker, :advance_issue, [advanced, :in_progress])
+    end)
 
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{"issue" => %{"state" => states["st_in_progress"], "team" => %{"states" => %{"nodes" => nodes}}}}
-        })
-      end)
+    assert {:snooze, 1} = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
+  end
 
-      Req.Test.expect(Rail.Linear, fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
-        assert %{"input" => %{"stateId" => "st_in_review"}} = Jason.decode!(body)["variables"]
-        Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
-      end)
+  test "a job that had nothing to move still runs again when its task moves on meanwhile", %{
+    issue: %{id: issue_id} = issue,
+    task: task
+  } do
+    {:ok, _started} = Issues.set_issue_status(system_scope(), issue, @in_progress)
 
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    # The catch-up after a claim, or a Review job retried after an outage, can run once the task is at Finalize.
-    test "a task at Finalize moves an In Progress ticket to In Review", %{
-      issue: issue,
-      task: task,
-      nodes: nodes,
-      states: states
-    } do
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :finalize})
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{"issue" => %{"state" => states["st_in_progress"], "team" => %{"states" => %{"nodes" => nodes}}}}
-        })
-      end)
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
-        assert %{"input" => %{"stateId" => "st_in_review"}} = Jason.decode!(body)["variables"]
-        Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
-      end)
-
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    # Two jobs running together must not let the earlier stage's write land last.
-    test "a job queued at the engineer stage aims at In Review once the task has moved to review", %{
-      issue: issue,
-      task: task,
-      nodes: nodes,
-      states: states
-    } do
-      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
-      {:ok, %Oban.Job{args: args}} = Issues.advance_issue_state(issue)
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :review})
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{"issue" => %{"state" => states["st_todo"], "team" => %{"states" => %{"nodes" => nodes}}}}
-        })
-      end)
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
-        assert %{"input" => %{"stateId" => "st_in_review"}} = Jason.decode!(body)["variables"]
-        Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
-      end)
-
-      assert :ok = perform_job(AdvanceTrackerState, args)
-    end
-
-    # The stage entered mid-run was refused a job of its own, because this one was executing.
-    test "a job whose task moves on while it writes runs again for the new stage", %{
-      issue: issue,
-      task: task,
-      nodes: nodes,
-      states: states
-    } do
-      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{"issue" => %{"state" => states["st_todo"], "team" => %{"states" => %{"nodes" => nodes}}}}
-        })
-      end)
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        {:ok, _task} = Pipeline.update_task(task, %{stage: :review})
-        Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
-      end)
-
-      assert {:snooze, 1} = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "a job that had nothing to move still runs again when its task moves on meanwhile", %{
-      issue: issue,
-      task: task,
-      nodes: nodes,
-      states: states
-    } do
-      {:ok, task} = Pipeline.update_task(task, %{stage: :plan})
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
-
-        Req.Test.json(conn, %{
-          "data" => %{"issue" => %{"state" => states["st_in_progress"], "team" => %{"states" => %{"nodes" => nodes}}}}
-        })
-      end)
-
-      assert {:snooze, 1} = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    # A merge of main from Review re-enters the engineer stage.
-    test "the engineer leaves an In Review ticket at In Review", %{
-      issue: issue,
-      task: task,
-      nodes: nodes,
-      states: states
-    } do
+    expect(Tracker, :advance_issue, fn %Issue{} = advanced, :in_progress ->
       {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
+      Mimic.call_original(Tracker, :advance_issue, [advanced, :in_progress])
+    end)
 
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{"issue" => %{"state" => states["st_in_review"], "team" => %{"states" => %{"nodes" => nodes}}}}
-        })
-      end)
+    assert {:snooze, 1} = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+    assert %Issue{state: :in_progress} = Repo.get!(Issue, issue_id)
+  end
 
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
+  test "an issue with no task, or a task at a stage the issue does not follow, stays where it is", %{
+    issue: %{id: issue_id, state: state},
+    task: task
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :split})
+    assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+    assert %Issue{state: ^state} = Repo.get!(Issue, issue_id)
 
-    # Product approval hands on a ticket that starting the task already moved to In Progress.
-    test "design leaves an In Progress ticket there rather than moving it back to Todo", %{
-      issue: issue,
-      task: task,
-      nodes: nodes,
-      states: states
-    } do
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :plan})
+    Repo.delete!(task)
+    assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+    assert %Issue{state: ^state} = Repo.get!(Issue, issue_id)
+  end
 
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{"issue" => %{"state" => states["st_in_progress"], "team" => %{"states" => %{"nodes" => nodes}}}}
-        })
-      end)
+  test "an issue whose task was cleaned up short of Merged stays where it is", %{
+    issue: %{id: issue_id, state: state},
+    task: task
+  } do
+    for stage <- [:engineer, :review] do
+      {:ok, _task} = Pipeline.update_task(task, %{stage: stage, cleaned_up_at: DateTime.utc_now()})
 
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "starting at Plan leaves an In Review ticket alone", %{
-      issue: issue,
-      task: task,
-      nodes: nodes,
-      states: states
-    } do
-      for stage <- [:plan] do
-        {:ok, _task} = Pipeline.update_task(task, %{stage: stage})
-
-        Req.Test.expect(Rail.Linear, fn conn ->
-          Req.Test.json(conn, %{
-            "data" => %{"issue" => %{"state" => states["st_in_review"], "team" => %{"states" => %{"nodes" => nodes}}}}
-          })
-        end)
-
-        assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-      end
-    end
-
-    test "never reopens a ticket that is Done or Canceled", %{issue: issue, task: task, nodes: nodes, states: states} do
-      for finished <- ["st_done", "st_canceled"],
-          stage <- [:plan, :engineer, :review, :merged] do
-        {:ok, _task} = Pipeline.update_task(task, %{stage: stage})
-
-        Req.Test.expect(Rail.Linear, fn conn ->
-          Req.Test.json(conn, %{
-            "data" => %{"issue" => %{"state" => states[finished], "team" => %{"states" => %{"nodes" => nodes}}}}
-          })
-        end)
-
-        assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-      end
-    end
-
-    test "review on a team with no In Review state leaves the ticket where it is", %{
-      issue: issue,
-      task: task,
-      nodes: nodes,
-      states: states
-    } do
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :review})
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issue" => %{
-              "state" => states["st_in_progress"],
-              "team" => %{"states" => %{"nodes" => Enum.reject(nodes, &(&1["id"] == "st_in_review"))}}
-            }
-          }
-        })
-      end)
-
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "a project that never stored its team's states still moves the ticket", %{
-      project: project,
-      issue: issue,
-      task: task,
-      nodes: nodes,
-      states: states
-    } do
-      project |> Ecto.Changeset.change(linear_state_ids: %{}) |> Repo.update!()
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :plan})
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{"issue" => %{"state" => states["st_backlog"], "team" => %{"states" => %{"nodes" => nodes}}}}
-        })
-      end)
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
-        assert %{"input" => %{"stateId" => "st_in_progress"}} = Jason.decode!(body)["variables"]
-        Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
-      end)
-
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "an issue nobody has claimed leaves Linear untouched", %{issue: issue, task: task} do
-      issue |> Ecto.Changeset.change(owner_user_id: nil) |> Repo.update!()
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
-
-      # No Linear mock is queued, so a request would raise.
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "an issue claimed before any task started leaves Linear untouched", %{issue: issue, task: task} do
-      Repo.delete!(task)
-
-      # No Linear mock is queued, so a request would raise.
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "a split parent at Merged moves its ticket to the first completed state", %{
-      issue: issue,
-      task: task,
-      nodes: nodes,
-      states: states
-    } do
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :merged})
-      nodes = [%{"id" => "st_shipped", "name" => "Shipped", "type" => "completed", "position" => 1.0} | nodes]
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{"issue" => %{"state" => states["st_in_review"], "team" => %{"states" => %{"nodes" => nodes}}}}
-        })
-      end)
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
-        assert %{"input" => %{"stateId" => "st_done"}} = Jason.decode!(body)["variables"]
-        Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
-      end)
-
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "a task at a stage the ticket does not follow leaves Linear untouched", %{issue: issue, task: task} do
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :split})
-
-      # No Linear mock is queued, so a request would raise.
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "an issue whose task was cleaned up short of Merged leaves Linear untouched", %{issue: issue, task: task} do
-      for stage <- [:engineer, :review] do
-        {:ok, _task} = Pipeline.update_task(task, %{stage: stage, cleaned_up_at: DateTime.utc_now()})
-
-        # No Linear mock is queued, so a request would raise.
-        assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-      end
-    end
-
-    # The merge queues its cleanup too, and that job can finish first.
-    test "a merged task cleaned up before this runs still moves its ticket to Done", %{
-      issue: issue,
-      task: task,
-      nodes: nodes,
-      states: states
-    } do
-      {:ok, task} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
-      {:ok, _cleaned} = Pipeline.cleanup_task(task)
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{"issue" => %{"state" => states["st_in_review"], "team" => %{"states" => %{"nodes" => nodes}}}}
-        })
-      end)
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
-        assert %{"input" => %{"stateId" => "st_done"}} = Jason.decode!(body)["variables"]
-        Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
-      end)
-
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    # A ticket started again after a cleanup follows its new task, not the one before it.
-    test "an issue started again after a merged task was cleaned up follows the new task", %{
-      issue: issue,
-      task: task,
-      nodes: nodes,
-      states: states
-    } do
-      {:ok, task} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
-      {:ok, _cleaned} = Pipeline.cleanup_task(task)
-      {:ok, _again} = Pipeline.create_task(issue, :plan)
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{"issue" => %{"state" => states["st_todo"], "team" => %{"states" => %{"nodes" => nodes}}}}
-        })
-      end)
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
-        assert %{"input" => %{"stateId" => "st_in_progress"}} = Jason.decode!(body)["variables"]
-        Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
-      end)
-
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "an issue reopened after a merge, whose new task was cleaned up short of Merged, leaves Linear untouched", %{
-      issue: issue,
-      task: task
-    } do
-      {:ok, merged} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
-
-      # Backdated so the abandoned task is the newer one whatever the clock does between inserts.
-      merged =
-        merged |> Ecto.Changeset.change(inserted_at: DateTime.shift(merged.inserted_at, hour: -1)) |> Repo.update!()
-
-      {:ok, _cleaned} = Pipeline.cleanup_task(merged)
-      {:ok, abandoned} = Pipeline.create_task(issue, :plan)
-      {:ok, abandoned} = Pipeline.update_task(abandoned, %{stage: :engineer})
-      {:ok, _cleaned} = Pipeline.cleanup_task(abandoned)
-
-      # No Linear mock is queued, so a request would raise.
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "fails the job when Linear does not take the update", %{issue: issue, task: task, nodes: nodes, states: states} do
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{"issue" => %{"state" => states["st_todo"], "team" => %{"states" => %{"nodes" => nodes}}}}
-        })
-      end)
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => false}}})
-      end)
-
-      assert {:error, {:linear_mutation_failed, "issueUpdate"}} = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "fails the job with Linear's error when the update does not go through", %{
-      issue: issue,
-      task: task,
-      nodes: nodes,
-      states: states
-    } do
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{"issue" => %{"state" => states["st_todo"], "team" => %{"states" => %{"nodes" => nodes}}}}
-        })
-      end)
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        conn |> Plug.Conn.put_status(400) |> Req.Test.json(%{"error" => "bad request"})
-      end)
-
-      assert {:error, {:linear_api_error, 400, %{"error" => "bad request"}}} =
-               perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "fails the job with Linear's error when the ticket cannot be read", %{issue: issue, task: task} do
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :plan})
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{"errors" => [%{"message" => "Entity not found"}]})
-      end)
-
-      assert {:error, {:linear_graphql_error, [%{"message" => "Entity not found"}]}} =
-               perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "an issue that is gone needs no move", %{issue: issue} do
-      Repo.delete!(issue)
-
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
+      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+      assert %Issue{state: ^state} = Repo.get!(Issue, issue_id)
     end
   end
 
-  describe "a GitHub issue" do
-    setup %{github_project: project} do
-      {:ok, owner} = Users.register_oauth_user(%{github_id: "gh_adv_owner", login: "adv-owner", email: "adv@example.com"})
-      issue = github_issue(project, %{number: 9, state: :triage, owner_user_id: owner.id})
-      {:ok, task} = Pipeline.create_task(issue, :plan)
+  # The merge queues its cleanup too, and that job can finish first.
+  test "a merged task cleaned up before this runs still moves its issue to Done", %{
+    issue: %{id: issue_id},
+    task: task
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
+    {:ok, _cleaned} = Pipeline.cleanup_task(task)
 
-      %{issue: issue, task: task}
-    end
-
-    test "Plan moves a Triage issue to in progress", %{issue: issue} do
-      live =
-        github_issue_json(%{"number" => 9, "labels" => [%{"name" => "rail:triage"}, %{"name" => "rail:high"}]})
-
-      Req.Test.expect(Client, 4, fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
-
-        case {conn.method, conn.request_path} do
-          {"POST", "/app/installations/1/access_tokens"} ->
-            Req.Test.json(conn, %{"token" => "ghs_token"})
-
-          {"GET", "/repos/example/test-gh/issues/9"} ->
-            Req.Test.json(conn, live)
-
-          {"POST", "/repos/example/test-gh/issues/9/labels"} ->
-            assert %{"labels" => ["rail:in-progress"]} == Jason.decode!(body)
-            Req.Test.json(conn, [])
-
-          {"DELETE", "/repos/example/test-gh/issues/9/labels/rail%3Atriage"} ->
-            Req.Test.json(conn, [])
-        end
-      end)
-
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "review moves an in progress issue to in review", %{issue: issue, task: task} do
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :review})
-      live = github_issue_json(%{"number" => 9, "labels" => [%{"name" => "rail:in-progress"}]})
-
-      Req.Test.expect(Client, 4, fn conn ->
-        case {conn.method, conn.request_path} do
-          {"POST", "/app/installations/1/access_tokens"} -> Req.Test.json(conn, %{"token" => "ghs_token"})
-          {"GET", "/repos/example/test-gh/issues/9"} -> Req.Test.json(conn, live)
-          {"POST", "/repos/example/test-gh/issues/9/labels"} -> Req.Test.json(conn, [])
-          {"DELETE", "/repos/example/test-gh/issues/9/labels/rail%3Ain-progress"} -> Req.Test.json(conn, [])
-        end
-      end)
-
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "Merged closes an issue the pull request's merge left open", %{issue: issue, task: task} do
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :merged})
-      live = github_issue_json(%{"number" => 9, "labels" => [%{"name" => "rail:in-review"}]})
-
-      Req.Test.expect(Client, 3, fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
-
-        case {conn.method, conn.request_path} do
-          {"POST", "/app/installations/1/access_tokens"} ->
-            Req.Test.json(conn, %{"token" => "ghs_token"})
-
-          {"GET", "/repos/example/test-gh/issues/9"} ->
-            Req.Test.json(conn, live)
-
-          {"PATCH", "/repos/example/test-gh/issues/9"} ->
-            assert %{"state" => "closed", "state_reason" => "completed"} == Jason.decode!(body)
-            Req.Test.json(conn, Map.put(live, "state", "closed"))
-        end
-      end)
-
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "never moves an issue back, nor reopens a closed one", %{issue: issue, task: task} do
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
-
-      for live <- [
-            github_issue_json(%{"number" => 9, "labels" => [%{"name" => "rail:in-review"}]}),
-            github_issue_json(%{"number" => 9, "state" => "closed", "state_reason" => "completed"})
-          ] do
-        Req.Test.expect(Client, 2, fn conn ->
-          case conn.request_path do
-            "/app/installations/1/access_tokens" -> Req.Test.json(conn, %{"token" => "ghs_token"})
-            "/repos/example/test-gh/issues/9" -> Req.Test.json(conn, live)
-          end
-        end)
-
-        assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-      end
-    end
-
-    test "runs again when its task moves on while it writes", %{issue: issue, task: task} do
-      Req.Test.expect(Client, 4, fn conn ->
-        case {conn.method, conn.request_path} do
-          {"POST", "/app/installations/1/access_tokens"} ->
-            Req.Test.json(conn, %{"token" => "ghs_token"})
-
-          {"GET", "/repos/example/test-gh/issues/9"} ->
-            Req.Test.json(conn, github_issue_json(%{"number" => 9, "labels" => [%{"name" => "rail:todo"}]}))
-
-          {"POST", "/repos/example/test-gh/issues/9/labels"} ->
-            {:ok, _task} = Pipeline.update_task(task, %{stage: :review})
-            Req.Test.json(conn, [])
-
-          {"DELETE", "/repos/example/test-gh/issues/9/labels/rail%3Atodo"} ->
-            conn |> Plug.Conn.put_status(500) |> Req.Test.json(%{})
-        end
-      end)
-
-      assert {:error, {:github_api_error, 500, _body}} = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-
-      Req.Test.expect(Client, 3, fn conn ->
-        case {conn.method, conn.request_path} do
-          {"POST", "/app/installations/1/access_tokens"} ->
-            Req.Test.json(conn, %{"token" => "ghs_token"})
-
-          {"GET", "/repos/example/test-gh/issues/9"} ->
-            Req.Test.json(conn, github_issue_json(%{"number" => 9}))
-
-          {"POST", "/repos/example/test-gh/issues/9/labels"} ->
-            {:ok, _task} = Pipeline.update_task(Repo.reload!(task), %{stage: :merged})
-            Req.Test.json(conn, [])
-        end
-      end)
-
-      assert {:snooze, 1} = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
-    end
-
-    test "an unowned issue, or one that is gone, stays where it is", %{issue: issue} do
-      {:ok, unowned} = Issues.update_issue(issue, %{owner_user_id: nil})
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: unowned.id})
-
-      Repo.delete!(Repo.preload(unowned, :task).task)
-      Repo.delete!(unowned)
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: unowned.id})
-    end
+    assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+    assert %Issue{state: :done} = Repo.get!(Issue, issue_id)
   end
 
-  describe "a Rail-tracked issue" do
-    setup do
-      key = "Adv#{System.unique_integer([:positive])}"
+  # An issue started again after a cleanup follows its new task, not the one before it.
+  test "an issue started again after a merged task was cleaned up follows the new task", %{
+    issue: %{id: issue_id} = issue,
+    task: task
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
+    {:ok, _cleaned} = Pipeline.cleanup_task(task)
+    {:ok, _again} = Pipeline.create_task(issue, :plan)
 
-      {:ok, project} =
-        Projects.create_project(system_scope(), %{
-          name: "Rail-tracked",
-          github_repo: "example/#{key}",
-          github_installation_id: 1,
-          tracker: :local,
-          key: key,
-          default_branch: "main",
-          clone_path: "/tmp/#{key}"
-        })
+    assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+    assert %Issue{state: :in_progress} = Repo.get!(Issue, issue_id)
+  end
 
-      {:ok, %Issue{owner_user_id: nil} = issue} = Issues.create_issue(system_scope(), project, %{title: "Unowned"})
-      {:ok, task} = Pipeline.create_task(issue, :plan)
-      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+  test "an issue reopened after a merge, whose new task was cleaned up short of Merged, stays where it is", %{
+    issue: %{id: issue_id, state: state} = issue,
+    task: task
+  } do
+    {:ok, merged} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
 
-      %{project: project, issue: issue, task: task}
-    end
+    # Backdated so the abandoned task is the newer one whatever the clock does between inserts.
+    merged =
+      merged |> Ecto.Changeset.change(inserted_at: DateTime.shift(merged.inserted_at, hour: -1)) |> Repo.update!()
 
-    test "follows its task with nobody owning it: In Progress at Plan, In Review at Review, Done at Merged", %{
-      issue: %{id: issue_id},
-      task: task
-    } do
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
-      assert %Issue{state: :in_progress, state_name: "In Progress", completed_at: nil} = Repo.get!(Issue, issue_id)
-      assert_receive {:issue_changed, ^issue_id}
-      refute_enqueued(worker: IssueFinished)
+    {:ok, _cleaned} = Pipeline.cleanup_task(merged)
+    {:ok, abandoned} = Pipeline.create_task(issue, :plan)
+    {:ok, abandoned} = Pipeline.update_task(abandoned, %{stage: :engineer})
+    {:ok, _cleaned} = Pipeline.cleanup_task(abandoned)
 
-      {:ok, task} = Pipeline.update_task(task, %{stage: :review})
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
-      assert %Issue{state: :in_review, state_name: "In Review"} = Repo.get!(Issue, issue_id)
-      assert_receive {:issue_changed, ^issue_id}
+    assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+    assert %Issue{state: ^state} = Repo.get!(Issue, issue_id)
+  end
 
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :merged})
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
-      assert %Issue{state: :done, state_name: "Done", completed_at: %DateTime{}} = Repo.get!(Issue, issue_id)
-      assert_receive {:issue_changed, ^issue_id}
-      assert [_once] = all_enqueued(worker: IssueFinished, args: %{issue_id: issue_id})
-    end
+  test "an issue that is gone needs no move", %{issue: issue} do
+    Repo.delete!(issue)
 
-    test "Start puts an issue in no cycle in the running one as it moves it to In Progress", %{
-      project: project,
-      issue: %{id: issue_id}
-    } do
-      :ok = Issues.close_cycle_day(Date.utc_today())
-
-      [%Cycle{id: running_id} | _later] =
-        Repo.all(from(c in Cycle, where: c.project_id == ^project.id, order_by: c.number))
-
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
-      assert %Issue{state: :in_progress, cycle_external_id: ^running_id} = Repo.get!(Issue, issue_id)
-    end
-
-    test "never moves back, so the engineer leaves In Review where it is", %{issue: %{id: issue_id} = issue, task: task} do
-      {:ok, _review} =
-        Issues.set_issue_status(system_scope(), issue, %{id: "in_review", name: "In Review", state: :in_review})
-
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
-
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
-      assert %Issue{state: :in_review} = Repo.get!(Issue, issue_id)
-    end
-
-    test "a canceled issue stays canceled when its task merges", %{issue: %{id: issue_id} = issue, task: task} do
-      {:ok, _canceled} =
-        Issues.set_issue_status(system_scope(), issue, %{id: "canceled", name: "Canceled", state: :canceled})
-
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :merged})
-
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
-      assert %Issue{state: :canceled, completed_at: nil} = Repo.get!(Issue, issue_id)
-      assert [_once] = all_enqueued(worker: IssueFinished, args: %{issue_id: issue_id})
-    end
-
-    test "a split child reaching Done moves its parent's split on", %{project: project, issue: parent_issue, task: task} do
-      Repo.delete!(task)
-      {:ok, %Task{id: parent_task_id}} = Pipeline.create_task(parent_issue, :split)
-
-      {:ok, %Issue{id: child_id} = child} =
-        Issues.create_issue(system_scope(), project, %{title: "A part", parent: parent_issue})
-
-      project
-      |> build_task(child, %{stage: :merged, split_position: 1})
-      |> Ecto.Changeset.put_change(:parent_task_id, parent_task_id)
-      |> Repo.insert!()
-
-      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: child_id})
-      assert %Issue{state: :done} = Repo.get!(Issue, child_id)
-      assert_enqueued(worker: AdvanceSplit, args: %{parent_task_id: parent_task_id})
-      assert_enqueued(worker: IssueFinished, args: %{issue_id: child_id})
-    end
+    assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
   end
 end

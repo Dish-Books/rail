@@ -1,6 +1,6 @@
 defmodule Rail.Issues.Schemas.CycleDay do
   @moduledoc """
-  A finished day of a Rail-tracked cycle, with its scope, started and completed points as they stood when Rail recorded
+  A finished day of a cycle, with its scope, started and completed points as they stood when Rail recorded
   it. Only the daily job writes these, all at once.
   """
   use Rail.Schema

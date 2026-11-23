@@ -45,7 +45,7 @@ defmodule RailWeb.Components.FindingIssueTest do
     refute Floki.text(doc) =~ "Filed when you send"
   end
 
-  test "a filed issue's places read as a numbered list, each path as code, as Linear will show them" do
+  test "a filed issue's places read as a numbered list, each path as code" do
     finding = %Finding{
       decision: :new_issue,
       kind: :code,
@@ -61,7 +61,7 @@ defmodule RailWeb.Components.FindingIssueTest do
       ]
     }
 
-    task = %Task{issue: %Issue{identifier: "RAIL-131", url: "https://linear.app/x/issue/RAIL-131"}}
+    task = %Task{issue: %Issue{identifier: "RAIL-131", url: "https://rail.test/issues/iss_131"}}
 
     doc =
       (&FindingIssue.finding_issue/1)
@@ -74,15 +74,13 @@ defmodule RailWeb.Components.FindingIssueTest do
              doc |> Floki.find("[data-qa=finding_issue_description] ol li code") |> Enum.map(&Floki.text/1)
   end
 
-  test "once filed it shows the issue it became, as Rail last synced it, open in its tracker" do
+  test "once filed it shows the issue it became, as Rail last saved it, open in a new tab" do
     issue = %Issue{
       identifier: "RAIL-152",
-      url: "https://linear.app/x/issue/RAIL-152",
+      url: "https://rail.test/issues/iss_152",
       title: "Issues page re-sorts after every sync",
-      state: :todo,
-      state_name: "Backlog",
-      priority: :high,
-      tracker: :linear
+      state: :backlog,
+      priority: :high
     }
 
     doc =
@@ -93,18 +91,8 @@ defmodule RailWeb.Components.FindingIssueTest do
     text = Floki.text(doc)
     assert text =~ ~r/Filed as\s+RAIL-152\s+· Backlog · High priority/
     assert text =~ "Its ruling can no longer change."
-    assert doc |> Floki.find("#finding-issue-open") |> Floki.text() =~ "Open in Linear"
-    assert ["https://linear.app/x/issue/RAIL-152"] = doc |> Floki.find("#finding-issue-open") |> Floki.attribute("href")
-
-    doc =
-      (&FindingIssue.finding_issue/1)
-      |> render_component(
-        finding: %Finding{decision: :new_issue, issue_id: "iss_1", issue: %{issue | state_name: nil, tracker: :github}},
-        project_name: "Rail"
-      )
-      |> Floki.parse_fragment!()
-
-    assert Floki.text(doc) =~ "· Todo · High priority"
-    assert doc |> Floki.find("#finding-issue-open") |> Floki.text() =~ "Open in GitHub"
+    assert doc |> Floki.find("#finding-issue-open") |> Floki.text() =~ "Open issue"
+    assert ["https://rail.test/issues/iss_152"] = doc |> Floki.find("#finding-issue-open") |> Floki.attribute("href")
+    assert ["_blank"] = doc |> Floki.find("#finding-issue-open") |> Floki.attribute("target")
   end
 end

@@ -14,7 +14,7 @@ defmodule Rail.Triage.Actions.UpdateTriageReplyTest do
     stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
     stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
 
-    %{project: project} = triage_project(tracker: :local)
+    %{project: project} = triage_project()
     %{workspace: workspace, channel: channel} = connect_slack_channel(project)
     {:ok, thread} = Triage.handle_slack_event(workspace, slack_message_event(channel, %{}))
     # An item with no ticket drafted, so the reply is the only thing to send.

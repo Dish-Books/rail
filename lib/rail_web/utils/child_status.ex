@@ -1,6 +1,6 @@
 defmodule RailWeb.Utils.ChildStatus do
   @moduledoc """
-  Where one child of a split stands among its siblings: merged or canceled as Linear has it, blocked by a
+  Where one child of a split stands among its siblings: merged or canceled as its issue has it, blocked by a
   sibling it builds on that was canceled or deleted, waiting while one has not merged, else as its run.
   """
 
@@ -94,7 +94,7 @@ defmodule RailWeb.Utils.ChildStatus do
       },
       needs_attention: false,
       badge: nil,
-      line: "#{label} in Linear",
+      line: "#{label}",
       line_class: "text-slate-600 dark:text-slate-300",
       action: nil
     }
@@ -106,7 +106,7 @@ defmodule RailWeb.Utils.ChildStatus do
     blocked_by = canceled ++ removed
 
     gone =
-      [{canceled, "canceled"}, {removed, "removed in Linear"}]
+      [{canceled, "canceled"}, {removed, "deleted"}]
       |> Enum.reject(&match?({[], _how}, &1))
       |> Enum.map_join(" and ", fn {names, how} ->
         "#{join_and(names)} #{if length(names) == 1, do: "was", else: "were"} #{how}"
@@ -128,7 +128,7 @@ defmodule RailWeb.Utils.ChildStatus do
       merged: %{mark: :pending, chip: nil},
       needs_attention: true,
       badge: :dot,
-      line: "#{gone}, so this will not start; cancel it in Linear to finish the split",
+      line: "#{gone}, so this will not start; cancel it to finish the split",
       line_class: "text-amber-700 dark:text-amber-300",
       action: nil
     }

@@ -11,17 +11,6 @@ defmodule Rail.Pipeline.Actions.MarkReadyTest do
   alias Rail.Users.Schemas.User
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_mr_1", "identifier" => "MR-1", "title" => "Mark Ready"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Mark Ready"})
     {:ok, task} = Pipeline.create_task(issue, :finalize)
     {:ok, task} = Pipeline.update_task(task, %{pr_number: 151})

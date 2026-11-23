@@ -11,30 +11,24 @@ defmodule Rail.Pipeline.Actions.CreateTaskTest do
   setup %{project: project} do
     scope = system_scope()
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_create_task_1",
-              "identifier" => "CRT-1",
-              "title" => "Create Task Issue"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Create Task Issue"})
 
     %{issue: issue}
   end
 
-  test "puts the task's own clone under the tasks root, named after the issue's identifier", %{
-    issue: %Issue{id: issue_id} = issue,
-    project: project
-  } do
+  test "puts the task's own clone under the tasks root, named after the issue's identifier", %{project: project} do
+    %Issue{id: issue_id} =
+      issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        identifier: "CRT-1",
+        title: "Issue",
+        state: :triage
+      })
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+
     path = Path.join([Rail.tasks_root(), project.id, "crt-1", "repo"])
 
     assert {:ok, %Task{issue_id: ^issue_id, stage: :plan, worktree_name: "crt-1", worktree_path: ^path}} =

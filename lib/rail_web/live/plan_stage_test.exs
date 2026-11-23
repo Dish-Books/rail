@@ -68,18 +68,9 @@ defmodule RailWeb.Live.PlanStageTest do
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_plan_stage_1", "identifier" => "PST-1", "title" => "Plan Stage Issue"}
-          }
-        }
-      })
-    end)
+    {:ok, issue} =
+      Issues.create_issue(Scope.for_system(), project, %{title: "Plan Stage Issue", description: "Plan Stage Issue"})
 
-    {:ok, issue} = Issues.create_issue(Scope.for_system(), project, %{title: "Issue", description: "Plan Stage Issue"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
@@ -449,31 +440,13 @@ defmodule RailWeb.Live.PlanStageTest do
     conn: conn,
     project: project
   } do
-    for {identifier, title} <- [
-          {"PST-10", "Work on PST-10"},
-          {"PST-11", "Child PST-11"},
-          {"PST-12", "Child PST-12"},
-          {"PST-13", "Child PST-13"}
-        ] do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueCreate" => %{
-              "success" => true,
-              "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
-            }
-          }
-        })
-      end)
-    end
-
-    {:ok, parent_issue} = Issues.create_issue(system_scope(), project, %{title: "Work on PST-10"})
+    {:ok, parent_issue} = Issues.create_issue(system_scope(), project, %{title: "Work on the parent"})
     {:ok, parent} = Pipeline.create_task(parent_issue, :split)
     parent = Repo.preload(parent, [:issue, :project])
 
-    [_first, _second, third] =
-      for {{identifier, builds_on}, number} <- Enum.with_index([{"PST-11", []}, {"PST-12", []}, {"PST-13", [1, 2]}], 1) do
-        attrs = %{title: "Child #{identifier}", parent: parent_issue}
+    [first, second, third] =
+      for {builds_on, number} <- Enum.with_index([[], [], [1, 2]], 1) do
+        attrs = %{title: "Child #{number}", parent: parent_issue}
         {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
 
         {:ok, child} =
@@ -495,10 +468,15 @@ defmodule RailWeb.Live.PlanStageTest do
       ticket: %Round.Ticket{title: "A part", description: "Its criteria."}
     })
 
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=PST-13&item=plan")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=#{third.issue.identifier}&item=plan")
 
-    assert has_element?(view, "#child-plan-waiting", "Starts when PST-11 and PST-12 merge.")
-    assert has_element?(view, "#child-plan-approved", "Approved in PST-10 · part 3 of 3")
+    assert has_element?(
+             view,
+             "#child-plan-waiting",
+             "Starts when #{first.issue.identifier} and #{second.issue.identifier} merge."
+           )
+
+    assert has_element?(view, "#child-plan-approved", "Approved in #{parent_issue.identifier} · part 3 of 3")
     assert has_element?(view, "#child-plan #plan-sheet #plan-3-group-pipeline")
   end
 

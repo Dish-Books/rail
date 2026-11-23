@@ -11,19 +11,6 @@ defmodule Rail.Pipeline.Actions.ApproveTaskTest do
   alias Rail.Users.Schemas.User
 
   setup %{project: project} do
-    Req.Test.stub(Rail.Linear, fn conn ->
-      n = System.unique_integer([:positive])
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_at_#{n}", "identifier" => "AT-#{n}", "title" => "Approve Task #{n}"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Approve Task"})
     {:ok, task} = Pipeline.create_task(issue, :finalize)
     {:ok, task} = Pipeline.update_task(task, %{pr_number: 151, marked_ready_at: DateTime.utc_now()})

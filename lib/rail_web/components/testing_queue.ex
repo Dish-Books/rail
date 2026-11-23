@@ -79,7 +79,7 @@ defmodule RailWeb.Components.TestingQueue do
     """
   end
 
-  # A tracker can report Done with no completed time, and then there is no age to show.
+  # An issue Done with no completed time, such as one moved in from Linear, has no age to show.
   defp done_age(%{completed_at: %DateTime{} = at}, now), do: "Done #{format_age(DateTime.diff(now, at))} ago"
   defp done_age(_issue, _now), do: nil
 end

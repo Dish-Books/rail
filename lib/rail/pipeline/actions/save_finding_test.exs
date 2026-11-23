@@ -9,17 +9,6 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
   alias Rail.Pipeline.Schemas.FindingNote
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_svf_1", "identifier" => "SVF-1", "title" => "Save Finding"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Save Finding"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     # HEAD is asked of Rail.Git, so the worktree is a plain directory and the stub says which commit it is on.

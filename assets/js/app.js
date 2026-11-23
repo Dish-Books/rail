@@ -33,6 +33,7 @@ import { StatusMenu } from "./hooks/status_menu";
 import { Theme } from "./hooks/theme";
 import { TodosDrop } from "./hooks/todos_drop";
 import { readOpen, TodosOpen } from "./hooks/todos_open";
+import { blockRepeatClicks } from "./no_repeat";
 import { recordDrops } from "./socket_drops";
 
 const Hooks = {
@@ -86,6 +87,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
 });
 drops.watch(liveSocket.socket);
 listenForDragLinks(document, window.location.origin);
+blockRepeatClicks(document);
 
 topbar.config({ barColors: { 0: "#6366f1" }, shadowColor: "rgba(0, 0, 0, 0)" });
 window.addEventListener("phx:page-loading-start", (info) => {

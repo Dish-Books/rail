@@ -61,7 +61,6 @@ defmodule Rail.Tools.Actions.StartAfterUsageResetTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: "lin_reset_#{unique}",
         identifier: "RST#{unique}-1",
         title: "Reset Issue",
         state: :backlog

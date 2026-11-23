@@ -21,20 +21,8 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
         {stage, role}
       end)
 
-    # Each issue created answers Linear once, under a key of its own.
     task_for = fn stage ->
       n = System.unique_integer([:positive])
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueCreate" => %{
-              "success" => true,
-              "issue" => %{"id" => "lin_attention_#{n}", "identifier" => "ATT-#{n}", "title" => "Attention #{n}"}
-            }
-          }
-        })
-      end)
 
       {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Attention #{n}"})
       {:ok, task} = Pipeline.create_task(issue, :plan)
@@ -257,24 +245,6 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
     roles: roles
   } do
     now = DateTime.utc_now()
-
-    for {identifier, title} <- [
-          {"ATT-SPL", "Work on ATT-SPL"},
-          {"ATT-S1", "Child ATT-S1"},
-          {"ATT-S2", "Child ATT-S2"},
-          {"ATT-S3", "Child ATT-S3"}
-        ] do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueCreate" => %{
-              "success" => true,
-              "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
-            }
-          }
-        })
-      end)
-    end
 
     {:ok, parent_issue} = Issues.create_issue(system_scope(), project, %{title: "Work on ATT-SPL"})
     {:ok, parent} = Pipeline.create_task(parent_issue, :split)

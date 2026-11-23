@@ -105,69 +105,14 @@ defmodule Rail.Users.Actions.UpdateUserTest do
     end
   end
 
-  describe "linear credentials" do
-    test "links a Linear account", %{user: user, user_id: user_id} do
-      scope = Scope.for_system()
-      expires_at = DateTime.shift(DateTime.utc_now(), hour: 1)
-
-      assert {:ok,
-              %User{
-                id: ^user_id,
-                linear_user_id: "lin_usr",
-                linear_name: "Linear User",
-                linear_access_token: "lin_at",
-                linear_refresh_token: "lin_rt",
-                linear_token_expires_at: %DateTime{}
-              }} =
-               Users.update_user(scope, user, %{
-                 linear_user_id: "lin_usr",
-                 linear_name: "Linear User",
-                 linear_access_token: "lin_at",
-                 linear_refresh_token: "lin_rt",
-                 linear_token_expires_at: expires_at
-               })
-    end
-
-    test "unlinks a Linear account", %{user: user} do
-      scope = Scope.for_system()
-
-      assert {:ok, %User{} = linked} =
-               Users.update_user(scope, user, %{
-                 linear_user_id: "lin_usr",
-                 linear_name: "Linear User",
-                 linear_access_token: "lin_at",
-                 linear_refresh_token: "lin_rt",
-                 linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
-               })
-
-      assert {:ok,
-              %User{
-                linear_user_id: nil,
-                linear_name: nil,
-                linear_access_token: nil,
-                linear_refresh_token: nil,
-                linear_token_expires_at: nil
-              }} =
-               Users.update_user(scope, linked, %{
-                 linear_user_id: nil,
-                 linear_name: nil,
-                 linear_access_token: nil,
-                 linear_refresh_token: nil,
-                 linear_token_expires_at: nil
-               })
-    end
-
+  describe "credentials" do
     test "keeps existing credentials when updating an unrelated field", %{user: user} do
       scope = Scope.for_system()
 
       assert {:ok, %User{} = linked} =
-               Users.update_user(scope, user, %{
-                 linear_access_token: "lin_at",
-                 linear_refresh_token: "lin_rt",
-                 linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
-               })
+               Users.update_user(scope, user, %{slack_user_id: "U_KEEP", slack_access_token: "xoxp-keep"})
 
-      assert {:ok, %User{linear_access_token: "lin_at", name: "Renamed"}} =
+      assert {:ok, %User{slack_access_token: "xoxp-keep", name: "Renamed"}} =
                Users.update_user(scope, linked, %{name: "Renamed"})
     end
   end

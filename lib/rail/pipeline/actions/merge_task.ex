@@ -118,7 +118,7 @@ defmodule Rail.Pipeline.Actions.MergeTask do
     end
   end
 
-  # The next children start without waiting on Linear to complete the issue, whose own job is the same one.
+  # The next children start without waiting on the issue to complete, whose own job is the same one.
   defp merged(%Task{} = task, merge) do
     {:ok, task} =
       Repo.transaction(fn ->

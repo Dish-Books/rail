@@ -42,7 +42,6 @@ config :rail, Oban,
   repo: Rail.Repo,
   queues: [
     issues: 5,
-    linear_files: 5,
     tools: 1,
     toolchains: 1,
     git: 1,

@@ -15,7 +15,6 @@ defmodule Rail.Issues.Actions.SearchIssuesTest do
             name: name,
             github_repo: "example/#{key}",
             github_installation_id: 1,
-            tracker: :local,
             key: key,
             default_branch: "main",
             clone_path: "/tmp/#{key}"

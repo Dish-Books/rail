@@ -77,7 +77,7 @@ defmodule RailWeb.Components.CyclePanelTest do
     assert ["50", "51", "57"] = Floki.attribute(doc, "rect[data-day]", "data-scope")
     assert ["+0%", "+2%", "+14%"] = Floki.attribute(doc, "rect[data-day]", "data-scope-change")
     assert ["pts", "pts", "pts"] = Floki.attribute(doc, "rect[data-day]", "data-scope-unit")
-    # Linear has no started figure for day three, and the panel's 43 is what today reads.
+    # The history has no started figure for day three, and the panel's 43 is what today reads.
     assert ["6", "43", "43"] = Floki.attribute(doc, "rect[data-day]", "data-started")
     assert ["12%", "84%", "75%"] = Floki.attribute(doc, "rect[data-day]", "data-started-share")
     assert ["2", "23", "23"] = Floki.attribute(doc, "rect[data-day]", "data-completed")
@@ -130,7 +130,7 @@ defmodule RailWeb.Components.CyclePanelTest do
     assert [""] = doc |> Floki.find("[data-field=scopeChange]") |> Floki.attribute("data-today")
   end
 
-  test "a running cycle's lines end on today at the panel's figures when Linear has none for today", %{
+  test "a running cycle's lines end on today at the panel's figures when the history has none for today", %{
     cycle: cycle,
     progress: progress
   } do
@@ -194,7 +194,7 @@ defmodule RailWeb.Components.CyclePanelTest do
     end
   end
 
-  test "lines Linear stopped short of today run flat from their own last figure and move on today only", %{
+  test "lines that stop short of today run flat from their own last figure and move on today only", %{
     cycle: cycle,
     progress: progress
   } do
@@ -218,7 +218,7 @@ defmodule RailWeb.Components.CyclePanelTest do
     assert [_scope, _started, _completed] = doc |> Floki.find("g[data-marker='4'] circle") |> Floki.attribute("cy")
   end
 
-  test "the panel's figure beats Linear's for today and a day past today goes, while an ended cycle keeps them", %{
+  test "the panel's figure beats the history's for today and a day past today goes, while an ended cycle keeps them", %{
     cycle: cycle,
     progress: progress
   } do
@@ -241,7 +241,7 @@ defmodule RailWeb.Components.CyclePanelTest do
     assert [] = Floki.find(ended, "#cycle-chart-today")
   end
 
-  test "on a cycle's first day, hovering today reads the panel's change, measured from Linear's first figure", %{
+  test "on a cycle's first day, hovering today reads the panel's change, measured from the history's first figure", %{
     cycle: cycle,
     progress: progress
   } do
@@ -272,7 +272,7 @@ defmodule RailWeb.Components.CyclePanelTest do
     assert String.ends_with?(target, "L316.0,62.5")
   end
 
-  test "a running cycle with today outside its dates keeps what Linear recorded", %{cycle: cycle, progress: progress} do
+  test "a running cycle with today outside its dates keeps what its history recorded", %{cycle: cycle, progress: progress} do
     for today <- [~D[2026-10-25], ~D[2026-11-09]] do
       doc =
         (&CyclePanel.cycle_panel/1)

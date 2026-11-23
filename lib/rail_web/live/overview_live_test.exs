@@ -100,70 +100,6 @@ defmodule RailWeb.OverviewLiveTest do
     refute has_element?(view, "#plan-queue-section")
   end
 
-  test "a task leaves without a reload when Linear deletes its issue, and stays when Linear archives it", %{
-    conn: conn,
-    project: project
-  } do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_overview_live_removed",
-        login: "overview_live_user_removed",
-        email: "overview_live_user_removed@example.com",
-        admin: true
-      })
-
-    user |> Ecto.Changeset.change(linear_user_id: "lin_usr_overview_removed") |> Repo.update!()
-    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
-
-    [deleted_task, archived_task] =
-      for external_id <- ["lin_overview_deleted", "lin_overview_archived"] do
-        {:ok, task} =
-          %Issue{}
-          |> Issue.tracker_changeset(%{
-            project_id: project.id,
-            external_id: external_id,
-            identifier: external_id,
-            title: external_id,
-            state: :in_progress,
-            owner_user_id: user.id
-          })
-          |> Repo.insert!()
-          |> Repo.preload(:project)
-          |> Pipeline.create_task(:engineer)
-
-        task
-      end
-
-    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/")
-    assert has_element?(view, "#in-progress-task-#{deleted_task.id}")
-    assert has_element?(view, "#in-progress-task-#{archived_task.id}")
-
-    assert {:ok, %Issue{}} =
-             Issues.handle_linear_webhook(workspace, %{
-               "type" => "Issue",
-               "action" => "remove",
-               "data" => %{"id" => "lin_overview_deleted"}
-             })
-
-    assert {:ok, %Issue{}} =
-             Issues.handle_linear_webhook(workspace, %{
-               "type" => "Issue",
-               "action" => "update",
-               "data" => %{
-                 "id" => "lin_overview_archived",
-                 "teamId" => "lin_team_id",
-                 "identifier" => "lin_overview_archived",
-                 "title" => "lin_overview_archived",
-                 "assigneeId" => "lin_usr_overview_removed",
-                 "state" => %{"id" => "st_in_progress", "name" => "In Progress", "type" => "started"},
-                 "archivedAt" => "2026-10-06T10:00:00.000Z"
-               }
-             })
-
-    refute has_element?(view, "#in-progress-task-#{deleted_task.id}")
-    assert has_element?(view, "#in-progress-task-#{archived_task.id}")
-  end
-
   test "a task or run read after its issue was deleted is left out, and the page still loads", %{
     conn: conn,
     project: project
@@ -179,13 +115,12 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
 
     [{:ok, %{id: kept_id}}, {:ok, %{id: vanishing_id}}] =
-      for external_id <- ["lin_overview_kept", "lin_overview_vanishing"] do
+      for identifier <- ["lin_overview_kept", "lin_overview_vanishing"] do
         %Issue{}
         |> Issue.tracker_changeset(%{
           project_id: project.id,
-          external_id: external_id,
-          identifier: external_id,
-          title: external_id,
+          identifier: identifier,
+          title: identifier,
           state: :in_progress,
           owner_user_id: user.id
         })
@@ -242,8 +177,7 @@ defmodule RailWeb.OverviewLiveTest do
                key: "P1OVW",
                default_branch: "main",
                clone_path: "/tmp/p1",
-               active: true,
-               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
+               active: true
              })
 
     assert {:ok, %Project{id: p2_id, name: p2_name}} =
@@ -254,8 +188,7 @@ defmodule RailWeb.OverviewLiveTest do
                key: "P2OVW",
                default_branch: "main",
                clone_path: "/tmp/p2",
-               active: true,
-               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
+               active: true
              })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
@@ -302,8 +235,7 @@ defmodule RailWeb.OverviewLiveTest do
                key: "PRE",
                default_branch: "main",
                clone_path: "/tmp/preset",
-               active: true,
-               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
+               active: true
              })
 
     assert {:ok, view, _html} = live(init_test_session(authed_conn, %{selected_project_id: project_id}), ~p"/")
@@ -399,27 +331,13 @@ defmodule RailWeb.OverviewLiveTest do
           email: "overview_rival_user@example.com"
         })
 
-      # Each issue created answers Linear once, under a key of its own. A
-      # `:completed_at` is Linear completing the issue. Issues belong to the
+      # A `:completed_at` is the issue completing. Issues belong to the
       # signed-in user unless `:owner_user_id` says otherwise.
       task_for = fn title, attrs ->
         {completed_at, attrs} = Map.pop(attrs, :completed_at)
         {owner_user_id, attrs} = Map.pop(attrs, :owner_user_id, user.id)
         {task_project, attrs} = Map.pop(attrs, :project, project)
-        n = System.unique_integer([:positive])
-
-        Req.Test.expect(Rail.Linear, fn conn ->
-          Req.Test.json(conn, %{
-            "data" => %{
-              "issueCreate" => %{
-                "success" => true,
-                "issue" => %{"id" => "lin_queue_#{n}", "identifier" => "QUE-#{n}", "title" => title}
-              }
-            }
-          })
-        end)
-
-        {:ok, issue} = Issues.create_issue(system_scope(), task_project, %{title: "Issue", description: title})
+        {:ok, issue} = Issues.create_issue(system_scope(), task_project, %{title: title, description: title})
 
         issue =
           issue
@@ -550,19 +468,6 @@ defmodule RailWeb.OverviewLiveTest do
       user: user,
       project: project
     } do
-      for {identifier, title} <- [{"OVB-1", "Work on OVB-1"}, {"OVB-2", "Child OVB-2"}, {"OVB-3", "Child OVB-3"}] do
-        Req.Test.expect(Rail.Linear, fn conn ->
-          Req.Test.json(conn, %{
-            "data" => %{
-              "issueCreate" => %{
-                "success" => true,
-                "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
-              }
-            }
-          })
-        end)
-      end
-
       {:ok, parent_issue} =
         Issues.create_issue(system_scope(), project, %{title: "Work on OVB-1", owner_user_id: user.id})
 
@@ -589,11 +494,11 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert has_element?(
                view,
-               "#up-next-blocked-#{blocked.id}[href='/tasks/#{parent.id}?child=OVB-3']",
-               "OVB-2 was canceled, so this will not start"
+               "#up-next-blocked-#{blocked.id}[href='/tasks/#{parent.id}?child=#{blocked.issue.identifier}']",
+               "#{first.issue.identifier} was canceled, so this will not start"
              )
 
-      assert has_element?(view, "#up-next-blocked-#{blocked.id}", "in OVB-1")
+      assert has_element?(view, "#up-next-blocked-#{blocked.id}", "in #{parent_issue.identifier}")
       assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
       refute has_element?(view, "#up-next-empty")
     end
@@ -604,19 +509,6 @@ defmodule RailWeb.OverviewLiveTest do
       project: project,
       roles: roles
     } do
-      for {identifier, title} <- [{"OVR-1", "Work on OVR-1"}, {"OVR-2", "Child OVR-2"}, {"OVR-3", "Child OVR-3"}] do
-        Req.Test.expect(Rail.Linear, fn conn ->
-          Req.Test.json(conn, %{
-            "data" => %{
-              "issueCreate" => %{
-                "success" => true,
-                "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
-              }
-            }
-          })
-        end)
-      end
-
       {:ok, parent_issue} =
         Issues.create_issue(system_scope(), project, %{title: "Work on OVR-1", owner_user_id: rival.id})
 
@@ -663,19 +555,6 @@ defmodule RailWeb.OverviewLiveTest do
       user: user,
       project: project
     } do
-      for {identifier, title} <- [{"OVC-1", "Work on OVC-1"}, {"OVC-2", "Child OVC-2"}, {"OVC-3", "Child OVC-3"}] do
-        Req.Test.expect(Rail.Linear, fn conn ->
-          Req.Test.json(conn, %{
-            "data" => %{
-              "issueCreate" => %{
-                "success" => true,
-                "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
-              }
-            }
-          })
-        end)
-      end
-
       {:ok, parent_issue} =
         Issues.create_issue(system_scope(), project, %{title: "Work on OVC-1", owner_user_id: user.id})
 
@@ -711,24 +590,6 @@ defmodule RailWeb.OverviewLiveTest do
       roles: roles
     } do
       now = DateTime.utc_now()
-
-      for {identifier, title} <- [
-            {"OVS-1", "Work on OVS-1"},
-            {"OVS-2", "Child OVS-2"},
-            {"OVS-3", "Child OVS-3"},
-            {"OVS-4", "Child OVS-4"}
-          ] do
-        Req.Test.expect(Rail.Linear, fn conn ->
-          Req.Test.json(conn, %{
-            "data" => %{
-              "issueCreate" => %{
-                "success" => true,
-                "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
-              }
-            }
-          })
-        end)
-      end
 
       {:ok, parent_issue} =
         Issues.create_issue(system_scope(), project, %{title: "Work on OVS-1", owner_user_id: user.id})
@@ -778,7 +639,8 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert has_element?(
                view,
-               "#in-progress-task-#{parent.id} [data-qa='in-progress-child'][title='OVS-3: Waiting on OVS-2']"
+               "#in-progress-task-#{parent.id} [data-qa='in-progress-child']" <>
+                 "[title='#{second.issue.identifier}: Waiting on #{first.issue.identifier}']"
              )
 
       assert view |> render() |> Floki.parse_document!() |> Floki.find("[data-qa='in-progress-child']") |> length() == 3
@@ -786,16 +648,8 @@ defmodule RailWeb.OverviewLiveTest do
 
       for child <- [first, second, third], do: refute(has_element?(view, "#in-progress-task-#{child.id}"))
 
-      assert has_element?(view, "#up-next", "in OVS-1")
-      assert has_element?(view, "#activity-feed", "OVS-1 split into 3")
-
-      # A child deleted in Linear does not shrink the split the person approved.
-      {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
-      remove = %{"type" => "Issue", "action" => "remove", "data" => %{"id" => second.issue.external_id}}
-      assert {:ok, _removed} = Issues.handle_linear_webhook(workspace, remove)
-
-      assert {:ok, view, _html} = live(conn, ~p"/")
-      assert has_element?(view, "#activity-feed", "OVS-1 split into 3")
+      assert has_element?(view, "#up-next", "in #{parent_issue.identifier}")
+      assert has_element?(view, "#activity-feed", "#{parent_issue.identifier} split into 3")
     end
 
     test "opens on the user's own work, and switches to everyone's and back", %{
@@ -1138,11 +992,10 @@ defmodule RailWeb.OverviewLiveTest do
       task_for.("Shipped this month", %{completed_at: DateTime.shift(now, day: -5)})
       task_for.("Shipped last month", %{completed_at: DateTime.shift(now, day: -45)})
 
-      # Linear archives what closed a while ago, and an issue Rail never ran still shipped.
+      # An issue archived a while after it closed, and one Rail never ran, still shipped.
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project.id,
-        external_id: "lin_overview_archived_shipped",
         identifier: "OVR-900",
         title: "Shipped and archived",
         state: :done,
@@ -1577,7 +1430,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     test "a merged task waits on nobody and is not in progress", %{conn: conn, roles: roles, task_for: task_for} do
       task = task_for.("Shipped work", %{stage: :merged, merged_at: DateTime.utc_now()})
-      completed = task_for.("Completed in Linear", %{completed_at: DateTime.utc_now()})
+      completed = task_for.("Completed already", %{completed_at: DateTime.utc_now()})
       live_task = task_for.("Live work", %{})
 
       {:ok, _run} =
@@ -1849,17 +1702,6 @@ defmodule RailWeb.OverviewLiveTest do
     } do
       now = DateTime.utc_now()
 
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueCreate" => %{
-              "success" => true,
-              "issue" => %{"id" => "lin_queue_custom", "identifier" => "QUE-302", "title" => "Dependency updates"}
-            }
-          }
-        })
-      end)
-
       stages = [
         %IssueStage{stage: :plan},
         %IssueStage{stage: :engineer},
@@ -1907,9 +1749,9 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert {:ok, view, html} = live(conn, ~p"/")
 
-      assert has_element?(view, "#activity-ended-#{checking.id}", "says QUE-302 is ready for review")
+      assert has_element?(view, "#activity-ended-#{checking.id}", "says #{issue.identifier} is ready for review")
       refute has_element?(view, "#activity-ended-#{checking.id}", "stopped on")
-      assert has_element?(view, "#activity-ended-#{stalled.id}", "stopped on QUE-302")
+      assert has_element?(view, "#activity-ended-#{stalled.id}", "stopped on #{issue.identifier}")
       assert has_element?(view, "#up-next-row-#{checking.id}", "License check file to approve")
       assert has_element?(view, "#in-progress-task-#{task.id}[data-state='done']")
 
@@ -2060,10 +1902,6 @@ defmodule RailWeb.OverviewLiveTest do
     end
 
     test "the list honors the project switcher", %{conn: conn, project: project, task_for: task_for} do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_other"}]}}})
-      end)
-
       {:ok, other_project} =
         Projects.create_project(system_scope(), %{
           name: "Other Project",
@@ -2071,8 +1909,7 @@ defmodule RailWeb.OverviewLiveTest do
           github_installation_id: 444,
           key: "OTHOVW",
           default_branch: "main",
-          clone_path: "/tmp/other",
-          linear_workspace_id: project.linear_workspace_id
+          clone_path: "/tmp/other"
         })
 
       mine = task_for.("Work in this project", %{})
@@ -2108,10 +1945,6 @@ defmodule RailWeb.OverviewLiveTest do
       rival: rival,
       task_for: task_for
     } do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_other"}]}}})
-      end)
-
       {:ok, other_project} =
         Projects.create_project(system_scope(), %{
           name: "Other Project",
@@ -2119,8 +1952,7 @@ defmodule RailWeb.OverviewLiveTest do
           github_installation_id: 444,
           key: "OTHOVW",
           default_branch: "main",
-          clone_path: "/tmp/other",
-          linear_workspace_id: project.linear_workspace_id
+          clone_path: "/tmp/other"
         })
 
       {:ok, other_role} =
@@ -2305,8 +2137,8 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#stat-waiting-for-resources [data-qa='stat-value']", "1")
     end
 
-    test "a task whose issue Linear completes has shipped, without a reload", %{conn: conn, task_for: task_for} do
-      task = task_for.("Ships in Linear", %{stage: :engineer})
+    test "a task whose issue completes has shipped, without a reload", %{conn: conn, task_for: task_for} do
+      task = task_for.("Ships", %{stage: :engineer})
 
       assert {:ok, view, _html} = live(conn, ~p"/")
 
@@ -2381,24 +2213,6 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#attention-badge", "1")
     end
 
-    test "a task whose issue completes in a sync from Linear has shipped, without a reload", %{
-      conn: conn,
-      project: project,
-      task_for: task_for
-    } do
-      task = task_for.("Ships in a sync", %{stage: :engineer})
-
-      assert {:ok, view, _html} = live(conn, ~p"/")
-
-      assert has_element?(view, "#in-progress-task-#{task.id}")
-
-      task.issue |> Issue.tracker_changeset(%{completed_at: DateTime.utc_now()}) |> Repo.update!()
-      Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issues_synced, project.id})
-
-      refute has_element?(view, "#in-progress-task-#{task.id}")
-      assert has_element?(view, "#stat-shipped [data-qa='stat-value']", "1")
-    end
-
     test "on my work in one project, a change to someone else's task or another project's changes nothing", %{
       conn: conn,
       project: project,
@@ -2406,10 +2220,6 @@ defmodule RailWeb.OverviewLiveTest do
       rival: rival,
       task_for: task_for
     } do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_other"}]}}})
-      end)
-
       {:ok, other_project} =
         Projects.create_project(system_scope(), %{
           name: "Other Project",
@@ -2417,8 +2227,7 @@ defmodule RailWeb.OverviewLiveTest do
           github_installation_id: 444,
           key: "OTHOVW",
           default_branch: "main",
-          clone_path: "/tmp/other",
-          linear_workspace_id: project.linear_workspace_id
+          clone_path: "/tmp/other"
         })
 
       mine = task_for.("My work here", %{})
@@ -2555,17 +2364,6 @@ defmodule RailWeb.OverviewLiveIssueEventsTest do
       })
 
     {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_issue_events", "identifier" => "QUE-1", "title" => "Queued work"}
-          }
-        }
-      })
-    end)
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Queued work"})
     issue = issue |> Issue.tracker_changeset(%{owner_user_id: user.id}) |> Repo.update!()

@@ -19,7 +19,7 @@ defmodule Rail.Support.Actions.SendSupportReplyTest do
     stub(Git, :checkout_detached_worktree, fn _project, worktree_path -> {:ok, worktree_path} end)
     stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
 
-    %{project: project} = triage_project(tracker: :local)
+    %{project: project} = triage_project()
     {:ok, tracked} = Issues.create_issue(system_scope(), project, %{title: "A recipe scales from an event's covers"})
     unique = System.unique_integer([:positive])
     app_id = "app#{unique}"

@@ -72,7 +72,5 @@ defmodule Rail.Pipeline.Utils.OpenPullRequest do
     Enum.join(Enum.filter(["Closes #{closing_ref(issue)}", url, ready], &is_binary/1), "\n\n")
   end
 
-  # GitHub only closes `#N` in the pull request's own repository; Linear's integration reads the identifier.
-  defp closing_ref(%Issue{tracker: :github, number: number}), do: "##{number}"
   defp closing_ref(%Issue{identifier: identifier}), do: identifier
 end

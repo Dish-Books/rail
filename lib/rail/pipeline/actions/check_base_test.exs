@@ -63,18 +63,12 @@ defmodule Rail.Pipeline.Actions.CheckBaseTest do
     assert {:ok, %Task{merge_error: "Required status check is failing"}} = Pipeline.check_base(task)
   end
 
-  test "a task in its own clone reads as behind once its project's clone has fetched a newer default", %{
-    project: %{linear_workspace_id: workspace_id}
-  } do
+  test "a task in its own clone reads as behind once its project's clone has fetched a newer default" do
     remote = create_temp_git_repo(prefix: "rail_ckb_remote")
     clone = Path.join(System.tmp_dir!(), "rail_ckb_clone_#{System.unique_integer([:positive])}")
     git!(remote, ["clone", "--quiet", remote, clone])
     on_exit(fn -> File.rm_rf(clone) end)
     Req.Test.stub(Client, &Req.Test.json(&1, %{"token" => "ghs_token"}))
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
 
     {:ok, project} =
       Projects.create_project(system_scope(), %{
@@ -83,8 +77,7 @@ defmodule Rail.Pipeline.Actions.CheckBaseTest do
         github_installation_id: 7004,
         key: "CKB",
         default_branch: "main",
-        clone_path: clone,
-        linear_workspace_id: workspace_id
+        clone_path: clone
       })
 
     on_exit(fn -> File.rm_rf(Path.join(Rail.tasks_root(), project.id)) end)

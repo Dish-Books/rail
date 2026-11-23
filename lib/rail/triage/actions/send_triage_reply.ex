@@ -233,9 +233,8 @@ defmodule Rail.Triage.Actions.SendTriageReply do
     )
   end
 
-  # Its identifier, as a link when the tracker gave it a URL.
-  defp slack_issue_link(%Issue{url: url, identifier: identifier}) when is_binary(url), do: "<#{url}|#{identifier}>"
-  defp slack_issue_link(%Issue{identifier: identifier}), do: identifier
+  # Its identifier, linking to its page.
+  defp slack_issue_link(%Issue{url: url, identifier: identifier}), do: "<#{url}|#{identifier}>"
 
   # Two Sends at once create one issue; the ticket links back to where it was reported.
   defp create_item_issue(%Scope{user: %{id: user_id}} = scope, %Item{thread: %Thread{}} = item) do

@@ -1,6 +1,6 @@
 defmodule RailWeb.Components.IssueIcons do
   @moduledoc """
-  The small marks an issue is read by, drawn the way Linear draws them: its
+  The small marks an issue is read by: its
   priority, its status and who owns it. The issues list and the issue page share
   them.
   """

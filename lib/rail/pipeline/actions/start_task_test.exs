@@ -7,7 +7,6 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueStage
-  alias Rail.Issues.Tracker
   alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline
@@ -27,7 +26,6 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
 
     attrs = %{
       project_id: project.id,
-      external_id: "lin_start_task",
       identifier: "STK-1",
       title: "Flaky test sweep 2026-10-10",
       description: "Make each flaky test deterministic.",
@@ -44,7 +42,7 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
           })
 
         {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
-        user |> Ecto.Changeset.change(linear_user_id: "lin_usr_#{login}") |> Repo.update!()
+        user
       end)
 
     %{attrs: attrs, starter: starter, teammate: teammate}
@@ -128,33 +126,14 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
 
     expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
     expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
-    expect(Tracker.Linear, :advance_issue, fn %Issue{id: ^issue_id, owner_user_id: ^starter_id}, :in_progress -> :ok end)
 
     assert {:ok, %Task{stage: :plan}} = Pipeline.start_task(Scope.for_user(starter), issue)
 
     assert %Issue{owner_user_id: ^starter_id} = Repo.reload!(issue)
-    assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id, fields: ["owner_user_id"]})
+    assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id})
     assert_received {:issue_changed, ^issue_id}
     assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
-  end
-
-  test "a person starting a GitHub issue owns it without a Linear account, and its label moves", %{
-    github_project: project
-  } do
-    {:ok, starter} =
-      Users.register_oauth_user(%{github_id: "gh_st_gh", login: "st-gh", email: "st-gh@example.com"})
-
-    {:ok, %{id: starter_id} = starter} = Users.update_user(system_scope(), starter, %{project_ids: [project.id]})
-    %{id: issue_id} = issue = github_issue(project)
-
-    expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
-    expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
-    expect(Tracker.Github, :advance_issue, fn %Issue{id: ^issue_id, owner_user_id: ^starter_id}, :in_progress -> :ok end)
-
-    assert {:ok, %Task{stage: :plan}} = Pipeline.start_task(Scope.for_user(starter), issue)
-
-    assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id, fields: ["owner_user_id"]})
-    assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+    assert %Issue{state: :in_progress} = Repo.reload!(issue)
   end
 
   test "the person who starts an unassigned issue at Engineer owns it, and its ticket moves to In Progress", %{
@@ -169,14 +148,14 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
 
     stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
     expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
-    expect(Tracker.Linear, :advance_issue, fn %Issue{id: ^issue_id, owner_user_id: ^starter_id}, :in_progress -> :ok end)
 
     assert {:ok, %Task{stage: :engineer}} = Pipeline.start_task(Scope.for_user(starter), issue)
 
     assert %Issue{owner_user_id: ^starter_id} = Repo.reload!(issue)
-    assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id, fields: ["owner_user_id"]})
+    assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id})
     assert_received {:issue_changed, ^issue_id}
     assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+    assert %Issue{state: :in_progress} = Repo.reload!(issue)
   end
 
   test "an Engineer start tells open pages again once its run exists, so they do not stay at Queued", %{
@@ -216,12 +195,12 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
 
     stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
     expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
-    expect(Tracker.Linear, :advance_issue, fn %Issue{id: ^issue_id, owner_user_id: ^starter_id}, :in_progress -> :ok end)
 
     assert {:ok, %Task{stage: :custom}} = Pipeline.start_task(Scope.for_user(starter), issue)
 
     assert %Issue{owner_user_id: ^starter_id} = Repo.reload!(issue)
     assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+    assert %Issue{state: :in_progress} = Repo.reload!(issue)
   end
 
   test "an issue a teammate owns keeps that owner, and the page still hears of the start", %{
@@ -278,7 +257,7 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
     assert %Issue{owner_user_id: ^starter_id} = Repo.reload!(issue)
   end
 
-  test "a person who never linked Linear still starts the task, with the issue left unassigned", %{
+  test "a person without GitHub still starts the task, with the issue left unassigned", %{
     project: project,
     attrs: attrs
   } do
@@ -288,6 +267,7 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
       Users.register_oauth_user(%{github_id: "gh_st_none", login: "st-none", email: "st-none@example.com"})
 
     {:ok, unlinked} = Users.update_user(system_scope(), unlinked, %{project_ids: [project.id]})
+    unlinked = unlinked |> Ecto.Changeset.change(github_id: nil) |> Repo.update!()
 
     expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
     expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
@@ -319,7 +299,7 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
       %{id: issue_id} =
         issue =
         %Issue{skipped_steps: skipped_steps}
-        |> Issue.tracker_changeset(%{attrs | external_id: "lin_no_tree_#{number}", identifier: "STK-1#{number}"})
+        |> Issue.tracker_changeset(%{attrs | identifier: "STK-1#{number}"})
         |> Repo.insert!()
 
       assert {:error, {:worktree_failed, :clone_missing}} = Pipeline.start_task(scope, issue)
