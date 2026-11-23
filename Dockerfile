@@ -14,7 +14,7 @@ FROM ${NODE_IMAGE} AS node
 FROM ${ELIXIR_IMAGE} AS build
 
 # Keep in step with mise.toml.
-ARG PNPM_VERSION=12.21.0
+ARG PNPM_VERSION=12.23.0
 
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
     build-essential \
@@ -111,7 +111,7 @@ RUN curl -fsSL https://mise.run | sh
 
 # Claude Code, pinned: the layer is cached and the auto-updater is off, so the
 # version only moves when this does. Bump it to pick up a new model.
-ARG CLAUDE_CODE_VERSION=2.1.325
+ARG CLAUDE_CODE_VERSION=2.1.330
 RUN curl -fsSL https://claude.ai/install.sh | bash -s -- "${CLAUDE_CODE_VERSION}"
 
 # prek on PATH, not only through mise. A pre-push hook calls prek by the path it
