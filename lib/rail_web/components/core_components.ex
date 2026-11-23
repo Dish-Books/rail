@@ -10,6 +10,7 @@ defmodule RailWeb.CoreComponents do
   alias RailWeb.Components
 
   defdelegate activity_feed(assigns), to: Components.ActivityFeed
+  defdelegate agent_chat(assigns), to: Components.AgentChat
   defdelegate answer_field(assigns), to: Components.AnswerField
   defdelegate answers_card(assigns), to: Components.AnswersCard
   defdelegate assignee(assigns), to: Components.IssueIcons
@@ -95,16 +96,17 @@ defmodule RailWeb.CoreComponents do
   defdelegate testing_queue(assigns), to: Components.TestingQueue
   defdelegate throughput_chart(assigns), to: Components.ThroughputChart
   defdelegate top_app_bar(assigns), to: Components.Nav
-  defdelegate support_chat(assigns), to: Components.SupportChat
   defdelegate support_conversation(assigns), to: Components.SupportConversation
   defdelegate support_draft(assigns), to: Components.SupportDraft
   defdelegate support_message(assigns), to: Components.SupportMessage
   defdelegate support_queue(assigns), to: Components.SupportQueue
   defdelegate triage_image(assigns), to: Components.TriageImage
   defdelegate triage_image_view(assigns), to: Components.TriageImageView
-  defdelegate triage_item(assigns), to: Components.TriageItem
   defdelegate triage_queue(assigns), to: Components.TriageQueue
+  defdelegate triage_reply(assigns), to: Components.TriageReply
+  defdelegate triage_send_bar(assigns), to: Components.TriageSendBar
   defdelegate triage_thread(assigns), to: Components.TriageThread
+  defdelegate triage_ticket(assigns), to: Components.TriageTicket
   defdelegate triage_verdict(assigns), to: Components.TriageVerdict
   defdelegate up_next(assigns), to: Components.UpNext
 end

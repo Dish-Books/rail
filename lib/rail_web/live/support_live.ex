@@ -6,6 +6,7 @@ defmodule RailWeb.SupportLive do
   alias Rail.Scope
   alias Rail.Support
   alias Rail.Support.Schemas.ChatMessage
+  alias Rail.Support.Schemas.Conversation
   alias Rail.Support.Schemas.Message
   alias Rail.Users
   alias RailWeb.Hooks.NavHook
@@ -112,7 +113,18 @@ defmodule RailWeb.SupportLive do
           />
         </div>
 
-        <.support_chat :if={@conversation} conversation={@conversation} form={@chat_form} />
+        <.agent_chat
+          :if={@conversation}
+          id="support-chat"
+          key={@conversation.id}
+          lines={@conversation.chat_messages}
+          running={Conversation.drafting?(@conversation)}
+          form={@chat_form}
+          empty="The agent reads the conversation, the code and the tickets when you ask for a draft, or when you ask it anything here."
+          placeholder="Ask the agent to change the reply or the list"
+          gone_author="Support"
+          class="w-[400px] max-xl:w-[260px] shrink-0"
+        />
 
         <section
           :if={!@conversation}
@@ -162,6 +174,9 @@ defmodule RailWeb.SupportLive do
   # What is typed in the chat stays through the reloads broadcasts bring.
   def handle_event("chat_change", %{"chat_message" => attrs}, socket),
     do: {:noreply, assign(socket, :chat_form, Ecto.Changeset.change(%ChatMessage{}, text: attrs["text"]))}
+
+  # A reconnect while the agent works recovers the disabled chat box with no text: nothing changed.
+  def handle_event("chat_change", _params, socket), do: {:noreply, socket}
 
   def handle_event("chat", %{"chat_message" => attrs}, socket) do
     socket =

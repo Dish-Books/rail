@@ -274,6 +274,10 @@ defmodule RailWeb.SupportLiveTest do
 
     view |> form("#support-reply-form", %{"conversation" => %{"reply_text" => "Typed"}}) |> render_change()
     assert has_element?(view, "#support-send-failed", "The agent is still working on the draft.")
+
+    # A reconnect sends the disabled chat box back with no text.
+    render_change(view, "chat_change", %{"_target" => ["chat_message", "text"]})
+    assert has_element?(view, "#support-chat-running", "Running")
   end
 
   test "a no-draft conversation's Draft a reply button asks for a draft", %{conn: conn, conversation: conversation} do
@@ -662,7 +666,7 @@ defmodule RailWeb.SupportLiveTest do
     assert has_element?(view, "[data-qa='support-chat-line']", "nn_#{unique}")
 
     {:ok, triage, _html} = live(conn, ~p"/triage/#{thread_id}")
-    assert has_element?(triage, "#forwarded-note", "Forwarded by nn_#{unique}")
+    assert has_element?(triage, "#triage-source", "Intercom · forwarded by nn_#{unique}")
 
     Repo.delete!(nameless)
 
@@ -671,7 +675,7 @@ defmodule RailWeb.SupportLiveTest do
     assert has_element?(view, "[data-qa='support-chat-line']", "Support")
 
     {:ok, triage, _html} = live(conn, ~p"/triage/#{thread_id}")
-    assert has_element?(triage, "#forwarded-note", "Forwarded by support")
+    assert has_element?(triage, "#triage-source", "Intercom · forwarded by support")
     assert has_element?(triage, "#triage-row-#{thread_id}", "Forwarded by support")
   end
 
