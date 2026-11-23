@@ -400,11 +400,9 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
 
     #{checkout} is a checkout of the default branch. Read it to check whether the code a rule names still exists. Change nothing in it, and write no file but #{result}.
 
-    Every rule is an instruction to every run that meets it, so a bad one costs every run it reaches and a missing one costs a person correcting the same thing again. A good rule:
+    Every rule is an instruction to every run that meets it, so a bad one costs every run it reaches and a missing one costs a person correcting the same thing again.
 
-    - is one instruction an agent can follow without having seen the task it came from: "context functions take the scope first", not "the scope was wrong on the last task";
-    - is scoped as narrowly as it holds, to the roles that act on it and, where it is about some files and not others, a path glob;
-    - says in its why what breaks without it, so an agent can tell when it does not apply.
+    #{Learning.writing_guide()}
 
     Weigh the evidence before you propose:
 
