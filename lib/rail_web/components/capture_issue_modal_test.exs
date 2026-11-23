@@ -25,7 +25,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         key: "ONE",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13102",
-        linear_state_ids: %{"triage" => "st_triage"},
         active: true
       })
 
@@ -37,7 +36,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         key: "TWO",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13103",
-        linear_state_ids: %{"triage" => "st_triage"},
         active: true
       })
 
@@ -78,7 +76,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         key: "INACIM",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13105",
-        linear_state_ids: %{"triage" => "st_triage"},
         active: false
       })
 
@@ -90,7 +87,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         key: "ACT",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13106",
-        linear_state_ids: %{"triage" => "st_triage"},
         active: true
       })
 
@@ -160,7 +156,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         key: "P13110",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13110",
-        linear_state_ids: %{"triage" => "st_triage"},
         active: true
       })
 
@@ -172,7 +167,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         key: "P13111",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13111",
-        linear_state_ids: %{"triage" => "st_triage"},
         active: true
       })
 
@@ -219,7 +213,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         key: "P13113",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13113",
-        linear_state_ids: %{"triage" => "st_triage"},
         active: true
       })
 
@@ -273,7 +266,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     assert has_element?(view, "#capture-title-input[value='Some idea']")
   end
 
-  test "submit creates the issue as the user and shows it in the dialog with links to Rail and Linear", %{
+  test "submit creates the issue and shows it in the dialog, linked to its page and openable in a new tab", %{
     conn: conn,
     project: %{id: project_id} = project
   } do
@@ -284,34 +277,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         email: "capture_user_8@example.com",
         admin: true
       })
-
-    {:ok, user} =
-      Users.update_user(system_scope(), user, %{
-        linear_access_token: "lin_capture_user_token",
-        linear_refresh_token: "lin_capture_user_refresh",
-        linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
-      })
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_capture_user_token"]
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_capture_ok",
-              "identifier" => "CAP-101",
-              "title" => "Capture via LiveView",
-              "description" => "Multiline\nbody",
-              "state" => %{"id" => "st_triage", "name" => "Triage", "type" => "triage"},
-              "branchName" => "cap-101-branch",
-              "url" => "https://linear.app/issue/CAP-101"
-            }
-          }
-        }
-      })
-    end)
 
     assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/")
 
@@ -326,26 +291,32 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     })
     |> render_submit()
 
-    assert %Issue{id: issue_id, project_id: ^project_id, identifier: "CAP-101", priority: :high} =
-             Repo.get_by(Issue, external_id: "lin_capture_ok")
+    assert %Issue{
+             id: issue_id,
+             project_id: ^project_id,
+             identifier: identifier,
+             url: url,
+             description: "Multiline\nbody",
+             priority: :high
+           } = Repo.get_by!(Issue, title: "Capture via LiveView")
 
     assert has_element?(view, "#capture-idea-dialog #capture-created[role='status']", "Created in Triage")
-    assert has_element?(view, "#capture-created-issue[href='/issues/#{issue_id}']", "CAP-101")
+    assert has_element?(view, "#capture-created-issue[href='/issues/#{issue_id}']", identifier)
     assert has_element?(view, "#capture-created-issue", "Capture via LiveView")
     assert has_element?(view, "#capture-created", "#{project.name} (#{project.key})")
     assert has_element?(view, "#capture-created", "High")
 
     assert has_element?(
              view,
-             "#capture-created-tracker[href='https://linear.app/issue/CAP-101'][target='_blank']",
-             "Open in Linear"
+             "#capture-created-tracker[href='#{url}'][target='_blank']",
+             "Open issue"
            )
 
     refute has_element?(view, "#capture-issue-form")
     refute has_element?(view, "#capture-error-banner")
 
     view |> element("#global-capture-idea-button") |> render_click()
-    assert has_element?(view, "#capture-created-issue", "CAP-101")
+    assert has_element?(view, "#capture-created-issue", identifier)
 
     view |> element("#capture-created-issue") |> render_click()
     assert_redirect(view, ~p"/issues/#{issue_id}")
@@ -368,11 +339,10 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project_id,
-        external_id: "lin_capture_once",
         identifier: "CAP-301",
         title: attrs.title,
         state: :triage,
-        url: "https://linear.app/issue/CAP-301"
+        url: "https://rail.test/issues/cap-301"
       })
       |> Repo.insert()
       |> then(fn {:ok, issue} -> {:ok, %{issue | project: project}} end)
@@ -389,7 +359,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     assert has_element?(view, "#capture-created-issue", "CAP-301")
   end
 
-  test "the confirmation names the state the tracker filed the issue in", %{conn: conn, project: project} do
+  test "the confirmation names the state the issue was filed in", %{conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_capture_14",
@@ -406,11 +376,9 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project_id,
-        external_id: "lin_capture_backlog",
         identifier: "CAP-302",
         title: attrs.title,
-        state: :triage,
-        state_name: "Backlog"
+        state: :backlog
       })
       |> Repo.insert()
       |> then(fn {:ok, issue} -> {:ok, %{issue | project: project}} end)
@@ -450,7 +418,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
       Repo.insert(
         Issue.tracker_changeset(%Issue{}, %{
           project_id: project.id,
-          external_id: "lin_capture_teammate",
           identifier: "CAP-402",
           title: "A teammate's issue",
           state: :triage
@@ -465,9 +432,9 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     refute has_element?(view, "#capture-created-tracker")
   end
 
-  test "a GitHub project's created issue opens in GitHub and keeps its long title whole", %{
+  test "a created issue in another project opens in a new tab and keeps its long title whole", %{
     conn: conn,
-    github_project: github_project
+    github_project: other_project
   } do
     {:ok, user} =
       Users.register_oauth_user(%{
@@ -481,13 +448,12 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
       "Recipe import keeps ingredient order, quantities and the source page's section headings when the page splits a recipe across tabs"
 
     issue =
-      github_issue(github_project, %{
+      github_issue(other_project, %{
         number: 214,
-        identifier: "tgh#214",
         title: title,
         priority: :urgent,
         state: :triage,
-        url: "https://github.com/example/test-gh/issues/214"
+        url: "https://rail.test/issues/tgh-214"
       })
 
     assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/")
@@ -497,17 +463,17 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     expect(Rail.Issues, :create_issue, fn _scope, _project, %{title: ^title, priority: :urgent} -> {:ok, issue} end)
 
     view
-    |> form("#capture-issue-form", %{"title" => title, "project_id" => github_project.id, "priority" => "urgent"})
+    |> form("#capture-issue-form", %{"title" => title, "project_id" => other_project.id, "priority" => "urgent"})
     |> render_submit()
 
-    assert has_element?(view, "#capture-created-issue[href='/issues/#{issue.id}']", "tgh#214")
+    assert has_element?(view, "#capture-created-issue[href='/issues/#{issue.id}']", "tgh-214")
     assert has_element?(view, "#capture-created-issue", title)
     assert has_element?(view, "#capture-created", "Urgent")
 
     assert has_element?(
              view,
-             "#capture-created-tracker[href='https://github.com/example/test-gh/issues/214'][target='_blank']",
-             "Open in GitHub"
+             "#capture-created-tracker[href='https://rail.test/issues/tgh-214'][target='_blank']",
+             "Open issue"
            )
   end
 
@@ -523,7 +489,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         key: "OTHCIM",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13120",
-        linear_state_ids: %{"triage" => "st_triage"},
         active: true
       })
 
@@ -579,7 +544,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         key: "P13117",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13117",
-        linear_state_ids: %{"triage" => "st_triage_err"},
         active: true
       })
 
@@ -614,53 +578,5 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     assert has_element?(view, "#capture-priority-dropdown option[value='urgent'][selected]")
     assert has_element?(view, "#capture-error-banner", "Could not create the issue")
     refute has_element?(view, "#capture-created")
-
-    expect(Rail.Issues, :create_issue, fn _scope, _project, _attrs -> {:error, "Direct string failure"} end)
-
-    render_submit(element(view, "#capture-issue-form"), %{
-      "title" => "Testing string error",
-      "project_id" => project.id,
-      "priority" => "medium"
-    })
-
-    assert has_element?(view, "#capture-error-banner", "Direct string failure")
-
-    expect(Rail.Issues, :create_issue, fn _scope, _project, _attrs -> {:error, :not_authorized} end)
-
-    render_submit(element(view, "#capture-issue-form"), %{
-      "title" => "Testing atom error",
-      "project_id" => project.id,
-      "priority" => "medium"
-    })
-
-    assert has_element?(view, "#capture-error-banner", ":not_authorized")
-
-    for {reason, message} <-
-          [
-            github_issues_permission_missing: "The GitHub App needs Issues: read and write on this repository",
-            github_issues_disabled: "Issues are turned off on this repository",
-            linear_team_not_found: "This project has no Linear team",
-            no_workspace_token: "Rail is not connected to this project's Linear workspace"
-          ] ++
-            [
-              {{:linear_graphql_error, [%{"message" => "Title is too long"}, %{"message" => "Second"}]},
-               "Linear refused the issue: Title is too long"},
-              {{:linear_api_error, 400, %{"errors" => [%{"message" => "Team is archived"}]}},
-               "Linear refused the issue: Team is archived"},
-              {{:linear_api_error, 503, "Service Unavailable"}, "Linear could not create the issue (503)"},
-              {{:linear_mutation_failed, "issueCreate"}, "Linear did not create the issue"},
-              {{:github_api_error, 422, %{"message" => "Validation Failed"}}, "GitHub could not create the issue (422)"},
-              {%Req.TransportError{reason: :timeout}, "Could not reach the tracker (timeout)"}
-            ] do
-      expect(Rail.Issues, :create_issue, fn _scope, _project, _attrs -> {:error, reason} end)
-
-      render_submit(element(view, "#capture-issue-form"), %{
-        "title" => "Testing GitHub error",
-        "project_id" => project.id,
-        "priority" => "medium"
-      })
-
-      assert has_element?(view, "#capture-error-banner", message)
-    end
   end
 end

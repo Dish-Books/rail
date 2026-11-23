@@ -14,7 +14,7 @@ defmodule Rail.Triage.Actions.CreateForwardedIssuesTest do
   alias Rail.Users
 
   setup do
-    %{project: project} = triage_project(tracker: :local)
+    %{project: project} = triage_project()
     unique = System.unique_integer([:positive])
 
     Req.Test.expect(Rail.Intercom, &Req.Test.json(&1, %{"app" => %{"id_code" => "app#{unique}"}}))

@@ -4,8 +4,6 @@ defmodule Rail.Projects.Schemas.Project do
 
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Linear.Client, as: Linear
-  alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.SlackChannel
   alias Rail.Projects.Schemas.SlackWorkspace
   alias Rail.Tools
@@ -16,13 +14,9 @@ defmodule Rail.Projects.Schemas.Project do
     field :name, :string
     field :github_repo, :string
     field :github_installation_id, :integer
-    # Where its issues live and the key they are named by: a Linear team's key, or the prefix in `<key>#<number>` on
-    # GitHub and `<key>-<number>` on Rail. Once issues exist, only a move to Rail changes them.
-    field :tracker, Ecto.Enum, values: [:linear, :github, :local], default: :linear
+    # What its issues are named by, as `<key>-<number>`. Once issues exist it stays as it is.
     field :key, :string
     field :default_branch, :string
-    field :linear_team_id, :string
-    field :linear_state_ids, :map, default: %{}
     field :clone_path, :string
     field :active, :boolean, default: true
     # Run once in each new worktree, from its root, before any agent works there.
@@ -47,8 +41,6 @@ defmodule Rail.Projects.Schemas.Project do
         "**/*.md"
       ]
 
-    # Shared by every project on the same Linear workspace; each project is one team in it.
-    belongs_to :linear_workspace, LinearWorkspace
     # Whose MCP connections a triage pass uses; a pass whose role names any it cannot reach fails.
     belongs_to :triage_user, User
     # Where Rail tells the team a backend lost its sign-in. It is not a `slack_channels` row, so triage never reads it.
@@ -66,11 +58,8 @@ defmodule Rail.Projects.Schemas.Project do
     :name,
     :github_repo,
     :github_installation_id,
-    :tracker,
     :key,
     :default_branch,
-    :linear_state_ids,
-    :linear_workspace_id,
     :clone_path,
     :active,
     :worktree_setup_script,
@@ -98,34 +87,21 @@ defmodule Rail.Projects.Schemas.Project do
   def changeset(project, attrs) do
     project
     |> cast(lines(attrs), @fields)
-    |> put_default_key()
     |> validate_required(@required_fields)
     |> validate_format(:key, ~r/^[a-z0-9][a-z0-9_-]*$/i, message: "use letters, digits, - and _")
     |> validate_length(:key, max: 20)
     |> unique_constraint(:key)
-    |> lock_tracker_once_issues_exist()
+    |> lock_key_once_issues_exist()
     |> validate_change(:clone_path, &validate_clone_path/2)
     |> validate_change(:worktree_setup_script, &validate_worktree_setup_script/2)
     |> validate_number(:ci_timeout_minutes, greater_than: 0, message: "must be at least a minute")
     |> validate_number(:ci_reserved_cpus, greater_than: 0, message: "must be at least 1 CPU")
     |> validate_ci_capacity()
-    |> foreign_key_constraint(:linear_workspace_id)
     |> foreign_key_constraint(:triage_user_id)
     |> validate_learnings_channel()
     |> foreign_key_constraint(:learnings_slack_workspace_id)
     |> unique_constraint(:github_repo)
     |> cast_assoc(:slack_channels)
-    |> put_linear_team_id()
-  end
-
-  @doc """
-  Moves the project onto Rail's own tracker under `key`, as its moved tickets spell it, and off its Linear team. Only the
-  move writes it, so it skips the lock `changeset/2` keeps on the tracker once issues exist.
-  """
-  def local_tracker_changeset(%__MODULE__{} = project, key) when is_binary(key) do
-    project
-    |> change(tracker: :local, key: key, linear_team_id: nil, linear_state_ids: %{}, linear_workspace_id: nil)
-    |> unique_constraint(:key)
   end
 
   # The form edits the globs one to a line.
@@ -155,25 +131,13 @@ defmodule Rail.Projects.Schemas.Project do
 
   defp validate_ci_capacity(changeset), do: changeset
 
-  # A GitHub project needs a key; the repo's name is the one people would pick anyway.
-  defp put_default_key(changeset) do
-    with :github <- get_field(changeset, :tracker),
-         nil <- get_field(changeset, :key),
-         repo when is_binary(repo) <- get_field(changeset, :github_repo),
-         [_owner, name] <- String.split(repo, "/", parts: 2) do
-      put_change(changeset, :key, name)
-    else
-      _keep -> changeset
-    end
-  end
-
-  # Issues keep the tracker and identifiers they were made with, so neither may move under them.
-  defp lock_tracker_once_issues_exist(%Ecto.Changeset{data: %{id: id}} = changeset) when is_binary(id) do
-    if changed?(changeset, :tracker) or changed?(changeset, :key) do
+  # Issues keep the identifiers they were made with, so the key may not move under them.
+  defp lock_key_once_issues_exist(%Ecto.Changeset{data: %{id: id}} = changeset) when is_binary(id) do
+    if changed?(changeset, :key) do
       prepare_changes(changeset, fn prepared ->
         if prepared.repo.exists?(from i in Issue, where: i.project_id == ^id) do
           prepared
-          |> add_error(:tracker, "cannot change once the project has issues")
+          |> add_error(:key, "cannot change once the project has issues")
           |> prepared.repo.rollback()
         else
           prepared
@@ -184,7 +148,7 @@ defmodule Rail.Projects.Schemas.Project do
     end
   end
 
-  defp lock_tracker_once_issues_exist(changeset), do: changeset
+  defp lock_key_once_issues_exist(changeset), do: changeset
 
   # A channel id means nothing without the workspace whose bot posts there.
   defp validate_learnings_channel(changeset) do
@@ -204,63 +168,4 @@ defmodule Rail.Projects.Schemas.Project do
       do: [],
       else: [worktree_setup_script: "must be a path inside the repository"]
   end
-
-  # People know a Linear team by its key; Linear's API wants its id, and the ids
-  # of its workflow states. Both are looked up as the row is written, and only
-  # when the key, the tracker or the workspace it is read through changed, so a form being
-  # filled in never calls Linear. With no workspace to ask through there is
-  # nothing to look up yet.
-  defp put_linear_team_id(%Ecto.Changeset{valid?: true} = changeset) do
-    linear? = get_field(changeset, :tracker) == :linear
-
-    if linear? and Enum.any?([:tracker, :key, :linear_workspace_id], &changed?(changeset, &1)) do
-      prepare_changes(changeset, &look_up_linear_team_id/1)
-    else
-      changeset
-    end
-  end
-
-  defp put_linear_team_id(changeset), do: changeset
-
-  defp look_up_linear_team_id(changeset) do
-    project = changeset |> apply_changes() |> changeset.repo.preload(:linear_workspace, force: true)
-
-    case Linear.team(project) do
-      {:ok, %{"teams" => %{"nodes" => [%{"id" => team_id} = team]}}} ->
-        changeset
-        |> put_change(:linear_team_id, team_id)
-        |> put_change(:linear_state_ids, linear_state_ids(team))
-
-      {:error, :no_workspace_token} ->
-        put_change(changeset, :linear_team_id, nil)
-
-      {:ok, _no_team} ->
-        changeset |> add_error(:key, "no Linear team has this key") |> changeset.repo.rollback()
-
-      {:error, _reason} ->
-        changeset |> add_error(:key, "could not be checked with Linear") |> changeset.repo.rollback()
-    end
-  end
-
-  # A team can have several states of one type; Rail moves issues into the first,
-  # which is written last so it wins.
-  defp linear_state_ids(team) do
-    (get_in(team, ["states", "nodes"]) || [])
-    |> Enum.sort_by(& &1["position"], :desc)
-    |> Enum.flat_map(fn state ->
-      case state_key(state["type"]) do
-        key when is_binary(key) -> [{key, state["id"]}]
-        nil -> []
-      end
-    end)
-    |> Map.new()
-  end
-
-  defp state_key("triage"), do: "triage"
-  defp state_key("backlog"), do: "backlog"
-  defp state_key("unstarted"), do: "todo"
-  defp state_key("started"), do: "in_progress"
-  defp state_key("completed"), do: "done"
-  defp state_key("canceled"), do: "canceled"
-  defp state_key(_other), do: nil
 end

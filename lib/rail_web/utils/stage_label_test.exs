@@ -228,7 +228,7 @@ defmodule RailWeb.Utils.StageLabelTest do
     assert stage_label(%Task{stage: :engineer}, %Run{status: :running}) == "Implement running"
   end
 
-  # Finalize records the merge before Linear completes the issue, and the child need not wait for Linear.
+  # Finalize records the merge before the issue is completed, and the child need not wait for that.
   test "a child is not held on a sibling merged through Finalize" do
     siblings = [%Task{split_position: 1, merged_at: DateTime.utc_now(), issue: %Issue{identifier: "SPL-1"}}]
     child = %Task{stage: :engineer, runs: [], builds_on: [1], parent_task: %Task{children: siblings}}

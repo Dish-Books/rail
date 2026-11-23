@@ -1,7 +1,7 @@
 defmodule Rail.Issues.Actions.LinkPullRequest do
   @moduledoc """
   Links an issue to the open pull request its work was started on outside Rail: the one from the issue's own branch,
-  or else one whose branch or title names the issue, as Linear links them. A linked one that has since closed is
+  or else one whose branch or title names the issue, as branches name them. A linked one that has since closed is
   let go and looked for again.
   """
 
@@ -47,7 +47,7 @@ defmodule Rail.Issues.Actions.LinkPullRequest do
 
   defp search(token, %Project{} = project, %Issue{} = issue) do
     with {:ok, open} <- GitHub.list_pull_requests(token, project.github_repo, state: "open", per_page: @per_page) do
-      # Linear's `eng-301-title` and Rail's GitHub `key-12-title` both start with the identifier, `#` read as `-`.
+      # A branch such as `key-12-title` starts with the identifier, `#` read as `-`.
       named = ~r/(?<![a-z0-9])#{Regex.escape(String.replace(issue.identifier, "#", "-"))}(?![0-9])/i
 
       {:ok,

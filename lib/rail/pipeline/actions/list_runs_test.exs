@@ -16,17 +16,6 @@ defmodule Rail.Pipeline.Actions.ListRunsTest do
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_list_runs_1", "identifier" => "LST-1", "title" => "List Runs Issue"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "List Runs Issue"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
 
@@ -64,17 +53,6 @@ defmodule Rail.Pipeline.Actions.ListRunsTest do
 
     [%Run{id: mine_id}, %Run{id: theirs_id}] =
       for {owner_id, n} <- [{user_id, 2}, {rival_id, 3}] do
-        Req.Test.expect(Rail.Linear, fn conn ->
-          Req.Test.json(conn, %{
-            "data" => %{
-              "issueCreate" => %{
-                "success" => true,
-                "issue" => %{"id" => "lin_list_runs_#{n}", "identifier" => "LST-#{n}", "title" => "List Runs #{n}"}
-              }
-            }
-          })
-        end)
-
         {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "List Runs #{n}"})
         {:ok, issue} = Issues.update_issue(issue, %{owner_user_id: owner_id})
         {:ok, task} = Pipeline.create_task(issue, :plan)

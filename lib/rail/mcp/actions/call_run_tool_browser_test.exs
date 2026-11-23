@@ -29,21 +29,6 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
         {stage, role}
       end)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_qat_#{System.unique_integer([:positive])}",
-              "identifier" => "QAT-1",
-              "title" => "Qa Tools"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Qa Tools"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     File.mkdir_p!(task.scratch_path)

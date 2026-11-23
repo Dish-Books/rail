@@ -645,17 +645,14 @@ defmodule RailWeb.Settings.UsersLive do
   attr :id_prefix, :string, default: "user"
 
   defp accounts(assigns) do
-    assigns =
-      assigns
-      |> assign(:github?, is_binary(assigns.user.github_id))
-      |> assign(:linear?, linear_connected?(assigns.user))
+    assigns = assign(assigns, :github?, is_binary(assigns.user.github_id))
 
     ~H"""
     <div
       id={"#{@id_prefix}-accounts-#{@user.id}"}
       class="flex flex-wrap gap-1.5"
       role="group"
-      aria-label={"Connected: #{if @github?, do: "GitHub", else: "no GitHub"}, #{if @linear?, do: "Linear", else: "no Linear"}"}
+      aria-label={"Connected: #{if @github?, do: "GitHub", else: "no GitHub"}"}
     >
       <.account_chip
         id={"#{@id_prefix}-github-chip-#{@user.id}"}
@@ -663,13 +660,6 @@ defmodule RailWeb.Settings.UsersLive do
         connected={@github?}
       >
         GitHub
-      </.account_chip>
-      <.account_chip
-        id={"#{@id_prefix}-linear-chip-#{@user.id}"}
-        icon="pi-kanban"
-        connected={@linear?}
-      >
-        Linear
       </.account_chip>
     </div>
     """
@@ -765,10 +755,6 @@ defmodule RailWeb.Settings.UsersLive do
       {message, _opts} -> "Email #{message}."
       nil -> "Failed to send the invite."
     end
-  end
-
-  defp linear_connected?(user) do
-    is_binary(user.linear_user_id) or (is_binary(user.linear_access_token) and user.linear_access_token != "")
   end
 
   # A person without GitHub has no handle, so the line is only their email.

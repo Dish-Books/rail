@@ -1,5 +1,5 @@
 defmodule Rail.Issues.Schemas.IssueLink do
-  @moduledoc "A URL Rail linked to a Rail-tracked issue under a title, such as the Slack thread triage filed it from."
+  @moduledoc "A URL Rail linked to an issue under a title, such as the Slack thread triage filed it from."
   use Rail.Schema
 
   alias Rail.Issues.Schemas.Issue

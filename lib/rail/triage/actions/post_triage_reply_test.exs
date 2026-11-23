@@ -3,6 +3,7 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
   use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Git
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueLink
   alias Rail.Issues.Workers.LinkTrackerUrl
   alias Rail.Projects
@@ -22,7 +23,7 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
     stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
     stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
 
-    %{project: project} = triage_project(tracker: Map.get(context, :tracker, :linear))
+    %{project: project} = triage_project()
     %{workspace: workspace, channel: channel} = connect_slack_channel(project, external: context[:external] == true)
     {:ok, thread} = Triage.handle_slack_event(workspace, slack_message_event(channel, %{}))
     user = slack_user(workspace.external_id)
@@ -108,29 +109,13 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
     assert {:error, :needs_issue_link} = Triage.post_triage_reply(scope, item, %{"reply_text" => "Mine, {issue link}"})
     assert %Item{reply_text: "Thanks Priya, we reproduced this. Filed as {issue link}."} = Repo.get!(Item, item.id)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_9",
-              "identifier" => "TRI-9",
-              "title" => "T",
-              "url" => "https://linear.app/acme/issue/TRI-9",
-              "state" => %{"type" => "triage"}
-            }
-          }
-        }
-      })
-    end)
-
     Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "not_in_channel"}))
-    {:ok, %Item{reply_posted_at: nil}} = Triage.create_triage_issue(scope, item, %{})
+    {:ok, %Item{created_issue_id: issue_id, reply_posted_at: nil}} = Triage.create_triage_issue(scope, item, %{})
+    %Issue{identifier: identifier, url: url} = Repo.get!(Issue, issue_id)
+    expected = "Thanks Priya, we reproduced this. Filed as <#{url}|#{identifier}>."
 
     Req.Test.expect(Rail.Slack, fn conn ->
-      assert %{"text" => "Thanks Priya, we reproduced this. Filed as <https://linear.app/acme/issue/TRI-9|TRI-9>."} =
-               conn |> Req.Test.raw_body() |> Jason.decode!()
+      assert %{"text" => ^expected} = conn |> Req.Test.raw_body() |> Jason.decode!()
 
       Req.Test.json(conn, %{"ok" => true, "ts" => "1790001000.000100"})
     end)
@@ -194,50 +179,7 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
     assert %Item{reply_posted_by_id: nil, reply_posted_at: nil} = Repo.get!(Item, item.id)
   end
 
-  test "a reply on an item an existing issue covers links that issue", %{
-    project: project,
-    thread: thread,
-    scope: scope
-  } do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_11",
-              "identifier" => "TRI-11",
-              "title" => "Sidebar",
-              "url" => "https://linear.app/acme/issue/TRI-11",
-              "state" => %{"type" => "started"}
-            }
-          }
-        }
-      })
-    end)
-
-    {:ok, issue} = Rail.Issues.create_issue(system_scope(), project, %{title: "Sidebar"})
-
-    tracked = triage_bug(%{"existing_issue" => "TRI-11", "reply" => "Already tracked in {issue link}."})
-    %Thread{items: [item]} = triage_with(thread, %{"items" => [tracked]})
-
-    Req.Test.expect(Rail.Slack, fn conn ->
-      assert %{"text" => "Already tracked in <https://linear.app/acme/issue/TRI-11|TRI-11>."} =
-               conn |> Req.Test.raw_body() |> Jason.decode!()
-
-      Req.Test.json(conn, %{"ok" => true, "ts" => "1790002000.000100"})
-    end)
-
-    refute_enqueued(worker: LinkTrackerUrl)
-    assert {:ok, %Item{reply_posted_at: %DateTime{}}} = Triage.post_triage_reply(scope, item, %{})
-
-    # Posting the reply accepts the pass's match, so the issue now links back to the thread.
-    %Thread{permalink: "https://slack.example/archives/" <> _ts = permalink} = Repo.get!(Thread, thread.id)
-    assert_enqueued(worker: LinkTrackerUrl, args: %{issue_id: issue.id, url: permalink, title: "Slack thread"})
-  end
-
-  @tag tracker: :local
-  test "a reply on an item a Rail-tracked ticket covers links the ticket's page in Rail, and the ticket links the thread",
+  test "a reply on an item an existing issue covers links the issue's page in Rail, and the issue links the thread",
        %{project: project, thread: thread, scope: scope} do
     {:ok, %{id: issue_id, identifier: identifier, url: url}} =
       Rail.Issues.create_issue(system_scope(), project, %{title: "Sidebar"})
@@ -251,8 +193,10 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
       Req.Test.json(conn, %{"ok" => true, "ts" => "1790002000.000100"})
     end)
 
+    refute_enqueued(worker: LinkTrackerUrl)
     assert {:ok, %Item{reply_posted_at: %DateTime{}}} = Triage.post_triage_reply(scope, item, %{})
 
+    # Posting the reply accepts the pass's match, so the issue now links back to the thread.
     %Thread{permalink: "https://slack.example/archives/" <> _ts = permalink} = Repo.get!(Thread, thread.id)
     assert_enqueued(worker: LinkTrackerUrl, args: %{issue_id: issue_id, url: permalink, title: "Slack thread"})
     assert :ok = perform_job(LinkTrackerUrl, %{issue_id: issue_id, url: permalink, title: "Slack thread"})
@@ -265,28 +209,11 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
     @describetag :external
 
     setup %{project: project, thread: thread} do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueCreate" => %{
-              "success" => true,
-              "issue" => %{
-                "id" => "lin_12",
-                "identifier" => "TRI-12",
-                "title" => "Sidebar",
-                "url" => "https://linear.app/acme/issue/TRI-12",
-                "state" => %{"type" => "started"}
-              }
-            }
-          }
-        })
-      end)
-
-      {:ok, _issue} = Rail.Issues.create_issue(system_scope(), project, %{title: "Sidebar"})
-      tracked = triage_bug(%{"existing_issue" => "TRI-12", "reply" => "Already tracked in {issue link}."})
+      {:ok, issue} = Rail.Issues.create_issue(system_scope(), project, %{title: "Sidebar"})
+      tracked = triage_bug(%{"existing_issue" => issue.identifier, "reply" => "Already tracked in {issue link}."})
       %Thread{items: [item]} = triage_with(thread, %{"items" => [tracked]})
 
-      %{item: item}
+      %{item: item, issue: issue}
     end
 
     test "a reply that links the issue is refused even though the issue exists, until the placeholder is out", %{
@@ -313,6 +240,7 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
       project: project,
       channel: channel,
       item: item,
+      issue: issue,
       scope: scope
     } do
       {:ok, _project} =
@@ -328,9 +256,10 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
           ]
         })
 
+      expected = "Already tracked in <#{issue.url}|#{issue.identifier}>."
+
       Req.Test.expect(Rail.Slack, fn conn ->
-        assert %{"text" => "Already tracked in <https://linear.app/acme/issue/TRI-12|TRI-12>."} =
-                 conn |> Req.Test.raw_body() |> Jason.decode!()
+        assert %{"text" => ^expected} = conn |> Req.Test.raw_body() |> Jason.decode!()
 
         Req.Test.json(conn, %{"ok" => true, "ts" => "1790003400.000100"})
       end)

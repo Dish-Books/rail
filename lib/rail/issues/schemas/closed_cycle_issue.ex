@@ -1,6 +1,6 @@
 defmodule Rail.Issues.Schemas.ClosedCycleIssue do
   @moduledoc """
-  An issue a Rail-tracked cycle held when it closed, in the state it had then, so the cycle reads as it closed. Only the
+  An issue a cycle held when it closed, in the state it had then, so the cycle reads as it closed. Only the
   daily job writes these, all at once.
   """
   use Rail.Schema

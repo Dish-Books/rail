@@ -594,7 +594,6 @@ defmodule Rail.Tools.BootTest do
         %Issue{}
         |> Issue.changeset(%{
           project_id: project.id,
-          external_id: "lin_boot_#{System.unique_integer([:positive])}",
           identifier: "BOO-#{System.unique_integer([:positive])}",
           title: "Boot Issue",
           state: :backlog

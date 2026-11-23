@@ -15,7 +15,6 @@ defmodule Rail.Issues.Actions.CloseCycleDayTest do
         name: "Nightly run",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -26,7 +25,7 @@ defmodule Rail.Issues.Actions.CloseCycleDayTest do
   end
 
   test "the first run schedules Cycles 1 to 3 back to back, two weeks each from that day, and a second run adds none",
-       %{local: %{id: local_id}, project: linear} do
+       %{local: %{id: local_id}} do
     inactive_key = "CCR#{System.unique_integer([:positive])}"
 
     {:ok, inactive} =
@@ -34,7 +33,6 @@ defmodule Rail.Issues.Actions.CloseCycleDayTest do
         name: "Resting",
         github_repo: "example/#{inactive_key}",
         github_installation_id: 2,
-        tracker: :local,
         active: false,
         key: inactive_key,
         default_branch: "main",
@@ -50,7 +48,7 @@ defmodule Rail.Issues.Actions.CloseCycleDayTest do
              %Cycle{number: 3, starts_on: ~D[2026-12-08], ends_on: ~D[2026-12-21]}
            ] = Repo.all(from(c in Cycle, where: c.project_id == ^local_id, order_by: c.number))
 
-    assert [] = Repo.all(from(c in Cycle, where: c.project_id in ^[inactive.id, linear.id]))
+    assert [] = Repo.all(from(c in Cycle, where: c.project_id == ^inactive.id))
     assert_receive {:cycles_changed, ^local_id}
   end
 
@@ -110,7 +108,7 @@ defmodule Rail.Issues.Actions.CloseCycleDayTest do
     closed = Repo.all(from(c in ClosedCycleIssue, where: c.cycle_id == ^first_id, select: {c.issue_id, c.state}))
     assert Map.new(closed) == Map.new(held, fn {state, id} -> {id, state} end)
 
-    cycles = Map.new(Repo.all(from(i in Issue, where: i.id in ^Map.values(held), select: {i.id, i.cycle_external_id})))
+    cycles = Map.new(Repo.all(from(i in Issue, where: i.id in ^Map.values(held), select: {i.id, i.cycle_id})))
 
     for {state, id} <- held do
       assert cycles[id] == if(Issue.finished_state?(state), do: first_id, else: second_id)
@@ -141,7 +139,7 @@ defmodule Rail.Issues.Actions.CloseCycleDayTest do
     assert [%ClosedCycleIssue{issue_id: ^issue_id, state: :triage}] =
              Repo.all(from(c in ClosedCycleIssue, where: c.cycle_id == ^first_id))
 
-    assert %Issue{cycle_external_id: ^second_id} = Repo.get!(Issue, issue_id)
+    assert %Issue{cycle_id: ^second_id} = Repo.get!(Issue, issue_id)
   end
 
   test "a project made active again starts a cycle that day for the issues its ended cycles leave", %{
@@ -155,7 +153,7 @@ defmodule Rail.Issues.Actions.CloseCycleDayTest do
 
     :ok = Issues.close_cycle_day(~D[2027-02-01])
 
-    assert %Issue{cycle_external_id: cycle_id} = Repo.get!(Issue, issue_id)
+    assert %Issue{cycle_id: cycle_id} = Repo.get!(Issue, issue_id)
     assert %Cycle{number: 4, starts_on: ~D[2027-02-01], ends_on: ~D[2027-02-14]} = Repo.get!(Cycle, cycle_id)
 
     assert [1, 2, 3, 4, 5, 6] =

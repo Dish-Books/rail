@@ -14,20 +14,8 @@ defmodule Rail.Projects do
 
   defdelegate get_project(id), to: Actions.GetProject
 
-  defdelegate list_linear_workspaces(), to: Actions.ListLinearWorkspaces
-
-  defdelegate get_linear_workspace(by), to: Actions.GetLinearWorkspace
-
-  @decorate can?(resource: :linear_workspace, action: :create)
-  defdelegate create_linear_workspace(scope, attrs), to: Actions.CreateLinearWorkspace
-
-  @decorate can?(resource: :linear_workspace, action: :update)
-  defdelegate update_linear_workspace(scope, workspace, attrs), to: Actions.UpdateLinearWorkspace
-
   @decorate can?(resource: :projects, action: :update)
   defdelegate update_project(scope, project, attrs), to: Actions.UpdateProject
-
-  defdelegate switch_to_local_tracker(project, key), to: Actions.SwitchToLocalTracker
 
   @decorate can?(resource: :projects, action: :update)
   defdelegate read_env_file(scope, project), to: Actions.ReadEnvFile

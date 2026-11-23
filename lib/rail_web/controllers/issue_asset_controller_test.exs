@@ -17,44 +17,9 @@ defmodule RailWeb.IssueAssetControllerTest do
 
     {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_issue_asset", "identifier" => "IAS-1", "title" => "Issue Asset Issue"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Issue Asset Issue"})
 
     %{conn: log_in_user(conn, user), issue: issue}
-  end
-
-  test "serves a Linear image the page cannot fetch for itself", %{conn: conn, issue: issue} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      assert conn.request_path == "/ws_id/issue_id/screenshot.png"
-      assert conn.query_string == "signature=abc"
-
-      conn
-      |> Plug.Conn.put_resp_content_type("image/png")
-      |> Plug.Conn.send_resp(200, "PNG_BYTES")
-    end)
-
-    conn = get(conn, ~p"/issues/#{issue.id}/assets/ws_id/issue_id/screenshot.png?signature=abc")
-
-    assert response(conn, 200) == "PNG_BYTES"
-    assert response_content_type(conn, :png) =~ "image/png"
-  end
-
-  test "a file Linear will not serve is not found", %{conn: conn, issue: issue} do
-    Req.Test.expect(Rail.Linear, fn conn -> Plug.Conn.send_resp(conn, 404, "") end)
-
-    conn = get(conn, ~p"/issues/#{issue.id}/assets/ws_id/gone.png")
-
-    assert response(conn, 404) == "Not found"
   end
 
   test "an issue that is not there has no files", %{conn: conn} do
@@ -67,6 +32,8 @@ defmodule RailWeb.IssueAssetControllerTest do
     conn: conn,
     issue: issue
   } do
+    name = "#{Ecto.UUID.generate()}-screenshot.png"
+
     {:ok, outsider} =
       Users.register_oauth_user(%{
         github_id: "gh_outsider",
@@ -77,7 +44,7 @@ defmodule RailWeb.IssueAssetControllerTest do
     {:ok, outsider} = Users.update_user(system_scope(), outsider, %{project_ids: ["prj_other"]})
     conn = log_in_user(conn, outsider)
 
-    assert conn |> get(~p"/issues/#{issue.id}/assets/ws_id/screenshot.png") |> response(404) == "Not found"
+    assert conn |> get("/issues/#{issue.id}/assets/#{name}") |> response(404) == "Not found"
 
     {:ok, admin} =
       Users.register_oauth_user(%{
@@ -87,13 +54,14 @@ defmodule RailWeb.IssueAssetControllerTest do
         admin: true
       })
 
-    Req.Test.expect(Rail.Linear, fn conn -> Plug.Conn.send_resp(conn, 200, "PNG_BYTES") end)
+    Req.Test.expect(R2, fn r2 ->
+      r2 |> Plug.Conn.put_resp_content_type("image/png", nil) |> Plug.Conn.send_resp(200, "PNG_BYTES")
+    end)
 
-    assert conn |> log_in_user(admin) |> get(~p"/issues/#{issue.id}/assets/ws_id/screenshot.png") |> response(200) ==
-             "PNG_BYTES"
+    assert conn |> log_in_user(admin) |> get("/issues/#{issue.id}/assets/#{name}") |> response(200) == "PNG_BYTES"
   end
 
-  test "serves a Rail-tracked issue's file from R2, and none through another issue's address", %{conn: conn} do
+  test "serves an issue's file from R2, and none through another issue's address", %{conn: conn} do
     n = System.unique_integer([:positive])
 
     {:ok, local} =
@@ -101,7 +69,6 @@ defmodule RailWeb.IssueAssetControllerTest do
         name: "Kept in Rail",
         github_repo: "example/asset-#{n}",
         github_installation_id: 1,
-        tracker: :local,
         key: "AST#{n}",
         default_branch: "main",
         clone_path: "/tmp/asset-#{n}"
@@ -144,7 +111,14 @@ defmodule RailWeb.IssueAssetControllerTest do
     assert conn |> get("/issues/#{other_id}/assets/#{name}") |> response(404) == "Not found"
     assert conn |> get("/issues/#{other_id}/assets/#{issue_id}/#{name}") |> response(404) == "Not found"
     assert conn |> get("/issues/#{other_id}/assets/../#{issue_id}/#{name}") |> response(404) == "Not found"
-    assert conn |> get("/issues/#{issue_id}/assets/#{name}?list-type=2") |> response(404) == "Not found"
+
+    # A query never reaches R2, so it cannot turn the fetch into a listing of the bucket.
+    Req.Test.expect(R2, fn r2 ->
+      assert %Plug.Conn{request_path: ^path, query_string: ""} = r2
+      Plug.Conn.send_resp(r2, 200, "PNG_BYTES")
+    end)
+
+    assert conn |> get("/issues/#{issue_id}/assets/#{name}?list-type=2") |> response(200) == "PNG_BYTES"
     assert conn |> get("/issues/#{issue_id}/assets/") |> response(404) == "Not found"
 
     {:ok, outsider} =
@@ -153,7 +127,7 @@ defmodule RailWeb.IssueAssetControllerTest do
     assert conn |> log_in_user(outsider) |> get("/issues/#{issue_id}/assets/#{name}") |> response(404) == "Not found"
   end
 
-  test "serves a Rail-tracked issue's PDF as a download, still sandboxed", %{conn: conn} do
+  test "serves an issue's PDF as a download, still sandboxed", %{conn: conn} do
     n = System.unique_integer([:positive])
 
     {:ok, local} =
@@ -161,7 +135,6 @@ defmodule RailWeb.IssueAssetControllerTest do
         name: "Kept in Rail",
         github_repo: "example/pdf-#{n}",
         github_installation_id: 1,
-        tracker: :local,
         key: "PDF#{n}",
         default_branch: "main",
         clone_path: "/tmp/pdf-#{n}"

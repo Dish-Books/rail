@@ -40,7 +40,6 @@ defmodule RailWeb.Components.StatusPicker do
       assigns
       |> assign(:name, Issue.calculate_status_name(assigns.issue))
       |> assign(:shown_state, Issue.calculate_shown_state(assigns.issue))
-      |> assign(:tracker, Issue.tracker_label(assigns.issue.tracker))
       |> assign(:trigger_id, trigger_id(assigns))
 
     ~H"""
@@ -107,7 +106,7 @@ defmodule RailWeb.Components.StatusPicker do
         >
           <p class="flex items-start gap-2">
             <.icon name="pi-warning-circle" class="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
-            <span>{@tracker} did not answer, so the statuses are not listed.</span>
+            <span>The statuses could not be read.</span>
           </p>
           <button
             type="button"
@@ -128,7 +127,7 @@ defmodule RailWeb.Components.StatusPicker do
           >
             <.icon name="pi-warning-circle" class="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
             <span class="min-w-0 break-words">
-              Could not change the status in {@tracker}. It is still {@name}.
+              Could not change the status. It is still {@name}.
             </span>
           </p>
           <ul role="none" class="max-h-80 overflow-y-auto p-1">

@@ -7,7 +7,6 @@ defmodule RailWeb.Components.TaskLayout do
 
   import RailWeb.Utils.StageLabel, only: [ready_to_merge?: 2, review_waiting?: 2, sent_plan_waiting?: 2]
 
-  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Workflows.Schemas.Workflow
@@ -103,7 +102,7 @@ defmodule RailWeb.Components.TaskLayout do
             rel="noopener noreferrer"
             id="task-issue-link"
             data-qa="task_issue_identifier"
-            title={"Open #{@task.issue.identifier} in #{Issue.tracker_label(@task.issue.tracker)}"}
+            title={"Open #{@task.issue.identifier}"}
             class="inline-flex items-center gap-1 font-mono text-blue-600 dark:text-blue-400 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 rounded-sm"
           >
             <.icon name="pi-ticket" class="size-4" />{@task.issue.identifier}

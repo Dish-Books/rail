@@ -12,21 +12,6 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
   setup %{project: project} do
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_stop_run_1",
-              "identifier" => "STP-1",
-              "title" => "Stop Run Issue"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Stop Run Issue"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 

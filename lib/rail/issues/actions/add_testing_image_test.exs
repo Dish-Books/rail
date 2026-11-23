@@ -17,7 +17,6 @@ defmodule Rail.Issues.Actions.AddTestingImageTest do
         name: "Pictures",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -32,7 +31,7 @@ defmodule Rail.Issues.Actions.AddTestingImageTest do
     %{issue: waiting, scope: scope, project: project}
   end
 
-  test "a picture is stored by the tracker, added after the others and moves a Waiting ticket to In testing", %{
+  test "a picture is stored in R2, added after the others and moves a Waiting ticket to In testing", %{
     issue: %Issue{id: issue_id} = issue,
     scope: scope
   } do
@@ -85,10 +84,5 @@ defmodule Rail.Issues.Actions.AddTestingImageTest do
     end)
 
     assert {:error, :not_found} = Issues.add_testing_image(scope, issue, "shot.png", "PNG")
-  end
-
-  test "a tracker that holds no files refuses", %{issue: issue, scope: scope} do
-    {:ok, github} = issue |> Ecto.Changeset.change(tracker: :github) |> Repo.update()
-    assert {:error, :unsupported} = Issues.add_testing_image(scope, github, "shot.png", "PNG")
   end
 end

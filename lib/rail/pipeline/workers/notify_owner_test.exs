@@ -22,17 +22,6 @@ defmodule Rail.Pipeline.Workers.NotifyOwnerTest do
   setup %{project: project} do
     unique = System.unique_integer([:positive])
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_no_#{unique}", "identifier" => "NO-#{unique}", "title" => "Pick <one> & go"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Pick <one> & go"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
@@ -99,8 +88,7 @@ defmodule Rail.Pipeline.Workers.NotifyOwnerTest do
     test "with three questions posts one message to the owner naming the task and linking to it", %{
       task: task,
       run: run,
-      posted: posted,
-      unique: unique
+      posted: posted
     } do
       %Run{id: run_id} = run.(:plan, %{status: :blocked_on_input})
 
@@ -112,7 +100,7 @@ defmodule Rail.Pipeline.Workers.NotifyOwnerTest do
       assert :ok = perform_job(NotifyOwner, %{run_id: run_id, os_process_id: "osp_1"})
 
       expected =
-        "<#{RailWeb.Endpoint.url()}/tasks/#{task.id}|NO-#{unique} Pick &lt;one&gt; &amp; go>\n" <>
+        "<#{RailWeb.Endpoint.url()}/tasks/#{task.id}|TST-1 Pick &lt;one&gt; &amp; go>\n" <>
           "Plan has *3 questions* for you."
 
       assert_received {:posted, %{"channel" => "U_MAYA", "text" => ^expected}}

@@ -34,24 +34,11 @@ defmodule Rail.Workflows.Actions.RunWorkflowNowTest do
   } do
     {:ok, paused} = Workflows.set_workflow_paused(system_scope(), workflow, true)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_TST-84", "identifier" => "TST-84", "title" => "Dependency updates 2026-10-14"}
-          }
-        }
-      })
-    end)
-
-    assert {:ok,
-            %Issue{identifier: "TST-84", title: "Dependency updates 2026-10-14", workflow_id: ^workflow_id, id: issue_id}} =
+    assert {:ok, %Issue{title: "Dependency updates 2026-10-14", workflow_id: ^workflow_id, id: issue_id}} =
              Workflows.run_workflow_now(system_scope(), paused)
 
     assert %Workflow{paused: true, next_run_at: ~U[2026-10-12 09:00:00Z]} = Repo.get!(Workflow, workflow_id)
 
-    # No second tracker request is expected, so one would raise.
     assert {:error, {:unfinished, %Issue{id: ^issue_id}}} = Workflows.run_workflow_now(system_scope(), paused)
     assert [%Oban.Job{args: %{"issue_id" => ^issue_id}}] = all_enqueued(worker: StartWorkflowTask)
   end
@@ -59,17 +46,6 @@ defmodule Rail.Workflows.Actions.RunWorkflowNowTest do
   test "two presses racing from separate processes open one issue between them", %{
     workflow: %{id: workflow_id} = workflow
   } do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_TST-85", "identifier" => "TST-85", "title" => "Dependency updates 2026-10-14"}
-          }
-        }
-      })
-    end)
-
     presses = for _tab <- 1..2, do: Elixir.Task.async(fn -> Workflows.run_workflow_now(system_scope(), workflow) end)
 
     assert [{:ok, %Issue{id: issue_id}}, {:error, {:unfinished, %Issue{id: issue_id}}}] =
@@ -123,18 +99,7 @@ defmodule Rail.Workflows.Actions.RunWorkflowNowTest do
     project: project,
     workflow: %{id: workflow_id} = workflow
   } do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_TST-86", "identifier" => "TST-86", "title" => "Dependency updates 2026-10-14"}
-          }
-        }
-      })
-    end)
-
-    assert {:ok, %Issue{identifier: "TST-86", workflow_id: ^workflow_id}} =
+    assert {:ok, %Issue{workflow_id: ^workflow_id}} =
              Workflows.run_workflow_now(user_scope(project_ids: [project.id]), workflow)
   end
 
@@ -144,7 +109,6 @@ defmodule Rail.Workflows.Actions.RunWorkflowNowTest do
   } do
     no_github = user_scope(user: %{id: "usr_no_github", admin: false, project_ids: [project.id], github_id: nil})
 
-    # No tracker request is expected, so one would raise.
     assert {:error, :github_required} = Workflows.run_workflow_now(no_github, workflow)
     assert [] = Repo.all(from(i in Issue, where: i.workflow_id == ^workflow_id))
     assert [] = all_enqueued(worker: StartWorkflowTask)
@@ -154,7 +118,6 @@ defmodule Rail.Workflows.Actions.RunWorkflowNowTest do
     github_project: github,
     workflow: %{id: workflow_id} = workflow
   } do
-    # No tracker request is expected, so one would raise.
     assert {:error, :not_found} = Workflows.run_workflow_now(user_scope(project_ids: [github.id]), workflow)
     assert [] = Repo.all(from(i in Issue, where: i.workflow_id == ^workflow_id))
     assert [] = all_enqueued(worker: StartWorkflowTask)

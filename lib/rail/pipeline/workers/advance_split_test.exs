@@ -12,7 +12,6 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.AdvanceSplit
   alias Rail.Pipeline.Workers.CleanupMergedTask
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
@@ -25,30 +24,11 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
     stub(Rail.Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
 
-    # 1 and 2 start at once; 3 waits on both; 4 on 1 alone.
-    for {identifier, title} <- [
-          {"ASP-1", "Work on ASP-1"},
-          {"ASP-2", "Child ASP-2"},
-          {"ASP-3", "Child ASP-3"},
-          {"ASP-4", "Child ASP-4"},
-          {"ASP-5", "Child ASP-5"}
-        ] do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueCreate" => %{
-              "success" => true,
-              "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
-            }
-          }
-        })
-      end)
-    end
-
     {:ok, parent_issue} = Issues.create_issue(system_scope(), project, %{title: "Work on ASP-1"})
     {:ok, parent} = Pipeline.create_task(parent_issue, :split)
     parent = Repo.preload(parent, [:issue, :project])
 
+    # 1 and 2 start at once; 3 waits on both; 4 on 1 alone.
     children =
       for {{identifier, builds_on}, number} <-
             Enum.with_index([{"ASP-2", []}, {"ASP-3", []}, {"ASP-4", [1, 2]}, {"ASP-5", [1]}], 1) do
@@ -135,7 +115,7 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
     assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: parent.issue_id})
   end
 
-  # Linear completed every child with no merge recorded in Rail, so only the parent's cleanup takes them.
+  # Every child completed with no merge recorded in Rail, so only the parent's cleanup takes them.
   test "the parent at Merged queues its own cleanup, once however often it runs, and none for its children", %{
     parent: %Task{id: parent_id} = parent,
     children: children,
@@ -162,8 +142,8 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
     assert [%Oban.Job{args: %{"task_id" => ^parent_id}}] = all_enqueued(worker: CleanupMergedTask)
   end
 
-  # Finalize records the merge on the task before Linear's webhook completes the issue.
-  test "a child merged through Finalize counts as merged before Linear completes its issue", %{
+  # Finalize records the merge on the task before the merged pull request completes the issue.
+  test "a child merged through Finalize counts as merged before its issue completes", %{
     parent: parent,
     children: [first, second, third, fourth]
   } do
@@ -212,22 +192,6 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
     cancel.(fourth)
     assert :ok = perform_job(AdvanceSplit, %{parent_task_id: parent.id})
     assert %Task{stage: :merged} = Repo.reload!(parent)
-  end
-
-  test "a child building on a sibling whose issue Linear removed is never started, and the parent stays open", %{
-    project: project,
-    parent: parent,
-    children: [first, second, third, _fourth],
-    merge: merge
-  } do
-    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
-    remove = %{"type" => "Issue", "action" => "remove", "data" => %{"id" => second.issue.external_id}}
-    assert {:ok, _removed} = Issues.handle_linear_webhook(workspace, remove)
-    merge.(first)
-
-    assert :ok = perform_job(AdvanceSplit, %{parent_task_id: parent.id})
-    assert [] = Repo.preload(third, :runs, force: true).runs
-    assert %Task{stage: :split} = Repo.reload!(parent)
   end
 
   test "looks again when another child merged while it ran", %{

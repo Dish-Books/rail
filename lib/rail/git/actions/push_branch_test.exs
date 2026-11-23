@@ -9,17 +9,6 @@ defmodule Rail.Git.Actions.PushBranchTest do
   setup %{project: project} do
     scope = system_scope()
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_psh_1", "identifier" => "PSH-1", "title" => "Push Branch"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Push Branch"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 

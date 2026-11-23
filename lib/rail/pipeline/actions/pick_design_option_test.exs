@@ -17,17 +17,6 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_pick_design_1", "identifier" => "PKD-1", "title" => "Pick Design"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Pick Design"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     # Git is stubbed, so the worktree is only ever looked for: a plain directory stands in for it.

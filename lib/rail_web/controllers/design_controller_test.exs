@@ -15,17 +15,6 @@ defmodule RailWeb.DesignControllerTest do
 
     {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_design_controller_1", "identifier" => "DCT-1", "title" => "Design Controller"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Design Controller"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     design_dir = Path.join(task.scratch_path, "design")

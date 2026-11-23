@@ -381,7 +381,7 @@ defmodule RailWeb.Components.CyclePanel do
     end
   end
 
-  # A running cycle's lines end on today at the panel's own figures, whatever Linear holds for the day.
+  # A running cycle's lines end on today at the panel's own figures, whatever the history holds for the day.
   defp with_today(%{status: :running, scope_history: [_first | _later]} = cycle, progress, today) do
     index = Date.diff(today, cycle.starts_on)
 
@@ -404,7 +404,7 @@ defmodule RailWeb.Components.CyclePanel do
     Enum.concat([recorded, List.duplicate(List.last(values, 0), index - length(recorded)), [figure]])
   end
 
-  # Every day the chart draws, ready to show on hover. `first` is Linear's, so today's change matches the panel's.
+  # Every day the chart draws, ready to show on hover. `first` is the history's, so today's change matches the panel's.
   defp day_figures(cycle, first) do
     total = Date.diff(cycle.ends_on, cycle.starts_on) + 1
 

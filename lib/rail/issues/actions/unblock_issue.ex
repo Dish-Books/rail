@@ -12,26 +12,20 @@ defmodule Rail.Issues.Actions.UnblockIssue do
   Removes the relation in which `blocker` blocks `blocked`, and broadcasts `{:issue_relations_changed, [blocker_id,
   blocked_id]}` on `"issues"`. One already gone is removed too.
   """
-  def unblock_issue(
-        %Scope{} = scope,
-        %Issue{id: blocker_id, project_id: project_id} = blocker,
-        %Issue{id: blocked_id, project_id: project_id} = blocked
-      ) do
-    cond do
-      not Scope.can_access_project?(scope, project_id) ->
-        {:error, :not_found}
-
-      blocker.tracker != :local or blocked.tracker != :local ->
-        {:error, :unsupported}
-
-      true ->
-        Repo.delete_all(
-          from(r in IssueRelation,
-            where: r.project_id == ^project_id and r.blocker_issue_id == ^blocker_id and r.blocked_issue_id == ^blocked_id
-          )
+  def unblock_issue(%Scope{} = scope, %Issue{id: blocker_id, project_id: project_id}, %Issue{
+        id: blocked_id,
+        project_id: project_id
+      }) do
+    if Scope.can_access_project?(scope, project_id) do
+      Repo.delete_all(
+        from(r in IssueRelation,
+          where: r.project_id == ^project_id and r.blocker_issue_id == ^blocker_id and r.blocked_issue_id == ^blocked_id
         )
+      )
 
-        Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_relations_changed, [blocker_id, blocked_id]})
+      Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_relations_changed, [blocker_id, blocked_id]})
+    else
+      {:error, :not_found}
     end
   end
 

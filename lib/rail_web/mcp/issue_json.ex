@@ -12,7 +12,7 @@ defmodule RailWeb.Mcp.IssueJSON do
 
   @doc """
   The ticket in full: its project, owner, parent, sub-issues and comments with their authors must be loaded. A
-  Rail-tracked ticket carries the `cycle` and `blockers` it was read with.
+  ticket carries the `cycle` and `blockers` it was read with.
   """
   def show(%{issue: %Issue{} = issue} = assigns) do
     full =
@@ -34,17 +34,12 @@ defmodule RailWeb.Mcp.IssueJSON do
     %{issue: Map.merge(full, Map.take(assigns, [:note]))}
   end
 
-  defp kept(%Issue{tracker: :local}, assigns) do
+  defp kept(%Issue{}, assigns) do
     %{
       cycle: cycle(assigns[:cycle]),
       blocked_by: Enum.map(assigns[:blockers][:blocked_by] || [], &related(&1.issue)),
       blocks: Enum.map(assigns[:blockers][:blocks] || [], &related(&1.issue))
     }
-  end
-
-  defp kept(%Issue{tracker: tracker}, _assigns) do
-    label = Issue.tracker_label(tracker)
-    %{cycle_and_blockers: "kept in #{label}: open the ticket there to see them"}
   end
 
   defp line(%Issue{} = issue) do

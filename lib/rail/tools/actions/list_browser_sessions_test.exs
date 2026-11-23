@@ -7,19 +7,6 @@ defmodule Rail.Tools.Actions.ListBrowserSessionsTest do
   alias Rail.Tools.Schemas.BrowserSession
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, 2, fn conn ->
-      n = System.unique_integer([:positive])
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_lbs_#{n}", "identifier" => "LBS-#{n}", "title" => "List Browsers"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "List Browsers"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     {:ok, other_issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Other Browsers"})

@@ -7,8 +7,7 @@ defmodule RailWeb.Mcp.Tools.CreateIssueTest do
   alias Rail.Projects
   alias Rail.Scope
   alias Rail.Users
-
-  setup {Req.Test, :verify_on_exit!}
+  alias Rail.Users.Schemas.User
 
   setup do
     key = "MCI#{System.unique_integer([:positive])}"
@@ -18,7 +17,6 @@ defmodule RailWeb.Mcp.Tools.CreateIssueTest do
         name: "Filed into",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -89,12 +87,12 @@ defmodule RailWeb.Mcp.Tools.CreateIssueTest do
     assert {:ok, %{"issue" => %{"identifier" => current, "cycle" => %{"number" => 1, "current" => true}}}} =
              call_mcp_tool(scope, "create_issue", %{"project" => local.key, "title" => "Now", "cycle" => "Current"})
 
-    assert {:ok, %Issue{cycle_external_id: ^first_id}} = Issues.get_issue(current)
+    assert {:ok, %Issue{cycle_id: ^first_id}} = Issues.get_issue(current)
 
     assert {:ok, %{"issue" => %{"identifier" => next, "cycle" => %{"number" => 2, "current" => false}}}} =
              call_mcp_tool(scope, "create_issue", %{"project" => local.key, "title" => "Later", "cycle" => "next"})
 
-    assert {:ok, %Issue{cycle_external_id: ^second_id}} = Issues.get_issue(next)
+    assert {:ok, %Issue{cycle_id: ^second_id}} = Issues.get_issue(next)
 
     assert {:ok, %{"issue" => %{"cycle" => %{"number" => 2}}}} =
              call_mcp_tool(scope, "create_issue", %{"project" => local.key, "title" => "By number", "cycle" => "2"})
@@ -109,15 +107,6 @@ defmodule RailWeb.Mcp.Tools.CreateIssueTest do
              call_mcp_tool(scope, "create_issue", %{"project" => local.key, "title" => "Too late", "cycle" => "1"})
 
     assert Repo.aggregate(from(i in Issue, where: i.project_id == ^local_id), :count) == count
-  end
-
-  test "a cycle on a GitHub ticket is refused, since GitHub keeps its own", %{github_project: github} do
-    assert {:error, "A GitHub project's cycles are kept in GitHub; open them there."} =
-             call_mcp_tool(user_scope(project_ids: [github.id]), "create_issue", %{
-               "project" => github.key,
-               "title" => "Planned",
-               "cycle" => "current"
-             })
   end
 
   test "names another assignee, or none", %{
@@ -152,6 +141,22 @@ defmodule RailWeb.Mcp.Tools.CreateIssueTest do
     assert {:ok, %Issue{owner_user_id: ^user_id}} = Issues.get_issue(identifier)
   end
 
+  test "a person who disconnected GitHub files the ticket unassigned, and is told why", %{
+    local: local,
+    user: %{id: user_id},
+    scope: scope
+  } do
+    Repo.update_all(from(u in User, where: u.id == ^user_id), set: [github_id: nil])
+
+    assert {:ok,
+            %{
+              "issue" => %{
+                "assignee" => nil,
+                "note" => "Filed unassigned: you can't be assigned tickets in this project yet."
+              }
+            }} = call_mcp_tool(scope, "create_issue", %{"project" => local.key, "title" => "Mine, later"})
+  end
+
   test "an estimate below 0 is refused and files nothing", %{local: %{id: local_id} = local, scope: scope} do
     assert {:error, "estimate must be greater than or equal to 0."} =
              call_mcp_tool(scope, "create_issue", %{"project" => local.key, "title" => "Negative", "estimate" => -5})
@@ -159,47 +164,16 @@ defmodule RailWeb.Mcp.Tools.CreateIssueTest do
     refute Repo.exists?(from(i in Issue, where: i.project_id == ^local_id))
   end
 
-  test "files a Linear ticket unassigned, and says so, when Linear cannot assign the person", %{
-    project: linear,
-    user: user
-  } do
-    {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [linear.id]})
-    identifier = "#{linear.key}-7401"
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
-      refute Map.has_key?(Jason.decode!(body)["variables"]["input"], "assigneeId")
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_mcp_create_1", "identifier" => identifier, "title" => "Filed"}
-          }
-        }
-      })
-    end)
-
-    assert {:ok,
-            %{"issue" => %{"identifier" => ^identifier, "assignee" => nil, "note" => "Filed unassigned: Linear" <> _rest}}} =
-             call_mcp_tool(Scope.for_user(user), "create_issue", %{"project" => linear.key, "title" => "Filed"})
-  end
-
-  test "refuses a project the person cannot open, a parent elsewhere, and a parent on GitHub", %{
+  test "refuses a project the person cannot open, a parent elsewhere, and a blank title", %{
     local: local,
     scope: scope,
-    github_project: github
+    github_project: other
   } do
     assert {:error, "No project you can open has that key or name. Yours are: " <> _keys} =
-             call_mcp_tool(scope, "create_issue", %{"project" => github.key, "title" => "Elsewhere"})
+             call_mcp_tool(scope, "create_issue", %{"project" => other.key, "title" => "Elsewhere"})
 
     assert {:error, "parent NOPE-1 is not a ticket in this project."} =
              call_mcp_tool(scope, "create_issue", %{"project" => local.key, "title" => "Orphan", "parent" => "NOPE-1"})
-
-    github_scope = user_scope(project_ids: [github.id])
-
-    assert {:error, "GitHub keeps no parent" <> _rest} =
-             call_mcp_tool(github_scope, "create_issue", %{"project" => github.key, "title" => "Sub", "parent" => "x#1"})
 
     assert {:error, "title can't be blank."} =
              call_mcp_tool(scope, "create_issue", %{"project" => local.key, "title" => ""})

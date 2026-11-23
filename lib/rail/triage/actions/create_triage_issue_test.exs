@@ -30,48 +30,19 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
     %{project: project, workspace: workspace, channel: channel, thread: thread, user: user, scope: Scope.for_user(user)}
   end
 
-  setup do
-    linear_issue = %{
-      "id" => "lin_tri_214",
-      "identifier" => "TRI-214",
-      "title" => "Approve leaves tasks at Design, with no Design role",
-      "url" => "https://linear.app/acme/issue/TRI-214",
-      "state" => %{"id" => "st_tri", "name" => "Triage", "type" => "triage"}
-    }
-
-    %{linear_issue: linear_issue}
-  end
-
   test "creates the issue as the person edited it and posts their reply with its link as them, starting no task", %{
     thread: thread,
     scope: scope,
-    user: %{id: user_id} = user,
-    linear_issue: linear_issue
+    user: %{id: user_id} = user
   } do
     %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug()]})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      assert %{"variables" => %{"input" => input}} = conn |> Req.Test.raw_body() |> Jason.decode!()
-
-      assert %{
-               "title" => "Approve leaves tasks at Design, with no Design role",
-               "description" => "Edited.",
-               "priority" => 1
-             } =
-               input
-
-      Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => true, "issue" => linear_issue}}})
-    end)
+    test_pid = self()
 
     Req.Test.expect(Rail.Slack, fn conn ->
       assert conn.request_path == "/api/chat.postMessage"
       assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer #{user.slack_access_token}"]
-
-      assert %{
-               "thread_ts" => "1790000000.000100",
-               "text" =>
-                 "Thanks Priya, we fixed the stuck tasks. Filed as <https://linear.app/acme/issue/TRI-214|TRI-214>."
-             } = conn |> Req.Test.raw_body() |> Jason.decode!()
+      assert %{"thread_ts" => "1790000000.000100", "text" => text} = conn |> Req.Test.raw_body() |> Jason.decode!()
+      send(test_pid, {:posted, text})
 
       Req.Test.json(conn, %{"ok" => true, "ts" => "1790000500.000100"})
     end)
@@ -92,6 +63,17 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
                "reply_text" => "Thanks Priya, we fixed the stuck tasks. Filed as {issue link}."
              })
 
+    assert %Issue{
+             title: "Approve leaves tasks at Design, with no Design role",
+             description: "Edited.",
+             priority: :urgent,
+             identifier: identifier,
+             url: url
+           } = Repo.get!(Issue, issue_id)
+
+    assert_received {:posted, text}
+    assert text == "Thanks Priya, we fixed the stuck tasks. Filed as <#{url}|#{identifier}>."
+
     assert %Thread{status: :done, permalink: "https://slack.example/archives/" <> _ts = permalink} =
              Repo.get!(Thread, thread.id)
 
@@ -104,18 +86,12 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
     assert {:error, :already_created} = Triage.create_triage_issue(scope, item, %{})
   end
 
-  test "an estimate the person picked reaches Linear, the issue and the item, in place of the agent's", %{
+  test "an estimate the person picked reaches the issue and the item, in place of the agent's", %{
     thread: thread,
-    scope: scope,
-    linear_issue: linear_issue
+    scope: scope
   } do
     bug = triage_bug(%{"reply" => nil, "issue" => %{"title" => "Stuck", "priority" => "high", "estimate" => 3}})
     %Thread{items: [item]} = triage_with(thread, %{"items" => [bug]})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      assert %{"variables" => %{"input" => %{"estimate" => 5}}} = conn |> Req.Test.raw_body() |> Jason.decode!()
-      Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => true, "issue" => linear_issue}}})
-    end)
 
     Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000700.000100"}))
 
@@ -127,16 +103,10 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
 
   test "an estimate left as the agent drafted it is the one created", %{
     thread: thread,
-    scope: scope,
-    linear_issue: linear_issue
+    scope: scope
   } do
     bug = triage_bug(%{"reply" => nil, "issue" => %{"title" => "Stuck", "priority" => "high", "estimate" => 3}})
     %Thread{items: [item]} = triage_with(thread, %{"items" => [bug]})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      assert %{"variables" => %{"input" => %{"estimate" => 3}}} = conn |> Req.Test.raw_body() |> Jason.decode!()
-      Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => true, "issue" => linear_issue}}})
-    end)
 
     Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000800.000100"}))
 
@@ -146,19 +116,12 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
     assert %Issue{estimate: 3} = Repo.get!(Issue, issue_id)
   end
 
-  test "an estimate cleared to no points sends none to Linear, and the issue has none", %{
+  test "an estimate cleared to no points leaves the issue with none", %{
     thread: thread,
-    scope: scope,
-    linear_issue: linear_issue
+    scope: scope
   } do
     bug = triage_bug(%{"reply" => nil, "issue" => %{"title" => "Stuck", "priority" => "high", "estimate" => 3}})
     %Thread{items: [item]} = triage_with(thread, %{"items" => [bug]})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      assert %{"variables" => %{"input" => input}} = conn |> Req.Test.raw_body() |> Jason.decode!()
-      refute Map.has_key?(input, "estimate")
-      Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => true, "issue" => linear_issue}}})
-    end)
 
     Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000900.000100"}))
 
@@ -178,46 +141,47 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
 
   test "posts only the link line when no reply was proposed, and keeps no error", %{
     thread: thread,
-    scope: scope,
-    linear_issue: linear_issue
+    scope: scope
   } do
     %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug(%{"reply" => nil})]})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => true, "issue" => linear_issue}}})
-    end)
+    test_pid = self()
 
     Req.Test.expect(Rail.Slack, fn conn ->
-      assert %{"text" => "Filed as <https://linear.app/acme/issue/TRI-214|TRI-214>"} =
-               conn |> Req.Test.raw_body() |> Jason.decode!()
+      assert %{"text" => text} = conn |> Req.Test.raw_body() |> Jason.decode!()
+      send(test_pid, {:posted, text})
 
       Req.Test.json(conn, %{"ok" => true, "ts" => "1790000600.000100"})
     end)
 
-    assert {:ok, %Item{reply_posted_at: nil, error: nil}} =
+    assert {:ok, %Item{created_issue_id: issue_id, reply_posted_at: nil, error: nil}} =
              Triage.create_triage_issue(scope, item, %{})
+
+    %Issue{identifier: identifier, url: url} = Repo.get!(Issue, issue_id)
+    assert_received {:posted, text}
+    assert text == "Filed as <#{url}|#{identifier}>"
   end
 
   test "appends the link when the reply leaves no place for it", %{
     thread: thread,
-    scope: scope,
-    linear_issue: linear_issue
+    scope: scope
   } do
     %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug(%{"reply" => "Thanks, we see it."})]})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => true, "issue" => linear_issue}}})
-    end)
+    test_pid = self()
 
     Req.Test.expect(Rail.Slack, fn conn ->
-      assert %{"text" => "Thanks, we see it.\n\nFiled as <https://linear.app/acme/issue/TRI-214|TRI-214>"} =
-               conn |> Req.Test.raw_body() |> Jason.decode!()
+      assert %{"text" => text} = conn |> Req.Test.raw_body() |> Jason.decode!()
+      send(test_pid, {:posted, text})
 
       Req.Test.json(conn, %{"ok" => false, "error" => "channel_not_found"})
     end)
 
-    assert {:ok, %Item{created_issue_id: "iss_" <> _id, error: "Created TRI-214, but could not post in Slack." <> _why}} =
+    assert {:ok, %Item{created_issue_id: "iss_" <> _id = issue_id, error: error}} =
              Triage.create_triage_issue(scope, item, %{})
+
+    %Issue{identifier: identifier, url: url} = Repo.get!(Issue, issue_id)
+    assert_received {:posted, text}
+    assert text == "Thanks, we see it.\n\nFiled as <#{url}|#{identifier}>"
+    assert String.starts_with?(error, "Created #{identifier}, but could not post in Slack.")
   end
 
   test "a person without Slack linked, or linked to another Slack workspace, creates nothing", %{thread: thread} do
@@ -233,19 +197,8 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
   end
 
   test "an item an existing issue covers is already tracked", %{project: project, thread: thread, scope: scope} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_23", "identifier" => "TRI-23", "title" => "T", "state" => %{"type" => "unstarted"}}
-          }
-        }
-      })
-    end)
-
-    {:ok, _issue} = Rail.Issues.create_issue(system_scope(), project, %{title: "T"})
-    %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug(%{"existing_issue" => "TRI-23"})]})
+    {:ok, %Issue{identifier: identifier}} = Rail.Issues.create_issue(system_scope(), project, %{title: "T"})
+    %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug(%{"existing_issue" => identifier})]})
 
     assert {:error, :already_tracked} = Triage.create_triage_issue(scope, item, %{})
   end
@@ -267,34 +220,35 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
   test "posts only the link line when someone else is posting the reply", %{
     thread: thread,
     scope: scope,
-    workspace: workspace,
-    linear_issue: linear_issue
+    workspace: workspace
   } do
     %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug()]})
     %{id: other_id} = slack_user(workspace.external_id, "Jordan Ellis")
     Repo.update_all(from(i in Item, where: i.id == ^item.id), set: [reply_posted_by_id: other_id])
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => true, "issue" => linear_issue}}})
-    end)
+    test_pid = self()
 
     Req.Test.expect(Rail.Slack, fn conn ->
-      assert %{"text" => "Filed as <https://linear.app/acme/issue/TRI-214|TRI-214>"} =
-               conn |> Req.Test.raw_body() |> Jason.decode!()
+      assert %{"text" => text} = conn |> Req.Test.raw_body() |> Jason.decode!()
+      send(test_pid, {:posted, text})
 
       Req.Test.json(conn, %{"ok" => true, "ts" => "1790000650.000100"})
     end)
 
-    assert {:ok, %Item{reply_posted_at: nil, reply_posted_by_id: ^other_id}} =
+    assert {:ok, %Item{created_issue_id: issue_id, reply_posted_at: nil, reply_posted_by_id: ^other_id}} =
              Triage.create_triage_issue(scope, item, %{})
+
+    %Issue{identifier: identifier, url: url} = Repo.get!(Issue, issue_id)
+    assert_received {:posted, text}
+    assert text == "Filed as <#{url}|#{identifier}>"
   end
 
-  test "a Linear failure frees the item to try again", %{thread: thread, scope: scope} do
+  test "an issue that cannot be created frees the item to try again", %{thread: thread, scope: scope} do
     %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug()]})
+    invalid = Ecto.Changeset.add_error(Ecto.Changeset.change(%Issue{}), :title, "can't be blank")
 
-    Req.Test.expect(Rail.Linear, &(&1 |> Plug.Conn.put_status(500) |> Req.Test.json(%{})))
+    expect(Rail.Issues, :create_issue, fn _scope, _project, _attrs -> {:error, invalid} end)
 
-    assert {:error, {:linear_api_error, 500, _body}} = Triage.create_triage_issue(scope, item, %{"issue_title" => "Mine"})
+    assert {:error, ^invalid} = Triage.create_triage_issue(scope, item, %{"issue_title" => "Mine"})
 
     assert %Item{created_issue_id: nil, issue_created_by_id: nil, issue_title: "Approve leaves tasks at Design"} =
              Repo.get!(Item, item.id)
@@ -305,14 +259,9 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
 
     test "accepting with no reply creates the issue, posts nothing and starts no task", %{
       thread: thread,
-      scope: scope,
-      linear_issue: linear_issue
+      scope: scope
     } do
       %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug(%{"reply" => nil})]})
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => true, "issue" => linear_issue}}})
-      end)
 
       assert {:ok, %Item{created_issue_id: "iss_" <> _id = issue_id, reply_posted_at: nil, error: nil}} =
                Triage.create_triage_issue(scope, item, %{})
@@ -324,14 +273,9 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
     test "accepting with a reply posts it exactly as written, with no Filed as line", %{
       thread: thread,
       scope: scope,
-      user: %{id: user_id},
-      linear_issue: linear_issue
+      user: %{id: user_id}
     } do
       %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug()]})
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => true, "issue" => linear_issue}}})
-      end)
 
       Req.Test.expect(Rail.Slack, fn conn ->
         assert %{"text" => "Thanks Priya, we reproduced this. We'll update this thread when it ships."} =
@@ -357,8 +301,7 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
 
     test "a reply that links the issue creates nothing until the placeholder is taken out", %{
       thread: thread,
-      scope: scope,
-      linear_issue: linear_issue
+      scope: scope
     } do
       %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug()]})
 
@@ -368,10 +311,6 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
                Triage.create_triage_issue(scope, item, %{"reply_text" => "Follow it in {issue link}."})
 
       assert %Item{created_issue_id: nil, issue_created_by_id: nil, reply_posted_by_id: nil} = Repo.get!(Item, item.id)
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => true, "issue" => linear_issue}}})
-      end)
 
       Req.Test.expect(Rail.Slack, fn conn ->
         assert %{"text" => "Thanks, a fix is underway."} = conn |> Req.Test.raw_body() |> Jason.decode!()
@@ -387,16 +326,11 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
     test "accepting while someone else posts the reply creates the issue and posts nothing", %{
       thread: thread,
       scope: scope,
-      workspace: workspace,
-      linear_issue: linear_issue
+      workspace: workspace
     } do
       %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug()]})
       %{id: other_id} = slack_user(workspace.external_id, "Jordan Ellis")
       Repo.update_all(from(i in Item, where: i.id == ^item.id), set: [reply_posted_by_id: other_id])
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => true, "issue" => linear_issue}}})
-      end)
 
       assert {:ok, %Item{created_issue_id: "iss_" <> _id, reply_posted_at: nil, reply_posted_by_id: ^other_id}} =
                Triage.create_triage_issue(scope, item, %{})
@@ -406,8 +340,7 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
       project: project,
       channel: channel,
       thread: thread,
-      scope: scope,
-      linear_issue: linear_issue
+      scope: scope
     } do
       %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug(%{"reply" => nil})]})
 
@@ -424,18 +357,20 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
           ]
         })
 
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => true, "issue" => linear_issue}}})
-      end)
+      test_pid = self()
 
       Req.Test.expect(Rail.Slack, fn conn ->
-        assert %{"text" => "Filed as <https://linear.app/acme/issue/TRI-214|TRI-214>"} =
-                 conn |> Req.Test.raw_body() |> Jason.decode!()
+        assert %{"text" => text} = conn |> Req.Test.raw_body() |> Jason.decode!()
+        send(test_pid, {:posted, text})
 
         Req.Test.json(conn, %{"ok" => true, "ts" => "1790003200.000100"})
       end)
 
-      assert {:ok, %Item{created_issue_id: "iss_" <> _id}} = Triage.create_triage_issue(scope, item, %{})
+      assert {:ok, %Item{created_issue_id: "iss_" <> _id = issue_id}} = Triage.create_triage_issue(scope, item, %{})
+
+      %Issue{identifier: identifier, url: url} = Repo.get!(Issue, issue_id)
+      assert_received {:posted, text}
+      assert text == "Filed as <#{url}|#{identifier}>"
     end
   end
 
@@ -468,7 +403,8 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
       set: [support_conversation_id: conversation.id, slack_channel_id: nil]
     )
 
-    # No Linear call is expected, so creating the issue would fail the test.
+    reject(Rail.Issues, :create_issue, 3)
+
     assert {:error, :forwarded} = Triage.create_triage_issue(scope, item, %{})
     assert %Item{created_issue_id: nil, issue_created_by_id: nil} = Repo.get!(Item, item.id)
   end

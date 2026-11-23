@@ -78,14 +78,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_001,
         key: "P13001",
         default_branch: "main",
-        clone_path: "/tmp/repos/roles-live-13001",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
+        clone_path: "/tmp/repos/roles-live-13001"
       })
 
     scope = Rail.Scope.for_user(admin_user)
@@ -124,14 +117,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_002,
         key: "P13002",
         default_branch: "main",
-        clone_path: "/tmp/repos/roles-live-13002",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
+        clone_path: "/tmp/repos/roles-live-13002"
       })
 
     view |> element("#project-selector-form") |> render_change(%{"project_id" => project2.id})
@@ -146,14 +132,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_003,
         key: "P13003",
         default_branch: "main",
-        clone_path: "/tmp/repos/roles-live-13003",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
+        clone_path: "/tmp/repos/roles-live-13003"
       })
 
     assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
@@ -232,14 +211,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_004,
         key: "P13004",
         default_branch: "main",
-        clone_path: "/tmp/repos/roles-live-13004",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
+        clone_path: "/tmp/repos/roles-live-13004"
       })
 
     assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
@@ -275,14 +247,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_005,
         key: "P13005",
         default_branch: "main",
-        clone_path: "/tmp/repos/roles-live-13005",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
+        clone_path: "/tmp/repos/roles-live-13005"
       })
 
     scope = Rail.Scope.for_user(admin_user)
@@ -403,8 +368,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_030,
         key: "P13030",
         default_branch: "main",
-        clone_path: "/tmp/repos/roles-live-13030",
-        linear_state_ids: %{"triage" => "st_triage"}
+        clone_path: "/tmp/repos/roles-live-13030"
       })
 
     assert {:ok, %Role{id: role_id}} =
@@ -454,8 +418,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_031,
         key: "P13031",
         default_branch: "main",
-        clone_path: "/tmp/repos/roles-live-13031",
-        linear_state_ids: %{"triage" => "st_triage"}
+        clone_path: "/tmp/repos/roles-live-13031"
       })
 
     assert {:ok, %Role{id: role_id}} =
@@ -714,14 +677,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_006,
         key: "P13006",
         default_branch: "main",
-        clone_path: "/tmp/repos/roles-live-13006",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
+        clone_path: "/tmp/repos/roles-live-13006"
       })
 
     scope = Rail.Scope.for_user(admin_user)
@@ -765,14 +721,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_007,
         key: "P13007",
         default_branch: "main",
-        clone_path: "/tmp/repos/roles-live-13007",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
+        clone_path: "/tmp/repos/roles-live-13007"
       })
 
     assert {:ok, %Role{}} =
@@ -791,14 +740,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_008,
         key: "P13008",
         default_branch: "main",
-        clone_path: "/tmp/repos/roles-live-13008",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
+        clone_path: "/tmp/repos/roles-live-13008"
       })
 
     assert {:ok, view, _html} =
@@ -827,13 +769,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         key: "P13012",
         default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13012",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        },
         active: true
       })
 
@@ -856,7 +791,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         key: "P13021",
         default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13021",
-        linear_state_ids: %{"triage" => "st_triage"},
         active: false
       })
 
@@ -868,7 +802,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         key: "P13020",
         default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13020",
-        linear_state_ids: %{"triage" => "st_triage"},
         active: true
       })
 
@@ -890,14 +823,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_013,
         key: "P13013",
         default_branch: "main",
-        clone_path: "/tmp/repos/roles-live-13013",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
+        clone_path: "/tmp/repos/roles-live-13013"
       })
 
     {:ok, project2} =
@@ -907,14 +833,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_014,
         key: "P13014",
         default_branch: "main",
-        clone_path: "/tmp/repos/roles-live-13014",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
+        clone_path: "/tmp/repos/roles-live-13014"
       })
 
     assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project1.id}), ~p"/settings/roles")
@@ -938,14 +857,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_015,
         key: "P13015",
         default_branch: "main",
-        clone_path: "/tmp/repos/roles-live-13015",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
+        clone_path: "/tmp/repos/roles-live-13015"
       })
 
     assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
@@ -996,14 +908,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_016,
         key: "P13016",
         default_branch: "main",
-        clone_path: "/tmp/repos/roles-live-13016",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
+        clone_path: "/tmp/repos/roles-live-13016"
       })
 
     assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
@@ -1115,14 +1020,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_017,
         key: "P13017",
         default_branch: "main",
-        clone_path: "/tmp/repos/roles-live-13017",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
+        clone_path: "/tmp/repos/roles-live-13017"
       })
 
     assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
@@ -1145,14 +1043,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_018,
         key: "P13018",
         default_branch: "main",
-        clone_path: "/tmp/repos/roles-live-13018",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
+        clone_path: "/tmp/repos/roles-live-13018"
       })
 
     {:ok, other_project} =
@@ -1162,14 +1053,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_019,
         key: "P13019",
         default_branch: "main",
-        clone_path: "/tmp/repos/roles-live-13019",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
+        clone_path: "/tmp/repos/roles-live-13019"
       })
 
     assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")

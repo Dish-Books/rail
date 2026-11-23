@@ -1,5 +1,5 @@
 defmodule RailWeb.Mcp.Tools.CreateComment do
-  @moduledoc "Comments on a ticket as you, in its tracker."
+  @moduledoc "Comments on a ticket as you."
 
   use Anubis.Server.Component, type: :tool
 

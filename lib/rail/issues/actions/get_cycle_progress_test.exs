@@ -2,6 +2,7 @@ defmodule Rail.Issues.Actions.GetCycleProgressTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
   alias Rail.Repo
@@ -21,16 +22,15 @@ defmodule Rail.Issues.Actions.GetCycleProgressTest do
         user
       end
 
-    insert = fn external_id, cycle, state, estimate, owner ->
+    insert = fn identifier, cycle, state, estimate, owner ->
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project.id,
-        external_id: external_id,
-        identifier: external_id,
-        title: external_id,
+        identifier: identifier,
+        title: identifier,
         state: state,
         estimate: estimate,
-        cycle_external_id: cycle,
+        cycle_id: cycle.id,
         owner_user_id: owner && owner.id
       })
       |> Repo.insert!()
@@ -44,16 +44,19 @@ defmodule Rail.Issues.Actions.GetCycleProgressTest do
     users: [%{id: ana_id} = ana, %{id: bo_id} = bo, %{id: cy_id} = cy],
     insert: insert
   } do
-    insert.("lin_cp1", "cyc_p", :done, 3, ana)
-    insert.("lin_cp2", "cyc_p", :in_progress, nil, ana)
-    insert.("lin_cp3", "cyc_p", :in_review, 2, bo)
-    insert.("lin_cp4", "cyc_p", :todo, 2, cy)
-    insert.("lin_cp5", "cyc_p", :canceled, 8, ana)
-    insert.("lin_cp6", "cyc_p", :duplicate, 8, bo)
-    insert.("lin_cp7", "cyc_p", :backlog, 1, nil)
-    insert.("lin_cp8", "cyc_other", :done, 5, ana)
+    cycle_p = Repo.insert!(%Cycle{project_id: project.id, starts_on: ~D[2026-11-10], ends_on: ~D[2026-11-23]})
+    other = Repo.insert!(%Cycle{project_id: project.id, starts_on: ~D[2026-11-24], ends_on: ~D[2026-12-07]})
 
-    cycle = %{id: "cyc_p", default_estimate: 2, scope_history: [8.0, 9.0]}
+    insert.("CP-1", cycle_p, :done, 3, ana)
+    insert.("CP-2", cycle_p, :in_progress, nil, ana)
+    insert.("CP-3", cycle_p, :in_review, 2, bo)
+    insert.("CP-4", cycle_p, :todo, 2, cy)
+    insert.("CP-5", cycle_p, :canceled, 8, ana)
+    insert.("CP-6", cycle_p, :duplicate, 8, bo)
+    insert.("CP-7", cycle_p, :backlog, 1, nil)
+    insert.("CP-8", other, :done, 5, ana)
+
+    cycle = %{id: cycle_p.id, default_estimate: 2, scope_history: [8.0, 9.0]}
 
     # Scope 3 + 2 + 2 + 2 + 1, against 8 on the first day.
     assert %{
@@ -84,7 +87,6 @@ defmodule Rail.Issues.Actions.GetCycleProgressTest do
           name: "Cycle progress",
           github_repo: "example/#{key}",
           github_installation_id: 1,
-          tracker: :local,
           key: key,
           default_branch: "main",
           clone_path: "/tmp/#{key}"

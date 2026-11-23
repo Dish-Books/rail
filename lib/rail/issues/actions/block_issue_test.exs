@@ -12,10 +12,9 @@ defmodule Rail.Issues.Actions.BlockIssueTest do
 
     {:ok, local} =
       Projects.create_project(system_scope(), %{
-        name: "Rail-tracked",
+        name: "Blocking",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -57,7 +56,6 @@ defmodule Rail.Issues.Actions.BlockIssueTest do
         name: "Another",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -72,22 +70,5 @@ defmodule Rail.Issues.Actions.BlockIssueTest do
 
   test "someone who cannot open the project adds nothing", %{blocker: blocker, blocked: blocked} do
     assert {:error, :not_found} = Issues.block_issue(user_scope(project_ids: []), blocker, blocked)
-  end
-
-  test "issues Linear holds keep their relations there", %{project: project} do
-    [first, second] =
-      for n <- 1..2 do
-        %Issue{}
-        |> Issue.tracker_changeset(%{
-          project_id: project.id,
-          external_id: "lin_block_#{n}",
-          identifier: "BLK-#{n}",
-          title: "In Linear #{n}",
-          state: :todo
-        })
-        |> Repo.insert!()
-      end
-
-    assert {:error, :unsupported} = Issues.block_issue(system_scope(), first, second)
   end
 end

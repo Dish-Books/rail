@@ -42,17 +42,6 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
   """
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_save_plan_1", "identifier" => "SVP-1", "title" => "Save Plan"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} =
       Issues.create_issue(system_scope(), project, %{
         title: "Issue",

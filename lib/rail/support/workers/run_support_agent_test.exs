@@ -17,7 +17,7 @@ defmodule Rail.Support.Workers.RunSupportAgentTest do
     stub(Git, :checkout_detached_worktree, fn _project, worktree_path -> {:ok, worktree_path} end)
     stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
     stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
-    %{project: project} = triage_project(tracker: :local)
+    %{project: project} = triage_project()
     app_id = "app_#{System.unique_integer([:positive])}"
 
     Req.Test.stub(Rail.Intercom, fn

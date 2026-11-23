@@ -202,12 +202,12 @@ defmodule RailWeb.Settings.McpServersLive do
                   name="server[name]"
                   id="mcp-server-name"
                   value={@form["name"]}
-                  placeholder="linear"
+                  placeholder="sentry"
                   class="font-mono"
                   errors={List.wrap(@form_errors[:name])}
                 />
                 <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
-                  Also the prefix agents see on its tools, e.g. <span class="font-mono">linear__get_issue</span>.
+                  Also the prefix agents see on its tools, e.g. <span class="font-mono">sentry__get_issue</span>.
                 </p>
               </div>
 
@@ -217,7 +217,7 @@ defmodule RailWeb.Settings.McpServersLive do
                 name="server[url]"
                 id="mcp-server-url"
                 value={@form["url"]}
-                placeholder="https://mcp.linear.app/mcp"
+                placeholder="https://mcp.sentry.dev/mcp"
                 class="font-mono"
                 errors={List.wrap(@form_errors[:url])}
               />

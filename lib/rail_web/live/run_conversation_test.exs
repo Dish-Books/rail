@@ -29,21 +29,6 @@ defmodule RailWeb.Live.RunConversationTest do
         {stage, role}
       end)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_conversation_1",
-              "identifier" => "CNV-1",
-              "title" => "Conversation Issue"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Conversation Issue"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
@@ -1997,7 +1982,7 @@ defmodule RailWeb.Live.RunConversationTest do
       assert Pipeline.list_finding_comments(ada, task) == []
     end
 
-    test "a Send the tracker refuses names the finding, sends nothing and leaves its New issue row", %{
+    test "a Send that cannot file the issue names the finding, sends nothing and leaves its New issue row", %{
       task: task,
       ada: ada,
       ada_conn: ada_conn,
@@ -2012,7 +1997,7 @@ defmodule RailWeb.Live.RunConversationTest do
       view |> element("#review-send-tray-fold") |> render_click()
       assert has_element?(view, "#review-tray-new-issue-a-nit", "A nit")
 
-      Req.Test.expect(Rail.Linear, &Plug.Conn.send_resp(&1, 500, "down"))
+      expect(Issues, :create_issue, fn _scope, _project, _attrs -> {:error, %Ecto.Changeset{}} end)
       reject(Tools, :start_os_process, 2)
       view |> element("#send-review-tray", "Send 3") |> render_click()
 

@@ -19,10 +19,9 @@ defmodule Rail.Issues.Actions.AddTestingImage do
   }
 
   @doc """
-  Stores a picture through the ticket's tracker and adds it to the testing notes of a ticket in the testing queue,
+  Stores a picture and adds it to the testing notes of a ticket in the testing queue,
   returning the ticket as it now reads. Broadcasts as `Rail.Issues.save_testing_notes/3` does. Refuses with
-  `:not_accepted` for a name that is not a PNG, JPEG, GIF or WebP, `:unsupported` from a tracker that holds no files,
-  and `:testing_finished` once the ticket is out of the queue.
+  `:not_accepted` for a name that is not a PNG, JPEG, GIF or WebP, and `:testing_finished` once the ticket is out of the queue.
   """
   def add_testing_image(%Scope{} = scope, %Issue{id: id, project_id: project_id} = issue, filename, data)
       when is_binary(filename) and is_binary(data) do
@@ -33,7 +32,7 @@ defmodule Rail.Issues.Actions.AddTestingImage do
     with true <- Scope.can_access_project?(scope, project_id) || {:error, :not_found},
          true <- is_binary(content_type) || {:error, :not_accepted},
          true <- Issue.in_testing_queue?(issue) || {:error, :testing_finished},
-         {:ok, url} <- Tracker.tracker(issue).upload_asset(issue, filename, content_type, data),
+         {:ok, url} <- Tracker.upload_asset(issue, filename, content_type, data),
          {:ok, {was, saved}} <-
            Repo.transaction(fn -> append(id, project_id, %TestingImage{url: url, name: filename}) end) do
       Phoenix.PubSub.broadcast(Rail.PubSub, "testing", {:testing_notes_changed, id})

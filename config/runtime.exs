@@ -40,10 +40,6 @@ config :rail, :github,
 # Goth reads GOOGLE_APPLICATION_CREDENTIALS(_JSON), or the metadata server when neither is set.
 config :rail, :goth_enabled, config_env() == :prod or get_env.("ENABLE_GOTH", nil) == "true"
 
-config :rail, :linear_oauth,
-  client_id: get_env.("LINEAR_CLIENT_ID", "linear_client_id"),
-  client_secret: get_env.("LINEAR_CLIENT_SECRET", "linear_client_secret")
-
 # The one gate on invoking an agent CLI. Read here so app code never touches the
 # environment directly.
 config :rail, :no_dispatch, get_env.("RAIL_NO_DISPATCH", nil) == "1"

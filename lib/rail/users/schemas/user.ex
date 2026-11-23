@@ -18,11 +18,6 @@ defmodule Rail.Users.Schemas.User do
     field :github_token, EncryptedBinary, redact: true
     field :github_refresh_token, EncryptedBinary, redact: true
     field :github_token_expires_at, :utc_datetime_usec
-    field :linear_user_id, :string
-    field :linear_name, :string
-    field :linear_access_token, EncryptedBinary, redact: true
-    field :linear_refresh_token, EncryptedBinary, redact: true
-    field :linear_token_expires_at, :utc_datetime_usec
     field :slack_user_id, :string
     field :slack_team_id, :string
     field :slack_name, :string
@@ -59,11 +54,6 @@ defmodule Rail.Users.Schemas.User do
     :github_token,
     :github_refresh_token,
     :github_token_expires_at,
-    :linear_user_id,
-    :linear_name,
-    :linear_access_token,
-    :linear_refresh_token,
-    :linear_token_expires_at,
     :slack_user_id,
     :slack_team_id,
     :slack_name,

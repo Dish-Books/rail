@@ -24,21 +24,6 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
         {stage, role}
       end)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_enter_stage_1",
-              "identifier" => "ENT-1",
-              "title" => "Enter Stage Issue"
-            }
-          }
-        }
-      })
-    end)
-
     stages = [
       %IssueStage{stage: :plan},
       %IssueStage{stage: :engineer},
@@ -114,7 +99,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert_received {:pipeline_changed, ^task_id}
   end
 
-  test "every stage the ticket follows queues its Linear move", %{task: task} do
+  test "every stage the ticket follows queues its status move", %{task: task} do
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
     for stage <- [:plan, :engineer, :review, :merged] do
@@ -260,7 +245,6 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: other_project.id,
-        external_id: "lin_other_slot",
         identifier: "OTHES-1",
         title: "Other",
         state: :backlog

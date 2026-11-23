@@ -62,15 +62,11 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
   - `lib/rail_test.exs`: covers the extension.
   """
 
-  setup %{project: %{linear_workspace_id: workspace_id}} do
+  setup do
     scope = system_scope()
     clone_path = Path.join(System.tmp_dir!(), "rail_start_plan_#{System.unique_integer([:positive])}")
     on_exit(fn -> File.rm_rf(clone_path) end)
     Req.Test.stub(Rail.GitHub.Client, &Req.Test.json(&1, %{"token" => "ghs_token"}))
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
 
     {:ok, project} =
       Projects.create_project(scope, %{
@@ -79,9 +75,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
         github_installation_id: 7002,
         key: "SPL",
         default_branch: "main",
-        clone_path: clone_path,
-        linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"},
-        linear_workspace_id: workspace_id
+        clone_path: clone_path
       })
 
     roles =
@@ -101,24 +95,9 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
         {stage, role}
       end
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_start_plan_1",
-              "identifier" => "SPL-1",
-              "title" => "Attachments follow their source document"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, issue} =
       Issues.create_issue(system_scope(), project, %{
-        title: "Issue",
+        title: "Attachments follow their source document",
         description: "Attachments follow their source document"
       })
 
@@ -140,7 +119,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     %{project: project, roles: roles, issue: issue}
   end
 
-  test "creates the task at Plan, queues the Linear advance and spawns one process that has its plan checked", %{
+  test "creates the task at Plan, queues its advance and spawns one process that has its plan checked", %{
     roles: %{plan: %Role{id: role_id}},
     issue: %Issue{id: issue_id} = issue
   } do
@@ -150,7 +129,6 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
 
     Repo.insert!(%Comment{
       issue_id: issue_id,
-      external_id: "lin_comment_start_plan",
       author_name: "Ana",
       body: "It only happens on Sysco bills."
     })
@@ -227,8 +205,6 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
         login: "plan-starter",
         email: "plan-starter@example.com"
       })
-
-    starter = starter |> Ecto.Changeset.change(linear_user_id: "lin_usr_plan_starter") |> Repo.update!()
 
     # The worktree is made before the task is recorded, so its id is only known from the attempt. No transaction is
     # open while git fetches, so nothing is recorded or claimed yet in here.
@@ -327,8 +303,6 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
   } do
     {:ok, starter} =
       Users.register_oauth_user(%{github_id: "gh_plan_racer", login: "plan-racer", email: "plan-racer@example.com"})
-
-    starter = starter |> Ecto.Changeset.change(linear_user_id: "lin_usr_plan_racer") |> Repo.update!()
 
     expect(Git, :get_or_create_worktree, fn _project, task ->
       {:ok, _theirs} = Pipeline.create_task(Repo.preload(issue, :project), :plan)

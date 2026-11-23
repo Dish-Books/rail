@@ -19,21 +19,6 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_task_schema_1",
-              "identifier" => "TSK-1",
-              "title" => "Task Schema Issue"
-            }
-          }
-        }
-      })
-    end)
-
     {:ok, %Issue{id: issue_id} = issue} =
       Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Task Schema Issue"})
 
@@ -93,7 +78,6 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        external_id: "lin_task_schema_fk",
         identifier: "TSK-2",
         title: "Untasked Issue",
         state: :backlog

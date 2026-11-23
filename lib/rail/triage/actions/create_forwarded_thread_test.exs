@@ -11,7 +11,7 @@ defmodule Rail.Triage.Actions.CreateForwardedThreadTest do
   alias Rail.Users
 
   setup do
-    %{project: project} = triage_project(tracker: :local)
+    %{project: project} = triage_project()
     unique = System.unique_integer([:positive])
     app_id = "app#{unique}"
 

@@ -8,17 +8,6 @@ defmodule Rail.Pipeline.Actions.ReadPlanTest do
   @plan "## Implementation plan\n\n### Approach\n\nExtend it.\n\n### Decisions\n\n- Decision: one module changes.\n\n### Changes\n\n#### `lib/rail.ex`\n\nExtends it.\n\nWhy: it is where the change goes.\n\n```elixir sketch\ndef go, do: :ok\n```\n\n### Acceptance criteria\n\n- 1: `lib/rail.ex`\n\n### Verification\n\n- `lib/rail_test.exs`: covers it."
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_read_plan_1", "identifier" => "RDP-1", "title" => "Plans"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Plans"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)

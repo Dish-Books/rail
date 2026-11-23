@@ -74,9 +74,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     assert has_element?(view, "#reconnect-github-button[href='/auth/github']")
     assert has_element?(view, "#disconnect-github-button")
     refute has_element?(view, "#connect-github-button")
-    assert html =~ "issues and comments go out as the workspace"
-    assert has_element?(view, "#connect-linear-button")
-    refute has_element?(view, "#disconnect-linear-button")
+    assert has_element?(view, "#github-connected-details", "approvals, merges and pull requests go out as you")
   end
 
   test "says Cloudflare Access signed them in when Access is set up", %{authed_conn: conn} do
@@ -209,77 +207,6 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
     assert has_element?(view, "#repository-access", project.github_repo)
     assert has_element?(view, "#repository-access", "org/second-project")
-  end
-
-  test "renders connected Linear section when user is linked", %{
-    authed_conn: conn,
-    user: user
-  } do
-    assert {:ok, %User{}} =
-             Users.update_user(Scope.for_system(), user, %{
-               linear_user_id: "lin_123",
-               linear_name: "Jane Doe Linear",
-               linear_access_token: "lin_at",
-               linear_refresh_token: "lin_rt",
-               linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
-             })
-
-    assert {:ok, view, html} = live(conn, ~p"/settings/connected-accounts")
-
-    assert html =~ "issues and comments attributed to you"
-    assert html =~ "Jane Doe Linear"
-    assert has_element?(view, "#disconnect-linear-button")
-    refute has_element?(view, "#connect-linear-button")
-  end
-
-  test "disconnects Linear when Disconnect button is clicked", %{
-    authed_conn: conn,
-    user: user,
-    user_id: user_id
-  } do
-    assert {:ok, %User{}} =
-             Users.update_user(Scope.for_system(), user, %{
-               linear_user_id: "lin_disconnect_id",
-               linear_name: "Disconnect User",
-               linear_access_token: "lin_at_disconnect",
-               linear_refresh_token: "lin_rt_disconnect",
-               linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
-             })
-
-    assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
-    assert has_element?(view, "#disconnect-linear-button")
-
-    rendered =
-      view
-      |> element("#disconnect-linear-button")
-      |> render_click()
-
-    assert rendered =~ "issues and comments go out as the workspace"
-    assert has_element?(view, "#connect-linear-button")
-    refute has_element?(view, "#disconnect-linear-button")
-
-    reloaded = Repo.get!(User, user_id)
-    assert is_nil(reloaded.linear_access_token)
-    assert is_nil(reloaded.linear_user_id)
-  end
-
-  test "handles disconnect error gracefully when the user cannot be updated", %{
-    authed_conn: conn,
-    user: user
-  } do
-    assert {:ok, %User{}} =
-             Users.update_user(Scope.for_system(), user, %{
-               linear_access_token: "lin_at_err_test",
-               linear_refresh_token: "lin_rt_err_test",
-               linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
-             })
-
-    assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
-
-    expect(Users, :unlink_linear, fn _scope -> {:error, :db_error} end)
-
-    rendered = render_click(element(view, "#disconnect-linear-button"))
-    assert rendered =~ "issues and comments attributed to you"
   end
 
   test "lists enabled OAuth MCP servers to connect and disconnect", %{authed_conn: conn, user: user} do

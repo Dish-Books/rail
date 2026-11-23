@@ -14,7 +14,6 @@ defmodule Rail.Issues.Actions.FindIssueTest do
         name: "Found here",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -53,28 +52,5 @@ defmodule Rail.Issues.Actions.FindIssueTest do
     for identifier <- ["12", "#{local.key}-", "#{local.key}-abc", "garbage", "#{local.key}-999999"] do
       assert {:error, :not_found} = Issues.find_issue(scope, identifier)
     end
-  end
-
-  test "finds a Linear ticket by its lower-case identifier and a GitHub one by key#number", %{
-    project: linear,
-    github_project: github
-  } do
-    for {project, external_id, identifier} <- [{linear, "lin_find_1", "TST-4242"}, {github, "gh_find_1", "tgh#4242"}] do
-      %Issue{}
-      |> Issue.tracker_changeset(%{
-        project_id: project.id,
-        tracker: project.tracker,
-        external_id: external_id,
-        identifier: identifier,
-        title: "Mirrored",
-        state: :todo
-      })
-      |> Repo.insert!()
-    end
-
-    scope = user_scope(project_ids: [linear.id, github.id])
-
-    assert {:ok, %Issue{identifier: "TST-4242"}} = Issues.find_issue(scope, "tst-4242")
-    assert {:ok, %Issue{identifier: "tgh#4242"}} = Issues.find_issue(scope, "TGH-4242")
   end
 end

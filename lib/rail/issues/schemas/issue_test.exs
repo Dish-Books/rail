@@ -10,15 +10,13 @@ defmodule Rail.Issues.Schemas.IssueTest do
 
   test "valid changeset with valid attributes" do
     attrs = %{
-      external_id: "lin_123",
       identifier: "ENG-101",
       title: "Fix crash on login",
       description: "Users crash when logging in",
       state: :in_progress,
-      state_name: "In Progress",
       priority: :urgent,
       branch_name: "fix/login-crash",
-      url: "https://linear.app/issue/ENG-101",
+      url: "https://rail.example/issues/iss_101",
       project_id: "prj_test_123"
     }
 
@@ -36,8 +34,8 @@ defmodule Rail.Issues.Schemas.IssueTest do
     errors = errors_on(changeset)
 
     assert errors[:project_id] == ["can't be blank"]
-    assert errors[:external_id] == ["can't be blank"]
-    assert errors[:identifier] == ["can't be blank"]
+    # Postgres names an issue as it inserts it.
+    refute Map.has_key?(errors, :identifier)
     assert errors[:title] == ["can't be blank"]
     assert errors[:state] == ["can't be blank"]
   end
@@ -45,7 +43,6 @@ defmodule Rail.Issues.Schemas.IssueTest do
   test "project_id is cast from attrs like any other field" do
     attrs = %{
       project_id: "prj_from_attrs",
-      external_id: "lin_123_2",
       identifier: "ENG-101",
       title: "Fix crash on login",
       state: :triage
@@ -56,7 +53,7 @@ defmodule Rail.Issues.Schemas.IssueTest do
     assert get_field(changeset, :project_id) == "prj_from_attrs"
   end
 
-  test "persists to database with valid foreign key and enforces unique external_id" do
+  test "persists to database with valid foreign key and enforces a number unique in its project" do
     {:ok, %Project{id: project_id}} =
       Projects.create_project(system_scope(), %{
         name: "Issue Schema Project",
@@ -68,8 +65,8 @@ defmodule Rail.Issues.Schemas.IssueTest do
       })
 
     issue_attrs = %{
-      external_id: "lin_unique_test_1",
       identifier: "ENG-201",
+      number: 201,
       title: "Database constraint test",
       state: :triage,
       project_id: project_id
@@ -82,12 +79,11 @@ defmodule Rail.Issues.Schemas.IssueTest do
 
     duplicate_changeset = Issue.changeset(%Issue{}, issue_attrs)
     assert {:error, failed_changeset} = Repo.insert(duplicate_changeset)
-    assert errors_on(failed_changeset)[:external_id] == ["has already been taken"]
+    assert errors_on(failed_changeset)[:number] == ["has already been taken"]
   end
 
   test "changeset validates enum types" do
     attrs = %{
-      external_id: "lin_invalid_enums",
       identifier: "ENG-999",
       title: "Invalid enums",
       priority: "invalid_priority",
@@ -204,7 +200,6 @@ defmodule Rail.Issues.Schemas.IssueTest do
         %Issue{}
         |> Issue.tracker_changeset(%{
           project_id: project.id,
-          external_id: "lin_no_testing",
           identifier: "NT-1",
           title: "Done",
           state: :done
@@ -272,15 +267,15 @@ defmodule Rail.Issues.Schemas.IssueTest do
   end
 
   describe "cycles and parents" do
-    test "only the tracker's changeset takes the cycle and the parent, so a local edit queues no push Linear refuses" do
-      attrs = %{cycle_external_id: "cyc_1", parent_external_id: "lin_parent"}
+    test "only tracker_changeset takes the cycle and the parent, which Rail sets through it" do
+      attrs = %{cycle_id: "cyc_1", parent_id: "iss_parent"}
 
-      assert %{changes: %{cycle_external_id: "cyc_1", parent_external_id: "lin_parent"}} =
+      assert %{changes: %{cycle_id: "cyc_1", parent_id: "iss_parent"}} =
                Issue.tracker_changeset(%Issue{}, attrs)
 
       assert %{changes: changes} = Issue.changeset(%Issue{}, attrs)
-      refute Map.has_key?(changes, :cycle_external_id)
-      refute Map.has_key?(changes, :parent_external_id)
+      refute Map.has_key?(changes, :cycle_id)
+      refute Map.has_key?(changes, :parent_id)
     end
 
     test "a parent and sub-issues count only in the issue's own project" do
@@ -324,7 +319,7 @@ defmodule Rail.Issues.Schemas.IssueTest do
              ] = Issue.calculate_issue_tree([child, parent, apart, foreign, middle, grandchild])
     end
 
-    test "groups follow Linear's statuses, started furthest along first, and Rail's label for any it does not list" do
+    test "groups follow the statuses given, started furthest along first, and Rail's label for any they do not list" do
       statuses = [
         %{name: "Backlog", type: "backlog", position: 0},
         %{name: "Ready for Dev", type: "unstarted", position: 1},
@@ -335,54 +330,44 @@ defmodule Rail.Issues.Schemas.IssueTest do
         %{name: "Canceled", type: "canceled", position: 5}
       ]
 
-      issue = fn id, state, name, estimate ->
-        %Issue{id: id, project_id: "prj_a", state: state, state_name: name, estimate: estimate, parent: nil}
+      issue = fn id, state, estimate ->
+        %Issue{id: id, project_id: "prj_a", state: state, estimate: estimate, parent: nil}
       end
 
       issues = [
-        issue.("iss_1", :backlog, "Backlog", 1),
-        issue.("iss_2", :in_progress, "In Progress", nil),
-        issue.("iss_3", :in_progress, "In Review", 3),
-        issue.("iss_4", :backlog, "Ready for Dev", 2),
-        issue.("iss_5", :todo, nil, 1),
-        issue.("iss_6", :done, "Done", 5),
-        issue.("iss_7", :triage, "Triage", 1)
+        issue.("iss_1", :backlog, 1),
+        issue.("iss_2", :in_progress, nil),
+        issue.("iss_3", :in_review, 3),
+        issue.("iss_5", :todo, 1),
+        issue.("iss_6", :done, 5),
+        issue.("iss_7", :triage, 1)
       ]
 
+      # Ready for Dev holds no issue, so it has no group.
       assert [
                %{label: "In Review", state: :in_review, count: 1, points: 3},
                %{label: "In Progress", state: :in_progress, count: 1, points: 2},
-               %{label: "Ready for Dev", state: :backlog, count: 1, points: 2},
                %{label: "Backlog", state: :backlog, count: 1, points: 1},
                %{label: "Triage", state: :triage},
                %{label: "Done", state: :done},
                %{label: "Todo", state: :todo, count: 1}
              ] = Issue.calculate_status_groups(issues, statuses, %{"prj_a" => 2})
 
-      assert [%{label: "Canceled", state: :canceled}, %{label: "Paused", state: :backlog}] =
+      assert [%{label: "Canceled", state: :canceled}, %{label: "Backlog", state: :backlog}] =
                Issue.calculate_status_groups(
-                 [issue.("iss_8", :canceled, "Canceled", 1), issue.("iss_9", :backlog, "Paused", 1)],
+                 [issue.("iss_8", :canceled, 1), issue.("iss_9", :backlog, 1)],
                  [%{name: "Paused", type: "paused", position: 9}, %{name: "Canceled", type: "canceled", position: 5}],
                  %{"prj_a" => 0}
                )
     end
 
-    test "Rail's own statuses group In Review first and Canceled last, a name Discard cleared joining its state's group",
+    test "Rail's statuses group In Review first and Canceled last, issues in one state sharing its group",
          %{project: project} do
-      {:ok, %{statuses: statuses}} = Issues.get_cycles(%{project | tracker: :local})
+      {:ok, %{statuses: statuses}} = Issues.get_cycles(project)
 
       issues =
-        for {state, name} <- [
-              done: "Done",
-              canceled: "Canceled",
-              triage: "Triage",
-              backlog: "Backlog",
-              todo: "Todo",
-              todo: nil,
-              in_progress: nil,
-              in_review: "In Review"
-            ],
-            do: %Issue{id: "iss_#{state}_#{name}", project_id: "prj_a", state: state, state_name: name, parent: nil}
+        for {state, n} <- Enum.with_index([:done, :canceled, :triage, :backlog, :todo, :todo, :in_progress, :in_review]),
+            do: %Issue{id: "iss_#{n}", project_id: "prj_a", state: state, parent: nil}
 
       assert [
                %{label: "In Review", state: :in_review, count: 1},
@@ -398,16 +383,14 @@ defmodule Rail.Issues.Schemas.IssueTest do
     test "an issue its cycle closed In Progress and since finished groups as In Progress, its row live", %{
       project: project
     } do
-      {:ok, %{statuses: statuses}} = Issues.get_cycles(%{project | tracker: :local})
+      {:ok, %{statuses: statuses}} = Issues.get_cycles(project)
 
       issue = %Issue{
         id: "iss_rolled",
         project_id: "prj_a",
         state: :done,
-        state_name: "Done",
         estimate: 3,
         cycle_state: :in_progress,
-        cycle_state_name: nil,
         parent: nil
       }
 
@@ -428,9 +411,9 @@ defmodule Rail.Issues.Schemas.IssueTest do
       statuses = [%{name: "In Progress", type: "started", position: 1}]
 
       issues = [
-        %Issue{id: "iss_a", project_id: "prj_a", state: :in_progress, state_name: "In Progress", parent: nil},
-        %Issue{id: "iss_b", project_id: "prj_b", state: :in_progress, state_name: "In Progress", parent: nil},
-        %Issue{id: "iss_c", project_id: "prj_b", state: :in_progress, state_name: "In Progress", estimate: 5, parent: nil}
+        %Issue{id: "iss_a", project_id: "prj_a", state: :in_progress, parent: nil},
+        %Issue{id: "iss_b", project_id: "prj_b", state: :in_progress, parent: nil},
+        %Issue{id: "iss_c", project_id: "prj_b", state: :in_progress, estimate: 5, parent: nil}
       ]
 
       assert [%{label: "In Progress", count: 3, points: 9}] =
@@ -439,18 +422,9 @@ defmodule Rail.Issues.Schemas.IssueTest do
 
     test "a dimmed copy adds nothing to a group, and each copy of a parent has its own key" do
       statuses = [%{name: "In Progress", type: "started", position: 1}, %{name: "Todo", type: "unstarted", position: 0}]
-      parent = %Issue{id: "iss_p", project_id: "prj_a", state: :done, state_name: "Done", estimate: 8, parent: nil}
-
-      started = %Issue{
-        id: "iss_a",
-        project_id: "prj_a",
-        state: :in_progress,
-        state_name: "In Progress",
-        estimate: 1,
-        parent: parent
-      }
-
-      waiting = %Issue{id: "iss_b", project_id: "prj_a", state: :backlog, state_name: "Todo", estimate: 2, parent: parent}
+      parent = %Issue{id: "iss_p", project_id: "prj_a", state: :done, estimate: 8, parent: nil}
+      started = %Issue{id: "iss_a", project_id: "prj_a", state: :in_progress, estimate: 1, parent: parent}
+      waiting = %Issue{id: "iss_b", project_id: "prj_a", state: :todo, estimate: 2, parent: parent}
 
       assert [
                %{count: 1, points: 1, rows: [%{dimmed: true, key: "group-0-iss_p-above-iss_a"}]},
@@ -458,18 +432,14 @@ defmodule Rail.Issues.Schemas.IssueTest do
              ] = Issue.calculate_status_groups([started, waiting], statuses, %{"prj_a" => 0})
     end
 
-    test "an In Progress issue under a status named In Review shows as In Review" do
-      assert :in_review = Issue.calculate_shown_state(%Issue{state: :in_progress, state_name: "In Review"})
-      assert :in_progress = Issue.calculate_shown_state(%Issue{state: :in_progress, state_name: "In Progress"})
-      assert :in_progress = Issue.calculate_shown_state(%Issue{state: :in_progress, state_name: nil})
+    test "an issue's status icon shows its own state" do
+      assert :in_progress = Issue.calculate_shown_state(%Issue{state: :in_progress})
       assert :in_review = Issue.calculate_shown_state(%Issue{state: :in_review})
     end
 
-    test "calculate_status_name/1 is the tracker's name, or else Rail's label" do
-      assert "Waiting on deploy" =
-               Issue.calculate_status_name(%Issue{state: :in_progress, state_name: "Waiting on deploy"})
-
-      assert "In Progress" = Issue.calculate_status_name(%Issue{state: :in_progress, state_name: nil})
+    test "calculate_status_name/1 is Rail's label for the issue's state" do
+      assert "In Progress" = Issue.calculate_status_name(%Issue{state: :in_progress})
+      assert "Todo" = Issue.calculate_status_name(%Issue{state: :todo})
     end
 
     test "only unfinished blockers are open" do

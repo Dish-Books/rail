@@ -1,13 +1,9 @@
 defmodule RailWeb.Settings.ProjectsLiveTest do
   use RailWeb.ConnCase, async: true
 
-  import Ecto.Query
   import Phoenix.LiveViewTest
 
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Issues.Schemas.LinearFileCopy
-  alias Rail.Issues.Workers.CopyLinearFile
-  alias Rail.Issues.Workers.MoveToLocalTracker
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
@@ -171,50 +167,10 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     assert render(view) =~ repo
   end
 
-  test "a project tracked in GitHub Issues is made without any Linear fields", %{admin_conn: conn} do
+  test "a project is made with the key that names its issues", %{admin_conn: conn} do
     assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
     view |> element("#new-project-button") |> render_click()
 
-    assert has_element?(view, "#project-key-input[placeholder='e.g. DIS']")
-
-    view |> form("#project-form", %{"project" => %{"tracker" => "github"}}) |> render_change()
-
-    refute has_element?(view, "#project-linear-workspace-input")
-    assert has_element?(view, "#project-key-input[placeholder=\"the repository's name\"]")
-
-    key = "gh-#{System.unique_integer([:positive])}"
-    repo = "example/#{key}"
-
-    view
-    |> form("#project-form", %{
-      "project" => %{
-        "name" => "GitHub Tracked",
-        "github_repo" => repo,
-        "github_installation_id" => "9989",
-        "default_branch" => "main",
-        "tracker" => "github",
-        "key" => "",
-        "clone_path" => "/tmp/ght"
-      }
-    })
-    |> render_submit()
-
-    refute has_element?(view, "#project-modal")
-
-    assert %Project{tracker: :github, key: ^key} =
-             project = Repo.get_by!(Project, github_repo: repo)
-
-    assert has_element?(view, "#project-team-key-#{project.id}", "(GitHub)")
-  end
-
-  test "a project Rail tracks itself is made with its key and no Linear fields", %{admin_conn: conn} do
-    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
-    view |> element("#new-project-button") |> render_click()
-    refute has_element?(view, "#project-key-hint")
-
-    view |> form("#project-form", %{"project" => %{"tracker" => "local"}}) |> render_change()
-
-    refute has_element?(view, "#project-linear-workspace-input")
     assert has_element?(view, "#project-key-input[placeholder='e.g. RAIL']")
     assert has_element?(view, "#project-key-hint", "Names its issues, as in KEY-12. Fixed once the project has issues.")
 
@@ -228,7 +184,6 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
         "github_repo" => repo,
         "github_installation_id" => "9990",
         "default_branch" => "main",
-        "tracker" => "local",
         "key" => key,
         "clone_path" => "/tmp/own"
       }
@@ -236,22 +191,19 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     |> render_submit()
 
     refute has_element?(view, "#project-modal")
-
-    assert %Project{id: project_id, tracker: :local, key: ^key, linear_team_id: nil} =
-             Repo.get_by!(Project, github_repo: repo)
-
-    assert has_element?(view, "#project-team-key-#{project_id}", "(Rail)")
+    assert %Project{id: project_id, key: ^key} = Repo.get_by!(Project, github_repo: repo)
+    assert has_element?(view, "#project-team-key-#{project_id}", key)
   end
 
-  test "a project with issues keeps its tracker, and says so", %{admin_conn: conn, github_project: project} do
+  test "a project with issues keeps its key, and says so", %{admin_conn: conn, github_project: project} do
     github_issue(project)
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
     view |> element("#edit-project-#{project.id}") |> render_click()
-    view |> form("#project-form", %{"project" => %{"tracker" => "linear"}}) |> render_change()
-    view |> form("#project-form", %{"project" => %{"tracker" => "linear", "key" => "TGH"}}) |> render_submit()
+    view |> form("#project-form", %{"project" => %{"key" => "TGH2"}}) |> render_submit()
 
-    assert has_element?(view, "#project-tracker-error", "cannot change once the project has issues")
+    assert has_element?(view, "#project-key-error", "cannot change once the project has issues")
+    assert %Project{key: "tgh"} = Repo.get!(Project, project.id)
   end
 
   test "opens edit project modal, changes active status and name, and updates project", %{
@@ -525,49 +477,6 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     view |> form("#project-form", %{"project" => %{"qa_skip_paths" => ""}}) |> render_submit()
 
     assert %Project{qa_skip_paths: []} = Repo.get!(Project, project_id)
-  end
-
-  test "links a project to a Linear workspace picked from the list", %{
-    admin_conn: conn,
-    admin_user: admin,
-    project: %Project{linear_workspace_id: workspace_id}
-  } do
-    assert {:ok, %Project{id: project_id, linear_workspace_id: nil}} =
-             Projects.create_project(Scope.for_user(admin), %{
-               name: "Workspace App",
-               github_repo: "example/workspace-#{System.unique_integer([:positive])}",
-               github_installation_id: 334,
-               key: "WSP",
-               default_branch: "main",
-               clone_path: "/tmp/workspace"
-             })
-
-    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
-
-    # Linking a workspace looks the team up through it, from the page's process.
-    Req.Test.expect(Rail.Linear, fn conn ->
-      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_api_test_seed"]
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_wsp"}]}}})
-    end)
-
-    Req.Test.allow(Rail.Linear, self(), view.pid)
-
-    view |> element("#edit-project-#{project_id}") |> render_click()
-    assert has_element?(view, "#project-linear-workspace-input option[value='#{workspace_id}']", "Test Workspace")
-
-    view |> form("#project-form", %{"project" => %{"linear_workspace_id" => workspace_id}}) |> render_submit()
-
-    refute has_element?(view, "#project-modal")
-    assert %Project{linear_workspace_id: ^workspace_id, linear_team_id: "lin_team_wsp"} = Repo.get!(Project, project_id)
-  end
-
-  test "a workspace that is gone is an error on the select", %{admin_conn: conn, project: %Project{id: project_id}} do
-    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
-    view |> element("#edit-project-#{project_id}") |> render_click()
-
-    render_submit(element(view, "#project-form"), %{"project" => %{"linear_workspace_id" => "lw_missing"}})
-
-    assert has_element?(view, "#project-linear-workspace-error", "does not exist")
   end
 
   test "closes modal when cancel or close button is clicked", %{admin_conn: conn} do
@@ -1205,7 +1114,6 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                 Repo.insert!(
                   Issue.changeset(%Issue{}, %{
                     project_id: project_id,
-                    external_id: "I_#{branch}",
                     identifier: branch,
                     title: branch,
                     state: :backlog
@@ -1427,176 +1335,6 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
 
       view |> form("#env-file-form") |> render_change()
       refute has_element?(view, "#env-file-refused-0")
-    end
-  end
-
-  describe "moving a project to Rail" do
-    setup do
-      %Project{id: project_id} =
-        project =
-        Repo.insert!(%Project{
-          name: "Moving App",
-          github_repo: "example/moving-app",
-          github_installation_id: 1,
-          default_branch: "main",
-          key: "MVL",
-          linear_team_id: "lin_team_mvl",
-          linear_workspace_id: "lw_test_seed",
-          clone_path: "/tmp/moving-app"
-        })
-
-      %{move_project: project, move_project_id: project_id}
-    end
-
-    test "only a Linear project's row offers Move to Rail", %{
-      admin_conn: conn,
-      move_project_id: project_id,
-      github_project: github_project
-    } do
-      %Project{id: local_id} =
-        Repo.insert!(%Project{
-          name: "Already on Rail",
-          github_repo: "example/already-on-rail",
-          github_installation_id: 1,
-          default_branch: "main",
-          tracker: :local,
-          key: "AOR",
-          clone_path: "/tmp/already-on-rail"
-        })
-
-      {:ok, view, _html} = live(conn, ~p"/settings/projects")
-
-      assert has_element?(view, "#move-project-#{project_id}", "Move to Rail")
-      refute has_element?(view, "#move-project-#{local_id}")
-      refute has_element?(view, "#move-project-#{github_project.id}")
-    end
-
-    test "confirming queues one move, which every open tab shows as moving and then as on Rail", %{
-      admin_conn: conn,
-      move_project_id: project_id
-    } do
-      {:ok, view, _html} = live(conn, ~p"/settings/projects")
-      {:ok, other_tab, _html} = live(conn, ~p"/settings/projects")
-
-      view |> element("#move-project-#{project_id}") |> render_click()
-      assert has_element?(view, "#move-title", "Move Moving App off Linear?")
-
-      view |> element("#confirm-move") |> render_click()
-
-      refute has_element?(view, "#move-dialog")
-      assert has_element?(view, "#project-moving-#{project_id}", "Moving to Rail")
-      refute has_element?(view, "#move-project-#{project_id}")
-      assert has_element?(other_tab, "#project-moving-#{project_id}", "Moving to Rail")
-      refute has_element?(other_tab, "#move-project-#{project_id}")
-
-      # The other tab's click, sent before it heard, starts no second move.
-      render_click(other_tab, "confirm_move", %{"project_id" => project_id})
-      assert [%Oban.Job{}] = Repo.all(from(j in Oban.Job, where: fragment("?->>'project_id'", j.args) == ^project_id))
-
-      Repo.update_all(from(p in Project, where: p.id == ^project_id), set: [tracker: :local])
-      Phoenix.PubSub.broadcast(Rail.PubSub, "projects", {:project_changed, project_id})
-
-      for tab <- [view, other_tab] do
-        assert has_element?(tab, "#project-team-key-#{project_id}", "(Rail)")
-        refute has_element?(tab, "#project-moving-#{project_id}")
-        refute has_element?(tab, "#move-project-#{project_id}")
-      end
-    end
-
-    test "a move copying files counts them on its row as each one settles", %{
-      admin_conn: conn,
-      move_project_id: project_id
-    } do
-      {:ok, %Oban.Job{id: job_id}} = Oban.insert(MoveToLocalTracker.new(%{project_id: project_id}))
-      Repo.update_all(from(j in Oban.Job, where: j.id == ^job_id), set: [state: "completed"])
-
-      copies =
-        for n <- 1..2 do
-          Repo.insert!(%LinearFileCopy{
-            project_id: project_id,
-            issue_external_id: "lin_#{n}",
-            issue_id: "iss_move_#{n}",
-            url: "https://uploads.linear.app/org/#{n}/shot.png"
-          })
-        end
-
-      for copy <- copies, do: Oban.insert!(CopyLinearFile.new_copy(copy))
-
-      {:ok, view, _html} = live(conn, ~p"/settings/projects")
-      assert has_element?(view, "#project-moving-#{project_id}", "Moving to Rail · 0 of 2 files copied")
-
-      Repo.update_all(from(c in LinearFileCopy, where: c.id == ^hd(copies).id), set: [state: :copied])
-      CopyLinearFile.broadcast_progress("prj_elsewhere")
-      CopyLinearFile.broadcast_progress(project_id)
-
-      assert has_element?(view, "#project-moving-#{project_id}", "Moving to Rail · 1 of 2 files copied")
-    end
-
-    test "a stopped move says why under the row, after a reload too, and Try again starts it again", %{
-      admin_conn: conn,
-      move_project_id: project_id
-    } do
-      {:ok, %Oban.Job{id: job_id}} = Oban.insert(MoveToLocalTracker.new(%{project_id: project_id}))
-
-      Repo.update_all(from(j in Oban.Job, where: j.id == ^job_id),
-        set: [
-          state: "discarded",
-          meta: %{"failure" => "Linear answered 502 while reading comments, so nothing was written."}
-        ]
-      )
-
-      {:ok, view, _html} = live(conn, ~p"/settings/projects")
-
-      assert has_element?(
-               view,
-               "#project-move-stopped-#{project_id}[role=alert]",
-               "The move stopped. Moving App is still on Linear, unchanged."
-             )
-
-      assert has_element?(
-               view,
-               "#project-move-stopped-#{project_id}",
-               "Linear answered 502 while reading comments, so nothing was written."
-             )
-
-      refute has_element?(view, "#move-project-#{project_id}")
-
-      view |> element("#retry-move-#{project_id}") |> render_click()
-
-      refute has_element?(view, "#project-move-stopped-#{project_id}")
-      assert has_element?(view, "#project-moving-#{project_id}")
-
-      assert [%Oban.Job{id: ^job_id}, %Oban.Job{state: "available"}] =
-               Repo.all(from(j in Oban.Job, where: fragment("?->>'project_id'", j.args) == ^project_id, order_by: j.id))
-    end
-
-    test "a project another tab already moved says so in the dialog", %{
-      admin_conn: conn,
-      move_project_id: project_id
-    } do
-      {:ok, view, _html} = live(conn, ~p"/settings/projects")
-      view |> element("#move-project-#{project_id}") |> render_click()
-      Repo.update_all(from(p in Project, where: p.id == ^project_id), set: [tracker: :local])
-
-      view |> element("#confirm-move") |> render_click()
-
-      assert has_element?(view, "#move-error", "Moving App is no longer on Linear. Another tab already moved it.")
-      assert [] = Repo.all(from(j in Oban.Job, where: fragment("?->>'project_id'", j.args) == ^project_id))
-    end
-
-    test "Cancel and Escape close the dialog and start nothing", %{admin_conn: conn, move_project_id: project_id} do
-      {:ok, view, _html} = live(conn, ~p"/settings/projects")
-
-      view |> element("#move-project-#{project_id}") |> render_click()
-      view |> element("#cancel-move") |> render_click()
-      refute has_element?(view, "#move-dialog")
-
-      view |> element("#move-project-#{project_id}") |> render_click()
-      render_keydown(view, "close_move", %{"key" => "Escape"})
-      refute has_element?(view, "#move-dialog")
-
-      assert has_element?(view, "#move-project-#{project_id}")
-      assert [] = Repo.all(from(j in Oban.Job, where: fragment("?->>'project_id'", j.args) == ^project_id))
     end
   end
 end

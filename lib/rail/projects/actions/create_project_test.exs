@@ -3,7 +3,6 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
 
   alias Rail.Issues
   alias Rail.Projects
-  alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Scope
 
@@ -41,16 +40,15 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
              Projects.create_project(scope, attrs)
   end
 
-  test "a project Rail tracks itself saves without a Linear workspace, and keeps its tracker once it has issues" do
+  test "a project saves with its key, which is fixed once it has issues" do
     key = "Trk#{System.unique_integer([:positive])}"
 
-    # The default Req adapter raises on any request, so Linear is never asked about the key.
-    assert {:ok, %Project{tracker: :local, key: ^key, linear_workspace_id: nil, linear_team_id: nil} = project} =
+    # The default Req adapter raises on any request, so nothing outside Rail is asked about the key.
+    assert {:ok, %Project{key: ^key} = project} =
              Projects.create_project(Scope.for_system(), %{
                name: "Rail-tracked",
                github_repo: "example/#{key}",
                github_installation_id: 1,
-               tracker: :local,
                key: key,
                default_branch: "main",
                clone_path: "/tmp/#{key}"
@@ -58,8 +56,8 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
 
     {:ok, _issue} = Issues.create_issue(Scope.for_system(), project, %{title: "First"})
 
-    assert {:error, changeset} = Projects.update_project(Scope.for_system(), project, %{tracker: :github})
-    assert %{tracker: ["cannot change once the project has issues"]} = errors_on(changeset)
+    assert {:error, changeset} = Projects.update_project(Scope.for_system(), project, %{key: "#{key}x"})
+    assert %{key: ["cannot change once the project has issues"]} = errors_on(changeset)
   end
 
   test "returns validation error changeset for missing required fields" do
@@ -74,50 +72,6 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
              key: ["can't be blank"],
              clone_path: ["can't be blank"]
            } = errors_on(changeset)
-  end
-
-  test "projects link to a saved Linear workspace by id, and an unknown id is an error on it" do
-    scope = Scope.for_user(%{admin: true})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_api_linked"]
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_linked"}]}}})
-    end)
-
-    {:ok, %LinearWorkspace{id: workspace_id}} =
-      Projects.create_linear_workspace(scope, %{
-        name: "Linked Workspace",
-        external_id: "lin_org_linked",
-        token: "lin_api_linked",
-        webhook_secret: "whsec_linked"
-      })
-
-    attrs = %{
-      name: "Linked Project",
-      github_repo: "example/linked-#{System.unique_integer([:positive])}",
-      github_installation_id: 12_346,
-      key: "LNK",
-      default_branch: "main",
-      clone_path: "/tmp/linked"
-    }
-
-    assert {:ok,
-            %Project{
-              linear_team_id: "lin_team_linked",
-              linear_workspace: %LinearWorkspace{id: ^workspace_id}
-            }} = Projects.create_project(scope, Map.put(attrs, :linear_workspace_id, workspace_id))
-
-    assert {:error, changeset} =
-             Projects.create_project(
-               scope,
-               Map.put(
-                 %{attrs | github_repo: "example/unlinked", key: "UNLCP"},
-                 :linear_workspace_id,
-                 "lw_missing"
-               )
-             )
-
-    assert %{linear_workspace_id: ["does not exist"]} = errors_on(changeset)
   end
 
   test "rejects a clone_path that is not a git repository" do

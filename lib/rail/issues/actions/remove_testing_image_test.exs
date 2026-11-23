@@ -14,7 +14,6 @@ defmodule Rail.Issues.Actions.RemoveTestingImageTest do
         name: "Pictures",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"

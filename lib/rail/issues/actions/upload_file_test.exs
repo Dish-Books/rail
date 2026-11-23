@@ -5,7 +5,6 @@ defmodule Rail.Issues.Actions.UploadFileTest do
   alias Rail.Issues.Clients.R2
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
-  alias Rail.Repo
 
   setup {Req.Test, :verify_on_exit!}
 
@@ -14,10 +13,9 @@ defmodule Rail.Issues.Actions.UploadFileTest do
 
     {:ok, local} =
       Projects.create_project(system_scope(), %{
-        name: "Rail-tracked",
+        name: "Tracked here",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -90,21 +88,6 @@ defmodule Rail.Issues.Actions.UploadFileTest do
     assert {:error, :not_accepted} = Issues.upload_file(scope, issue, "shot.html", "<script>alert(1)</script>")
     assert {:error, :not_accepted} = Issues.upload_file(scope, issue, "shot.svg", "<svg/>")
     assert {:error, :not_accepted} = Issues.upload_file(scope, issue, "notes.docx", "PK")
-  end
-
-  test "an issue Linear holds takes no uploads here", %{project: project} do
-    linear =
-      %Issue{}
-      |> Issue.tracker_changeset(%{
-        project_id: project.id,
-        external_id: "lin_image_1",
-        identifier: "IMG-1",
-        title: "In Linear",
-        state: :todo
-      })
-      |> Repo.insert!()
-
-    assert {:error, :unsupported} = Issues.upload_file(system_scope(), linear, "shot.png", "PNG_BYTES")
   end
 
   test "someone who cannot open the project stores nothing", %{issue: issue} do

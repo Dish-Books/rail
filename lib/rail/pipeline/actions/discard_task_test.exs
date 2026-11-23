@@ -40,11 +40,9 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project_id,
-        external_id: "lin_discard_1",
         identifier: "DSC-1",
         title: "Discard me",
         state: :in_review,
-        state_name: "In Review",
         branch_name: "dsc-1-discard-me"
       })
       |> Repo.insert!()
@@ -194,7 +192,7 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
            )
 
     refute File.exists?(task.scratch_path)
-    assert %Issue{state: :todo, state_name: nil} = Repo.get!(Issue, issue_id)
+    assert %Issue{state: :todo} = Repo.get!(Issue, issue_id)
     assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id})
 
     {:ok, %Task{id: new_id, worktree_name: ^branch}} = Pipeline.create_task(issue, :plan)
@@ -261,7 +259,7 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
              Pipeline.discard_task(scope, task)
 
     assert %Task{cleaned_up_at: nil} = Repo.reload!(task)
-    assert %Issue{state: :in_review, state_name: "In Review"} = Repo.get!(Issue, issue_id)
+    assert %Issue{state: :in_review} = Repo.get!(Issue, issue_id)
     assert %Run{} = Repo.get(Run, run_id)
     refute_enqueued(worker: SyncIssue)
   end
@@ -295,17 +293,17 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
     assert Repo.get(Task, task.id) == nil
   end
 
-  test "a finished ticket keeps its status, nothing is sent to the tracker and its page is told", %{
+  test "a finished ticket keeps its status and its page is told", %{
     scope: scope,
     task: task,
     issue: issue
   } do
-    %Issue{id: issue_id} = issue |> Ecto.Changeset.change(state: :canceled, state_name: "Canceled") |> Repo.update!()
+    %Issue{id: issue_id} = issue |> Ecto.Changeset.change(state: :canceled) |> Repo.update!()
     Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
 
     assert {:ok, %Task{}} = Pipeline.discard_task(scope, task)
     assert Repo.get(Task, task.id) == nil
-    assert %Issue{state: :canceled, state_name: "Canceled"} = Repo.get!(Issue, issue_id)
+    assert %Issue{state: :canceled} = Repo.get!(Issue, issue_id)
     assert_receive {:issue_changed, ^issue_id}
     refute_enqueued(worker: SyncIssue)
   end
@@ -408,7 +406,6 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
         %Issue{}
         |> Issue.tracker_changeset(%{
           project_id: issue.project_id,
-          external_id: "lin_discard_parent",
           identifier: "DSC-2",
           title: "Split",
           state: :in_progress

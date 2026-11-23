@@ -49,7 +49,7 @@ defmodule Rail.Pipeline.Workers.AdvanceSplit do
     Pipeline.list_tasks(parent_task_id: id, include_cleaned_up: true, preload: [:issue, :runs])
   end
 
-  # A child has merged once Rail merged it from Finalize or Linear completed its issue, whichever is first.
+  # A child has merged once Rail merged it from Finalize or its issue completed, whichever is first.
   defp merged(children) do
     for %Task{issue: issue, split_position: position} = child <- children,
         child.merged_at != nil or issue.completed_at != nil,
@@ -59,7 +59,7 @@ defmodule Rail.Pipeline.Workers.AdvanceSplit do
 
   defp settled(children), do: MapSet.union(merged(children), canceled(children))
 
-  # A child canceled in Linear will never merge, so it is no reason for its parent to stay open.
+  # A canceled child will never merge, so it is no reason for its parent to stay open.
   defp canceled(children) do
     for %Task{issue: issue, split_position: position} = child <- children,
         child.merged_at == nil and issue.completed_at == nil and issue.state in [:canceled, :duplicate],

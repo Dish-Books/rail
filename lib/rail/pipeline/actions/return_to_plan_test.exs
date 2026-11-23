@@ -43,11 +43,9 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project.id,
-        external_id: "lin_return_1",
         identifier: "RTP-1",
         title: "Return me",
         state: :in_review,
-        state_name: "In Review",
         branch_name: "rtp-1-return-me"
       })
       |> Repo.insert!()
@@ -225,8 +223,8 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
     assert task.scratch_path |> File.ls!() |> Enum.reject(&(&1 == "streams")) == ["design"]
     assert File.read!(Path.join([task.scratch_path, "design", "picked"])) == "rows"
 
-    assert %Issue{state: :in_progress, state_name: nil} = Repo.get!(Issue, issue_id)
-    assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id, fields: ["state", "state_name"]})
+    assert %Issue{state: :in_progress} = Repo.get!(Issue, issue_id)
+    assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id})
   end
 
   test "keeps the run, file and comments of a custom stage before Plan, and erases one after it", %{
@@ -380,7 +378,6 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
         %Issue{}
         |> Issue.tracker_changeset(%{
           project_id: issue.project_id,
-          external_id: "lin_return_parent",
           identifier: "RTP-2",
           title: "Split",
           state: :in_progress

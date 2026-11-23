@@ -14,7 +14,6 @@ defmodule Rail.Issues.Actions.SetBlockersTest do
         name: "Blocked here",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -79,7 +78,6 @@ defmodule Rail.Issues.Actions.SetBlockersTest do
         name: "Blocked elsewhere",
         github_repo: "example/#{key}",
         github_installation_id: 1,
-        tracker: :local,
         key: key,
         default_branch: "main",
         clone_path: "/tmp/#{key}"
@@ -90,22 +88,7 @@ defmodule Rail.Issues.Actions.SetBlockersTest do
     assert {:error, :not_found} = Issues.set_blockers(scope, issue, [outsider])
   end
 
-  test "another tracker's ticket is unsupported, and a project the scope cannot open is not found", %{
-    project: linear,
-    issues: [issue | _others]
-  } do
-    linear_issue =
-      %Issue{}
-      |> Issue.tracker_changeset(%{
-        project_id: linear.id,
-        external_id: "lin_sbl",
-        identifier: "TST-9301",
-        title: "Linear",
-        state: :todo
-      })
-      |> Repo.insert!()
-
-    assert {:error, :unsupported} = Issues.set_blockers(system_scope(), linear_issue, [])
+  test "a project the scope cannot open is not found", %{issues: [issue | _others]} do
     assert {:error, :not_found} = Issues.set_blockers(user_scope(project_ids: []), issue, [])
   end
 end

@@ -10,16 +10,16 @@ defmodule Rail.Issues.Actions.SetBlockers do
   alias Rail.Scope
 
   @doc """
-  Makes the tickets blocking a Rail-tracked `issue` exactly `blockers`, issues of its project: unblocks what is no longer
+  Makes the tickets blocking `issue` exactly `blockers`, issues of its project: unblocks what is no longer
   listed, then blocks what is new. A listed ticket this one already blocks is refused before anything is written, as
   `{:error, {:already_blocks, identifiers}}`, since `Rail.Issues.block_issue/3` leaves a reversed pair as it is, and a
-  list naming the issue itself as `{:error, :blocks_itself}`. Returns `{:ok, issue}`, `{:error, :unsupported}` on another tracker, or `{:error, :not_found}`.
+  list naming the issue itself as `{:error, :blocks_itself}`. Returns `{:ok, issue}` or `{:error, :not_found}`.
   """
   def set_blockers(%Scope{} = scope, %Issue{project_id: project_id} = issue, blockers) when is_list(blockers) do
-    cond do
-      not Scope.can_access_project?(scope, project_id) -> {:error, :not_found}
-      issue.tracker != :local -> {:error, :unsupported}
-      true -> replace(scope, issue, Enum.uniq_by(blockers, & &1.id))
+    if Scope.can_access_project?(scope, project_id) do
+      replace(scope, issue, Enum.uniq_by(blockers, & &1.id))
+    else
+      {:error, :not_found}
     end
   end
 

@@ -31,7 +31,7 @@ defmodule Rail.Pipeline.Actions.SaveDemo do
       write_scratch_file(Path.join([task.scratch_path, "demo", "#{identifier}.json"]), Jason.encode!(body, pretty: true))
       directory = Tools.stop_browser_recording(task)
 
-      # The encode publishes to Linear, so a take already encoded gets a new write-up and nothing else; with
+      # The encode publishes to the issue, so a take already encoded gets a new write-up and nothing else; with
       # no video yet the encode still runs, to say why there is none.
       if is_binary(directory) or not Task.demo_recorded?(task),
         do: {:ok, _job} = %{task_id: task.id} |> EncodeDemo.new() |> Oban.insert()

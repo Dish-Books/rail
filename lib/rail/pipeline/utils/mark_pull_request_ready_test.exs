@@ -9,17 +9,6 @@ defmodule Rail.Pipeline.Utils.MarkPullRequestReadyTest do
   alias Rail.Pipeline.Schemas.Task
 
   setup %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_mprr_1", "identifier" => "MPR-1", "title" => "Mark Ready"}
-          }
-        }
-      })
-    end)
-
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Mark Ready"})
     {:ok, task} = Pipeline.create_task(issue, :review)
     {:ok, task} = Pipeline.update_task(task, %{pr_number: 42, pr_is_draft: true})

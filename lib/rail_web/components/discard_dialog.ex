@@ -53,7 +53,7 @@ defmodule RailWeb.Components.DiscardDialog do
       |> assign(:choices, for(choice <- @choices, do: Map.put(choice, :checked, choice.value == assigns.choice)))
       |> assign(:running, running)
       |> assign(:runs_heading, runs_heading)
-      |> assign(:status, issue.state_name || Issue.state_label(issue.state))
+      |> assign(:status, Issue.state_label(issue.state))
       |> assign(:finished, Issue.finished_state?(issue.state))
       |> assign(:confirm_label, confirm_label(assigns))
 
