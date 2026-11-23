@@ -140,7 +140,7 @@ defmodule RailWeb.TriageLive do
                 variant="primary"
                 size="sm"
                 phx-click="create_forwarded"
-                phx-disable-with="Creating…"
+                data-no-repeat
                 id="create-forwarded-button"
               >
                 <.icon name="pi-check-bold" class="size-3.5" />Create {@create_count} {if @create_count ==

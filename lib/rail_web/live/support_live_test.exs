@@ -344,6 +344,7 @@ defmodule RailWeb.SupportLiveTest do
     refute has_element?(view, "#support-link-prompt")
     assert has_element?(view, "#support-send-hint", "Posts in Intercom as Dana W., then forwards 2 to triage.")
     refute has_element?(view, "#support-send-button[disabled]")
+    assert has_element?(view, "#support-send-button[data-no-repeat] .pi-paper-plane-tilt-bold")
   end
 
   test "Send posts the reply once as the person and forwards to triage, then waits for Mark done", %{
@@ -663,6 +664,9 @@ defmodule RailWeb.SupportLiveTest do
     assert has_element?(view, "#support-drafting")
     assert has_element?(view, ~s(#support-message-text[placeholder="Message Marta Kowalczyk in Intercom as Dana W."]))
     refute has_element?(view, "#support-message-text[disabled]")
+    # LiveView puts a phx-disable-with button back by its text alone, which drops the icon.
+    refute has_element?(view, "#support-message-send[phx-disable-with]")
+    assert has_element?(view, "#support-message-send .pi-paper-plane-tilt-bold")
 
     view |> form("#support-message-form", %{"support_message" => %{"text" => "One more thing"}}) |> render_change()
     send(view.pid, :reload)

@@ -68,7 +68,7 @@ defmodule RailWeb.Live.TaskActions do
         phx-click="retry"
         phx-value-run={@failed.id}
         phx-target={@myself}
-        phx-disable-with="Starting…"
+        data-no-repeat
         title={@failed.error}
       >
         <.icon name="pi-arrow-clockwise" class="size-4" />Retry {@failed.role.name}
@@ -80,7 +80,7 @@ defmodule RailWeb.Live.TaskActions do
         phx-click="retry"
         phx-value-run={@skipped.id}
         phx-target={@myself}
-        phx-disable-with="Starting…"
+        data-no-repeat
         title="This round changed only files nobody sees in the app, so QA did not run on it."
       >
         <.icon name="pi-play" class="size-4" />Run QA anyway
@@ -109,7 +109,7 @@ defmodule RailWeb.Live.TaskActions do
         id="task-send-plan"
         phx-click="send_plan"
         phx-target={@myself}
-        phx-disable-with="Sending…"
+        data-no-repeat
       >
         <.icon name="pi-paper-plane-tilt" class="size-4" />Send plan to lead
       </.button>
@@ -119,7 +119,7 @@ defmodule RailWeb.Live.TaskActions do
         id="task-start-plan"
         phx-click="start_plan"
         phx-target={@myself}
-        phx-disable-with="Starting…"
+        data-no-repeat
       >
         <.icon name="pi-play" class="size-4" />Start without approval
       </.button>
@@ -130,7 +130,7 @@ defmodule RailWeb.Live.TaskActions do
         variant="primary"
         phx-click="approve_plan"
         phx-target={@myself}
-        phx-disable-with="Approving…"
+        data-no-repeat
         disabled={@unsent_comments > 0}
         title={@unsent_comments > 0 && unsent(@unsent_comments)}
       >
@@ -154,7 +154,7 @@ defmodule RailWeb.Live.TaskActions do
         id="task-update"
         phx-click="update_branch"
         phx-target={@myself}
-        phx-disable-with="Updating…"
+        data-no-repeat
         title={"Merge #{@task.project.default_branch} in, as a round of its own"}
       >
         <.icon name="pi-arrows-clockwise" class="size-4" />Update
@@ -166,7 +166,7 @@ defmodule RailWeb.Live.TaskActions do
         variant="primary"
         phx-click="mark_ready"
         phx-target={@myself}
-        phx-disable-with="Marking…"
+        data-no-repeat
       >
         <.icon name="pi-flag" class="size-4" />Ready for review
       </.button>

@@ -241,7 +241,7 @@ defmodule RailWeb.Components.SupportDraft do
           <.button
             variant="primary"
             phx-click="send"
-            phx-disable-with="Sending…"
+            data-no-repeat
             id="support-send-button"
             disabled={@send_disabled}
           >

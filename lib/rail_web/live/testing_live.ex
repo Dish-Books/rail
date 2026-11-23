@@ -112,7 +112,7 @@ defmodule RailWeb.TestingLive do
                 id="testing-send-to-triage"
                 phx-click="send_to_triage"
                 phx-value-issue_id={@issue.id}
-                phx-disable-with="Sending..."
+                data-no-repeat
                 disabled={@notes_blank}
                 title={if @notes_blank, do: "Write testing notes to send this to triage"}
               >
@@ -123,7 +123,7 @@ defmodule RailWeb.TestingLive do
                 variant="success"
                 phx-click="mark_tested"
                 phx-value-issue_id={@issue.id}
-                phx-disable-with="Marking..."
+                data-no-repeat
               >
                 <.icon name="pi-check-bold" class="size-4" />Mark tested
               </.button>
