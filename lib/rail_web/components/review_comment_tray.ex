@@ -98,7 +98,7 @@ defmodule RailWeb.Components.ReviewCommentTray do
           id="send-review-tray"
           data-qa="send_review_tray"
           phx-click="send_review_tray"
-          phx-disable-with="Sending…"
+          data-no-repeat
           phx-target={@target}
           disabled={not @can_send}
           class="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white shadow-xs whitespace-nowrap hover:opacity-90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
@@ -111,7 +111,7 @@ defmodule RailWeb.Components.ReviewCommentTray do
           id="finish-review"
           data-qa="finish_review"
           phx-click="send_review_tray"
-          phx-disable-with="Finishing…"
+          data-no-repeat
           phx-target={@target}
           disabled={not @can_send}
           class="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white shadow-xs whitespace-nowrap hover:opacity-90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"

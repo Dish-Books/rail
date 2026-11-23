@@ -406,7 +406,6 @@ defmodule RailWeb.Settings.UsersLive do
             variant="primary"
             id="send-invite-button"
             data-qa="send_invite_button"
-            phx-disable-with="Inviting..."
             class="w-full"
           >
             <.icon name="pi-envelope-simple" class="h-3.5 w-3.5" /> Invite

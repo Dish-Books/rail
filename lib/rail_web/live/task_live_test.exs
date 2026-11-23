@@ -2866,7 +2866,10 @@ defmodule RailWeb.TaskLiveTest do
       save_plan.("table")
       send(view.pid, {:output_saved, task.id})
       _settled = render(view)
-      assert has_element?(view, "#task-approve-plan[phx-disable-with='Approving…']", "Approve plan")
+      # A double click approves once, and the button keeps its icon after the click is answered.
+      assert has_element?(view, "#task-approve-plan[data-no-repeat]", "Approve plan")
+      refute has_element?(view, "#task-approve-plan[phx-disable-with]")
+      assert has_element?(view, "#task-approve-plan .pi-check")
 
       Req.Test.expect(Rail.Linear, fn conn ->
         Req.Test.json(conn, %{
