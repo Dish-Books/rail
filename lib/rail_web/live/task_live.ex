@@ -102,7 +102,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:blockers_for, nil)
       |> assign(:assignees, [])
       |> assign(:assignee_query, "")
-      |> assign(:comment_nonce, 0)
+      |> assign(:comment_nonce, %{})
       |> assign(:subscribed_run_ids, MapSet.new())
       |> assign(:watched_browser, nil)
       |> assign(:review_browser, nil)

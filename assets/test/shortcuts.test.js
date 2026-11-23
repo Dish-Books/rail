@@ -4,16 +4,14 @@ import { formSubmitButton, modalOpen } from "../js/hooks/shortcuts.js";
 
 describe("formSubmitButton", () => {
   it("gives the submit button of the form the target belongs to", () => {
-    const button = { id: "slack-channels-submit" };
-    const target = {
-      form: { querySelector: (selector) => (selector === "button[type='submit']" ? button : null) }
-    };
+    const button = { id: "slack-channels-submit", type: "submit" };
+    const target = { form: { elements: [{ type: "text" }, { type: "button" }, button] } };
 
     assert.equal(formSubmitButton(target), button);
   });
 
   it("gives nothing when the form has no submit button", () => {
-    assert.equal(formSubmitButton({ form: { querySelector: () => null } }), null);
+    assert.equal(formSubmitButton({ form: { elements: [{ type: "text" }] } }), null);
   });
 
   it("gives nothing when the target is in no form", () => {

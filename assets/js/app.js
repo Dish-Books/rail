@@ -24,6 +24,7 @@ import { IssueTitle } from "./hooks/issue_title";
 import { JumpToLine } from "./hooks/jump_to_line";
 import { LocalResetTime } from "./hooks/local_reset_time";
 import { LocalTime } from "./hooks/local_time";
+import { MarkdownPaste } from "./hooks/markdown_paste";
 import { MenuKeys } from "./hooks/menu_keys";
 import { ScrollSelectedTab } from "./hooks/scroll_selected_tab";
 import { Shortcuts } from "./hooks/shortcuts";
@@ -65,6 +66,7 @@ const Hooks = {
   IssueTitle,
   ImagePaste,
   IssueDescription,
+  MarkdownPaste,
   TodosDrop,
   TodosOpen,
   StartFocus

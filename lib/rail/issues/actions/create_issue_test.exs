@@ -8,6 +8,7 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
   alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Projects
+  alias Rail.Repo
   alias Rail.Users
   alias Rail.Workflows.Schemas.Workflow
   alias Rail.Workflows.Schemas.WorkflowDefinition
@@ -27,6 +28,23 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
       })
 
     %{project: project, key: key}
+  end
+
+  test "an issue created with an id drawn first keeps it in its row and URL, and one without gets its own", %{
+    project: project
+  } do
+    drawn_id = UXID.generate!(prefix: "iss")
+    url = RailWeb.Endpoint.url() <> "/issues/" <> drawn_id
+
+    assert {:ok, %Issue{id: ^drawn_id, url: ^url}} =
+             Issues.create_issue(system_scope(), project, %{id: drawn_id, title: "Pasted into before saving"})
+
+    assert %Issue{id: ^drawn_id, url: ^url} = Repo.get!(Issue, drawn_id)
+
+    assert {:ok, %Issue{id: "iss_" <> _other = other_id}} =
+             Issues.create_issue(system_scope(), project, %{title: "Nothing pasted"})
+
+    refute other_id == drawn_id
   end
 
   test "numbers each issue one past the last, and names and branches it from that number", %{
