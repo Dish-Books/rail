@@ -25,7 +25,9 @@ defmodule RailWeb.Components.TriageTicket do
       |> assign(:show_kind_select, show_fields and not readonly)
       |> assign(:show_followup, is_struct(item.existing_issue, Issue))
       |> assign(:show_created, is_struct(item.created_issue, Issue))
-      |> assign(:show_commented, is_struct(item.followup_posted_at, DateTime) and is_struct(item.sent_at, DateTime))
+      # Send claims the follow-up just before the tracker call and gives it back if the call fails,
+      # so once it is set the comment is on the ticket, or about to be.
+      |> assign(:show_commented, is_struct(item.followup_posted_at, DateTime))
       |> assign(:show_ignore, not closed)
       |> assign(:ignored_label, if(show_fields, do: "Ignored · not created", else: "Ignored · not added"))
       |> assign(:verdict, Item.fitting_verdict(item))

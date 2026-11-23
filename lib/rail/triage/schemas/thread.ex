@@ -83,11 +83,12 @@ defmodule Rail.Triage.Schemas.Thread do
   end
 
   @doc """
-  The reply as the person types it. Line breaks are stored as `\\n`, as the agent writes them.
+  The reply as the person types it. Line breaks are stored as `\\n`, as the agent writes them, and an
+  emptied reply stays "" so its box stays on the page to write a new one.
   """
   def reply_changeset(thread, attrs) do
     thread
-    |> cast(attrs, [:reply_text])
+    |> cast(attrs, [:reply_text], empty_values: [])
     |> update_change(:reply_text, &if(is_binary(&1), do: String.replace(&1, "\r\n", "\n"), else: &1))
   end
 

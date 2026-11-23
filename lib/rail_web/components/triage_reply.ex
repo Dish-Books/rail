@@ -30,7 +30,8 @@ defmodule RailWeb.Components.TriageReply do
         thread.items == [] and is_nil(thread.reply_text) and not running and is_nil(thread.no_response_reason)
       )
       |> assign(:show_forwarded, forwarded)
-      |> assign(:show_reply, not forwarded and (posted or is_binary(thread.reply_text)))
+      # A reply a person emptied, or one the agent never drafted beside its tickets, still has a box to write in.
+      |> assign(:show_reply, not forwarded and (posted or is_binary(thread.reply_text) or thread.items != []))
 
     ~H"""
     <div id="triage-reply-panel" class="space-y-4">

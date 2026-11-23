@@ -16,12 +16,16 @@ defmodule RailWeb.Components.TriageSendBar do
     label = Thread.send_label(thread)
     unlinked = Thread.reply_draft?(thread) and not assigns.slack_linked
 
+    sent? =
+      is_struct(thread.reply_posted_at, DateTime) or Enum.any?(thread.items, &is_struct(&1.sent_at, DateTime))
+
     assigns =
       assigns
       |> assign(:send_label, label)
       |> assign(:send_disabled, running or unlinked)
       |> assign(:show_link_prompt, unlinked)
-      |> assign(:show_sent, is_nil(label) and not running and Enum.any?(thread.items, &is_struct(&1.sent_at, DateTime)))
+      |> assign(:show_sent, is_nil(label) and not running and sent?)
+      |> assign(:comes_back, comes_back(thread))
       |> assign(:show_dismiss, thread.status != :done)
       |> assign(:hint, calculate_hint(thread, label, running))
       |> assign(:sent_counts, calculate_sent_counts(thread))
@@ -57,10 +61,10 @@ defmodule RailWeb.Components.TriageSendBar do
         <.icon name="pi-check-circle-fill" class="size-3.5 shrink-0 text-emerald-500" />
         <span :if={@thread.reply_posted_at}>
           Sent by {name(@thread.reply_posted_by)} at
-          <.local_time id="triage-sent-at" at={@thread.reply_posted_at} /><span :if={@sent_counts}>: {@sent_counts}</span>. A new message in the thread brings it back.
+          <.local_time id="triage-sent-at" at={@thread.reply_posted_at} /><span :if={@sent_counts}>: {@sent_counts}</span>. {@comes_back}
         </span>
         <span :if={!@thread.reply_posted_at}>
-          Sent<span :if={@sent_counts}>: {@sent_counts}</span>. A new message in the thread brings it back.
+          Sent<span :if={@sent_counts}>: {@sent_counts}</span>. {@comes_back}
         </span>
       </p>
       <div :if={!@show_sent} class="flex flex-wrap items-center gap-3">
@@ -86,6 +90,13 @@ defmodule RailWeb.Components.TriageSendBar do
       </div>
     </div>
     """
+  end
+
+  # A forwarded thread has no Slack thread for a new message to arrive in; only the chat brings it back.
+  defp comes_back(%Thread{} = thread) do
+    if Thread.forwarded?(thread),
+      do: "Ask the agent in the chat to bring it back.",
+      else: "A new message in the thread brings it back."
   end
 
   defp calculate_hint(_thread, _label, true), do: "Send waits until the agent finishes."

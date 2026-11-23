@@ -36,7 +36,7 @@ defmodule Rail.Triage.Actions.UpdateTriageReplyTest do
 
     assert_received {:triage_changed, ^thread_id}
 
-    assert {:ok, %Thread{status: :done, reply_text: nil}} =
+    assert {:ok, %Thread{status: :done, reply_text: ""}} =
              Triage.update_triage_reply(scope, thread, %{"reply_text" => ""})
 
     assert {:ok, %Thread{status: :waiting}} = Triage.update_triage_reply(scope, thread, %{"reply_text" => "Back."})
@@ -50,6 +50,11 @@ defmodule Rail.Triage.Actions.UpdateTriageReplyTest do
 
     assert {:ok, %Thread{reply_text: "Thanks Priya."}} =
              Triage.update_triage_reply(scope, thread, %{"reply_text" => "Thanks Priya."})
+
+    # An empty box sends back "" for a thread with no reply.
+    Repo.update_all(from(t in Thread, where: t.id == ^thread_id), set: [reply_text: nil])
+    assert {:ok, %Thread{reply_text: nil}} = Triage.update_triage_reply(scope, thread, %{"reply_text" => ""})
+    assert %Thread{reply_text: nil} = Repo.get!(Thread, thread_id)
   end
 
   test "is refused while the agent works, once posted or dismissed, and outside the person's projects", %{

@@ -70,11 +70,11 @@ defmodule Rail.Triage.Schemas.ThreadTest do
     refute Thread.reply_draft?(%Thread{reply_text: "Hi", reply_posted_at: now})
   end
 
-  test "the reply is stored with the line breaks the agent writes" do
+  test "the reply is stored with the line breaks the agent writes, and an emptied one stays empty" do
     assert %{changes: %{reply_text: "Hi\n\nThanks"}} =
              Thread.reply_changeset(%Thread{}, %{"reply_text" => "Hi\r\n\r\nThanks"})
 
-    assert %{changes: %{reply_text: nil}} = Thread.reply_changeset(%Thread{reply_text: "Hi"}, %{"reply_text" => ""})
+    assert %{changes: %{reply_text: ""}} = Thread.reply_changeset(%Thread{reply_text: "Hi"}, %{"reply_text" => ""})
   end
 
   test "a Send holds the thread for two minutes at most" do

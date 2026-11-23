@@ -319,7 +319,7 @@ defmodule Rail.Triage.Actions.SendTriageReplyTest do
   } do
     {:ok, _cleared} = Triage.update_triage_reply(scope, thread, %{"reply_text" => ""})
 
-    assert {:ok, %Thread{status: :done, reply_text: nil, reply_posted_at: nil}} =
+    assert {:ok, %Thread{status: :done, reply_text: "", reply_posted_at: nil}} =
              Triage.send_triage_reply(scope, thread)
 
     assert 2 =

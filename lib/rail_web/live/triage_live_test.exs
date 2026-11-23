@@ -201,6 +201,30 @@ defmodule RailWeb.TriageLiveTest do
     assert has_element?(view, "#triage-refused", "That did not save.")
   end
 
+  test "clearing the reply keeps its box to write a new one, and a thread drafted with no reply has one", %{
+    conn: conn,
+    workspace: workspace,
+    channel: channel,
+    thread: %Thread{id: thread_id}
+  } do
+    {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}")
+
+    view |> form("#triage-reply-form", %{"thread" => %{"reply_text" => ""}}) |> render_change()
+    assert has_element?(view, "#triage-reply-form")
+    refute has_element?(view, "#triage-send-button", "Send reply")
+
+    view |> form("#triage-reply-form", %{"thread" => %{"reply_text" => "Both filed, thanks."}}) |> render_change()
+    assert has_element?(view, "#triage-send-button", "Send reply")
+
+    {:ok, quiet} =
+      Triage.handle_slack_event(workspace, slack_message_event(channel, %{"ts" => "1790000600.000400"}))
+
+    triage_with(quiet, triage_result([triage_bug()], %{"reply" => nil}))
+    {:ok, other, _html} = live(conn, ~p"/triage/#{quiet.id}")
+    assert has_element?(other, "#triage-reply-form")
+    assert has_element?(other, "#triage-send-button", "Create 1 ticket")
+  end
+
   test "Ignore greys a card, keeps it, and takes it out of the button; switching it off counts it again", %{
     conn: conn,
     thread: %Thread{items: [_bug, request, covered]}
@@ -357,7 +381,7 @@ defmodule RailWeb.TriageLiveTest do
   test "a Send that stops partway says so on every tab, and Send again does only what is left", %{
     conn: conn,
     existing: %{id: existing_id},
-    thread: %Thread{id: thread_id, items: [bug, request, _covered]}
+    thread: %Thread{id: thread_id, items: [bug, request, covered]}
   } do
     {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}")
     {:ok, other_tab, _html} = live(conn, ~p"/triage/#{thread_id}")
@@ -376,6 +400,7 @@ defmodule RailWeb.TriageLiveTest do
       assert has_element?(tab, "#triage-send-error", "Send stopped partway. Could not create item 2")
       assert has_element?(tab, "#triage-ticket-created-#{bug.id}")
       assert has_element?(tab, "#triage-send-button", "Send reply & create 1 ticket")
+      assert has_element?(tab, "#triage-ticket-commented-#{covered.id}", "Comment added to")
     end
 
     refute has_element?(view, "#triage-refused")
@@ -412,7 +437,13 @@ defmodule RailWeb.TriageLiveTest do
     view |> form("#triage-chat-form", %{"chat_message" => %{"text" => "Shorter."}}) |> render_submit()
     assert has_element?(view, "#triage-refused", "This thread is being sent.")
 
+    send(view.pid, {:triage_changed, thread_id})
+    assert has_element?(view, "#triage-refused", "This thread is being sent.")
+
     Repo.update_all(from(t in Thread, where: t.id == ^thread_id), set: [send_started_at: nil])
+    send(view.pid, {:triage_changed, thread_id})
+    refute has_element?(view, "#triage-refused")
+
     Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "not_in_channel"}))
     view |> element("#triage-send-button") |> render_click()
 
@@ -445,6 +476,29 @@ defmodule RailWeb.TriageLiveTest do
     {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}?filter=done")
     assert has_element?(view, "#triage-reply-posted", "Posted by someone at")
     assert has_element?(view, "#triage-sent", "Sent by someone at")
+  end
+
+  test "a thread that only needed a reply says who sent it once it is posted", %{
+    conn: conn,
+    workspace: workspace,
+    channel: channel
+  } do
+    {:ok, thread} =
+      Triage.handle_slack_event(
+        workspace,
+        slack_message_event(channel, %{"ts" => "1790000600.000500", "text" => "How do I re-run a stage?"})
+      )
+
+    triage_with(thread, triage_result([], %{"reply" => "Open the task and press Retry."}))
+    {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+    Req.Test.allow(Rail.Slack, self(), view.pid)
+    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000600.000600"}))
+
+    view |> element("#triage-send-button", "Send reply") |> render_click()
+
+    assert has_element?(view, "#triage-sent", "Sent by Michael at")
+    assert has_element?(view, "#triage-sent", "A new message in the thread brings it back.")
+    refute has_element?(view, "#triage-send-hint")
   end
 
   test "a person who has not linked Slack is told how to, and cannot send the reply", %{
@@ -1099,6 +1153,8 @@ defmodule RailWeb.TriageLiveTest do
 
       refute has_element?(view, "#triage-send-button")
       assert has_element?(view, "#triage-sent", "Sent: 2 tickets created.")
+      assert has_element?(view, "#triage-sent", "Ask the agent in the chat to bring it back.")
+      refute has_element?(view, "#triage-sent", "A new message")
     end
 
     test "a person who lost the project sees the thread go when they send", %{

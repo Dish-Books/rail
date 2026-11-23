@@ -20,8 +20,8 @@ defmodule Rail.Triage.Actions.UpdateTriageReply do
 
         cond do
           not Scope.can_access_project?(scope, thread.project_id) -> Repo.rollback(:not_found)
-          # A reconnect's form recovery sends back the reply as it stands.
-          changeset.changes == %{} -> thread
+          # A reconnect's form recovery sends back the reply as it stands, "" where the box is empty.
+          same_reply?(thread, changeset) -> thread
           Thread.forwarded?(thread) -> Repo.rollback(:forwarded)
           is_struct(thread.dismissed_at, DateTime) -> Repo.rollback(:dismissed)
           thread.status == :triaging -> Repo.rollback(:triaging)
@@ -33,4 +33,7 @@ defmodule Rail.Triage.Actions.UpdateTriageReply do
 
     with {:ok, _thread} <- result, do: settle_thread(%Thread{id: id})
   end
+
+  defp same_reply?(%Thread{reply_text: stored}, changeset),
+    do: (stored || "") == (Ecto.Changeset.get_field(changeset, :reply_text) || "")
 end

@@ -244,7 +244,17 @@ defmodule RailWeb.TriageLive do
 
   def handle_event("close_image", _params, socket), do: {:noreply, assign(socket, :open_image, nil)}
 
-  def handle_info({:triage_changed, _thread_id}, socket), do: {:noreply, load(socket)}
+  # A refusal goes once what it described changed, such as another tab's Send ending or a pass finishing.
+  def handle_info({:triage_changed, thread_id}, socket) do
+    before = socket.assigns.thread
+    socket = load(socket)
+    now = socket.assigns.thread
+
+    if match?(%Thread{id: ^thread_id}, before) and match?(%Thread{id: ^thread_id}, now) and
+         refusal_basis(before) != refusal_basis(now),
+       do: {:noreply, assign(socket, :error, nil)},
+       else: {:noreply, socket}
+  end
 
   # A project's name and its channels' switches show on the open thread.
   def handle_info({:project_changed, _project_id}, socket), do: {:noreply, load(socket)}
@@ -265,6 +275,8 @@ defmodule RailWeb.TriageLive do
 
   defp result(socket, {:ok, _record}), do: socket |> assign(:error, nil) |> load()
   defp result(socket, {:error, reason}), do: socket |> assign(:error, error_message(reason)) |> load()
+
+  defp refusal_basis(%Thread{} = thread), do: {thread.status, Thread.sending?(thread)}
 
   defp load(socket) do
     scope = socket.assigns.current_scope
