@@ -1,8 +1,8 @@
 defmodule Rail.Triage do
   @moduledoc """
   Public context for triage: Slack threads in a project's connected channels,
-  read by an agent that verifies each claim against the code and proposes a
-  reply and an issue for a person to accept.
+  read by an agent that verifies each claim against the code and drafts one
+  reply, tickets and follow-ups for a person to send.
 
   It owns the Socket Mode connections events arrive on, one per workspace.
   """
@@ -36,16 +36,15 @@ defmodule Rail.Triage do
   defdelegate get_slack_socket_status(workspace), to: Actions.GetSlackSocketStatus
   defdelegate triage_thread(thread), to: Actions.TriageThread
   defdelegate read_triage(thread), to: Actions.ReadTriage
-  defdelegate sync_triage(thread, result, item_keys_in_scope), to: Actions.SyncTriage
+  defdelegate sync_triage(thread, result, started_at), to: Actions.SyncTriage
   defdelegate get_triage_thread(scope, id), to: Actions.GetTriageThread
   defdelegate get_triage_image(scope, message_id, file_id), to: Actions.GetTriageImage
-  defdelegate create_triage_issue(scope, item, attrs), to: Actions.CreateTriageIssue
-  defdelegate post_triage_reply(scope, item, attrs), to: Actions.PostTriageReply
-  defdelegate add_triage_note(scope, item, attrs), to: Actions.AddTriageNote
+  defdelegate send_triage_chat(scope, thread, attrs), to: Actions.SendTriageChat
+  defdelegate update_triage_reply(scope, thread, attrs), to: Actions.UpdateTriageReply
+  defdelegate update_triage_item(scope, item, attrs), to: Actions.UpdateTriageItem
+  defdelegate send_triage_reply(scope, thread), to: Actions.SendTriageReply
   defdelegate dismiss_triage_thread(scope, thread), to: Actions.DismissTriageThread
-  defdelegate retriage_thread(scope, thread), to: Actions.RetriageThread
   defdelegate list_triage_threads(opts \\ []), to: Actions.ListTriageThreads
   defdelegate count_triage_threads(opts), to: Actions.CountTriageThreads
   defdelegate create_forwarded_thread(scope, conversation, items), to: Actions.CreateForwardedThread
-  defdelegate create_forwarded_issues(scope, thread, drafts), to: Actions.CreateForwardedIssues
 end

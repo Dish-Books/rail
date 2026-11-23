@@ -1,20 +1,22 @@
 defmodule RailWeb.TriageLiveTest do
   use RailWeb.ConnCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   import Ecto.Query
   import Phoenix.LiveViewTest
 
   alias Rail.Git
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Repo
   alias Rail.Support
   alias Rail.Support.Schemas.Conversation
   alias Rail.Tools
   alias Rail.Triage
+  alias Rail.Triage.Schemas.ChatMessage
   alias Rail.Triage.Schemas.Item
   alias Rail.Triage.Schemas.Thread
   alias Rail.Users
@@ -27,14 +29,17 @@ defmodule RailWeb.TriageLiveTest do
     stub(Git, :checkout_detached_worktree, fn _project, worktree_path -> {:ok, worktree_path} end)
     stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
 
-    %{project: project} = triage_project()
+    %{project: project} = triage_project(tracker: :local)
     %{workspace: workspace, channel: channel} = connect_slack_channel(project, users: %{"U_PRIYA" => "Priya Natarajan"})
+
+    {:ok, %Issue{identifier: tracked} = existing} =
+      Issues.create_issue(system_scope(), project, %{title: "Ruling a finding scrolls the list to the top"})
 
     {:ok, thread} =
       Triage.handle_slack_event(
         workspace,
         slack_message_event(channel, %{
-          "text" => "Approved BILL-88 and it sits at Design. Could Up next show wait times?"
+          "text" => "Approved BILL-88 and it sits at Design. Could Up next show wait times? And the list jumps."
         })
       )
 
@@ -44,27 +49,41 @@ defmodule RailWeb.TriageLiveTest do
       "title" => "Wait time on every Up next row",
       "verdict" => "partly_built",
       "summary" => "Ordered by wait, but rows show none.",
-      "evidence" => [
-        %{"file" => "lib/overview.ex", "excerpt" => "Up next is ordered longest-waiting first.", "holds" => true},
-        %{"file" => "lib/up_next.ex", "lines" => "78", "excerpt" => "Rows show no wait time.", "holds" => false}
-      ],
-      "reply" => "Good call, Priya."
+      "evidence" => [%{"file" => "lib/up_next.ex", "lines" => "78", "excerpt" => "Rows show no wait.", "holds" => false}],
+      "issue" => %{"title" => "Every Up next row shows its wait", "priority" => "low", "estimate" => 2}
+    }
+
+    covered = %{
+      "key" => "list-jumps",
+      "kind" => "bug",
+      "title" => "The findings list jumps on ruling",
+      "verdict" => "confirmed",
+      "existing_issue" => tracked,
+      "followup" => "Priya hit it too, on BILL-88."
     }
 
     thread =
-      triage_with(thread, %{
-        "title" => "Tasks stuck at Design, wait times in Up next",
-        "messages" => [
-          %{
-            "ts" => thread.external_id,
-            "items" => [
-              %{"key" => "stuck-at-design", "change" => "raised", "passage" => "Approved BILL-88 and it sits at Design."},
-              %{"key" => "wait-times", "change" => "raised", "passage" => "Could Up next show wait times?"}
-            ]
-          }
-        ],
-        "items" => [triage_bug(), request]
-      })
+      triage_with(
+        thread,
+        triage_result([triage_bug(), request, covered], %{
+          "title" => "Tasks stuck at Design, wait times in Up next",
+          "message" => "Three items. One is already tracked.",
+          "reply" => "Thanks Priya, we reproduced the first and filed both.",
+          "messages" => [
+            %{
+              "ts" => thread.external_id,
+              "items" => [
+                %{
+                  "key" => "stuck-at-design",
+                  "change" => "raised",
+                  "passage" => "Approved BILL-88 and it sits at Design."
+                },
+                %{"key" => "wait-times", "change" => "raised", "passage" => "Could Up next show wait times?"}
+              ]
+            }
+          ]
+        })
+      )
 
     user = slack_user(workspace.external_id, "Michael")
     {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
@@ -75,473 +94,462 @@ defmodule RailWeb.TriageLiveTest do
       project: project,
       workspace: workspace,
       channel: channel,
-      thread: thread
+      thread: thread,
+      existing: existing
     }
   end
 
-  test "shows the queue, the thread with its passages marked, and every item with its drafts", %{
+  test "shows one reply, a card per item, the chat, and Send naming each part, with no evidence or assumptions", %{
     conn: conn,
-    thread: %Thread{id: thread_id, items: [bug, request]}
+    project: project,
+    existing: existing,
+    thread: %Thread{id: thread_id, items: [bug, request, covered]}
   } do
-    {:ok, view, _html} = live(conn, ~p"/triage")
+    {:ok, view, html} = live(conn, ~p"/triage")
 
     assert has_element?(view, "#triage-filter-waiting", "Waiting · 1")
     assert has_element?(view, "#triage-channels", "#rail-feedback")
     assert has_element?(view, "#triage-row-#{thread_id}", "Tasks stuck at Design")
-    assert has_element?(view, "#triage-row-#{thread_id}", "1 bug")
-    assert has_element?(view, "#triage-row-#{thread_id}", "1 request")
-    assert has_element?(view, "#triage-row-#{thread_id}", "3 to accept")
+    assert has_element?(view, "#triage-row-#{thread_id}", "4 to accept")
     assert has_element?(view, "#triage-badge", "1")
 
-    assert has_element?(view, "#triage-thread mark", "Approved BILL-88 and it sits at Design.")
-    assert has_element?(view, "#triage-thread mark", "Could Up next show wait times?")
-    assert has_element?(view, "#triage-thread", "Priya Natarajan")
-    assert has_element?(view, "#triage-thread time[phx-hook='LocalTime'][data-format='date-time']")
+    assert has_element?(view, "#triage-source", "#rail-feedback · Priya Natarajan")
+    assert has_element?(view, "#triage-thread-title", "Tasks stuck at Design, wait times in Up next")
+    assert has_element?(view, "#triage-reply", "Thanks Priya, we reproduced the first and filed both.")
+    assert has_element?(view, "#triage-reply-form", "Reply in Slack as Michael")
+    assert has_element?(view, "#triage-reply-form", "Draft, not sent")
+    assert has_element?(view, "#triage-tickets-line", "Tickets · 2 to create · 1 follow-up")
 
-    assert has_element?(view, "#triage-verdict-#{bug.id}", "Confirmed")
-    assert has_element?(view, "#triage-verdict-#{request.id}", "Partly built")
-    assert has_element?(view, "#issue-title-#{bug.id}[value='Approve leaves tasks at Design']")
-    assert has_element?(view, "#issue-estimate-#{bug.id}.text-slate-500 option[value=''][selected]", "No points")
-    assert has_element?(view, "#reply-text-#{request.id}", "Good call, Priya.")
-    refute has_element?(view, "#issue-form-#{request.id}")
-    assert has_element?(view, "#triage-item-#{request.id}", "Rows show no wait time.")
-    assert has_element?(view, "#triage-item-#{request.id}", "lib/overview.ex")
-  end
+    assert has_element?(view, "#triage-ticket-title-#{bug.id}[value='Approve leaves tasks at Design']")
+    assert has_element?(view, "#triage-ticket-verdict-#{bug.id}", "Confirmed")
+    assert has_element?(view, "#triage-ticket-kind-#{bug.id} option[value='bug'][selected]")
+    assert has_element?(view, "#triage-ticket-priority-#{bug.id} option[value='high'][selected]")
+    assert has_element?(view, "#triage-ticket-estimate-#{bug.id} option[value=''][selected]", "No estimate")
+    assert has_element?(view, "#triage-ticket-estimate-#{request.id} option[value='2'][selected]", "2 points")
+    assert has_element?(view, "#triage-ticket-verdict-#{request.id}", "Partly built")
+    assert has_element?(view, "#triage-ticket-#{covered.id}", "Follow up on #{existing.identifier}")
+    assert has_element?(view, "#triage-ticket-tracked-#{covered.id}[href='/issues/#{existing.id}']")
+    assert has_element?(view, "#triage-ticket-followup-#{covered.id}", "Priya hit it too, on BILL-88.")
+    refute has_element?(view, "#triage-ticket-title-#{covered.id}")
 
-  test "what a person types stays on the page until a pass redrafts it, and is never saved", %{
-    conn: conn,
-    workspace: workspace,
-    channel: channel,
-    thread: %Thread{items: [bug, request]} = thread
-  } do
-    {:ok, view, _html} = live(conn, ~p"/triage")
+    refute html =~ "Rows show no wait."
+    refute html =~ "lib/enter_stage.ex"
+    refute html =~ "Billing is the BILL project."
 
-    view
-    |> form("#issue-form-#{bug.id}", %{"item" => %{"issue_title" => "Approve leaves tasks stuck at Design"}})
-    |> render_change()
-
-    view |> form("#issue-form-#{bug.id}", %{"item" => %{"issue_estimate" => "2"}}) |> render_change()
-    view |> form("#reply-form-#{request.id}", %{"item" => %{"reply_text" => "Good call."}}) |> render_change()
-
-    assert %Item{issue_title: "Approve leaves tasks at Design", issue_estimate: nil} = Repo.get!(Item, bug.id)
-    assert %Item{reply_text: "Good call, Priya."} = Repo.get!(Item, request.id)
-    refute has_element?(view, "#triage-items", "Edited by")
-
-    {:ok, _reply} =
-      Triage.handle_slack_event(
-        workspace,
-        slack_message_event(channel, %{"ts" => "1790000700.000100", "thread_ts" => thread.external_id, "text" => "+1"})
-      )
-
-    send(view.pid, {:triage_changed, thread.id})
-    assert has_element?(view, ~s(#issue-title-#{bug.id}[value="Approve leaves tasks stuck at Design"]))
-    assert has_element?(view, "#issue-estimate-#{bug.id}.text-slate-900 option[value='2'][selected]", "2 points")
-    assert has_element?(view, "#reply-text-#{request.id}", "Good call.")
-
-    {:ok, fresh, _html} = live(conn, ~p"/triage/#{thread.id}")
-    assert has_element?(fresh, ~s(#issue-title-#{bug.id}[value="Approve leaves tasks at Design"]))
-    assert has_element?(fresh, "#reply-text-#{request.id}", "Good call, Priya.")
-
-    rewritten = %{
-      "key" => "wait-times",
-      "kind" => "feature_request",
-      "title" => "Wait time on every Up next row",
-      "verdict" => "partly_built",
-      "reply" => "Rail's second thought."
-    }
-
-    redrafted = triage_bug(%{"issue" => %{"title" => "Approve leaves tasks at Design", "estimate" => 8}})
-    triage_with(Repo.get!(Thread, thread.id), %{"items" => [redrafted, rewritten]})
-    send(view.pid, {:triage_changed, thread.id})
-
-    assert has_element?(view, "#reply-text-#{request.id}", "Rail's second thought.")
-    assert has_element?(view, ~s(#issue-title-#{bug.id}[value="Approve leaves tasks stuck at Design"]))
-    assert has_element?(view, "#issue-estimate-#{bug.id} option[value='8'][selected]", "8 points")
-  end
-
-  test "creating the issue and posting a reply settle their items, and the posts show as yours via Rail", %{
-    conn: conn,
-    user: user,
-    thread: %Thread{items: [bug, request]}
-  } do
-    {:ok, view, _html} = live(conn, ~p"/triage")
-    Req.Test.allow(Rail.Linear, self(), view.pid)
-    Req.Test.allow(Rail.Slack, self(), view.pid)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      assert %{"variables" => %{"input" => %{"estimate" => 5}}} = conn |> Req.Test.raw_body() |> Jason.decode!()
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_tri_214",
-              "identifier" => "TRI-214",
-              "title" => "Approve leaves tasks at Design",
-              "url" => "https://linear.app/acme/issue/TRI-214",
-              "state" => %{"id" => "st_tri", "name" => "Triage", "type" => "triage"}
-            }
-          }
-        }
-      })
-    end)
-
-    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000500.000100"}))
-    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000600.000100"}))
-
-    view
-    |> form("#reply-form-#{bug.id}", %{"item" => %{"reply_text" => "Fixed soon. Filed as {issue link}."}})
-    |> render_change()
-
-    view |> form("#issue-form-#{bug.id}", %{"item" => %{"issue_estimate" => "5"}}) |> render_change()
-
-    view
-    |> form("#issue-form-#{bug.id}", %{"item" => %{"issue_title" => "Approve leaves tasks at Design, with no role"}})
-    |> render_submit()
-
-    assert has_element?(view, "#triage-item-#{bug.id}[data-state='settled']", "Created TRI-214")
-    assert %Item{created_issue: %Issue{estimate: 5}} = Item |> Repo.get!(bug.id) |> Repo.preload(:created_issue)
-    assert has_element?(view, "#triage-item-posted-#{bug.id}", "Fixed soon. Filed as TRI-214.")
-    refute has_element?(view, "#triage-item-#{bug.id}", "{issue link}")
-
-    view |> form("#reply-form-#{request.id}") |> render_submit()
-    assert has_element?(view, "#triage-item-#{request.id}[data-state='settled']", "Reply posted by Michael")
-    assert has_element?(view, "#reply-posted-time-#{request.id}[phx-hook='LocalTime']")
-
-    assert has_element?(view, "#triage-thread [data-qa='triage-message']", user.slack_name)
-    assert has_element?(view, "#triage-thread [data-qa='via-rail']", "via Rail")
-    assert has_element?(view, "#triage-filter-done", "Done · 1")
-  end
-
-  test "the agent's estimate shows right after Priority, and clearing it creates the issue with no points", %{
-    conn: conn,
-    workspace: workspace,
-    channel: channel
-  } do
-    {:ok, thread} =
-      Triage.handle_slack_event(
-        workspace,
-        slack_message_event(channel, %{"ts" => "1790008000.000100", "text" => "Stuck"})
-      )
-
-    bug = triage_bug(%{"reply" => nil, "issue" => %{"title" => "Stuck", "priority" => "high", "estimate" => 3}})
-    %Thread{items: [item]} = triage_with(thread, %{"items" => [bug]})
-
-    {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+    assert has_element?(view, "#triage-send-button", "Send reply, create 2 tickets & update 1")
+    refute has_element?(view, "#triage-send-button[disabled]")
 
     assert has_element?(
              view,
-             "#issue-priority-#{item.id} + span #issue-estimate-#{item.id}[aria-label='Estimate'] option[value='3'][selected]",
-             "3 points"
+             "#triage-send-hint",
+             "Comments on #{existing.identifier} and creates 2 tickets in #{project.key}, then posts in #rail-feedback as you."
            )
 
-    assert has_element?(view, "#issue-estimate-#{item.id}.text-slate-900")
+    assert has_element?(view, "#triage-chat [data-qa='triage-chat-line']", "Three items. One is already tracked.")
+    assert has_element?(view, "#triage-chat", "Added item 1 · Added item 2 · Added item 3")
+    assert has_element?(view, "#triage-panel-thread", "Thread · 1")
+    refute has_element?(view, "#triage-thread")
+    refute html =~ "Triage again"
+    refute html =~ "Triage anyway"
 
-    Req.Test.allow(Rail.Linear, self(), view.pid)
-    Req.Test.allow(Rail.Slack, self(), view.pid)
+    view |> element("#triage-panel-thread") |> render_click()
+    assert has_element?(view, "#triage-thread mark", "Approved BILL-88 and it sits at Design.")
+    assert has_element?(view, "#triage-thread", "Priya Natarajan")
+    assert has_element?(view, "#open-in-slack", "Open in Slack")
+    refute has_element?(view, "#triage-chat")
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      assert %{"variables" => %{"input" => input}} = conn |> Req.Test.raw_body() |> Jason.decode!()
-      refute Map.has_key?(input, "estimate")
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_tri_220",
-              "identifier" => "TRI-220",
-              "title" => "Stuck",
-              "url" => "https://linear.app/acme/issue/TRI-220",
-              "state" => %{"id" => "st_tri", "name" => "Triage", "type" => "triage"}
-            }
-          }
-        }
-      })
-    end)
-
-    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790008100.000100"}))
-
-    view |> form("#issue-form-#{item.id}", %{"item" => %{"issue_estimate" => ""}}) |> render_submit()
-
-    assert has_element?(view, "#triage-item-#{item.id}[data-state='settled']", "Created TRI-220")
-    refute has_element?(view, "#issue-estimate-#{item.id}")
-    assert %Item{created_issue: %Issue{estimate: nil}} = Item |> Repo.get!(item.id) |> Repo.preload(:created_issue)
+    view |> element("#triage-panel-chat") |> render_click()
+    assert has_element?(view, "#triage-chat")
   end
 
-  test "a created issue points to its issue page until its task starts, then shows the task's stage", %{
+  test "the reply and a card's fields save as typed, survive a reload, and a changed kind hides its verdict", %{
     conn: conn,
-    thread: %Thread{items: [bug, _request]}
+    thread: %Thread{id: thread_id, items: [bug, _request, _covered]}
   } do
     {:ok, view, _html} = live(conn, ~p"/triage")
-    Req.Test.allow(Rail.Linear, self(), view.pid)
-    Req.Test.allow(Rail.Slack, self(), view.pid)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_tri_214",
-              "identifier" => "TRI-214",
-              "title" => "Approve leaves tasks at Design",
-              "url" => "https://linear.app/acme/issue/TRI-214",
-              "state" => %{"id" => "st_tri", "name" => "Triage", "type" => "triage"}
-            }
-          }
-        }
-      })
-    end)
-
-    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000500.000100"}))
 
     view
-    |> form("#reply-form-#{bug.id}", %{"item" => %{"reply_text" => "Fixed soon. Filed as {issue link}."}})
+    |> form("#triage-reply-form", %{"thread" => %{"reply_text" => "Thanks Priya.\r\n\r\nFiled."}})
     |> render_change()
 
-    view |> form("#issue-form-#{bug.id}") |> render_submit()
+    view
+    |> form("#triage-ticket-form-#{bug.id}", %{
+      "item" => %{
+        "kind" => "feature_request",
+        "issue_title" => "Approving moves the task on",
+        "issue_description" => "Rewritten.",
+        "issue_priority" => "low",
+        "issue_estimate" => "3"
+      }
+    })
+    |> render_change()
 
+    assert %Thread{reply_text: "Thanks Priya.\n\nFiled."} = Repo.get!(Thread, thread_id)
+
+    assert %Item{kind: :feature_request, issue_title: "Approving moves the task on", issue_estimate: 3} =
+             Repo.get!(Item, bug.id)
+
+    refute has_element?(view, "#triage-ticket-verdict-#{bug.id}")
+
+    {:ok, fresh, _html} = live(conn, ~p"/triage/#{thread_id}")
+    assert has_element?(fresh, "#triage-reply", "Filed.")
+    assert has_element?(fresh, "#triage-ticket-title-#{bug.id}[value='Approving moves the task on']")
+    assert has_element?(fresh, "#triage-ticket-description-#{bug.id}", "Rewritten.")
+    assert has_element?(fresh, "#triage-ticket-priority-#{bug.id} option[value='low'][selected]")
+
+    render_change(view, "update_item", %{"item_id" => bug.id, "item" => %{"issue_estimate" => "4"}})
+    assert has_element?(view, "#triage-refused", "That did not save.")
+  end
+
+  test "Ignore greys a card, keeps it, and takes it out of the button; switching it off counts it again", %{
+    conn: conn,
+    thread: %Thread{items: [_bug, request, covered]}
+  } do
+    {:ok, view, _html} = live(conn, ~p"/triage")
+
+    view |> element("#triage-ticket-ignore-#{covered.id}") |> render_click()
+
+    assert has_element?(view, "#triage-ticket-#{covered.id}[data-ignored='true'].opacity-55")
+    assert has_element?(view, "#triage-ticket-ignore-#{covered.id}[role='switch'][aria-checked='true']")
+    assert has_element?(view, "#triage-ticket-ignored-#{covered.id}", "Ignored · not added")
+    assert has_element?(view, "#triage-send-button", "Send reply & create 2 tickets")
+    assert has_element?(view, "#triage-tickets-line", "Tickets · 2 to create · 1 ignored")
+
+    view |> element("#triage-ticket-ignore-#{request.id}") |> render_click()
+    assert has_element?(view, "#triage-ticket-ignored-#{request.id}", "Ignored · not created")
+    assert has_element?(view, "#triage-send-button", "Send reply & create 1 ticket")
+
+    view |> element("#triage-ticket-ignore-#{covered.id}") |> render_click()
+    assert has_element?(view, "#triage-ticket-ignore-#{covered.id}[aria-checked='false']")
+    assert has_element?(view, "#triage-send-button", "Send reply, create 1 ticket & update 1")
+  end
+
+  test "a chat line runs the agent, which locks the page on every tab, and its answer shows without a reload", %{
+    conn: conn,
+    thread: %Thread{id: thread_id, items: [bug, request, covered]} = thread
+  } do
+    {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}")
+    {:ok, other_tab, _html} = live(conn, ~p"/triage/#{thread_id}")
+
+    view |> form("#triage-chat-form", %{"chat_message" => %{"text" => "Make the"}}) |> render_change()
+    assert has_element?(view, "#triage-chat-text", "Make the")
+
+    view |> form("#triage-chat-form", %{"chat_message" => %{"text" => "  "}}) |> render_submit()
+    assert [] = Repo.all(from c in ChatMessage, where: c.thread_id == ^thread_id and c.author == :person)
+
+    view |> form("#triage-chat-form", %{"chat_message" => %{"text" => "Make the reply shorter."}}) |> render_submit()
+
+    assert has_element?(view, "[data-qa='triage-chat-line']", "Make the reply shorter.")
+    refute has_element?(view, "#triage-chat-text", "Make the")
+
+    for tab <- [view, other_tab] do
+      assert has_element?(tab, "#triage-running", "Running")
+      assert has_element?(tab, "#triage-chat-running", "Running")
+      assert has_element?(tab, "#triage-reply[readonly]")
+      assert has_element?(tab, "#triage-ticket-title-#{bug.id}[readonly]")
+      refute has_element?(tab, "#triage-ticket-kind-#{bug.id}")
+      assert has_element?(tab, "#triage-ticket-ignore-#{request.id}[disabled]")
+      assert has_element?(tab, "#triage-send-button[disabled]")
+      assert has_element?(tab, "#triage-chat-text[disabled]")
+      assert has_element?(tab, "#triage-send-hint", "Send waits until the agent finishes.")
+    end
+
+    render_click(view, "toggle_ignore", %{"item_id" => covered.id})
+    assert has_element?(view, "#triage-refused", "The agent is still working on this thread.")
+    assert %Item{ignored: false} = Repo.get!(Item, covered.id)
+
+    restated = [
+      Map.put(triage_bug(), "issue", %{"title" => "Approving moves a task on", "priority" => "high"}),
+      %{
+        "key" => request.key,
+        "kind" => "feature_request",
+        "title" => request.title,
+        "verdict" => "partly_built",
+        "issue" => %{"title" => request.issue_title, "priority" => "low", "estimate" => 2}
+      },
+      %{
+        "key" => covered.key,
+        "kind" => "bug",
+        "title" => covered.title,
+        "verdict" => "confirmed",
+        "existing_issue" => Repo.get!(Issue, covered.existing_issue_id).identifier,
+        "followup" => covered.followup_text
+      }
+    ]
+
+    message = %{"message" => "Cut it to one line and retitled item 1.", "reply" => "Reproduced and filed, thanks."}
+    triage_with(Repo.get!(Thread, thread.id), triage_result(restated, message))
+
+    for tab <- [view, other_tab] do
+      assert has_element?(tab, "#triage-reply", "Reproduced and filed, thanks.")
+      assert has_element?(tab, "#triage-ticket-title-#{bug.id}[value='Approving moves a task on']")
+      assert has_element?(tab, "[data-qa='triage-chat-line']", "Cut it to one line and retitled item 1.")
+      assert has_element?(tab, "[data-qa='triage-chat-line']", "Edited the reply · Edited item 1")
+      refute has_element?(tab, "#triage-running")
+      refute has_element?(tab, "#triage-send-button[disabled]")
+    end
+  end
+
+  test "Send comments, creates and posts as the person, and the Done thread keeps all of it on screen", %{
+    conn: conn,
+    user: %{id: user_id},
+    existing: %{id: existing_id, identifier: tracked},
+    thread: %Thread{id: thread_id, items: [bug, request, covered]}
+  } do
+    {:ok, view, _html} = live(conn, ~p"/triage")
+    Req.Test.allow(Rail.Slack, self(), view.pid)
+
+    Req.Test.expect(Rail.Slack, fn conn ->
+      assert %{"text" => "Thanks Priya, we reproduced the first and filed both.\n\nFiled as " <> _links} =
+               conn |> Req.Test.raw_body() |> Jason.decode!()
+
+      Req.Test.json(conn, %{"ok" => true, "ts" => "1790000500.000100"})
+    end)
+
+    view |> element("#triage-send-button") |> render_click()
+
+    assert %Thread{status: :done, reply_posted_by_id: ^user_id} = Repo.get!(Thread, thread_id)
+    assert [%Comment{}] = Repo.all(from c in Comment, where: c.issue_id == ^existing_id)
     %Item{created_issue_id: issue_id} = Repo.get!(Item, bug.id)
-    assert has_element?(view, "#triage-item-#{bug.id}[data-state='settled']", "Created TRI-214")
-    assert has_element?(view, "#triage-item-issue-#{bug.id}[href='/issues/#{issue_id}']", "TRI-214")
-    assert has_element?(view, "#triage-item-not-started-#{bug.id}", "Not started.")
-    assert has_element?(view, "#triage-item-start-#{bug.id}[href='/issues/#{issue_id}']", "Start on the issue page")
-    refute has_element?(view, "#triage-item-task-#{bug.id}")
-    refute has_element?(view, "#triage-items button", "Start")
-    # The browser owns whether the item is open, so a reload that brings the chip leaves it open.
-    assert has_element?(view, ~s(#triage-item-#{bug.id}[phx-mounted*='"ignore_attrs",{"attrs":["open"]}']))
+
+    assert has_element?(view, "#triage-reply-posted", "Posted by Michael at")
+    assert has_element?(view, "#triage-reply[readonly]", "Filed as")
+    assert has_element?(view, "#triage-sent", "Sent by Michael at")
+    assert has_element?(view, "#triage-sent", "2 tickets created, 1 follow-up added.")
+    assert has_element?(view, "#triage-ticket-created-#{bug.id}", "Created")
+    assert has_element?(view, "#triage-ticket-issue-#{bug.id}[href='/issues/#{issue_id}']")
+    assert has_element?(view, "#triage-ticket-start-#{bug.id}[href='/issues/#{issue_id}']", "Start")
+    assert has_element?(view, "#triage-ticket-created-#{request.id}")
+    assert has_element?(view, "#triage-ticket-commented-#{covered.id}", "Comment added to #{tracked}")
+    assert has_element?(view, "#triage-ticket-title-#{bug.id}[readonly]")
+    refute has_element?(view, "#triage-ticket-ignore-#{bug.id}")
+    refute has_element?(view, "#triage-send-button")
+    refute has_element?(view, "#dismiss-thread-button")
+    assert has_element?(view, "[data-qa='triage-chat-line']", "Three items. One is already tracked.")
+
+    view |> element("#triage-filter-done") |> render_click()
+    assert has_element?(view, "#triage-row-#{thread_id}", "Accepted by Michael")
+  end
+
+  test "a created ticket shows its task's stage once started, or its state once closed", %{
+    conn: conn,
+    thread: %Thread{id: thread_id, items: [bug, _request, _covered]} = thread,
+    user: user
+  } do
+    {:ok, _cleared} = Triage.update_triage_reply(Rail.Scope.for_user(user), thread, %{"reply_text" => ""})
+    {:ok, _sent} = Triage.send_triage_reply(Rail.Scope.for_user(user), thread)
+    %Item{created_issue_id: issue_id} = Repo.get!(Item, bug.id)
+
+    {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}")
+    assert has_element?(view, "#triage-sent", "Sent: 2 tickets created, 1 follow-up added.")
 
     {:ok, %Task{id: task_id}} = Pipeline.create_task(Repo.preload(Repo.get!(Issue, issue_id), :project), :plan)
     Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, task_id})
+    assert has_element?(view, "#triage-ticket-task-#{bug.id}[href='/tasks/#{task_id}']", "Plan")
+    refute has_element?(view, "#triage-ticket-start-#{bug.id}")
 
-    assert has_element?(view, "#triage-item-task-#{bug.id}[href='/tasks/#{task_id}']", "Plan")
-    refute has_element?(view, "#triage-item-not-started-#{bug.id}")
-    refute has_element?(view, "#triage-item-start-#{bug.id}")
+    %Item{created_issue_id: other_id} = Repo.get!(Item, Enum.at(thread.items, 1).id)
+    Repo.update_all(from(i in Issue, where: i.id == ^other_id), set: [state: :canceled])
+    Phoenix.PubSub.broadcast(Rail.PubSub, "triage", {:triage_changed, thread_id})
+    assert has_element?(view, "#triage-ticket-issue-state-#{Enum.at(thread.items, 1).id}", "Canceled")
   end
 
-  test "a created issue closed before anyone starts it shows its state, not an offer to start it", %{
+  test "a Send that stops partway says so on every tab, and Send again does only what is left", %{
     conn: conn,
-    thread: %Thread{items: [bug, _request]} = thread
+    existing: %{id: existing_id},
+    thread: %Thread{id: thread_id, items: [bug, request, _covered]}
   } do
-    {:ok, view, _html} = live(conn, ~p"/triage")
-    Req.Test.allow(Rail.Linear, self(), view.pid)
+    {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}")
+    {:ok, other_tab, _html} = live(conn, ~p"/triage/#{thread_id}")
+    allow(Issues, self(), view.pid)
     Req.Test.allow(Rail.Slack, self(), view.pid)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_tri_214",
-              "identifier" => "TRI-214",
-              "title" => "Approve leaves tasks at Design",
-              "url" => "https://linear.app/acme/issue/TRI-214",
-              "state" => %{"id" => "st_tri", "name" => "Triage", "type" => "triage"}
-            }
-          }
-        }
-      })
+    expect(Issues, :create_issue, 2, fn scope, project, attrs ->
+      if attrs.title == "Every Up next row shows its wait",
+        do: {:error, :tracker_down},
+        else: call_original(Issues, :create_issue, [scope, project, attrs])
     end)
 
-    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000500.000100"}))
+    view |> element("#triage-send-button") |> render_click()
 
-    view
-    |> form("#reply-form-#{bug.id}", %{"item" => %{"reply_text" => "Fixed soon. Filed as {issue link}."}})
-    |> render_change()
+    for tab <- [view, other_tab] do
+      assert has_element?(tab, "#triage-send-error", "Send stopped partway. Could not create item 2")
+      assert has_element?(tab, "#triage-ticket-created-#{bug.id}")
+      assert has_element?(tab, "#triage-send-button", "Send reply & create 1 ticket")
+    end
 
-    view |> form("#issue-form-#{bug.id}") |> render_submit()
-    assert has_element?(view, "#triage-item-start-#{bug.id}")
+    refute has_element?(view, "#triage-refused")
 
-    %Item{created_issue_id: issue_id} = Repo.get!(Item, bug.id)
-    Repo.update_all(from(i in Issue, where: i.id == ^issue_id), set: [state: :canceled])
-    Phoenix.PubSub.broadcast(Rail.PubSub, "triage", {:triage_changed, thread.id})
+    expect(Issues, :create_issue, fn scope, project, attrs ->
+      call_original(Issues, :create_issue, [scope, project, attrs])
+    end)
 
-    assert has_element?(view, "#triage-item-issue-state-#{bug.id}", "Canceled")
-    assert has_element?(view, "#triage-item-issue-#{bug.id}[href='/issues/#{issue_id}']", "TRI-214")
-    refute has_element?(view, "#triage-item-start-#{bug.id}")
-    refute has_element?(view, "#triage-item-not-started-#{bug.id}")
-    refute has_element?(view, "#triage-item-task-#{bug.id}")
+    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000500.000200"}))
+    view |> element("#triage-send-button") |> render_click()
+
+    assert has_element?(other_tab, "#triage-ticket-created-#{request.id}")
+    refute has_element?(other_tab, "#triage-send-error")
+    assert 1 = Repo.aggregate(from(c in Comment, where: c.issue_id == ^existing_id), :count)
   end
 
-  test "an accept that fails says why on its item", %{conn: conn, thread: %Thread{items: [bug, _request]}} do
-    {:ok, view, _html} = live(conn, ~p"/triage")
-
-    view |> form("#reply-form-#{bug.id}") |> render_submit()
-
-    assert has_element?(view, "#triage-item-error-#{bug.id}", "create the issue first")
-  end
-
-  test "marking the channel external changes an open item's issue line, and a reply that links the issue is refused", %{
+  test "a Send another tab holds, one Slack refuses, or a follow-up the tracker refuses, is said on the page", %{
     conn: conn,
-    project: project,
-    channel: channel,
-    thread: %Thread{items: [bug, _request]}
+    thread: %Thread{id: thread_id}
   } do
-    {:ok, view, _html} = live(conn, ~p"/triage")
+    {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}")
+    Req.Test.allow(Rail.Slack, self(), view.pid)
+    allow(Issues, self(), view.pid)
 
-    assert has_element?(
-             view,
-             "#issue-line-#{bug.id}",
-             "waits for Start at Plan on its issue page · link posted in thread"
-           )
+    stub(Issues, :comment, fn scope, issue, attrs -> call_original(Issues, :comment, [scope, issue, attrs]) end)
+    expect(Issues, :comment, fn _scope, _issue, _attrs -> {:error, :tracker_down} end)
+    view |> element("#triage-send-button") |> render_click()
+    assert has_element?(view, "#triage-send-error", "Could not add the follow-up on item 3")
 
-    {:ok, _project} =
-      Projects.update_project(system_scope(), project, %{
-        "slack_channels" => [
-          %{
-            "id" => channel.id,
-            "external_id" => channel.external_id,
-            "name" => channel.name,
-            "slack_workspace_id" => channel.slack_workspace_id,
-            "external" => "true"
-          }
-        ]
-      })
+    Repo.update_all(from(t in Thread, where: t.id == ^thread_id), set: [send_started_at: DateTime.utc_now()])
+    view |> element("#triage-send-button") |> render_click()
+    assert has_element?(view, "#triage-refused", "This thread is being sent.")
 
-    assert has_element?(
-             view,
-             "#issue-line-#{bug.id}",
-             "waits for Start at Plan on its issue page · no link posted, external channel"
-           )
+    view |> form("#triage-chat-form", %{"chat_message" => %{"text" => "Shorter."}}) |> render_submit()
+    assert has_element?(view, "#triage-refused", "This thread is being sent.")
 
-    refute has_element?(view, "#issue-line-#{bug.id}", "link posted in thread")
-    refute has_element?(view, "#triage-items", "starts Product")
+    Repo.update_all(from(t in Thread, where: t.id == ^thread_id), set: [send_started_at: nil])
+    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "not_in_channel"}))
+    view |> element("#triage-send-button") |> render_click()
 
-    refusal = "This reply cannot link the issue in an external channel. Take out {issue link} to post it."
-    view |> form("#reply-form-#{bug.id}") |> render_submit()
-    assert has_element?(view, "#triage-item-error-#{bug.id}", refusal)
-
-    {:ok, view, _html} = live(conn, ~p"/triage")
-    refute has_element?(view, "#triage-item-error-#{bug.id}")
-    view |> form("#issue-form-#{bug.id}") |> render_submit()
-    assert has_element?(view, "#triage-item-error-#{bug.id}", refusal)
-    assert %Item{created_issue_id: nil, issue_created_by_id: nil} = Repo.get!(Item, bug.id)
+    refute has_element?(view, "#triage-refused")
+    assert has_element?(view, "#triage-send-error", "Slack did not take the reply.")
   end
 
-  test "a person who has not linked Slack cannot accept, and is told how to", %{
+  test "a sent thread names who posted it, by login without a name, and as someone once they are gone", %{
+    conn: conn,
+    thread: %Thread{id: thread_id}
+  } do
+    unique = System.unique_integer([:positive])
+
+    {:ok, poster} =
+      Users.register_oauth_user(%{github_id: "po_#{unique}", login: "po_#{unique}", email: "po_#{unique}@x.com"})
+
+    now = DateTime.utc_now()
+
+    Repo.update_all(from(t in Thread, where: t.id == ^thread_id),
+      set: [reply_posted_at: now, reply_posted_by_id: poster.id, status: :done]
+    )
+
+    Repo.update_all(from(i in Item, where: i.thread_id == ^thread_id), set: [sent_at: now])
+
+    {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}?filter=done")
+    assert has_element?(view, "#triage-reply-posted", "Posted by po_#{unique} at")
+    assert has_element?(view, "#triage-sent", "Sent by po_#{unique} at")
+
+    Repo.delete!(poster)
+    {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}?filter=done")
+    assert has_element?(view, "#triage-reply-posted", "Posted by someone at")
+    assert has_element?(view, "#triage-sent", "Sent by someone at")
+  end
+
+  test "a person who has not linked Slack is told how to, and cannot send the reply", %{
     conn: conn,
     project: project,
-    thread: %Thread{items: [bug, _request]} = thread
+    thread: %Thread{id: thread_id}
   } do
     unique = System.unique_integer([:positive])
 
     {:ok, unlinked} =
-      Users.register_oauth_user(%{github_id: "tl_#{unique}", login: "tl_#{unique}", email: "tl#{unique}@x.com"})
+      Users.register_oauth_user(%{github_id: "ul_#{unique}", login: "ul_#{unique}", email: "ul_#{unique}@x.com"})
 
     {:ok, unlinked} = Users.update_user(system_scope(), unlinked, %{project_ids: [project.id]})
+    {:ok, view, _html} = live(log_in_user(conn, unlinked), ~p"/triage/#{thread_id}")
 
-    {:ok, view, _html} = live(log_in_user(conn, unlinked), ~p"/triage/#{thread.id}")
-
-    assert has_element?(view, "#create-issue-#{bug.id}[disabled]")
-    assert has_element?(view, "#post-reply-#{bug.id}[disabled]")
-    assert has_element?(view, "#connect-slack-#{bug.id}", "Connect Slack to post as yourself")
+    assert has_element?(view, "#triage-link-prompt", "Connect Slack to post as yourself.")
+    assert has_element?(view, "#connect-slack[href='/settings/connected-accounts']")
+    assert has_element?(view, "#triage-send-button[disabled]")
+    assert has_element?(view, "#triage-reply-form", "Reply in Slack as ul_#{unique}")
   end
 
-  test "Correct quotes the assumption in a note, and adding the note locks only its item", %{
+  test "a failed pass shows why, and the chat is how to try again", %{
     conn: conn,
-    thread: %Thread{items: [bug, request]}
+    thread: %Thread{id: thread_id}
   } do
-    {:ok, view, _html} = live(conn, ~p"/triage")
+    Repo.update_all(from(t in Thread, where: t.id == ^thread_id), set: [error: "This project has no Triage role."])
 
-    view |> element("#correct-#{bug.id}-0") |> render_click()
-    view |> form("#note-form", %{"note" => %{"text" => "Half typed"}}) |> render_change()
-    assert has_element?(view, "#note-text", "Half typed")
-    assert has_element?(view, "#note-assumption", "Assumed: Billing is the BILL project.")
-    assert has_element?(view, "#note-pick-#{bug.id}[aria-pressed='true']")
+    {:ok, view, html} = live(conn, ~p"/triage/#{thread_id}")
+    assert has_element?(view, "#triage-error", "Triage did not finish. This project has no Triage role.")
+    assert has_element?(view, "#triage-error", "Tell the agent in the chat to try again.")
+    refute html =~ "Triage again"
 
-    view |> form("#note-form", %{"note" => %{"text" => "Billing has no Design role."}}) |> render_submit()
-
-    assert has_element?(view, "#triage-item-#{bug.id}[data-state='retriaging']", "Triaging again with your note")
-    assert has_element?(view, "#triage-item-#{request.id}[data-state='open']")
-    assert has_element?(view, "#triage-notes", "You · on item 1")
-    assert has_element?(view, "#triage-notes", "Billing has no Design role.")
-
-    bug_redone =
-      triage_bug(%{
-        "verdict" => "not_reproduced",
-        "assumptions" => [%{"text" => "Billing has a Design role.", "corrected" => true}]
-      })
-
-    triage_with(Repo.get!(Thread, bug.thread_id), %{"items" => [bug_redone]})
-    send(view.pid, {:triage_changed, bug.thread_id})
-
-    assert has_element?(view, "#triage-redo-#{bug.id}", "Was Confirmed.")
-    assert has_element?(view, "#triage-item-#{bug.id}", "Corrected by you.")
-    assert has_element?(view, "#triage-notes", "Item 1 triaged again at")
-    assert has_element?(view, "#triage-notes time[phx-hook='LocalTime']")
-
-    view |> element("#note-pick-#{request.id}") |> render_click()
-    view |> form("#note-form", %{"note" => %{"text" => " "}}) |> render_submit()
-    assert %Item{retriaging: false} = Repo.get!(Item, request.id)
-
-    assert has_element?(view, "#note-form", "Never posted to Slack")
-    assert has_element?(view, "#add-note-button", "Add note")
-    refute has_element?(view, "#note-assumption")
-
-    view |> form("#note-form", %{"note" => %{"text" => "Customers asked for this twice this week."}}) |> render_submit()
-    assert %Item{retriaging: true} = Repo.get!(Item, request.id)
-    assert has_element?(view, "#triage-notes", "Customers asked for this twice this week.")
+    view |> form("#triage-chat-form", %{"chat_message" => %{"text" => "Try again."}}) |> render_submit()
+    assert %Thread{error: nil, status: :triaging} = Repo.get!(Thread, thread_id)
+    refute has_element?(view, "#triage-error")
   end
 
-  test "dismissing a thread finishes it", %{conn: conn, thread: %Thread{id: thread_id, items: [bug, _request]}} do
-    {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}")
-
-    view |> element("#dismiss-thread-button") |> render_click()
-
-    assert %Thread{status: :done} = Repo.get!(Thread, thread_id)
-    refute has_element?(view, "#triage-badge")
-    assert has_element?(view, "#triage-queue-empty", "Nothing is waiting on you.")
-    assert has_element?(view, "#triage-queue-empty", "#rail-feedback is connected.")
-    assert has_element?(view, "#triage-item-#{bug.id}[data-state='settled']", "Done")
-
-    render_hook(view, "add_note", %{"note" => %{"item_id" => bug.id, "text" => "Too late"}})
-    assert has_element?(view, "#triage-item-error-#{bug.id}", "settled and takes no more notes")
-
-    view |> element("#triage-filter-done") |> render_click()
-    assert_patch(view, ~p"/triage?filter=done")
-    assert has_element?(view, "#triage-row-#{thread_id}", "Dismissed by Michael")
-  end
-
-  test "a thread that needed no response offers Triage anyway", %{
+  test "a thread that needed no response says to ask in the chat, and nothing is drafted", %{
     conn: conn,
     workspace: workspace,
     channel: channel
   } do
     {:ok, thread} =
-      Triage.handle_slack_event(
-        workspace,
-        slack_message_event(channel, %{"ts" => "1790009000.000100", "text" => "sync at 11:30?"})
-      )
+      Triage.handle_slack_event(workspace, slack_message_event(channel, %{"ts" => "1790000600.000100", "text" => "ty"}))
 
-    thread =
-      triage_with(thread, %{
-        "messages" => [%{"ts" => "1790009000.000100", "needs_response" => false, "reason" => "Scheduling"}],
-        "items" => []
+    triage_with(
+      thread,
+      triage_result([], %{
+        "reply" => nil,
+        "messages" => [%{"ts" => thread.external_id, "needs_response" => false, "reason" => "a thank-you"}]
       })
+    )
 
-    {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}?filter=done")
+    {:ok, view, html} = live(conn, ~p"/triage/#{thread.id}?filter=done")
 
-    assert has_element?(view, "#triage-row-#{thread.id}", "Needed no response")
-    assert has_element?(view, "#triage-no-response", "Scheduling")
+    assert has_element?(
+             view,
+             "#triage-no-response",
+             "Rail read this as: a thank-you. If it needs a response, say so in the chat."
+           )
+
+    refute has_element?(view, "#triage-reply-form")
+    assert has_element?(view, "#triage-send-hint", "Nothing to send yet.")
+    refute has_element?(view, "#triage-send-button")
+    refute html =~ "Triage anyway"
+
+    view |> element("#triage-panel-thread") |> render_click()
     assert has_element?(view, "#triage-thread", "Needs no response. Nothing drafted.")
-
-    view |> element("#triage-anyway-button") |> render_click()
-
-    assert %Thread{status: :triaging, forced: true} = Repo.get!(Thread, thread.id)
-    assert has_element?(view, "#triage-running")
   end
 
-  test "a failed pass shows why and can be run again", %{conn: conn, thread: %Thread{id: thread_id}} do
-    Repo.update_all(from(t in Thread, where: t.id == ^thread_id), set: [error: "This project has no Triage role."])
+  test "a thread with nothing drafted yet says so", %{conn: conn, workspace: workspace, channel: channel} do
+    {:ok, thread} = Triage.handle_slack_event(workspace, slack_message_event(channel, %{"ts" => "1790000600.000300"}))
+    Repo.update_all(from(t in Thread, where: t.id == ^thread.id), set: [status: :waiting, error: "Timed out."])
 
+    {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+    assert has_element?(view, "#triage-nothing", "Nothing is drafted yet.")
+    assert has_element?(view, "#triage-chat-empty", "Ask it to change the reply or the tickets")
+  end
+
+  test "dismissing a thread finishes it and locks it until a chat line brings it back", %{
+    conn: conn,
+    thread: %Thread{id: thread_id, items: [bug, _request, _covered]}
+  } do
     {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}")
-    assert has_element?(view, "#triage-error", "This project has no Triage role.")
+    view |> element("#dismiss-thread-button") |> render_click()
 
-    view |> element("#triage-again-button") |> render_click()
-    assert %Thread{error: nil, status: :triaging} = Repo.get!(Thread, thread_id)
+    assert %Thread{status: :done, dismissed_at: %DateTime{}} = Repo.get!(Thread, thread_id)
+    assert has_element?(view, "#triage-reply[readonly]")
+    assert has_element?(view, "#triage-ticket-ignore-#{bug.id}[disabled]")
+    refute has_element?(view, "#triage-send-button")
+
+    view |> form("#triage-reply-form", %{"thread" => %{"reply_text" => "Changed"}}) |> render_change()
+    assert has_element?(view, "#triage-refused", "This thread was dismissed. Write in the chat to bring it back.")
+
+    view |> form("#triage-chat-form", %{"chat_message" => %{"text" => "Actually, look again."}}) |> render_submit()
+    assert %Thread{status: :triaging, dismissed_at: nil} = Repo.get!(Thread, thread_id)
+  end
+
+  test "an edit to a card a pass just removed is let go, and the card is gone", %{
+    conn: conn,
+    thread: %Thread{id: thread_id}
+  } do
+    {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}")
+    render_click(view, "toggle_ignore", %{"item_id" => "tit_gone"})
+    refute has_element?(view, "#triage-refused")
   end
 
   test "a bot's post shows its name and APP", %{conn: conn, project: project} do
@@ -554,11 +562,12 @@ defmodule RailWeb.TriageLiveTest do
       )
 
     {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}?filter=triaging")
+    view |> element("#triage-panel-thread") |> render_click()
 
     assert has_element?(view, "#triage-thread [data-qa='triage-message']", "PostHog")
     assert has_element?(view, "#triage-thread [data-qa='triage-message']", "APP")
 
-    triage_with(thread, %{"items" => [triage_bug(%{"reply" => nil})]})
+    triage_with(thread, triage_result([triage_bug()], %{"reply" => nil}))
     send(view.pid, {:triage_changed, thread.id})
     view |> element("#triage-filter-waiting") |> render_click()
     assert has_element?(view, "#triage-row-#{thread.id}", "Confirmed")
@@ -570,6 +579,7 @@ defmodule RailWeb.TriageLiveTest do
     Repo.update_all(from(t in Thread, where: t.id == ^thread_id), set: [title: "Renamed elsewhere"])
     send(view.pid, {:triage_changed, thread_id})
     send(view.pid, {:issue_created, "iss_any"})
+    send(view.pid, {:project_changed, "prj_any"})
 
     assert has_element?(view, "#triage-thread-title", "Renamed elsewhere")
   end
@@ -596,109 +606,12 @@ defmodule RailWeb.TriageLiveTest do
 
     {:ok, view, html} = live(conn, ~p"/triage/#{hidden_id}")
 
-    refute has_element?(view, "#triage-thread")
+    refute has_element?(view, "#triage-draft-column-#{hidden_id}")
     refute html =~ "A secret request"
     refute render(view) =~ "Hidden thread"
 
     {:ok, view, _html} = live(conn, ~p"/triage/tth_missing?filter=bogus")
-    refute has_element?(view, "#triage-thread")
-  end
-
-  test "an item an existing issue covers shows it is tracked, and settles once its reply is posted", %{
-    conn: conn,
-    project: project,
-    workspace: workspace,
-    channel: channel
-  } do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_23",
-              "identifier" => "TRI-23",
-              "title" => "Wait times",
-              "state" => %{"type" => "triage"}
-            }
-          }
-        }
-      })
-    end)
-
-    {:ok, %{id: tracked_issue_id}} = Issues.create_issue(system_scope(), project, %{title: "Wait times"})
-
-    {:ok, thread} =
-      Triage.handle_slack_event(
-        workspace,
-        slack_message_event(channel, %{"ts" => "1790007000.000100", "text" => "wait?"})
-      )
-
-    tracked = %{
-      "key" => "wait-times",
-      "kind" => "feature_request",
-      "title" => "Wait times",
-      "verdict" => "not_built",
-      "existing_issue" => "TRI-23",
-      "reply" => "Tracked in TRI-23, which is in Triage."
-    }
-
-    %Thread{items: [item]} = triage_with(thread, %{"items" => [tracked]})
-
-    {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
-    assert has_element?(view, "#triage-tracked-#{item.id}", "Already tracked, no new issue:")
-    assert has_element?(view, "#triage-tracked-#{item.id}", "TRI-23")
-    assert has_element?(view, "#triage-tracked-link-#{item.id}[href='/issues/#{tracked_issue_id}']")
-    refute has_element?(view, "#issue-form-#{item.id}")
-    refute has_element?(view, "#issue-estimate-#{item.id}")
-
-    Req.Test.allow(Rail.Slack, self(), view.pid)
-    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790007100.000100"}))
-    view |> form("#reply-form-#{item.id}") |> render_submit()
-
-    assert has_element?(view, "#triage-item-#{item.id}[data-state='settled']", "in TRI-23")
-  end
-
-  test "an issue created whose post then fails says so, and keeps its reply to send", %{
-    conn: conn,
-    thread: %Thread{items: [bug, _request]}
-  } do
-    {:ok, view, _html} = live(conn, ~p"/triage")
-    Req.Test.allow(Rail.Linear, self(), view.pid)
-    Req.Test.allow(Rail.Slack, self(), view.pid)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_77", "identifier" => "TRI-77", "title" => "T", "state" => %{"type" => "triage"}}
-          }
-        }
-      })
-    end)
-
-    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "not_in_channel"}))
-
-    view |> form("#issue-form-#{bug.id}") |> render_submit()
-
-    %Item{created_issue_id: issue_id} = Repo.get!(Item, bug.id)
-    assert has_element?(view, "#triage-item-#{bug.id}[data-state='open']", "Created TRI-77")
-    assert has_element?(view, "#triage-item-issue-#{bug.id}[href='/issues/#{issue_id}']", "TRI-77")
-    assert has_element?(view, "#triage-item-start-#{bug.id}[href='/issues/#{issue_id}']", "Start on the issue page")
-    assert has_element?(view, "#triage-item-error-#{bug.id}", "could not post in Slack")
-    refute has_element?(view, "#triage-item-#{bug.id}", "Plan did not start")
-    assert has_element?(view, "#reply-form-#{bug.id}")
-
-    Req.Test.expect(Rail.Slack, fn conn ->
-      assert %{"text" => "Thanks Priya, we reproduced this. Filed as TRI-77."} =
-               conn |> Req.Test.raw_body() |> Jason.decode!()
-
-      Req.Test.json(conn, %{"ok" => true, "ts" => "1790008000.000100"})
-    end)
-
-    view |> form("#reply-form-#{bug.id}") |> render_submit()
-    assert has_element?(view, "#triage-item-#{bug.id}[data-state='settled']", "Created TRI-77")
+    refute has_element?(view, "[id^='triage-draft-column-']")
   end
 
   describe "images a message came with" do
@@ -768,6 +681,7 @@ defmodule RailWeb.TriageLiveTest do
       single: single
     } do
       {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+      view |> element("#triage-panel-thread") |> render_click()
 
       tiles =
         view
@@ -798,6 +712,7 @@ defmodule RailWeb.TriageLiveTest do
       shots: shots
     } do
       {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+      view |> element("#triage-panel-thread") |> render_click()
       tile = "#triage-image-#{shots.id}-F_TWO"
 
       assert has_element?(view, "#{tile}[phx-hook='ImageFallback'][data-image='loading']")
@@ -826,6 +741,7 @@ defmodule RailWeb.TriageLiveTest do
       shots: shots
     } do
       {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+      view |> element("#triage-panel-thread") |> render_click()
       withheld = "#triage-image-#{shots.id}-F_HIDDEN"
 
       assert has_element?(view, withheld, "A file was attached that Rail cannot see.")
@@ -847,6 +763,7 @@ defmodule RailWeb.TriageLiveTest do
       shots: shots
     } do
       {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+      view |> element("#triage-panel-thread") |> render_click()
 
       view |> element("#triage-image-open-#{shots.id}-F_ONE") |> render_click()
 
@@ -862,7 +779,7 @@ defmodule RailWeb.TriageLiveTest do
 
       assert has_element?(view, "#triage-image-original.group-has-\\[\\[data-image\\=failed\\]\\]\\/panel\\:hidden")
       assert has_element?(view, "#triage-thread")
-      assert has_element?(view, "#triage-items")
+      assert has_element?(view, "#triage-draft-column-#{thread.id}")
 
       picture = "#triage-image-picture-F_ONE[phx-hook='ImageFallback'][data-image='loading']"
       assert has_element?(view, picture)
@@ -889,6 +806,7 @@ defmodule RailWeb.TriageLiveTest do
       shots: shots
     } do
       {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+      view |> element("#triage-panel-thread") |> render_click()
       view |> element("#triage-image-open-#{shots.id}-F_ONE") |> render_click()
 
       panel_class =
@@ -939,6 +857,7 @@ defmodule RailWeb.TriageLiveTest do
       shots: shots
     } do
       {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+      view |> element("#triage-panel-thread") |> render_click()
       view |> element("#triage-image-open-#{shots.id}-F_ONE") |> render_click()
       view |> element("#triage-image-next") |> render_click()
       view |> element("#triage-image-next") |> render_click()
@@ -967,6 +886,7 @@ defmodule RailWeb.TriageLiveTest do
            single: single
          } do
       {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+      view |> element("#triage-panel-thread") |> render_click()
       render_hook(view, "step_image", %{"direction" => "next"})
       render_hook(view, "image_key", %{"key" => "ArrowRight"})
       refute has_element?(view, "#triage-image-view")
@@ -991,6 +911,7 @@ defmodule RailWeb.TriageLiveTest do
       shots: shots
     } do
       {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+      view |> element("#triage-panel-thread") |> render_click()
       view |> element("#triage-image-open-#{shots.id}-F_ONE") |> render_click()
       view |> element("#triage-image-next") |> render_click()
 
@@ -1019,6 +940,7 @@ defmodule RailWeb.TriageLiveTest do
       thread: thread
     } do
       {:ok, view, html} = live(conn, ~p"/triage/#{thread.id}")
+      view |> element("#triage-panel-thread") |> render_click()
 
       refute html =~ "files.slack.com"
       refute html =~ "xoxb-bot"
@@ -1050,9 +972,7 @@ defmodule RailWeb.TriageLiveTest do
   end
 
   describe "a thread forwarded from Intercom" do
-    setup %{user: user, project: slack_project} do
-      %{project: project} = triage_project(tracker: :local)
-      {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [slack_project.id, project.id]})
+    setup %{user: user, project: project} do
       unique = System.unique_integer([:positive])
       app_id = "app#{unique}"
 
@@ -1099,7 +1019,6 @@ defmodule RailWeb.TriageLiveTest do
             "kind" => "bug",
             "title" => title,
             "verdict" => "confirmed",
-            "assumptions" => [%{"text" => "Tahini is sesame."}],
             "issue" => %{"title" => title, "description" => "Seen on Intercom.", "priority" => "high"}
           }
         end
@@ -1130,37 +1049,33 @@ defmodule RailWeb.TriageLiveTest do
       [thread] =
         Repo.all(
           from t in Thread,
-            where: t.project_id == ^project.id,
+            where: t.support_conversation_id == ^conversation.id,
             preload: [items: ^from(i in Item, order_by: i.position)]
         )
 
       %{forwarded: thread, user: user}
     end
 
-    test "is marked as from Intercom, shows the conversation and who forwarded it, and takes no notes", %{
+    test "shows who forwarded it, no reply box, and Create 2 tickets, with the conversation one click away", %{
       conn: conn,
       user: user,
-      forwarded: %Thread{id: thread_id, permalink: permalink, items: [first, _second]}
+      forwarded: %Thread{id: thread_id, permalink: permalink}
     } do
       {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}")
 
       assert has_element?(view, "#triage-row-#{thread_id}", "Intercom")
       assert has_element?(view, "#triage-row-#{thread_id}", "Forwarded by #{user.name}")
-      assert has_element?(view, "#triage-thread", "Intercom")
+      assert has_element?(view, "#triage-source", "Intercom · forwarded by #{user.name}")
+      assert has_element?(view, "#triage-forwarded", "Support already replied in Intercom.")
+      refute has_element?(view, "#triage-reply-form")
+      refute has_element?(view, "#triage-link-prompt")
+      assert has_element?(view, "#triage-send-button", "Create 2 tickets")
+      assert has_element?(view, "#triage-send-hint", "Creates 2 tickets in")
+      assert has_element?(view, "#triage-panel-thread", "Conversation · 2")
+
+      view |> element("#triage-panel-thread") |> render_click()
       assert has_element?(view, ~s(#open-in-slack[href="#{permalink}"]), "Open in Intercom")
       assert has_element?(view, "#triage-thread", "Internal note: Looks like a bug.")
-      assert has_element?(view, "#forwarded-note", "Forwarded by #{user.name}")
-      refute has_element?(view, "#note-form")
-      assert has_element?(view, "#triage-items", "Support already replied.")
-      assert has_element?(view, "#create-forwarded-button", "Create 2 tickets")
-      refute has_element?(view, "#create-issue-#{first.id}")
-      refute has_element?(view, "#correct-#{first.id}-0")
-      refute has_element?(view, "#connect-slack-#{first.id}")
-      assert has_element?(view, "#issue-line-#{first.id}", "links back to the Intercom conversation")
-      refute has_element?(view, "#triage-again-button")
-
-      render_click(view, "retriage", %{})
-      assert has_element?(view, "#forward-error", "forwarded from Intercom")
     end
 
     test "Create 2 tickets creates both with what was typed, and settles the thread", %{
@@ -1170,10 +1085,10 @@ defmodule RailWeb.TriageLiveTest do
       {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}")
 
       view
-      |> form("#issue-form-#{first.id}", %{"item" => %{"issue_title" => "Sesame shows on the allergen sheet"}})
+      |> form("#triage-ticket-form-#{first.id}", %{"item" => %{"issue_title" => "Sesame shows on the allergen sheet"}})
       |> render_change()
 
-      view |> element("#create-forwarded-button") |> render_click()
+      view |> element("#triage-send-button") |> render_click()
 
       assert %Thread{status: :done} = Repo.get!(Thread, thread_id)
 
@@ -1182,31 +1097,11 @@ defmodule RailWeb.TriageLiveTest do
                  from i in Item, where: i.id in ^[first.id, second.id], order_by: i.position, preload: :created_issue
                )
 
-      refute has_element?(view, "#create-forwarded-button")
-      refute has_element?(view, "#forward-error")
+      refute has_element?(view, "#triage-send-button")
+      assert has_element?(view, "#triage-sent", "Sent: 2 tickets created.")
     end
 
-    test "an item that could not be created is named, the others are, and Enter in a form creates them too", %{
-      conn: conn,
-      forwarded: %Thread{id: thread_id, items: [first, second]}
-    } do
-      {:ok, view, _html} = live(conn, ~p"/triage/#{thread_id}")
-      allow(Issues, self(), view.pid)
-      expect(Issues, :create_issue, fn _scope, _project, _attrs -> {:error, :tracker_down} end)
-
-      expect(Issues, :create_issue, fn scope, project, attrs ->
-        call_original(Issues, :create_issue, [scope, project, attrs])
-      end)
-
-      view |> form("#issue-form-#{second.id}") |> render_submit()
-
-      assert has_element?(view, "#forward-error", "Could not create item 1. Try again; the others are created.")
-      assert has_element?(view, "#create-forwarded-button", "Create 1 ticket")
-      assert %Item{created_issue_id: nil} = Repo.get!(Item, first.id)
-      assert %Item{created_issue: %Issue{}} = Item |> Repo.get!(second.id) |> Repo.preload(:created_issue)
-    end
-
-    test "a person who lost the project sees the thread go when they create", %{
+    test "a person who lost the project sees the thread go when they send", %{
       conn: conn,
       user: user,
       forwarded: %Thread{id: thread_id}
@@ -1217,8 +1112,8 @@ defmodule RailWeb.TriageLiveTest do
         put_in(state.socket.assigns.current_scope, Rail.Scope.for_user(%{user | project_ids: []}))
       end)
 
-      view |> element("#create-forwarded-button") |> render_click()
-      refute has_element?(view, "#triage-thread")
+      view |> element("#triage-send-button") |> render_click()
+      refute has_element?(view, "#triage-draft-column-#{thread_id}")
     end
   end
 end

@@ -13,11 +13,13 @@ defmodule Rail.Triage.Actions.ReadTriageTest do
     %{thread: thread, path: Path.join(dir, "result.json")}
   end
 
-  test "keeps what fits the agreed shape and drops what does not", %{thread: thread, path: path} do
+  test "keeps what fits the agreed shape, and names each item it could not read", %{thread: thread, path: path} do
     File.write!(
       path,
       Jason.encode!(%{
         "title" => "  ",
+        "message" => " Merged 2 into 1. ",
+        "reply" => "Thanks both, filed.",
         "messages" => [
           %{
             "ts" => "1.0",
@@ -36,18 +38,23 @@ defmodule Rail.Triage.Actions.ReadTriageTest do
             "verdict" => "confirmed",
             "evidence" => [%{"file" => "a.ex", "lines" => 4}, "not evidence"],
             "assumptions" => ["plain words", %{"text" => "an object", "corrected" => true}, 7],
-            "issue" => "not a map"
+            "issue" => "not a map",
+            "followup" => " Seen again on RAIL-41. "
           },
           %{"key" => "Bad Key", "kind" => "bug", "title" => "T", "verdict" => "confirmed"},
           %{"key" => "wrong-verdict", "kind" => "bug", "title" => "T", "verdict" => "built"},
           %{"key" => "no-kind", "title" => "T", "verdict" => "confirmed"},
-          %{"title" => "no key"}
+          %{"title" => "no key"},
+          "not an item"
         ]
       })
     )
 
     assert %{
              title: nil,
+             message: "Merged 2 into 1.",
+             reply: "Thanks both, filed.",
+             rejected: ["Bad Key", "wrong-verdict", "no-kind", "one without a key", "one without a key"],
              messages: [
                %{ts: "1.0", needs_response: false, reason: "Thanks", item_links: [%{item_key: "k", change: "raised"}]}
              ],
@@ -57,7 +64,8 @@ defmodule Rail.Triage.Actions.ReadTriageTest do
                  title: "Stuck",
                  evidence: [%{file: "a.ex", lines: "4", holds: true}],
                  assumptions: [%{text: "plain words", corrected: false}, %{text: "an object", corrected: true}],
-                 issue_title: nil
+                 issue_title: nil,
+                 followup_text: "Seen again on RAIL-41."
                }
              ]
            } = Triage.read_triage(thread)
@@ -77,6 +85,9 @@ defmodule Rail.Triage.Actions.ReadTriageTest do
     File.write!(path, Jason.encode!(%{"items" => items}))
 
     assert %{
+             message: nil,
+             reply: nil,
+             rejected: [],
              items: [
                %{key: "on-scale", issue_title: "Draft on-scale", issue_estimate: 3},
                %{key: "missing", issue_title: "Draft missing", issue_priority: "high", issue_estimate: nil},

@@ -10,6 +10,7 @@ defmodule RailTest.Helpers do
   defdelegate triage_project(opts \\ []), to: RailTest.TriageHelpers
   defdelegate triage_with(thread, result), to: RailTest.TriageHelpers
   defdelegate triage_bug(overrides \\ %{}), to: RailTest.TriageHelpers
+  defdelegate triage_result(items, overrides \\ %{}), to: RailTest.TriageHelpers
   defdelegate slack_user(team_id, name \\ "Michael"), to: RailTest.TriageHelpers
 
   defdelegate github_issue_json(overrides \\ %{}), to: RailTest.GithubHelpers

@@ -5,6 +5,7 @@ defmodule RailWeb.SupportLive do
   alias Rail.Scope
   alias Rail.Support
   alias Rail.Support.Schemas.ChatMessage
+  alias Rail.Support.Schemas.Conversation
   alias Rail.Users
 
   @filters ["waiting", "drafting", "done"]
@@ -97,7 +98,18 @@ defmodule RailWeb.SupportLive do
           />
         </div>
 
-        <.support_chat :if={@conversation} conversation={@conversation} form={@chat_form} />
+        <.agent_chat
+          :if={@conversation}
+          id="support-chat"
+          key={@conversation.id}
+          lines={@conversation.chat_messages}
+          running={Conversation.drafting?(@conversation)}
+          form={@chat_form}
+          empty="The agent reads the conversation, the code and the tickets when you ask for a draft, or when you ask it anything here."
+          placeholder="Ask the agent to change the reply or the list"
+          gone_author="Support"
+          class="w-[400px] max-xl:w-[260px] shrink-0"
+        />
 
         <section
           :if={!@conversation}

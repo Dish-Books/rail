@@ -635,7 +635,7 @@ defmodule RailWeb.SupportLiveTest do
     assert has_element?(view, "[data-qa='support-chat-line']", "nn_#{unique}")
 
     {:ok, triage, _html} = live(conn, ~p"/triage/#{thread_id}")
-    assert has_element?(triage, "#forwarded-note", "Forwarded by nn_#{unique}")
+    assert has_element?(triage, "#triage-source", "Intercom · forwarded by nn_#{unique}")
 
     Repo.delete!(nameless)
 
@@ -644,7 +644,7 @@ defmodule RailWeb.SupportLiveTest do
     assert has_element?(view, "[data-qa='support-chat-line']", "Support")
 
     {:ok, triage, _html} = live(conn, ~p"/triage/#{thread_id}")
-    assert has_element?(triage, "#forwarded-note", "Forwarded by support")
+    assert has_element?(triage, "#triage-source", "Intercom · forwarded by support")
     assert has_element?(triage, "#triage-row-#{thread_id}", "Forwarded by support")
   end
 end

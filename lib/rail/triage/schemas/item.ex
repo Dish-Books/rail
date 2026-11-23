@@ -1,8 +1,7 @@
 defmodule Rail.Triage.Schemas.Item do
   @moduledoc """
-  One bug or feature request a thread raised: the verdict a pass reached on it,
-  the evidence and assumptions behind that, and the issue and reply it proposes.
-  Nothing it proposes reaches Linear or Slack until a person accepts it.
+  One bug or feature request a thread raised: the verdict a pass reached on it, the evidence and
+  assumptions behind that, and the ticket or follow-up it proposes, which only Send makes.
   """
   use Rail.Schema
 
@@ -23,18 +22,17 @@ defmodule Rail.Triage.Schemas.Item do
     field :kind, Ecto.Enum, values: @kinds
     field :title, :string
     field :verdict, Ecto.Enum, values: @all_verdicts
-    field :previous_verdict, Ecto.Enum, values: @all_verdicts
     field :summary, :string
     field :issue_note, :string
     field :issue_title, :string
     field :issue_description, :string
     field :issue_priority, Ecto.Enum, values: Issue.priorities()
     field :issue_estimate, :integer
-    field :reply_text, :string
-    field :reply_posted_at, :utc_datetime_usec
-    field :retriaging, :boolean, default: false
-    field :retriaged_at, :utc_datetime_usec
-    field :error, :string
+    field :ignored, :boolean, default: false
+    field :sent_at, :utc_datetime_usec
+    # The comment for the existing ticket that covers the item, and when Send claimed it for posting.
+    field :followup_text, :string
+    field :followup_posted_at, :utc_datetime_usec
 
     embeds_many :evidence, Evidence, on_replace: :delete, primary_key: false do
       field :file, :string
@@ -53,7 +51,6 @@ defmodule Rail.Triage.Schemas.Item do
     belongs_to :existing_issue, Issue
     belongs_to :created_issue, Issue
     belongs_to :issue_created_by, User
-    belongs_to :reply_posted_by, User
 
     timestamps()
   end
@@ -64,7 +61,6 @@ defmodule Rail.Triage.Schemas.Item do
     :kind,
     :title,
     :verdict,
-    :previous_verdict,
     :summary,
     :existing_issue_id,
     :issue_note,
@@ -72,10 +68,7 @@ defmodule Rail.Triage.Schemas.Item do
     :issue_description,
     :issue_priority,
     :issue_estimate,
-    :reply_text,
-    :retriaging,
-    :retriaged_at,
-    :error
+    :followup_text
   ]
 
   @doc """
@@ -92,34 +85,44 @@ defmodule Rail.Triage.Schemas.Item do
   end
 
   @doc """
-  What a person typed into the drafts, before they accept them.
+  What a person changed on the card. A kind the verdict no longer fits is allowed; the card hides that verdict.
   """
   def draft_changeset(item, attrs) do
     item
-    |> cast(attrs, [:issue_title, :issue_description, :issue_priority, :issue_estimate, :reply_text])
+    |> cast(attrs, [:kind, :issue_title, :issue_description, :issue_priority, :issue_estimate, :followup_text, :ignored])
+    |> update_change(:followup_text, &if(is_binary(&1), do: String.replace(&1, "\r\n", "\n"), else: &1))
+    |> update_change(:issue_description, &if(is_binary(&1), do: String.replace(&1, "\r\n", "\n"), else: &1))
+    |> validate_required([:kind])
     |> validate_inclusion(:issue_estimate, @estimates)
   end
 
-  def issue_draft?(%__MODULE__{issue_title: title, existing_issue_id: nil}), do: is_binary(title) and title != ""
+  def issue_draft?(%__MODULE__{issue_title: title, existing_issue_id: nil}),
+    do: is_binary(title) and String.trim(title) != ""
+
   def issue_draft?(%__MODULE__{}), do: false
 
-  def reply_draft?(%__MODULE__{reply_text: text}), do: is_binary(text) and String.trim(text) != ""
+  @doc """
+  Closed to every pass and every edit: its round was sent, its follow-up was claimed, or its ticket is
+  created or being created.
+  """
+  def closed?(%__MODULE__{} = item),
+    do:
+      is_struct(item.sent_at, DateTime) or is_struct(item.followup_posted_at, DateTime) or
+        is_binary(item.created_issue_id) or is_binary(item.issue_created_by_id)
+
+  def to_create?(%__MODULE__{ignored: false} = item), do: issue_draft?(item) and not closed?(item)
+  def to_create?(%__MODULE__{}), do: false
+
+  def to_update?(%__MODULE__{ignored: false, existing_issue_id: issue_id, followup_text: text} = item)
+      when is_binary(issue_id) and is_binary(text), do: String.trim(text) != "" and not closed?(item)
+
+  def to_update?(%__MODULE__{}), do: false
 
   @doc """
-  Whether nothing is left to accept: every proposal was, or the thread was dismissed.
+  The verdict while it fits the item's kind, which a person may have changed since.
   """
-  def settled?(%__MODULE__{thread: %Thread{dismissed_at: %DateTime{}}}), do: true
-  def settled?(%__MODULE__{} = item), do: pending_proposals(item) == 0
-
-  def pending_proposals(%__MODULE__{} = item) do
-    Enum.count(
-      [
-        issue_draft?(item) and is_nil(item.created_issue_id),
-        reply_draft?(item) and is_nil(item.reply_posted_at)
-      ],
-      & &1
-    )
-  end
+  def fitting_verdict(%__MODULE__{kind: kind, verdict: verdict}),
+    do: if(verdict in Map.fetch!(@verdicts, kind), do: verdict)
 
   def kinds, do: @kinds
   def estimates, do: @estimates

@@ -11,6 +11,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
   alias Rail.Scope
   alias Rail.Tools
   alias Rail.Triage
+  alias Rail.Triage.Schemas.ChatMessage
   alias Rail.Triage.Schemas.Item
   alias Rail.Triage.Schemas.Message
   alias Rail.Triage.Schemas.Thread
@@ -57,8 +58,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
         "description" => "Root cause: ...",
         "priority" => "urgent",
         "estimate" => 3
-      },
-      "reply" => "Thanks Priya, we reproduced this. Filed as {issue link}."
+      }
     }
 
     request = %{
@@ -69,8 +69,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       "summary" => "Ordered by wait, but rows show none.",
       "evidence" => [%{"file" => "lib/up_next.ex", "lines" => "78", "excerpt" => "row", "holds" => false}],
       "assumptions" => [],
-      "issue" => %{"title" => "Show wait times", "description" => "...", "priority" => "low", "estimate" => 2},
-      "reply" => "Good call."
+      "issue" => %{"title" => "Show wait times", "description" => "...", "priority" => "low", "estimate" => 2}
     }
 
     %{bug: bug, request: request, result_path: Path.join(Thread.scratch_path(thread), "result.json")}
@@ -82,7 +81,16 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     result_path: result_path
   } do
     expect(Tools, :run_agent, fn _role, _argv, _opts ->
-      File.write!(result_path, Jason.encode!(%{"title" => "Tasks stuck at Design", "items" => [bug]}))
+      File.write!(
+        result_path,
+        Jason.encode!(%{
+          "title" => "Tasks stuck at Design",
+          "message" => "One bug, confirmed.",
+          "reply" => "Thanks Priya, we reproduced this.",
+          "items" => [bug]
+        })
+      )
+
       {:ok, ""}
     end)
 
@@ -92,9 +100,15 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
              status: :waiting,
              title: "Tasks stuck at Design",
              error: nil,
+             reply_text: "Thanks Priya, we reproduced this.",
+             reply_posted_at: nil,
+             chat_read_at: %DateTime{},
              permalink: "https://slack.example/" <> _p
            } =
              Repo.get!(Thread, thread_id)
+
+    assert [%ChatMessage{author: :agent, text: "One bug, confirmed.", changes: "Added item 1"}] =
+             Repo.all(from c in ChatMessage, where: c.thread_id == ^thread_id)
 
     assert [
              %Item{
@@ -108,9 +122,10 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
                issue_title: "Approve leaves tasks at Design",
                issue_priority: :urgent,
                issue_estimate: 3,
-               reply_text: "Thanks Priya, we reproduced this. Filed as {issue link}.",
-               created_issue_id: nil,
-               reply_posted_at: nil
+               followup_text: nil,
+               ignored: false,
+               sent_at: nil,
+               created_issue_id: nil
              }
            ] = Repo.all(from i in Item, where: i.thread_id == ^thread_id)
   end
@@ -190,7 +205,8 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
              )
 
       refute thread |> Thread.scratch_path() |> Path.join("issues.md") |> File.exists?()
-      File.write!(result_path, Jason.encode!(%{"items" => [Map.put(request, "existing_issue", "TRI-23")]}))
+      covered = Map.merge(request, %{"existing_issue" => "TRI-23", "followup" => "Priya hit it too, on BILL-88."})
+      File.write!(result_path, Jason.encode!(%{"items" => [covered]}))
       {:ok, ""}
     end)
 
@@ -203,7 +219,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
                issue_description: nil,
                issue_priority: nil,
                issue_estimate: nil,
-               reply_text: "Good call."
+               followup_text: "Priya hit it too, on BILL-88."
              }
            ] = Repo.all(from i in Item, where: i.thread_id == ^thread_id)
   end
@@ -232,11 +248,11 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
 
     assert :ok = Triage.triage_thread(thread)
 
-    assert [%Item{existing_issue_id: ^issue_id, issue_title: nil, reply_text: "Good call."}] =
+    assert [%Item{existing_issue_id: ^issue_id, issue_title: nil, followup_text: nil}] =
              Repo.all(from i in Item, where: i.thread_id == ^thread_id)
   end
 
-  test "a pass in an ordinary channel runs the stored triage prompt where the repo has none, and drafts replies that link the issue with the placeholder",
+  test "a pass in an ordinary channel runs the stored triage prompt where the repo has none, and drafts one reply Rail ends with the new tickets' links",
        %{
          thread: thread,
          result_path: result_path
@@ -244,7 +260,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     expect(Tools, :run_agent, fn _role, argv, _opts ->
       assert ["--append-system-prompt", "You triage."] in Enum.chunk_every(argv, 2, 1)
       brief = Enum.find(argv, &(&1 =~ "Triage the Slack thread in"))
-      assert brief =~ "Where the issue should be linked, write `{issue link}`"
+      assert brief =~ "Rail ends it with the links of the tickets it creates"
       assert brief =~ "the reply says the item is already tracked in that issue, giving its identifier"
       assert brief =~ "An issue's `title` states the behavior the product should have"
       refute brief =~ "external"
@@ -265,7 +281,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       assert brief =~ "channel is external, shared with people outside the team"
       assert brief =~ "the reply says the item is already tracked, without naming the issue or its identifier"
       assert brief =~ "Still fill in `existing_issue`"
-      refute brief =~ "Where the issue should be linked"
+      refute brief =~ "Rail ends it with the links"
       refute brief =~ "giving its identifier"
       File.write!(result_path, Jason.encode!(%{"items" => []}))
       {:ok, ""}
@@ -348,7 +364,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
              Repo.all(from m in Message, where: m.thread_id == ^thread_id)
   end
 
-  test "a later message widens an item by its key, adds a new one, and leaves settled items alone", %{
+  test "a later message widens an item by its key, adds a new one, and leaves closed items alone", %{
     workspace: workspace,
     channel: channel,
     thread: %{id: thread_id} = thread,
@@ -369,6 +385,8 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     end)
 
     assert :ok = Triage.triage_thread(thread)
+    # As a Send leaves it: that round is over.
+    Repo.update_all(from(i in Item, where: i.key == "switcher-resets"), set: [sent_at: DateTime.utc_now()])
 
     {:ok, thread} =
       Triage.handle_slack_event(
@@ -380,9 +398,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
         })
       )
 
-    expect(Tools, :run_agent, fn _role, argv, _opts ->
-      assert Enum.any?(argv, &(&1 =~ "`stuck-at-design`" and &1 =~ "`switcher-resets` (settled"))
-
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
       widened = Map.put(bug, "summary", "Both BILL-88 and BILL-91.")
       rewritten = Map.put(fixed, "summary", "A pass must not touch this.")
 
@@ -445,15 +461,17 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       thread
       |> Thread.scratch_path()
       |> Path.join("result.json")
-      |> File.write!(Jason.encode!(%{"items" => [Map.put(bug, "reply", nil)]}))
+      |> File.write!(Jason.encode!(%{"reply" => nil, "items" => [bug]}))
 
       {:ok, ""}
     end)
 
     assert :ok = Triage.triage_thread(thread)
 
-    assert [%Item{kind: :bug, issue_title: "Approve leaves tasks at Design", reply_text: nil}] =
+    assert [%Item{kind: :bug, issue_title: "Approve leaves tasks at Design"}] =
              Repo.all(from i in Item, where: i.thread_id == ^thread_id)
+
+    assert %Thread{reply_text: nil} = Repo.get!(Thread, thread_id)
   end
 
   test "the agent runs in a checkout of the default branch, removed after, with an MCP token the thread holds meanwhile",
@@ -620,7 +638,9 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       assert :ok = Triage.triage_thread(thread)
 
       assert %Thread{
-               error: "tt_linear needs reconnecting for tt. Reconnect it under Settings → Connected accounts, then retry."
+               error:
+                 "tt_linear needs reconnecting for tt. Reconnect it under Settings → Connected accounts, " <>
+                   "then ask the agent in the chat to try again."
              } = Repo.get!(Thread, thread_id)
     end
 
@@ -637,7 +657,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
             {{:error, :dispatch_disabled}, "Dispatch is switched off, so triage did not run."},
             {{:error, :backend_signed_out},
              "The Triage role's backend is signed out, so triage did not run. " <>
-               "Sign it in under Settings → Backends, then retry."}
+               "Sign it in under Settings → Backends, then ask the agent in the chat to try again."}
           ] do
         expect(Tools, :run_agent, fn _role, _argv, _opts -> outcome end)
 
@@ -747,7 +767,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     bug: bug,
     result_path: result_path
   } do
-    %Thread{items: [_item]} = triage_with(thread, %{"items" => [bug]})
+    %Thread{items: [_item]} = triage_with(thread, %{"reply" => "Reproduced.", "items" => [bug]})
 
     {:ok, thread} =
       Triage.handle_slack_event(
@@ -757,20 +777,29 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
 
     expect(Tools, :run_agent, fn _role, _argv, _opts ->
       rewritten =
-        Map.merge(bug, %{
-          "reply" => "Couldn't reproduce yet.",
-          "issue" => %{"title" => "Rail's new title", "description" => "New.", "priority" => "low", "estimate" => 5}
+        Map.put(bug, "issue", %{
+          "title" => "Rail's new title",
+          "description" => "New.",
+          "priority" => "low",
+          "estimate" => 5
         })
 
-      File.write!(result_path, Jason.encode!(%{"items" => [rewritten]}))
+      File.write!(
+        result_path,
+        Jason.encode!(%{"message" => "Redrafted.", "reply" => "Couldn't reproduce yet.", "items" => [rewritten]})
+      )
+
       {:ok, ""}
     end)
 
     assert :ok = Triage.triage_thread(thread)
+    assert %Thread{reply_text: "Couldn't reproduce yet."} = Repo.get!(Thread, thread_id)
+
+    assert [%ChatMessage{changes: "Edited the reply · Edited item 1"}] =
+             Repo.all(from c in ChatMessage, where: c.thread_id == ^thread_id)
 
     assert [
              %Item{
-               reply_text: "Couldn't reproduce yet.",
                issue_title: "Rail's new title",
                issue_description: "New.",
                issue_priority: :low,
@@ -779,15 +808,16 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
            ] = Repo.all(from i in Item, where: i.thread_id == ^thread_id)
   end
 
-  test "a later pass leaves the estimate an issue was created with, while its reply is still to post", %{
+  test "a later pass never changes a ticket Send created", %{
+    project: project,
     workspace: workspace,
     channel: channel,
     thread: %{id: thread_id} = thread,
     bug: bug,
     result_path: result_path
   } do
-    %Thread{items: [item]} = triage_with(thread, %{"items" => [bug]})
-    user = slack_user(workspace.external_id)
+    thread = triage_with(thread, %{"items" => [bug]})
+    {:ok, user} = Users.update_user(system_scope(), slack_user(workspace.external_id), %{project_ids: [project.id]})
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -806,10 +836,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       })
     end)
 
-    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "channel_not_found"}))
-
-    assert {:ok, %Item{created_issue_id: "iss_" <> _id, issue_estimate: 2, reply_posted_at: nil}} =
-             Triage.create_triage_issue(Scope.for_user(user), item, %{"issue_estimate" => "2"})
+    assert {:ok, %Thread{status: :done}} = Triage.send_triage_reply(Scope.for_user(user), thread)
 
     {:ok, thread} =
       Triage.handle_slack_event(
@@ -818,15 +845,23 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       )
 
     expect(Tools, :run_agent, fn _role, _argv, _opts ->
-      redrafted = Map.merge(bug, %{"reply" => "Still on it.", "issue" => %{"title" => "Redrafted", "estimate" => 8}})
+      draft = thread |> Thread.scratch_path() |> Path.join("draft.json") |> File.read!() |> Jason.decode!()
+      assert %{"items" => [%{"key" => "stuck-at-design", "state" => "closed: never restate it"}]} = draft
+      redrafted = Map.merge(bug, %{"summary" => "Redrafted.", "issue" => %{"title" => "Redrafted", "estimate" => 8}})
       File.write!(result_path, Jason.encode!(%{"items" => [redrafted]}))
       {:ok, ""}
     end)
 
     assert :ok = Triage.triage_thread(thread)
 
-    assert [%Item{issue_title: "Approve leaves tasks at Design", issue_estimate: 2, reply_text: "Still on it."}] =
-             Repo.all(from i in Item, where: i.thread_id == ^thread_id)
+    assert [
+             %Item{
+               summary: "enter_stage writes the stage, then the role lookup raises.",
+               issue_title: "Approve leaves tasks at Design",
+               created_issue_id: "iss_" <> _created,
+               sent_at: %DateTime{}
+             }
+           ] = Repo.all(from i in Item, where: i.thread_id == ^thread_id)
   end
 
   describe "images attached to messages" do
@@ -1139,5 +1174,258 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
 
     assert :ok = Triage.triage_thread(thread)
     assert %Thread{error: ^error} = Repo.get!(Thread, thread_id)
+  end
+
+  describe "a chat line" do
+    setup %{project: project, workspace: workspace, thread: thread, bug: bug, request: request} do
+      dup = Map.merge(bug, %{"key" => "stuck-again", "title" => "Stuck again", "issue" => %{"title" => "Dup"}})
+      noise = Map.merge(bug, %{"key" => "fix-enabled", "title" => "Fix stays enabled", "issue" => %{"title" => "Fix"}})
+      thread = triage_with(thread, triage_result([bug, request, dup, noise]))
+      user = slack_user(workspace.external_id, "Michael Chen")
+      {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
+      scope = Scope.for_user(user)
+      [_bug, sent, dup_item, ignored] = thread.items
+
+      # As a Send leaves it: that item's round is over.
+      Repo.update_all(from(i in Item, where: i.id == ^sent.id), set: [sent_at: DateTime.utc_now()])
+      {:ok, _ignored} = Triage.update_triage_item(scope, ignored, %{"ignored" => "true"})
+      {:ok, _kind} = Triage.update_triage_item(scope, dup_item, %{"kind" => "feature_request"})
+      {:ok, _reply} = Triage.update_triage_reply(scope, thread, %{"reply_text" => "Typed by Michael."})
+
+      %{thread: thread, scope: scope}
+    end
+
+    test "runs a pass that reads the draft and the chat, and changes only what it asks", %{
+      thread: %{id: thread_id} = thread,
+      scope: scope,
+      bug: bug,
+      request: request,
+      result_path: result_path
+    } do
+      assert {:ok, %ChatMessage{author: :person, text: "Drop item 3."}} =
+               Triage.send_triage_chat(scope, thread, %{"text" => "Drop item 3."})
+
+      assert %Thread{status: :triaging} = Repo.get!(Thread, thread_id)
+
+      expect(Tools, :run_agent, fn _role, _argv, _opts ->
+        dir = Thread.scratch_path(thread)
+        assert File.read!(Path.join(dir, "chat.md")) =~ "### Michael Chen\n\nDrop item 3."
+
+        assert %{
+                 "reply" => "Typed by Michael.",
+                 "reply_posted" => false,
+                 "items" => [
+                   %{
+                     "key" => "stuck-at-design",
+                     "position" => 1,
+                     "state" => "open",
+                     "verdict" => "confirmed",
+                     "evidence" => [%{"file" => "lib/enter_stage.ex", "lines" => "42-45"}],
+                     "assumptions" => [%{"text" => "Billing is the BILL project."}]
+                   },
+                   %{"key" => "wait-times", "state" => "closed: never restate it"},
+                   %{"key" => "stuck-again", "kind" => "feature_request", "verdict" => nil},
+                   %{
+                     "key" => "fix-enabled",
+                     "state" => "ignored by a teammate: restate it unchanged unless the chat asks"
+                   }
+                 ]
+               } = dir |> Path.join("draft.json") |> File.read!() |> Jason.decode!()
+
+        rewritten = Map.put(request, "summary", "A pass must not touch a closed item.")
+
+        File.write!(
+          result_path,
+          Jason.encode!(triage_result([bug, rewritten], %{"message" => "Dropped item 3.", "reply" => nil}))
+        )
+
+        {:ok, ""}
+      end)
+
+      assert :ok = Triage.triage_thread(thread)
+
+      assert %Thread{status: :waiting, error: nil, reply_text: "Typed by Michael."} = Repo.get!(Thread, thread_id)
+
+      assert [
+               %Item{key: "stuck-at-design", position: 1, evidence: [%Item.Evidence{lines: "42-45"}]},
+               %Item{key: "wait-times", position: 2, summary: "Ordered by wait, but rows show none."},
+               %Item{key: "fix-enabled", position: 4, ignored: true}
+             ] = Repo.all(from i in Item, where: i.thread_id == ^thread_id, order_by: i.position)
+
+      assert [
+               %ChatMessage{author: :agent},
+               %ChatMessage{author: :person},
+               %ChatMessage{author: :agent, text: "Dropped item 3.", changes: "Removed item 3"}
+             ] = Repo.all(from c in ChatMessage, where: c.thread_id == ^thread_id, order_by: [c.inserted_at, c.id])
+
+      assert {:ok, %Thread{status: :waiting}} = Triage.get_triage_thread(scope, thread_id)
+    end
+
+    test "a result with an item Rail cannot read fails the pass and keeps every card", %{
+      thread: %{id: thread_id} = thread,
+      scope: scope,
+      bug: bug,
+      result_path: result_path
+    } do
+      {:ok, _line} = Triage.send_triage_chat(scope, thread, %{"text" => "Merge 1 and 3."})
+      before = Repo.all(from i in Item, where: i.thread_id == ^thread_id, order_by: i.position)
+
+      expect(Tools, :run_agent, fn _role, _argv, _opts ->
+        unreadable = Map.put(bug, "key", "Bad Key")
+        File.write!(result_path, Jason.encode!(triage_result([bug, unreadable])))
+        {:ok, ""}
+      end)
+
+      assert :ok = Triage.triage_thread(thread)
+
+      assert %Thread{
+               status: :waiting,
+               error: "Triage listed an item Rail could not read: Bad Key. The draft is as it was.",
+               reply_text: "Typed by Michael."
+             } = Repo.get!(Thread, thread_id)
+
+      assert ^before = Repo.all(from i in Item, where: i.thread_id == ^thread_id, order_by: i.position)
+    end
+
+    test "a line sent while a pass runs gets a pass of its own", %{
+      thread: %{id: thread_id} = thread,
+      scope: scope,
+      bug: bug,
+      result_path: result_path
+    } do
+      {:ok, _line} = Triage.send_triage_chat(scope, thread, %{"text" => "Shorter reply."})
+      Phoenix.PubSub.subscribe(Rail.PubSub, "triage")
+
+      expect(Tools, :run_agent, fn _role, _argv, _opts ->
+        {:ok, _line} = Triage.send_triage_chat(scope, thread, %{"text" => "And item 1 is low."})
+        File.write!(result_path, Jason.encode!(triage_result([bug], %{"reply" => "Shorter."})))
+        {:ok, ""}
+      end)
+
+      assert :ok = Triage.triage_thread(thread)
+      assert_received {:triage_scheduled, ^thread_id, 0}
+      assert_received {:triage_scheduled, ^thread_id, 0}
+      assert %Thread{status: :triaging} = settled = Repo.get!(Thread, thread_id)
+      assert Thread.chat_owed?(Repo.preload(settled, :chat_messages))
+
+      expect(Tools, :run_agent, fn _role, _argv, _opts ->
+        assert thread |> Thread.scratch_path() |> Path.join("chat.md") |> File.read!() =~ "And item 1 is low."
+        File.write!(result_path, Jason.encode!(triage_result([bug], %{"reply" => "Shorter."})))
+        {:ok, ""}
+      end)
+
+      assert :ok = Triage.triage_thread(thread)
+      assert %Thread{status: :waiting} = Repo.get!(Thread, thread_id)
+    end
+
+    test "a pass whose result meets a Send writes nothing, records no error and is tried again", %{
+      thread: %{id: thread_id} = thread,
+      scope: scope,
+      result_path: result_path
+    } do
+      {:ok, _line} = Triage.send_triage_chat(scope, thread, %{"text" => "Drop everything."})
+      before = Repo.all(from i in Item, where: i.thread_id == ^thread_id, order_by: i.position)
+
+      expect(Tools, :run_agent, fn _role, _argv, _opts ->
+        Repo.update_all(from(t in Thread, where: t.id == ^thread_id), set: [send_started_at: DateTime.utc_now()])
+        File.write!(result_path, Jason.encode!(triage_result([], %{"reply" => "Gone."})))
+        {:ok, ""}
+      end)
+
+      assert {:snooze, 30} = Triage.triage_thread(thread)
+      assert %Thread{error: nil, reply_text: "Typed by Michael.", triage_started_at: nil} = Repo.get!(Thread, thread_id)
+      assert ^before = Repo.all(from i in Item, where: i.thread_id == ^thread_id, order_by: i.position)
+      assert 1 = Repo.aggregate(from(c in ChatMessage, where: c.thread_id == ^thread_id and c.author == :agent), :count)
+    end
+  end
+
+  test "after a reply is posted, a thanks keeps it, and a newer question opens a new round", %{
+    workspace: workspace,
+    channel: channel,
+    thread: %{id: thread_id} = thread,
+    bug: bug,
+    result_path: result_path
+  } do
+    thread = triage_with(thread, triage_result([bug]))
+    %{id: user_id} = slack_user(workspace.external_id)
+    posted_at = ~U[2026-09-01 10:00:00.000000Z]
+    # As a Send leaves the thread, posted before the messages below.
+    Repo.update_all(from(t in Thread, where: t.id == ^thread_id),
+      set: [reply_posted_at: posted_at, reply_posted_by_id: user_id]
+    )
+
+    Repo.update_all(from(i in Item, where: i.thread_id == ^thread_id), set: [sent_at: posted_at])
+
+    {:ok, thread} =
+      Triage.handle_slack_event(
+        workspace,
+        slack_message_event(channel, %{"ts" => "1790000100.000400", "thread_ts" => thread.external_id, "text" => "thanks"})
+      )
+
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
+      File.write!(result_path, Jason.encode!(triage_result([], %{"reply" => nil, "message" => "Nothing to do."})))
+      {:ok, ""}
+    end)
+
+    assert :ok = Triage.triage_thread(thread)
+
+    assert %Thread{
+             status: :done,
+             reply_text: "Thanks Priya, we reproduced this and filed it.",
+             reply_posted_at: ^posted_at,
+             reply_posted_by_id: ^user_id
+           } = Repo.get!(Thread, thread_id)
+
+    assert [%ChatMessage{changes: nil}] =
+             Repo.all(from c in ChatMessage, where: c.thread_id == ^thread_id and c.text == "Nothing to do.")
+
+    {:ok, thread} =
+      Triage.handle_slack_event(
+        workspace,
+        slack_message_event(channel, %{"ts" => "1790000200.000400", "thread_ts" => thread.external_id, "text" => "When?"})
+      )
+
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
+      File.write!(result_path, Jason.encode!(triage_result([bug], %{"reply" => "No date yet."})))
+      {:ok, ""}
+    end)
+
+    assert :ok = Triage.triage_thread(thread)
+
+    assert %Thread{status: :waiting, reply_text: "No date yet.", reply_posted_at: nil, reply_posted_by_id: nil} =
+             Repo.get!(Thread, thread_id)
+
+    # Posted again, a chat pass that drafts a reply with nothing newer in the thread keeps what Slack has.
+    Repo.update_all(from(t in Thread, where: t.id == ^thread_id),
+      set: [reply_posted_at: DateTime.utc_now(), reply_posted_by_id: user_id]
+    )
+
+    unique = System.unique_integer([:positive])
+
+    {:ok, nameless} =
+      Users.register_oauth_user(%{github_id: "nl_#{unique}", login: "nl_#{unique}", email: "nl_#{unique}@x.com"})
+
+    {:ok, nameless} = Users.update_user(system_scope(), nameless, %{project_ids: [thread.project_id]})
+
+    {:ok, gone} =
+      Users.register_oauth_user(%{github_id: "go_#{unique}", login: "go_#{unique}", email: "go_#{unique}@x.com"})
+
+    {:ok, gone} = Users.update_user(system_scope(), gone, %{project_ids: [thread.project_id]})
+    {:ok, _line} = Triage.send_triage_chat(Scope.for_user(nameless), thread, %{"text" => "Anything else?"})
+    {:ok, _line} = Triage.send_triage_chat(Scope.for_user(gone), thread, %{"text" => "Me too."})
+    Repo.delete!(gone)
+
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
+      chat = thread |> Thread.scratch_path() |> Path.join("chat.md") |> File.read!()
+      assert chat =~ "### nl_#{unique}\n\nAnything else?"
+      assert chat =~ "### A teammate\n\nMe too."
+      File.write!(result_path, Jason.encode!(triage_result([bug], %{"reply" => "A second reply."})))
+      {:ok, ""}
+    end)
+
+    assert :ok = Triage.triage_thread(thread)
+    assert %Thread{reply_text: "No date yet.", reply_posted_at: %DateTime{}} = Repo.get!(Thread, thread_id)
+
+    assert [%Item{sent_at: ^posted_at}] = Repo.all(from i in Item, where: i.thread_id == ^thread_id)
   end
 end
