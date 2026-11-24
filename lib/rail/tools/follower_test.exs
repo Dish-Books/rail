@@ -45,7 +45,7 @@ defmodule Rail.Tools.FollowerTest do
         project_id: project.id,
         identifier: "FOL-#{System.unique_integer([:positive])}",
         title: "Follower Issue",
-        state: :backlog
+        state: :todo
       })
       |> Repo.insert!()
 

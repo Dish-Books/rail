@@ -36,8 +36,7 @@ defmodule Rail.Issues.Actions.SendIssueToTriageTest do
     title = "Follow-up to #{identifier}: Merge moves the ticket"
     description = "A branch that only names it moved it too.\n\nFound while testing [#{identifier}](#{url})."
 
-    assert {:ok,
-            %Issue{id: created_id, project_id: ^project_id, state: :triage, title: ^title, description: ^description}} =
+    assert {:ok, %Issue{id: created_id, project_id: ^project_id, state: :todo, title: ^title, description: ^description}} =
              Issues.send_issue_to_triage(scope, issue)
 
     assert %Issue{state: :done, testing_state: :sent_to_triage} = Repo.get!(Issue, issue_id)

@@ -56,7 +56,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         project_id: project.id,
         identifier: "TST-1",
         title: "Issue in the selected project",
-        state: :triage
+        state: :todo
       })
       |> Repo.insert!()
 
@@ -66,7 +66,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         project_id: other_project.id,
         identifier: "OTHNH-1",
         title: "Issue in the other project",
-        state: :triage
+        state: :todo
       })
       |> Repo.insert!()
       |> Repo.preload(:project)
@@ -301,6 +301,34 @@ defmodule RailWeb.Hooks.NavHookTest do
       end
 
       assert has_element?(view, "#attention-badge", "2")
+      assert has_element?(view, "#triage-badge", "1")
+    end
+
+    test "a tester gets no Triage badge while a thread waits, and neither badge is counted", %{
+      conn: conn,
+      user: user,
+      triage_project: triage_project
+    } do
+      {:ok, _user} = Users.update_user(system_scope(), user, %{project_ids: [triage_project.id], role: :tester})
+      reject(&Triage.count_triage_threads/1)
+      reject(&Pipeline.count_attention/1)
+
+      assert {:ok, view, _html} = live(conn, ~p"/testing")
+
+      refute has_element?(view, "#nav-triage")
+      refute has_element?(view, "#triage-badge")
+      refute has_element?(view, "#attention-badge")
+    end
+
+    test "a dev with the thread's project gets a Triage badge of one", %{
+      conn: conn,
+      user: user,
+      triage_project: triage_project
+    } do
+      {:ok, _user} = Users.update_user(system_scope(), user, %{project_ids: [triage_project.id], role: :dev})
+
+      assert {:ok, view, _html} = live(conn, ~p"/testing")
+
       assert has_element?(view, "#triage-badge", "1")
     end
 

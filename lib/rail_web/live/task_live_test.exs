@@ -109,7 +109,7 @@ defmodule RailWeb.TaskLiveTest do
         identifier: "TLV-1",
         title: "Task Live Issue",
         description: "Task Live Issue",
-        state: :triage
+        state: :todo
       })
       |> Repo.insert!()
       |> Map.put(:project, project)
@@ -137,6 +137,23 @@ defmodule RailWeb.TaskLiveTest do
       role: role,
       run: run
     }
+  end
+
+  test "a support person is sent to Support, ahead of the GitHub check", %{conn: conn} do
+    id = System.unique_integer([:positive])
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "task_live_role_#{id}",
+        login: "task_live-role-#{id}",
+        email: "task_live_role_#{id}@example.com"
+      })
+
+    {:ok, user} = Users.update_user(system_scope(), user, %{role: :support})
+    {:ok, user} = Users.unlink_github(Scope.for_user(user))
+
+    assert {:error, {:redirect, %{to: "/support"}}} =
+             live(log_in_user(conn, user), ~p"/tasks/tsk_01m7xfs1xpe4w74g5spsve63hm")
   end
 
   test "a plan sent to the tech leads reads Ready for tech lead in the header", %{conn: conn, task: task} do
@@ -315,11 +332,13 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "[data-qa='task_status_chip']", "Queued for Review")
   end
 
-  test "a stage waiting for resources says so, and where it stands in line", %{
-    conn: conn,
-    task: task,
-    project: project
-  } do
+  test "a stage waiting for resources says so, and where it stands in line, linked only for a role that opens Sandboxes",
+       %{
+         conn: conn,
+         scope: %{user: user},
+         task: task,
+         project: project
+       } do
     {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
     {:ok, engineer} = Roles.update_role(system_scope(), engineer, %{reserved_cpus: 2})
 
@@ -355,6 +374,12 @@ defmodule RailWeb.TaskLiveTest do
 
     assert has_element?(view, "[data-qa='task_status_chip']", "Implement waiting for resources")
     assert has_element?(view, "#task-line[href='/sandboxes']", "1st in line for 2 CPUs")
+
+    {:ok, _user} = Users.update_user(system_scope(), user, %{role: :tester})
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(view, "span#task-line", "1st in line for 2 CPUs")
+    refute has_element?(view, "a[href='/sandboxes']")
   end
 
   test "a stage waiting for usage says when it starts, reads apart from a sandbox wait, and starts on its own", %{
@@ -652,12 +677,16 @@ defmodule RailWeb.TaskLiveTest do
              live(conn, ~p"/tasks/#{task.id}")
   end
 
-  test "an open task page sends its person to connect GitHub once they disconnect it", %{
+  test "an open task page sends its person to connect GitHub once they disconnect it, and no one else's change does", %{
     conn: conn,
     scope: scope,
     task: task
   } do
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    send(view.pid, {:users_changed, "usr_someone_else"})
+    send(view.pid, {:users_changed, scope.user.id})
+    assert render(view) =~ "Task Live Issue"
 
     {:ok, _user} = Users.unlink_github(scope)
     assert_redirect(view, "/settings/connected-accounts")
@@ -2284,6 +2313,14 @@ defmodule RailWeb.TaskLiveTest do
       %{task: task, curator: curator, curator_run: curator_run}
     end
 
+    test "a tester sees the proposals with no link to All learnings", %{conn: conn, scope: %{user: user}, task: task} do
+      {:ok, _user} = Users.update_user(system_scope(), user, %{role: :tester})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
+
+      assert has_element?(view, "#task-learnings-empty", "The curator is reading this task")
+      refute has_element?(view, "#task-learnings-all")
+    end
+
     test "the curator's conversation sits beside it and takes a message, which waits while it works", %{
       conn: conn,
       task: task,
@@ -2305,6 +2342,7 @@ defmodule RailWeb.TaskLiveTest do
     } do
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=learnings")
       assert has_element?(view, "#task-learnings-empty", "The curator is reading this task")
+      assert has_element?(view, "#task-learnings-all[href='/learnings']", "All learnings")
 
       # The broadcast has the page update the item, which lands after the next read of the page.
       {:ok, proposal} = Learnings.save_task_proposal(task, %{action: "add", rule: "Lock the row.", kind: "qa"})
@@ -6769,12 +6807,14 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     # Leaving a suppressed finding alone is what its calibration rule already did, so Fix is the only call.
-    test "a finding a calibration rule suppressed offers Fix only, and names the rule", %{
-      conn: conn,
-      project: project,
-      task: task,
-      code: code
-    } do
+    test "a finding a calibration rule suppressed offers Fix only, and names the rule, linked for a role that opens Learnings",
+         %{
+           conn: conn,
+           scope: %{user: user},
+           project: project,
+           task: task,
+           code: code
+         } do
       rule = learning(project, %{rule: "Don't flag a missing nil clause", kind: :calibration})
       {:ok, _saved} = Pipeline.save_finding(task, Map.put(code, :checklist_rule, rule.id))
       {:ok, _pass} = Pipeline.save_review(task)
@@ -6788,9 +6828,16 @@ defmodule RailWeb.TaskLiveTest do
              )
 
       assert has_element?(view, "#finding-suppressor", "Don't flag a missing nil clause")
+      assert has_element?(view, "#finding-open-rule[href='/learnings/#{rule.id}']")
       assert has_element?(view, "#decide-fix-unhandled-nil")
       refute has_element?(view, "#decide-skip-unhandled-nil")
       assert has_element?(view, "#finish-review")
+
+      {:ok, _user} = Users.update_user(system_scope(), user, %{role: :tester})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#finding-suppressor", "Don't flag a missing nil clause")
+      refute has_element?(view, "#finding-open-rule")
     end
 
     # A frame goes to the client rather than through the render, because it
@@ -7187,7 +7234,7 @@ defmodule RailWeb.TaskLiveTest do
         |> Map.put(:project, project)
       end
 
-      parent_issue = insert.("TLV-10", "Work on TLV-10", %{state: :triage})
+      parent_issue = insert.("TLV-10", "Work on TLV-10", %{state: :todo})
       {:ok, parent} = Pipeline.create_task(parent_issue, :split)
       parent = Repo.preload(parent, [:issue, :project])
 

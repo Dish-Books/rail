@@ -55,6 +55,23 @@ defmodule RailWeb.TestingLiveTest do
     %{conn: log_in_user(conn, user), here: here, there: there, hidden: hidden, done: done, user: user}
   end
 
+  test "a role without the Testing tab is sent to its own first tab", %{conn: conn} do
+    id = System.unique_integer([:positive])
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "testing_live_role_#{id}",
+        login: "testing_live-role-#{id}",
+        email: "testing_live_role_#{id}@example.com"
+      })
+
+    for {role, home} <- [support: "/support"] do
+      {:ok, user} = Users.update_user(system_scope(), user, %{role: role})
+
+      assert {:error, {:redirect, %{to: ^home}}} = live(log_in_user(conn, user), ~p"/testing")
+    end
+  end
+
   test "an empty queue says how a ticket joins it, and one moved into Done elsewhere shows without a reload", %{
     conn: conn,
     here: here
@@ -477,7 +494,7 @@ defmodule RailWeb.TestingLiveTest do
     assert %Issue{state: :done, testing_state: :sent_to_triage} = Repo.get!(Issue, sent.id)
 
     assert %{issues: [%Issue{identifier: created, description: "The row is cut off" <> _link}]} =
-             Issues.list_issues(project_id: here.id, state: :triage)
+             Issues.list_issues(project_id: here.id, state: :todo)
 
     assert has_element?(view, "#testing-notice", "#{sent.identifier} sent to triage as #{created}.")
     assert has_element?(view, "#testing-notice-created[href='/issues/#{created}']")
@@ -520,7 +537,7 @@ defmodule RailWeb.TestingLiveTest do
 
     assert_patch(view, ~p"/testing/#{second.id}", 1_000)
     assert has_element?(view, "#testing-notice", "sent to triage as")
-    assert %{total: 1} = Issues.list_issues(project_id: here.id, state: :triage)
+    assert %{total: 1} = Issues.list_issues(project_id: here.id, state: :todo)
 
     view |> element("#testing-mark-tested") |> render_click()
 
@@ -626,7 +643,7 @@ defmodule RailWeb.TestingLiveTest do
     render_hook(view, "send_to_triage", %{"issue_id" => sent.id})
     assert has_element?(view, "#testing-notice", "#{sent.identifier} was already sent to triage.")
     assert has_element?(view, "#testing-notes-status", "Testing finished")
-    assert %{total: 1} = Issues.list_issues(project_id: sent.project_id, state: :triage)
+    assert %{total: 1} = Issues.list_issues(project_id: sent.project_id, state: :todo)
 
     {:ok, view, _html} = live(conn, ~p"/testing/#{reopened.id}")
 

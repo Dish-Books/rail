@@ -5,14 +5,14 @@ defmodule Rail.Triage.Actions.GetTriageThread do
 
   alias Rail.Repo
   alias Rail.Scope
+  alias Rail.Triage.Schemas.ChatMessage
   alias Rail.Triage.Schemas.Item
   alias Rail.Triage.Schemas.Message
-  alias Rail.Triage.Schemas.Note
   alias Rail.Triage.Schemas.Thread
 
   @doc """
   Loads a thread with everything its page shows: the conversation oldest first,
-  its items in order with the issues they link and created, and the notes people left on them.
+  its items in order with the issues they cover and created, the reply's poster and the chat.
   A thread in a project the scope cannot see is not found.
   """
   def get_triage_thread(scope, id) when is_binary(id) do
@@ -23,21 +23,16 @@ defmodule Rail.Triage.Actions.GetTriageThread do
           :project,
           :dismissed_by,
           :forwarded_by,
+          :reply_posted_by,
           slack_channel: :slack_workspace,
           # A forwarded copy carries Intercom's whole-second times, so the id breaks ties.
           messages: ^from(m in Message, order_by: [asc: m.posted_at, asc: m.id], preload: :sent_by_user),
           items:
             ^from(i in Item,
-              order_by: [asc: i.position],
-              preload: [
-                :thread,
-                :existing_issue,
-                :issue_created_by,
-                :reply_posted_by,
-                created_issue: :task
-              ]
+              order_by: [asc: i.position, asc: i.id],
+              preload: [:thread, :existing_issue, :issue_created_by, created_issue: :task]
             ),
-          notes: ^from(n in Note, order_by: [asc: n.inserted_at], preload: [:user, :item])
+          chat_messages: ^from(c in ChatMessage, order_by: [asc: c.inserted_at, asc: c.id], preload: :user)
         ]
 
     query = if ids = Scope.project_ids(scope), do: where(query, [t], t.project_id in ^ids), else: query

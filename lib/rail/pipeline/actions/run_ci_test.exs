@@ -42,7 +42,7 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
         project_id: project.id,
         identifier: "RCI-1",
         title: "Run CI",
-        state: :backlog
+        state: :todo
       })
       |> Repo.insert!()
 
@@ -185,7 +185,7 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
         project_id: other_project.id,
         identifier: "OCI-1",
         title: "Other CI",
-        state: :backlog
+        state: :todo
       })
       |> Repo.insert!()
 

@@ -5,33 +5,28 @@ defmodule RailWeb.TriageLive do
   alias Rail.Projects
   alias Rail.Scope
   alias Rail.Triage
+  alias Rail.Triage.Schemas.ChatMessage
   alias Rail.Triage.Schemas.Item
   alias Rail.Triage.Schemas.Message
-  alias Rail.Triage.Schemas.Note
   alias Rail.Triage.Schemas.Thread
+  alias Rail.Users.Schemas.User
+
+  on_mount {RailWeb.UserAuth, {:require_tab, :triage}}
 
   @filters ["waiting", "triaging", "done"]
 
   @errors %{
     slack_not_linked: "Connect Slack to post as yourself.",
     slack_other_workspace: "Your Slack account is in another workspace than this thread.",
-    already_tracked: "An existing issue already tracks this.",
-    already_created: "Someone already accepted this.",
-    already_posted: "Someone already accepted this.",
-    locked: "This item is being triaged again, so it cannot change yet.",
-    needs_issue_link: "This reply links the issue, so create the issue first.",
-    external_issue_link: "This reply cannot link the issue in an external channel. Take out {issue link} to post it.",
-    no_reply: "There is no reply to post.",
-    settled: "This item is settled and takes no more notes.",
-    forwarded: "This thread was forwarded from Intercom, so it is not triaged again and has no Slack thread."
-  }
-
-  @draft_fields %{
-    "issue_title" => :issue_title,
-    "issue_description" => :issue_description,
-    "issue_priority" => :issue_priority,
-    "issue_estimate" => :issue_estimate,
-    "reply_text" => :reply_text
+    triaging: "The agent is still working on this thread.",
+    already_sending: "This thread is being sent.",
+    already_sent: "This reply is already posted.",
+    closed: "This ticket was already sent.",
+    gone: "The agent removed this card.",
+    dismissed: "This thread was dismissed. Write in the chat to bring it back.",
+    nothing_to_send: "There is nothing to send.",
+    forwarded: "Support already answered this conversation.",
+    not_found: "This thread is no longer here."
   }
 
   def mount(_params, _session, socket) do
@@ -46,9 +41,6 @@ defmodule RailWeb.TriageLive do
       |> assign(:page_title, "Triage")
       |> assign(:current_section, :triage)
       |> assign(:show_slack_link_prompt, not Scope.slack_linked?(socket.assigns.current_scope))
-      |> assign(:item_errors, %{})
-      |> assign(:forward_error, nil)
-      |> assign(:note, Ecto.Changeset.change(%Note{}))
 
     {:ok, socket}
   end
@@ -62,10 +54,9 @@ defmodule RailWeb.TriageLive do
       |> assign(:filter, filter)
       |> assign(:selected_id, params["id"])
       |> assign(:thread, nil)
-      |> assign(:item_errors, %{})
-      |> assign(:forward_error, nil)
-      |> assign(:drafts, %{})
-      |> assign(:note, Ecto.Changeset.change(%Note{}))
+      |> assign(:panel, "chat")
+      |> assign(:error, nil)
+      |> assign(:chat_form, Ecto.Changeset.change(%ChatMessage{}))
       |> assign(:open_image, nil)
       |> load()
 
@@ -80,6 +71,7 @@ defmodule RailWeb.TriageLive do
       current_scope={@current_scope}
       attention_count={@attention_count}
       triage_count={@triage_count}
+      support_count={@support_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}
@@ -96,132 +88,79 @@ defmodule RailWeb.TriageLive do
           now={@now}
         />
 
-        <.triage_thread
-          :if={@thread}
-          thread={@thread}
-          current_user_id={@current_scope.user.id}
-          note={@note}
-        />
-
         <section
           :if={@thread}
-          id="triage-items"
-          class="flex-1 min-w-[min(560px,calc(100%-630px))] flex flex-col min-h-0"
+          id={"triage-draft-column-#{@thread.id}"}
+          class="flex-1 min-w-[320px] flex flex-col min-h-0 border-r border-slate-200 dark:border-slate-700"
         >
-          <div class="flex items-center gap-3 px-6 py-3 border-b border-slate-200 dark:border-slate-700">
-            <span class="text-sm font-bold text-slate-900 dark:text-slate-100">
-              {length(@thread.items)} {if length(@thread.items) == 1, do: "item", else: "items"}
-            </span>
-            <span
-              :if={@forwarded}
-              class="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400"
+          <div class="px-6 py-3 border-b border-slate-200 dark:border-slate-700">
+            <div class="flex items-center gap-2 min-w-0 text-xs text-slate-500 dark:text-slate-400">
+              <.project_badge project={@thread.project} />
+              <span id="triage-source" class="font-mono truncate">{@source_line}</span>
+            </div>
+            <h2
+              id="triage-thread-title"
+              title={Thread.title_or_preview(@thread)}
+              class="mt-1 text-lg font-bold leading-snug truncate text-slate-900 dark:text-slate-100"
             >
-              <.icon name="pi-lock-simple" class="size-3" />
-              Support already replied. Nothing reaches the issue tracker until you create it.
-            </span>
-            <span
-              :if={!@forwarded}
-              class="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400"
-            >
-              <.icon name="pi-lock-simple" class="size-3" />
-              Nothing reaches Slack or the issue tracker until you accept it.
-            </span>
-            <span class="ml-auto flex items-center gap-2">
-              <.button
-                :if={@show_dismiss}
-                size="sm"
-                phx-click="dismiss_thread"
-                id="dismiss-thread-button"
-              >
-                Dismiss thread
-              </.button>
-              <.button
-                :if={@create_count > 0}
-                variant="primary"
-                size="sm"
-                phx-click="create_forwarded"
-                data-no-repeat
-                id="create-forwarded-button"
-              >
-                <.icon name="pi-check-bold" class="size-3.5" />Create {@create_count} {if @create_count ==
-                                                                                            1,
-                                                                                          do:
-                                                                                            "ticket",
-                                                                                          else:
-                                                                                            "tickets"}
-              </.button>
-            </span>
+              {Thread.title_or_preview(@thread)}
+            </h2>
           </div>
-          <p
-            :if={@forward_error}
-            id="forward-error"
-            role="alert"
-            class="px-6 py-2 text-xs text-red-600 dark:text-red-400 border-b border-slate-200 dark:border-slate-700"
-          >
-            {@forward_error}
-          </p>
-
-          <div class="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-            <div
-              :if={@thread.error}
-              id="triage-error"
-              class="rounded-xl border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30 px-5 py-4 space-y-2"
+          <div class="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            <.triage_reply thread={@thread} author_name={@author_name} locked={@locked} />
+            <p
+              :if={@thread.items != []}
+              id="triage-tickets-line"
+              class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400"
             >
-              <p class="flex items-center gap-2 text-sm font-semibold text-red-800 dark:text-red-200">
-                <.icon name="pi-warning-circle" class="size-4" />Triage did not finish
-              </p>
-              <p class="text-[13px] text-red-800 dark:text-red-200">{@thread.error}</p>
-              <div :if={!@forwarded} class="flex justify-end">
-                <.button size="sm" phx-click="retriage" id="triage-again-button">Triage again</.button>
-              </div>
-            </div>
+              {@tickets_line}
+            </p>
+            <.triage_ticket :for={item <- @thread.items} item={item} locked={@locked} />
+          </div>
+          <.triage_send_bar thread={@thread} slack_linked={!@show_slack_link_prompt} error={@error} />
+        </section>
 
-            <div
-              :if={@show_triaging}
-              id="triage-running"
-              class="flex items-center gap-2.5 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 text-[12.5px]"
-            >
-              <span class="relative flex size-2">
-                <span class="absolute inline-flex size-full rounded-full bg-blue-400 opacity-75 animate-ping"></span>
-                <span class="relative size-2 rounded-full bg-blue-500"></span>
-              </span>
-              <span class="font-semibold text-slate-900 dark:text-slate-100">
-                Rail is reading this thread against the code.
-              </span>
-            </div>
+        <.agent_chat
+          :if={@thread && @panel == "chat"}
+          id="triage-chat"
+          key={@thread.id}
+          lines={@thread.chat_messages}
+          running={@running}
+          form={@chat_form}
+          empty="The agent reads the thread, the code and the tickets. Ask it to change the reply or the tickets, or why it reached a verdict."
+          placeholder="Ask the agent to change the reply or the tickets"
+          gone_author="A teammate"
+          class="w-[400px] max-xl:w-[260px] shrink-0"
+        >
+          <:header>
+            <.segmented_control
+              id="triage-panel"
+              options={@panel_options}
+              selected={@panel}
+              event="show_panel"
+              value_name="panel"
+              aria-label="Right panel"
+            />
+          </:header>
+        </.agent_chat>
 
-            <div
-              :if={@show_no_response}
-              id="triage-no-response"
-              class="rounded-xl border border-slate-200 dark:border-slate-700 px-5 py-4 space-y-2"
-            >
-              <p class="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                <.icon name="pi-minus-circle" class="size-4 text-slate-400" />Needed no response
-              </p>
-              <p class="text-[13px] text-slate-700 dark:text-slate-300">
-                Rail read this as: {@thread.no_response_reason}. It asks nothing of the product and reports nothing, so nothing was drafted and it never waited on you.
-              </p>
-              <div class="flex items-center gap-2 pt-1">
-                <span class="text-xs text-slate-500 dark:text-slate-400">If Rail got this wrong:</span>
-                <.button size="sm" phx-click="retriage" id="triage-anyway-button" class="ml-auto">
-                  Triage anyway
-                </.button>
-              </div>
-            </div>
-
-            <.triage_item
-              :for={item <- @thread.items}
-              item={item}
-              form={Map.fetch!(@item_forms, item.id)}
-              slack_linked={!@show_slack_link_prompt}
-              project_name={@thread.project.name}
-              external_channel={Thread.external?(@thread)}
-              forwarded={@forwarded}
-              corrected_by={Map.get(@corrected_by, item.id)}
-              error={Map.get(@item_errors, item.id)}
+        <aside
+          :if={@thread && @panel == "thread"}
+          id="triage-thread-panel"
+          class="w-[400px] max-xl:w-[260px] shrink-0 flex flex-col min-h-0"
+        >
+          <div class="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center gap-2">
+            <.segmented_control
+              id="triage-panel"
+              options={@panel_options}
+              selected={@panel}
+              event="show_panel"
+              value_name="panel"
+              aria-label="Right panel"
             />
           </div>
-        </section>
+          <.triage_thread thread={@thread} />
+        </aside>
       </div>
     </Layouts.app>
 
@@ -239,93 +178,64 @@ defmodule RailWeb.TriageLive do
     {:noreply, push_patch(socket, to: ~p"/triage?#{[filter: filter]}")}
   end
 
-  # What a person types stays on this page, and is only saved by accepting it.
-  def handle_event("update_draft", %{"item_id" => item_id, "item" => attrs}, socket) do
-    item = Enum.find(socket.assigns.thread.items, &(&1.id == item_id))
-    typed = Map.get(socket.assigns.drafts, item_id, %{})
+  def handle_event("show_panel", %{"panel" => panel}, socket) when panel in ["chat", "thread"],
+    do: {:noreply, assign(socket, :panel, panel)}
 
-    typed =
-      for {field, key} <- @draft_fields, Map.has_key?(attrs, field), into: typed do
-        {field, {Map.fetch!(item, key), attrs[field]}}
+  def handle_event("update_reply", %{"thread" => attrs}, socket) do
+    result = Triage.update_triage_reply(socket.assigns.current_scope, socket.assigns.thread, attrs)
+    {:noreply, result(socket, result)}
+  end
+
+  def handle_event("update_item", %{"item_id" => item_id, "item" => attrs}, socket) do
+    {:noreply, on_item(socket, item_id, &Triage.update_triage_item(socket.assigns.current_scope, &1, attrs))}
+  end
+
+  def handle_event("toggle_ignore", %{"item_id" => item_id}, socket) do
+    scope = socket.assigns.current_scope
+    {:noreply, on_item(socket, item_id, &Triage.update_triage_item(scope, &1, %{"ignored" => not &1.ignored}))}
+  end
+
+  # What is typed in the chat stays through the reloads broadcasts bring.
+  def handle_event("chat_change", %{"chat_message" => attrs}, socket),
+    do: {:noreply, assign(socket, :chat_form, Ecto.Changeset.change(%ChatMessage{}, text: attrs["text"]))}
+
+  # A reconnect while the agent works recovers the disabled chat box with no text: nothing changed.
+  def handle_event("chat_change", _params, socket), do: {:noreply, socket}
+
+  def handle_event("chat", %{"chat_message" => attrs}, socket) do
+    socket =
+      case Triage.send_triage_chat(socket.assigns.current_scope, socket.assigns.thread, attrs) do
+        {:ok, _line} ->
+          socket |> assign(:chat_form, Ecto.Changeset.change(%ChatMessage{})) |> assign(:error, nil) |> load()
+
+        {:error, %Ecto.Changeset{} = changeset} ->
+          assign(socket, :chat_form, changeset)
+
+        {:error, reason} ->
+          socket |> assign(:error, error_message(reason)) |> load()
       end
 
-    drafts = Map.put(socket.assigns.drafts, item_id, typed)
-    socket = socket |> assign(:drafts, drafts) |> assign(:item_forms, item_forms(socket.assigns.thread, drafts))
     {:noreply, socket}
   end
 
-  def handle_event("create_issue", %{"item_id" => item_id, "item" => attrs}, socket) do
-    attrs = Map.merge(typed(socket.assigns.drafts, item_id), attrs)
-    {:noreply, accept(socket, item_id, &Triage.create_triage_issue(socket.assigns.current_scope, &1, attrs))}
-  end
+  # A failure partway is saved on the thread, so every tab shows it; only a refusal is this page's own.
+  def handle_event("send", _params, socket) do
+    error =
+      case Triage.send_triage_reply(socket.assigns.current_scope, socket.assigns.thread) do
+        {:ok, _thread} -> nil
+        {:error, {:not_created, _positions}} -> nil
+        {:error, {:not_updated, _positions}} -> nil
+        {:error, {:reply_failed, _reason}} -> nil
+        {:error, reason} -> error_message(reason)
+      end
 
-  def handle_event("post_reply", %{"item_id" => item_id, "item" => attrs}, socket) do
-    attrs = Map.merge(typed(socket.assigns.drafts, item_id), attrs)
-    {:noreply, accept(socket, item_id, &Triage.post_triage_reply(socket.assigns.current_scope, &1, attrs))}
-  end
-
-  def handle_event("pick_note", %{"item_id" => item_id} = params, socket) do
-    note = Ecto.Changeset.change(%Note{}, item_id: item_id, assumption: params["assumption"])
-    {:noreply, assign(socket, :note, note)}
-  end
-
-  def handle_event("change_note", %{"note" => attrs}, socket) do
-    note =
-      Ecto.Changeset.change(%Note{},
-        item_id: attrs["item_id"],
-        assumption: attrs["assumption"],
-        text: attrs["text"]
-      )
-
-    {:noreply, assign(socket, :note, note)}
-  end
-
-  def handle_event("add_note", %{"note" => %{"item_id" => item_id} = attrs}, socket) do
-    item = Enum.find(socket.assigns.thread.items, &(&1.id == item_id))
-
-    case Triage.add_triage_note(socket.assigns.current_scope, item, attrs) do
-      {:ok, _note} ->
-        socket = socket |> assign(:note, Ecto.Changeset.change(%Note{})) |> load()
-        {:noreply, socket}
-
-      {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign(socket, :note, changeset)}
-
-      {:error, reason} ->
-        {:noreply, assign(socket, :item_errors, %{item_id => error_message(reason)})}
-    end
+    socket = socket |> assign(:error, error) |> load()
+    {:noreply, socket}
   end
 
   def handle_event("dismiss_thread", _params, socket) do
     {:ok, _thread} = Triage.dismiss_triage_thread(socket.assigns.current_scope, socket.assigns.thread)
     {:noreply, load(socket)}
-  end
-
-  def handle_event("retriage", _params, socket) do
-    case Triage.retriage_thread(socket.assigns.current_scope, socket.assigns.thread) do
-      {:ok, _thread} -> {:noreply, load(socket)}
-      {:error, reason} -> {:noreply, assign(socket, :forward_error, error_message(reason))}
-    end
-  end
-
-  # Creates every open item's ticket with what was typed on this page.
-  def handle_event("create_forwarded", _params, socket) do
-    drafts = Map.new(socket.assigns.drafts, fn {item_id, _typed} -> {item_id, typed(socket.assigns.drafts, item_id)} end)
-
-    forward_error =
-      case Triage.create_forwarded_issues(socket.assigns.current_scope, socket.assigns.thread, drafts) do
-        {:ok, _thread} ->
-          nil
-
-        {:error, {:not_created, positions}} ->
-          "Could not create item #{Enum.join(positions, ", ")}. Try again; the others are created."
-
-        {:error, :not_found} ->
-          "This thread is no longer here."
-      end
-
-    socket = socket |> assign(:forward_error, forward_error) |> load()
-    {:noreply, socket}
   end
 
   def handle_event("open_image", %{"message_id" => message_id, "file_id" => file_id}, socket) do
@@ -340,7 +250,17 @@ defmodule RailWeb.TriageLive do
 
   def handle_event("close_image", _params, socket), do: {:noreply, assign(socket, :open_image, nil)}
 
-  def handle_info({:triage_changed, _thread_id}, socket), do: {:noreply, load(socket)}
+  # A refusal goes once what it described changed, such as another tab's Send ending or a pass finishing.
+  def handle_info({:triage_changed, thread_id}, socket) do
+    before = socket.assigns.thread
+    socket = load(socket)
+    now = socket.assigns.thread
+
+    if match?(%Thread{id: ^thread_id}, before) and match?(%Thread{id: ^thread_id}, now) and
+         refusal_basis(before) != refusal_basis(now),
+       do: {:noreply, assign(socket, :error, nil)},
+       else: {:noreply, socket}
+  end
 
   # A project's name and its channels' switches show on the open thread.
   def handle_info({:project_changed, _project_id}, socket), do: {:noreply, load(socket)}
@@ -351,24 +271,25 @@ defmodule RailWeb.TriageLive do
   # The navigation hook and the issue dialog broadcast things this page has no use for.
   def handle_info(_message, socket), do: {:noreply, socket}
 
-  defp accept(socket, item_id, action) do
-    item = Enum.find(socket.assigns.thread.items, &(&1.id == item_id))
-
-    case action.(item) do
-      {:ok, _item} ->
-        socket |> assign(:item_errors, Map.delete(socket.assigns.item_errors, item_id)) |> load()
-
-      {:error, reason} ->
-        assign(socket, :item_errors, Map.put(socket.assigns.item_errors, item_id, error_message(reason)))
+  # A card a pass removed while its change was in flight is simply gone after the reload.
+  defp on_item(socket, item_id, action) do
+    case Enum.find(socket.assigns.thread.items, &(&1.id == item_id)) do
+      %Item{} = item -> result(socket, action.(item))
+      nil -> load(socket)
     end
   end
+
+  defp result(socket, {:ok, _record}), do: socket |> assign(:error, nil) |> load()
+  defp result(socket, {:error, reason}), do: socket |> assign(:error, error_message(reason)) |> load()
+
+  defp refusal_basis(%Thread{} = thread), do: {thread.status, Thread.sending?(thread)}
 
   defp load(socket) do
     scope = socket.assigns.current_scope
     project_id = socket.assigns.current_project_id
     project_filter = socket.assigns.project_filter
     threads = Triage.list_triage_threads(project_id: project_filter, status: socket.assigns.filter, limit: 100)
-    # The open thread stays open when an accept moves it to another status.
+    # The open thread stays open when a Send moves it to another status.
     open_id = socket.assigns.thread && socket.assigns.thread.id
     selected_id = socket.assigns.selected_id || open_id || (List.first(threads) && List.first(threads).id)
 
@@ -378,8 +299,8 @@ defmodule RailWeb.TriageLive do
         _none -> nil
       end
 
-    drafts = kept_drafts(socket.assigns.drafts, thread)
     open = socket.assigns.open_image
+    user = scope.user
 
     socket
     |> assign(:now, DateTime.utc_now())
@@ -387,16 +308,23 @@ defmodule RailWeb.TriageLive do
     |> assign(:counts, Triage.count_triage_threads(project_id: project_filter))
     |> assign(:triage_count, Triage.count_triage_threads(project_id: Scope.project_ids(scope)).waiting)
     |> assign(:channel_names, channel_names(socket.assigns.projects, project_id))
-    |> assign(:thread, thread)
-    |> assign(:drafts, drafts)
-    |> assign(:item_forms, item_forms(thread, drafts))
-    |> assign(:corrected_by, corrected_by(thread, scope.user.id))
-    |> assign(:show_dismiss, thread != nil and thread.status != :done)
-    |> assign(:forwarded, thread != nil and Thread.forwarded?(thread))
-    |> assign(:create_count, create_count(thread))
-    |> assign(:show_triaging, thread != nil and thread.status == :triaging and thread.items == [])
-    |> assign(:show_no_response, show_no_response?(thread))
+    |> assign(:author_name, user.slack_name || user.name || user.login)
+    |> assign_thread(thread)
     |> assign(:open_image, open && resolve_image(thread, open.message_id, open.image.external_id, 0))
+  end
+
+  defp assign_thread(socket, nil), do: socket |> assign(:thread, nil) |> assign(:running, false) |> assign(:locked, false)
+
+  defp assign_thread(socket, %Thread{} = thread) do
+    running = thread.status == :triaging
+
+    socket
+    |> assign(:thread, thread)
+    |> assign(:running, running)
+    |> assign(:locked, running or is_struct(thread.dismissed_at, DateTime))
+    |> assign(:panel_options, [{"chat", "Chat"}, {"thread", panel_label(thread)}])
+    |> assign(:source_line, calculate_source_line(thread))
+    |> assign(:tickets_line, calculate_tickets_line(thread))
   end
 
   defp step_image(%{assigns: %{open_image: %{message_id: message_id, image: image}}} = socket, step),
@@ -421,38 +349,37 @@ defmodule RailWeb.TriageLive do
     if index, do: %{message_id: message_id, image: Enum.at(images, index), position: index + 1, count: length(images)}
   end
 
-  defp create_count(%Thread{support_conversation_id: id, items: items}) when is_binary(id),
-    do: Enum.count(items, &(Item.issue_draft?(&1) and is_nil(&1.created_issue_id)))
+  defp panel_label(%Thread{messages: messages} = thread),
+    do: "#{if Thread.forwarded?(thread), do: "Conversation", else: "Thread"} · #{length(messages)}"
 
-  defp create_count(_slack_or_none), do: 0
+  # "#rail-feedback · Priya Raman, Marcus Lee", or "Intercom · forwarded by Jo Park".
+  defp calculate_source_line(%Thread{forwarded_by: forwarded_by} = thread) when is_struct(forwarded_by, User),
+    do: "#{Thread.source_label(thread)} · forwarded by #{forwarded_by.name || forwarded_by.login}"
 
-  defp show_no_response?(%Thread{items: [], error: nil, no_response_reason: reason}), do: is_binary(reason)
-  defp show_no_response?(_thread), do: false
+  defp calculate_source_line(%Thread{support_conversation_id: id} = thread) when is_binary(id),
+    do: "#{Thread.source_label(thread)} · forwarded by support"
 
-  defp item_forms(nil, _drafts), do: %{}
-
-  defp item_forms(%Thread{items: items}, drafts),
-    do: Map.new(items, &{&1.id, Item.draft_changeset(&1, typed(drafts, &1.id))})
-
-  # A pass that redrafts a field replaces what was typed there.
-  defp kept_drafts(_drafts, nil), do: %{}
-
-  defp kept_drafts(drafts, %Thread{items: items}) do
-    for %Item{id: id} = item <- items, Map.has_key?(drafts, id), into: %{} do
-      {id, Map.filter(drafts[id], fn {field, {pass, _typed}} -> Map.fetch!(item, @draft_fields[field]) == pass end)}
-    end
+  defp calculate_source_line(%Thread{messages: messages} = thread) do
+    authors = messages |> Enum.reject(&Message.via_rail?/1) |> Enum.map(& &1.author_name) |> Enum.uniq()
+    Enum.join([Thread.source_label(thread) | if(authors == [], do: [], else: [Enum.join(authors, ", ")])], " · ")
   end
 
-  defp typed(drafts, item_id),
-    do: Map.new(Map.get(drafts, item_id, %{}), fn {field, {_pass, value}} -> {field, value} end)
+  # "Tickets · 2 to create · 1 follow-up · 1 ignored"
+  defp calculate_tickets_line(%Thread{items: items} = thread) do
+    updates = length(Thread.to_update(thread))
+    ignored = Enum.count(items, & &1.ignored)
 
-  defp corrected_by(nil, _user_id), do: %{}
+    parts =
+      Enum.reject(
+        [
+          "#{length(Thread.to_create(thread))} to create",
+          updates > 0 && "#{updates} #{if updates == 1, do: "follow-up", else: "follow-ups"}",
+          ignored > 0 && "#{ignored} ignored"
+        ],
+        &(&1 == false)
+      )
 
-  # Who wrote the note that corrected an item's assumption, for the assumption it answers.
-  defp corrected_by(%Thread{notes: notes}, user_id) do
-    for %{assumption: assumption} = note <- notes, is_binary(assumption), into: %{} do
-      {note.item_id, if(note.user_id == user_id, do: "you", else: note.user && note.user.name)}
-    end
+    Enum.join(["Tickets" | parts], " · ")
   end
 
   defp channel_names(projects, project_id) do
@@ -462,5 +389,6 @@ defmodule RailWeb.TriageLive do
     |> Enum.map(& &1.name)
   end
 
+  defp error_message(%Ecto.Changeset{}), do: "That did not save."
   defp error_message(reason), do: Map.get_lazy(@errors, reason, fn -> "That did not work: #{inspect(reason)}" end)
 end

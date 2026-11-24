@@ -51,6 +51,7 @@ defmodule RailWeb.Settings.ProjectsLive do
       current_scope={@current_scope}
       attention_count={@attention_count}
       triage_count={@triage_count}
+      support_count={@support_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}
@@ -721,7 +722,7 @@ defmodule RailWeb.Settings.ProjectsLive do
                 >
                   Removing #{removal.name} deletes {removal.threads} triage {if removal.threads == 1,
                     do: "thread",
-                    else: "threads"}, along with their items, notes and the record of what was posted.
+                    else: "threads"}, along with their items, chat and the record of what was posted.
                 </p>
                 <div class="flex justify-end gap-2">
                   <.button

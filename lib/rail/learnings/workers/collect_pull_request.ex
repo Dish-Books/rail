@@ -89,7 +89,7 @@ defmodule Rail.Learnings.Workers.CollectPullRequest do
   defp excerpt(%{"path" => path, "diff_hunk" => hunk}) when is_binary(path), do: "#{path}\n#{hunk}"
   defp excerpt(_review), do: nil
 
-  defp abandoned?(%Task{issue: %Issue{state: state}}), do: state in [:canceled, :duplicate]
+  defp abandoned?(%Task{issue: %Issue{state: state}}), do: state == :canceled
   defp abandoned?(nil), do: false
 
   defp users_by_login(sightings) do

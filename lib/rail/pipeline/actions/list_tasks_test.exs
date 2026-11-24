@@ -12,6 +12,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Users
 
   setup %{project: project} do
@@ -213,7 +214,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     {:ok, _open} = Pipeline.update_task(open, %{stage: :finalize, marked_ready_at: now})
     open_issue |> Issue.tracker_changeset(%{state: :in_review}) |> Repo.update!()
 
-    for closed <- [%{state: :done, completed_at: now}, %{state: :canceled}, %{state: :duplicate}] do
+    for closed <- [%{state: :done, completed_at: now}, %{state: :canceled}, %{state: :canceled}] do
       {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Closed"})
       issue |> Issue.tracker_changeset(closed) |> Repo.update!()
       {:ok, task} = Pipeline.create_task(issue, :finalize)
@@ -269,5 +270,47 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     assert Process.get(:plan_saved_again)
     assert [] = Pipeline.list_tasks(project_id: project.id, plan_ready: true)
+  end
+
+  # What a tech lead would approve is still changing while Plan works, so it waits until Plan stops.
+  test "plan_ready: true leaves out a task while its Plan agent is in flight", %{
+    project: project,
+    task: %Task{id: task_id}
+  } do
+    Repo.insert!(%Round{task_id: task_id, number: 1, plan: "## Plan", ready_at: DateTime.utc_now()})
+    {:ok, plan} = Roles.get_role(project_id: project.id, stage: :plan)
+
+    {:ok, run} =
+      Pipeline.create_run(%{task_id: task_id, role_id: plan.id, status: :finished, started_at: DateTime.utc_now()})
+
+    assert [%Task{id: ^task_id}] = Pipeline.list_tasks(project_id: project.id, plan_ready: true)
+
+    for status <- [:waiting_for_resources, :waiting_for_usage, :starting, :running] do
+      {:ok, _run} = run |> Ecto.Changeset.change(status: status) |> Repo.update()
+      assert [] = Pipeline.list_tasks(project_id: project.id, plan_ready: true)
+    end
+
+    {:ok, _run} = run |> Ecto.Changeset.change(status: :blocked_on_input) |> Repo.update()
+    assert [%Task{id: ^task_id}] = Pipeline.list_tasks(project_id: project.id, plan_ready: true)
+  end
+
+  # Approve and Merge wait while any agent works, the curator too, so the task waits until it stops.
+  test "ready: true leaves out a task while any agent is in flight on it", %{
+    project: project,
+    task: %Task{id: task_id} = task
+  } do
+    {:ok, _marked} = Pipeline.update_task(task, %{stage: :finalize, marked_ready_at: DateTime.utc_now()})
+
+    for stage <- [:curator, :review_lead, :engineer] do
+      {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
+
+      {:ok, run} =
+        Pipeline.create_run(%{task_id: task_id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
+
+      assert [] = Pipeline.list_tasks(project_id: project.id, ready: true)
+
+      {:ok, _run} = run |> Ecto.Changeset.change(status: :finished) |> Repo.update()
+      assert [%Task{id: ^task_id}] = Pipeline.list_tasks(project_id: project.id, ready: true)
+    end
   end
 end

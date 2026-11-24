@@ -13,6 +13,7 @@ defmodule RailWeb.Components.TaskLearnings do
   attr :run_state, :atom, required: true, doc: "the curator run's `Run.state/1`"
   attr :errors, :map, default: %{}, doc: "a proposal id to the message its last click got"
   attr :target, :any, required: true
+  attr :open_learnings, :boolean, default: true, doc: "the reader opens Learnings, where All learnings links"
 
   def task_learnings(assigns) do
     total = length(assigns.proposals)
@@ -30,6 +31,8 @@ defmodule RailWeb.Components.TaskLearnings do
         <h2 class="text-[15px] font-semibold text-slate-900 dark:text-slate-100">Learnings</h2>
         <span id="task-learnings-count" class="text-[13px] text-slate-500 dark:text-slate-400">{@count}</span>
         <.link
+          :if={@open_learnings}
+          id="task-learnings-all"
           navigate={~p"/learnings"}
           class="ml-auto inline-flex items-center gap-1 text-[13px] text-blue-600 dark:text-blue-400 hover:underline rounded-sm focus-visible:outline-2 focus-visible:outline-blue-500"
         >

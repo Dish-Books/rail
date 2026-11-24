@@ -31,7 +31,7 @@ defmodule Rail.Tools.Actions.GetUsageWaitTest do
         project_id: project.id,
         identifier: "WAIT#{unique}-1",
         title: "Wait Issue",
-        state: :backlog
+        state: :todo
       })
       |> Repo.insert!()
 

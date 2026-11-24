@@ -43,6 +43,7 @@ defmodule Rail.Mcp do
 
   defdelegate register_dynamic_client(metadata), to: Actions.RegisterDynamicClient
   defdelegate validate_authorize_request(params), to: Actions.ValidateAuthorizeRequest
+  @decorate can?(resource: :issues, action: :view)
   defdelegate authorize(scope, params), to: Actions.Authorize
   defdelegate authenticate_client(client_id, credential), to: Actions.AuthenticateClient
   defdelegate exchange_code(client, params), to: Actions.ExchangeCode

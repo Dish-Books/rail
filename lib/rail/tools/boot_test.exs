@@ -596,7 +596,7 @@ defmodule Rail.Tools.BootTest do
           project_id: project.id,
           identifier: "BOO-#{System.unique_integer([:positive])}",
           title: "Boot Issue",
-          state: :backlog
+          state: :todo
         })
         |> Repo.insert!()
 

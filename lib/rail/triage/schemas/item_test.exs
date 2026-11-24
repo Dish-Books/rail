@@ -2,7 +2,6 @@ defmodule Rail.Triage.Schemas.ItemTest do
   use Rail.DataCase, async: true
 
   alias Rail.Triage.Schemas.Item
-  alias Rail.Triage.Schemas.Thread
 
   test "a verdict has to fit the item's kind" do
     base = %{key: "k", position: 1, title: "T"}
@@ -19,17 +18,31 @@ defmodule Rail.Triage.Schemas.ItemTest do
     assert %{kind: ["can't be blank"]} = errors_on(Item.triage_changeset(%Item{}, base))
   end
 
-  test "a person's edit reaches the drafts and nothing else" do
-    item = %Item{issue_title: "Old", reply_text: "Hi", verdict: :confirmed}
+  test "a person's edit reaches the card's fields and nothing the pass owns" do
+    item = %Item{issue_title: "Old", kind: :bug, verdict: :confirmed, followup_text: nil, ignored: false}
 
-    expected = %{issue_title: "New"}
+    expected = %{issue_title: "New", kind: :feature_request, followup_text: "Seen\nagain", ignored: true}
 
-    assert %{changes: ^expected} =
-             Item.draft_changeset(item, %{"issue_title" => "New", "reply_text" => "Hi", "verdict" => "built"})
+    assert %{valid?: true, changes: ^expected} =
+             Item.draft_changeset(item, %{
+               "issue_title" => "New",
+               "kind" => "feature_request",
+               "followup_text" => "Seen\r\nagain",
+               "ignored" => "true",
+               "verdict" => "built",
+               "title" => "Changed"
+             })
+
+    assert %{kind: ["can't be blank"]} = errors_on(Item.draft_changeset(item, %{"kind" => ""}))
+  end
+
+  test "a verdict shows only while it fits the kind" do
+    assert :confirmed = Item.fitting_verdict(%Item{kind: :bug, verdict: :confirmed})
+    assert nil == Item.fitting_verdict(%Item{kind: :feature_request, verdict: :confirmed})
   end
 
   test "a person can change the estimate or clear it, but only to a point on the scale" do
-    item = %Item{issue_estimate: 3}
+    item = %Item{kind: :bug, issue_estimate: 3}
 
     assert %{valid?: true, changes: %{issue_estimate: 5}} = Item.draft_changeset(item, %{"issue_estimate" => "5"})
     assert %{valid?: true, changes: %{issue_estimate: nil}} = Item.draft_changeset(item, %{"issue_estimate" => ""})
@@ -43,21 +56,40 @@ defmodule Rail.Triage.Schemas.ItemTest do
     refute Item.issue_draft?(%Item{issue_title: nil})
   end
 
-  test "an item settles once everything it proposed was accepted" do
+  test "an untitled draft is no ticket, and a title of spaces is untitled" do
+    refute Item.issue_draft?(%Item{issue_title: "  "})
+    refute Item.to_create?(%Item{issue_title: ""})
+  end
+
+  test "an item is closed once its round was sent, its follow-up claimed, or its ticket created or claimed" do
     now = DateTime.utc_now()
 
-    refute Item.settled?(%Item{reply_text: "Thanks"})
-    assert Item.settled?(%Item{reply_text: "Thanks", reply_posted_at: now})
+    refute Item.closed?(%Item{})
+    assert Item.closed?(%Item{sent_at: now})
+    assert Item.closed?(%Item{followup_posted_at: now})
+    assert Item.closed?(%Item{created_issue_id: "iss_1"})
+    assert Item.closed?(%Item{issue_created_by_id: "usr_1"})
+  end
 
-    refute Item.settled?(%Item{issue_title: "Bug"})
-    assert Item.settled?(%Item{issue_title: "Bug", created_issue_id: "iss_1"})
+  test "Send creates a titled, open item's ticket, and never an ignored or closed one's" do
+    assert Item.to_create?(%Item{issue_title: "Bug"})
+    refute Item.to_create?(%Item{issue_title: "Bug", ignored: true})
+    refute Item.to_create?(%Item{issue_title: "Bug", issue_created_by_id: "usr_1"})
+    refute Item.to_create?(%Item{issue_title: "Bug", existing_issue_id: "iss_1"})
+  end
 
-    refute Item.settled?(%Item{issue_title: "Bug", reply_text: "Thanks", created_issue_id: "iss_1"})
-    assert Item.settled?(%Item{issue_title: "Bug", reply_text: "Thanks", created_issue_id: "iss_1", reply_posted_at: now})
+  test "Send adds a covered item's follow-up when there is one to add" do
+    assert Item.to_update?(%Item{existing_issue_id: "iss_1", followup_text: "Seen again"})
+    refute Item.to_update?(%Item{existing_issue_id: "iss_1", followup_text: "  "})
+    refute Item.to_update?(%Item{existing_issue_id: "iss_1", followup_text: nil})
+    refute Item.to_update?(%Item{existing_issue_id: nil, followup_text: "Seen again"})
+    refute Item.to_update?(%Item{existing_issue_id: "iss_1", followup_text: "Seen again", ignored: true})
 
-    assert Item.settled?(%Item{issue_title: "Bug", reply_text: "Thanks", thread: %Thread{dismissed_at: now}})
-    assert 2 = Item.pending_proposals(%Item{issue_title: "Bug", reply_text: "Thanks"})
-    assert 0 = Item.pending_proposals(%Item{issue_title: "Bug", existing_issue_id: "iss_1"})
+    refute Item.to_update?(%Item{
+             existing_issue_id: "iss_1",
+             followup_text: "Seen",
+             followup_posted_at: DateTime.utc_now()
+           })
   end
 
   test "labels" do

@@ -22,6 +22,8 @@ defmodule RailWeb.UserAuth do
     require_admin_user(conn, [])
   end
 
+  def call(conn, {:require_tab, tab}), do: require_tab(conn, tab)
+
   def call(conn, _opts) do
     fetch_current_user(conn, [])
   end
@@ -86,6 +88,27 @@ defmodule RailWeb.UserAuth do
     end
   end
 
+  def require_tab(conn, tab) do
+    scope = conn.assigns.current_scope
+
+    if Users.can?(scope, tab, :view) do
+      conn
+    else
+      conn
+      |> redirect(to: home_path(scope))
+      |> halt()
+    end
+  end
+
+  @doc "The first tab the scope's role opens, where a page outside the role sends it."
+  def home_path(scope) do
+    cond do
+      Users.can?(scope, :overview, :view) -> ~p"/"
+      Users.can?(scope, :testing, :view) -> ~p"/testing"
+      true -> ~p"/support"
+    end
+  end
+
   def disconnect_sessions(tokens) do
     Enum.each(tokens, fn %{token: token} ->
       RailWeb.Endpoint.broadcast(user_session_topic(token), "disconnect", %{})
@@ -99,10 +122,13 @@ defmodule RailWeb.UserAuth do
   def on_mount(:require_authenticated, _params, session, socket) do
     socket = mount_current_scope(socket, session)
 
-    if socket.assigns[:current_scope] && socket.assigns.current_scope.user do
-      {:cont, socket}
-    else
-      {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/sign-in")}
+    case socket.assigns[:current_scope] do
+      %Scope{user: %User{id: id}} ->
+        if Phoenix.LiveView.connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "user:#{id}")
+        {:cont, Phoenix.LiveView.attach_hook(socket, :user_removed, :handle_info, &leave_when_removed/2)}
+
+      _signed_out ->
+        {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/sign-in")}
     end
   end
 
@@ -116,7 +142,15 @@ defmodule RailWeb.UserAuth do
     end
   end
 
-  # Issue and task pages: someone without GitHub is sent to connect it, and so is an open page once they disconnect.
+  def on_mount({:require_tab, tab}, _params, _session, socket) do
+    scope = socket.assigns.current_scope
+
+    if Users.can?(scope, tab, :view),
+      do: {:cont, socket},
+      else: {:halt, Phoenix.LiveView.redirect(socket, to: home_path(scope))}
+  end
+
+  # The task page: someone without GitHub is sent to connect it, and so is an open page once they disconnect.
   def on_mount(
         :require_github,
         _params,
@@ -128,6 +162,10 @@ defmodule RailWeb.UserAuth do
     if Phoenix.LiveView.connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "users")
     {:cont, Phoenix.LiveView.attach_hook(socket, :require_github, :handle_info, &recheck_github/2)}
   end
+
+  # Removal deletes the session's token, so the full page load this redirect makes finds no one signed in.
+  defp leave_when_removed({:user_removed, _id}, socket), do: {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/sign-in")}
+  defp leave_when_removed(_message, socket), do: {:cont, socket}
 
   defp recheck_github({:users_changed, id}, %{assigns: %{current_scope: %Scope{user: %User{id: id}}}} = socket) do
     case Users.get_user(id: id) do

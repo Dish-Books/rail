@@ -170,7 +170,9 @@ defmodule Rail.Support.Actions.SendSupportReplyTest do
 
     inbox_url = "https://app.intercom.com/a/inbox/#{app_id}/inbox/conversation/#{external_id}"
     assert_receive {:support_changed, ^conversation_id}
-    assert_receive {:triage_changed, thread_id}
+    # "triage" is one topic for every test, so only this conversation's thread counts.
+    [%Thread{id: thread_id}] = Repo.all(from t in Thread, where: t.support_conversation_id == ^conversation_id)
+    assert_receive {:triage_changed, ^thread_id}
 
     assert %Thread{
              project_id: ^project_id,
@@ -205,7 +207,7 @@ defmodule Rail.Support.Actions.SendSupportReplyTest do
     # A second click finds the reply posted and nothing left to forward.
     assert {:ok, %Conversation{reply_posted_by_id: ^user_id}} = Support.send_support_reply(scope, conversation)
     assert 1 = Repo.aggregate(from(t in Thread, where: t.support_conversation_id == ^conversation_id), :count)
-    refute_receive {:triage_changed, _another}
+    refute_receive {:triage_changed, ^thread_id}
   end
 
   test "the posted reply shows at once, from the conversation Intercom answers with", %{
@@ -370,7 +372,7 @@ defmodule Rail.Support.Actions.SendSupportReplyTest do
 
     assert {:ok, %Conversation{reply_posted_at: %DateTime{}}} = Support.send_support_reply(scope, conversation)
     assert_receive {:support_changed, ^conversation_id}
-    refute_receive {:triage_changed, _thread_id}
+    # "triage" is one topic for every test, so the thread's absence is what shows nothing was forwarded.
     refute Repo.exists?(from(t in Thread, where: t.support_conversation_id == ^conversation_id))
   end
 end

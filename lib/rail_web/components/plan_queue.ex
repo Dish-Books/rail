@@ -1,8 +1,8 @@
 defmodule RailWeb.Components.PlanQueue do
   @moduledoc """
   Overview's plans to approve: every task whose owner sent its plan to the tech leads and no tech lead has approved,
-  oldest send first, with the ones its owner already started marked. A row opens the task on its plan, where the
-  header's Approve plan is.
+  left out while its Plan agent works on it, oldest send first, with the ones its owner already started marked. A row
+  opens the task on its plan, where the header's Approve plan is.
   """
   use RailWeb, :html
 

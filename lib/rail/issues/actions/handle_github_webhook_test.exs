@@ -162,8 +162,8 @@ defmodule Rail.Issues.Actions.HandleGithubWebhookTest do
     refute_enqueued(worker: IssueFinished)
   end
 
-  test "a Canceled or Duplicate issue stays so when its pull request merges", %{project: project, closed: closed} do
-    for state <- [:canceled, :duplicate] do
+  test "a Canceled issue stays so when its pull request merges", %{project: project, closed: closed} do
+    for state <- [:canceled] do
       {:ok, %Issue{id: issue_id} = issue} = Issues.create_issue(system_scope(), project, %{title: "Finished"})
       {:ok, _task} = Pipeline.create_task(issue, :plan)
       Repo.update!(Issue.pull_request_changeset(issue, %{pr_number: 46}))

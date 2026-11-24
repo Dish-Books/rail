@@ -61,4 +61,18 @@ defmodule Rail.Mcp.Actions.AuthorizeTest do
     assert {:error, :github_required} = Mcp.authorize(Scope.for_user(user), params)
     assert [] = Repo.all(from(c in OauthAuthorizationCode, where: c.user_id == ^user_id))
   end
+
+  test "issues nothing for a support person, refusing their role before GitHub, while a tester gets a code", %{
+    user: %{id: user_id} = user,
+    params: params
+  } do
+    {:ok, user} = Users.update_user(system_scope(), user, %{role: :support})
+    {:ok, user} = Users.unlink_github(Scope.for_user(user))
+
+    assert {:error, :not_authorized} = Mcp.authorize(Scope.for_user(user), params)
+    assert [] = Repo.all(from(c in OauthAuthorizationCode, where: c.user_id == ^user_id))
+
+    {:ok, user} = Users.update_user(system_scope(), user, %{role: :tester, github_id: "az_back_#{user_id}"})
+    assert {:ok, %{redirect_url: _url}} = Mcp.authorize(Scope.for_user(user), params)
+  end
 end

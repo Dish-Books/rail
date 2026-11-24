@@ -244,7 +244,8 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
     assert {:error, {:invalid_stage, :review}} = Pipeline.send_message(system_scope(), run, "One more thing")
   end
 
-  test "a person's message to the Review lead takes a teammate's ready mark off, so the task leaves the review queue", %{
+  # The queue already leaves the task out while the lead works, so the mark coming off is what keeps it out after.
+  test "a person's message to the Review lead takes a teammate's ready mark off", %{
     project: project,
     task: task
   } do
@@ -262,13 +263,11 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
         started_at: DateTime.utc_now()
       })
 
-    assert [%Task{id: ^task_id}] = Pipeline.list_tasks(ready: true)
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
 
     assert {:ok, :queued, %Run{}} = Pipeline.send_message(user_scope(), run, "Keep the edit through the patch back.")
     assert %Task{marked_ready_at: nil} = Repo.reload!(task)
     assert_receive {:pipeline_changed, ^task_id}
-    assert [] = Pipeline.list_tasks(ready: true)
   end
 
   test "Rail answering the Review lead out of past answers leaves the ready mark on", %{project: project, task: task} do

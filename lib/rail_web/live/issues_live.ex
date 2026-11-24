@@ -13,6 +13,8 @@ defmodule RailWeb.IssuesLive do
   alias Rail.Users.Schemas.User
   alias RailWeb.Components.CaptureIssueModal
 
+  on_mount {RailWeb.UserAuth, {:require_tab, :issues}}
+
   @page_size 50
   # The URL parameters a person's Issues page reopens on; search, the page and which cycle is open are not among them.
   @remembered ["priority", "mine", "finished", "cycle", "owner"]
@@ -100,6 +102,7 @@ defmodule RailWeb.IssuesLive do
       current_scope={@current_scope}
       attention_count={@attention_count}
       triage_count={@triage_count}
+      support_count={@support_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}

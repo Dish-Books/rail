@@ -8,6 +8,8 @@ defmodule RailWeb.Settings.WorkflowsLive do
   alias Rail.Workflows.Schemas.Workflow
   alias Rail.Workflows.Schemas.WorkflowDefinition
 
+  on_mount {RailWeb.UserAuth, {:require_tab, :issues}}
+
   @example """
   # .rail/workflows/dependency-updates.yml
   name: Dependency updates      # the issue title adds the date
@@ -53,6 +55,7 @@ defmodule RailWeb.Settings.WorkflowsLive do
       current_scope={@current_scope}
       attention_count={@attention_count}
       triage_count={@triage_count}
+      support_count={@support_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}

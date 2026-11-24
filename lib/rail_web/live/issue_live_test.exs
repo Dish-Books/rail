@@ -54,6 +54,22 @@ defmodule RailWeb.IssueLiveTest do
     %{conn: log_in_user(conn, user), user: user, project: project}
   end
 
+  test "a support person without GitHub is sent to Support, not shown the issue read-only", %{conn: conn} do
+    id = System.unique_integer([:positive])
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "issue_live_role_#{id}",
+        login: "issue_live-role-#{id}",
+        email: "issue_live_role_#{id}@example.com"
+      })
+
+    {:ok, user} = Users.update_user(system_scope(), user, %{role: :support})
+    {:ok, user} = Users.unlink_github(Scope.for_user(user))
+
+    assert {:error, {:redirect, %{to: "/support"}}} = live(log_in_user(conn, user), ~p"/issues/RAIL-41")
+  end
+
   test "shows the issue's title, description and properties", %{conn: conn, user: user, project: project} do
     issue =
       %Issue{}
@@ -110,7 +126,7 @@ defmodule RailWeb.IssueLiveTest do
         workflow_id: workflow.id,
         identifier: "WFP-1",
         title: "Flaky test sweep 2026-10-12",
-        state: :triage
+        state: :todo
       })
       |> Repo.insert!()
 
@@ -167,7 +183,7 @@ defmodule RailWeb.IssueLiveTest do
           workflow_id: workflow_id,
           identifier: "WFA-#{n}",
           title: "Admin #{n}",
-          state: :triage
+          state: :todo
         })
         |> Repo.insert!()
       end
@@ -801,20 +817,20 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-start-plan")
   end
 
-  test "a Duplicate issue reads as Duplicate and offers no start", %{conn: conn, project: project} do
+  test "a Canceled issue reads as Canceled and offers no start", %{conn: conn, project: project} do
     issue =
       %Issue{}
       |> Issue.tracker_changeset(%{
         project_id: project.id,
         identifier: "IPG-20",
         title: "Same as IPG-7",
-        state: :duplicate
+        state: :canceled
       })
       |> Repo.insert!()
 
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
 
-    assert has_element?(view, "#issue-status", "Duplicate")
+    assert has_element?(view, "#issue-status", "Canceled")
     refute has_element?(view, "#issue-start")
   end
 
@@ -869,15 +885,15 @@ defmodule RailWeb.IssueLiveTest do
     assert {:ok, view, _html} = live(conn, ~p"/issues/IPG-21")
     assert has_element?(view, "#issue-start")
 
-    duplicate = %{id: "duplicate", name: "Duplicate", state: :duplicate}
+    canceled = %{id: "canceled", name: "Canceled", state: :canceled}
 
     # An unrelated issue closing leaves this page as it was.
-    assert {:ok, _other} = Issues.set_issue_status(system_scope(), other, duplicate)
+    assert {:ok, _other} = Issues.set_issue_status(system_scope(), other, canceled)
     assert has_element?(view, "#issue-status", "Todo")
     assert has_element?(view, "#issue-start")
 
-    assert {:ok, _issue} = Issues.set_issue_status(system_scope(), open, duplicate)
-    assert has_element?(view, "#issue-status", "Duplicate")
+    assert {:ok, _issue} = Issues.set_issue_status(system_scope(), open, canceled)
+    assert has_element?(view, "#issue-status", "Canceled")
     refute has_element?(view, "#issue-start")
   end
 
@@ -1178,7 +1194,7 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#flash-error", "Could not post the comment")
   end
 
-  test "someone who disconnected GitHub is sent to connect it rather than shown the issue", %{
+  test "someone without GitHub reads the issue with nothing to change, comment on or start", %{
     conn: conn,
     user: user,
     project: project
@@ -1195,13 +1211,48 @@ defmodule RailWeb.IssueLiveTest do
 
     {:ok, _user} = Users.unlink_github(Scope.for_user(user))
 
-    assert {:error,
-            {:redirect,
-             %{to: "/settings/connected-accounts", flash: %{"error" => "Connect GitHub to work on issues and tasks."}}}} =
-             live(conn, ~p"/issues/#{issue.identifier}")
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    assert has_element?(view, "#issue-title", "Needs GitHub")
+    assert has_element?(view, "#issue-github-required", "to change, comment on or start this issue")
+    assert has_element?(view, "#issue-github-required a[href='/settings/connected-accounts']")
+    assert has_element?(view, "#issue-not-started", "Not started")
+    refute has_element?(view, "#issue-title-#{issue.id}")
+    refute has_element?(view, "#issue-comment-form")
+    refute has_element?(view, "#issue-start-plan")
   end
 
-  test "an open issue page sends its person to connect GitHub once they disconnect it, and no one else's change does", %{
+  test "someone without GitHub changes nothing on the issue, whatever events the page is sent", %{
+    conn: conn,
+    user: user,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        identifier: "IPG-93",
+        title: "Untouched",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    {:ok, _user} = Users.unlink_github(Scope.for_user(user))
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    render_hook(view, "comment", %{"body" => "Sent anyway"})
+    render_hook(view, "edit_issue", %{"title" => "Renamed anyway"})
+    render_hook(view, "assign", %{"user_id" => user.id})
+    render_hook(view, "start_task", %{})
+
+    assert has_element?(view, "#flash-error", "Connect GitHub in Connected accounts to work on this issue.")
+
+    assert %Issue{title: "Untouched", owner_user_id: nil} = Repo.get!(Issue, issue.id)
+    assert Repo.all(from(c in Comment, where: c.issue_id == ^issue.id)) == []
+    assert Repo.all(from(t in Task, where: t.issue_id == ^issue.id)) == []
+  end
+
+  test "an open issue page turns read-only when its person disconnects GitHub and back when they reconnect", %{
     conn: conn,
     user: user,
     project: project
@@ -1219,11 +1270,28 @@ defmodule RailWeb.IssueLiveTest do
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
 
     send(view.pid, {:users_changed, "usr_someone_else"})
-    send(view.pid, {:users_changed, user.id})
-    assert has_element?(view, "#issue-title-#{issue.id}")
+    assert has_element?(view, "#issue-comment-form")
+    refute has_element?(view, "#issue-github-required")
 
-    {:ok, _user} = Users.unlink_github(Scope.for_user(user))
-    assert_redirect(view, "/settings/connected-accounts")
+    {:ok, user} = Users.unlink_github(Scope.for_user(user))
+
+    eventually(fn ->
+      assert has_element?(view, "#issue-github-required")
+      refute has_element?(view, "#issue-comment-form")
+    end)
+
+    auth = %Ueberauth.Auth{
+      uid: "relinked_#{user.id}",
+      info: %Ueberauth.Auth.Info{nickname: "relinked-#{user.id}", name: "Relinked"},
+      credentials: %Ueberauth.Auth.Credentials{token: "gho_relinked"}
+    }
+
+    {:ok, _linked} = Users.link_github(Scope.for_user(user), auth)
+
+    eventually(fn ->
+      assert has_element?(view, "#issue-comment-form")
+      refute has_element?(view, "#issue-github-required")
+    end)
   end
 
   test "reloads when it or its own comments change", %{conn: conn, project: project} do

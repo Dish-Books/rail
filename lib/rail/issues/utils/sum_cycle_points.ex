@@ -15,7 +15,7 @@ defmodule Rail.Issues.Utils.SumCyclePoints do
   def sum_cycle_points(project_id, cycle_id, default_estimate) do
     Repo.all(
       from(i in cycle_issues([project_id], [cycle_id]),
-        where: i.state not in ^[:canceled, :duplicate],
+        where: i.state != ^:canceled,
         group_by: i.owner_user_id,
         select: {
           i.owner_user_id,

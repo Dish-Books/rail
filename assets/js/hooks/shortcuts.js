@@ -16,12 +16,8 @@ export const Shortcuts = {
         if (!isInput) {
           e.preventDefault();
           if (modalOpen(document)) return;
-          const button = document.querySelector("[data-qa='global_capture_idea_button']");
-          if (button) {
-            button.click();
-          } else {
-            this.pushEvent("open_new_issue", {});
-          }
+          // A role without Issues has no New Issue button, and ⌘N then does nothing.
+          document.querySelector("[data-qa='global_capture_idea_button']")?.click();
         }
       }
 

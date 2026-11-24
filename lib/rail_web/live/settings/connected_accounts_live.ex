@@ -53,6 +53,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
       current_scope={@current_scope}
       attention_count={@attention_count}
       triage_count={@triage_count}
+      support_count={@support_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}
@@ -524,6 +525,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
         </div>
 
         <section
+          :if={Users.can?(@current_scope, :issues, :view)}
           id="rail-mcp-section"
           class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 overflow-hidden"
         >

@@ -6,6 +6,7 @@ defmodule Rail.Support.Actions.RunSupportAgentTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Learnings
   alias Rail.Learnings.Schemas.Learning
+  alias Rail.Learnings.Schemas.LearningProposal
   alias Rail.Mcp
   alias Rail.Roles
   alias Rail.Scope
@@ -470,6 +471,120 @@ defmodule Rail.Support.Actions.RunSupportAgentTest do
             }} = Support.get_support_conversation(system_scope(), conversation_id)
   end
 
+  test "a rule the teammate taught becomes a pending Triage proposal under the turn's chat line", %{
+    project: %{id: project_id},
+    conversation: %{id: conversation_id} = conversation,
+    result_path: result_path
+  } do
+    rule = %{
+      "key" => "print",
+      "title" => "Never offer printing for export",
+      "rule" => "Never suggest printing a recipe as a workaround for exporting it.",
+      "why" => "The print layout leaves out ingredient costs.",
+      "kind" => "product"
+    }
+
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
+      File.write!(
+        result_path,
+        Jason.encode!(%{"message" => "Proposed a rule.", "reply" => "Hi", "items" => [], "rules" => [rule, "junk"]})
+      )
+
+      {:ok, ""}
+    end)
+
+    assert :ok = Support.run_support_agent(conversation)
+
+    assert {:ok,
+            %Conversation{
+              chat_messages: [%ChatMessage{id: line_id, author: :agent, changes: "Proposed a rule"}],
+              learning_proposals: [
+                %LearningProposal{
+                  project_id: ^project_id,
+                  support_conversation_id: ^conversation_id,
+                  support_chat_message_id: line_id,
+                  support_key: "print",
+                  action: :add,
+                  status: :pending,
+                  learning: %Learning{status: :proposed, roles: [:triage], kind: :product}
+                }
+              ]
+            }} = Support.get_support_conversation(system_scope(), conversation_id)
+  end
+
+  test "draft.json shows the agent each rule and whether it is still undecided", %{
+    conversation: conversation,
+    scope: scope,
+    result_path: result_path
+  } do
+    rules = [
+      %{"key" => "print", "title" => "No printing", "rule" => "Never offer printing.", "kind" => "product"},
+      %{"key" => "pdf", "title" => "No PDF", "rule" => "Never offer a PDF export.", "kind" => "product"}
+    ]
+
+    expect(Tools, :run_agent, 2, fn _role, _argv, _opts ->
+      File.write!(result_path, Jason.encode!(%{"message" => "m", "reply" => "Hi", "items" => [], "rules" => rules}))
+      {:ok, ""}
+    end)
+
+    assert :ok = Support.run_support_agent(conversation)
+
+    {:ok, %Conversation{learning_proposals: [first, _second]} = loaded} =
+      Support.get_support_conversation(system_scope(), conversation.id)
+
+    {:ok, _rejected} = Support.decide_support_rule(scope, loaded, first.id, :rejected)
+    {:ok, _drafting} = Support.draft_support_reply(system_scope(), conversation)
+    assert :ok = Support.run_support_agent(conversation)
+
+    assert %{
+             "rules" => [
+               %{
+                 "key" => "print",
+                 "state" => "rejected by the teammate, closed to this pass",
+                 "rule" => "Never offer printing."
+               },
+               %{"key" => "pdf", "state" => "undecided", "title" => "No PDF", "kind" => "product", "why" => nil}
+             ]
+           } = conversation |> Conversation.scratch_path() |> Path.join("draft.json") |> File.read!() |> Jason.decode!()
+  end
+
+  test "the chat line notes the rules a pass proposed, edited and dropped", %{
+    conversation: %{id: conversation_id} = conversation,
+    result_path: result_path
+  } do
+    print = %{"key" => "print", "title" => "No printing", "rule" => "Never offer printing.", "kind" => "product"}
+    pdf = %{"key" => "pdf", "title" => "No PDF", "rule" => "Never offer a PDF export.", "kind" => "product"}
+    csv = %{"key" => "csv", "title" => "No CSV", "rule" => "Never promise a CSV export.", "kind" => "product"}
+
+    results = [
+      %{"message" => "Two.", "reply" => "A", "items" => [], "rules" => [print, pdf]},
+      %{"message" => "Changed.", "reply" => "A", "items" => [], "rules" => [%{print | "rule" => "Never print."}]},
+      %{"message" => "Swapped.", "reply" => "A", "items" => [], "rules" => [pdf, csv]},
+      %{"message" => "None.", "reply" => "A", "items" => []}
+    ]
+
+    for result <- results do
+      expect(Tools, :run_agent, fn _role, _argv, _opts ->
+        File.write!(result_path, Jason.encode!(result))
+        {:ok, ""}
+      end)
+
+      {:ok, _drafting} = Support.draft_support_reply(system_scope(), conversation)
+      assert :ok = Support.run_support_agent(conversation)
+    end
+
+    assert {:ok,
+            %Conversation{
+              learning_proposals: [],
+              chat_messages: [
+                %ChatMessage{text: "Two.", changes: "Proposed 2 rules"},
+                %ChatMessage{text: "Changed.", changes: "Edited a rule · Dropped a rule"},
+                %ChatMessage{text: "Swapped.", changes: "Proposed 2 rules · Dropped a rule"},
+                %ChatMessage{text: "None.", changes: "Dropped 2 rules"}
+              ]
+            }} = Support.get_support_conversation(system_scope(), conversation_id)
+  end
+
   describe "a pass that fails keeps the draft as it was, clears Drafting and says why" do
     setup %{conversation: conversation, item: item, result_path: result_path} do
       expect(Tools, :run_agent, fn _role, _argv, _opts ->
@@ -495,6 +610,9 @@ defmodule Rail.Support.Actions.RunSupportAgentTest do
           {"an item whose evidence Rail cannot read",
            ~s({"message": "m", "reply": "New", "items": [{"key": "a", "kind": "bug", "title": "t", "verdict": "confirmed", "evidence": [{"holds": "maybe"}], "issue": {"title": "x"}}]}),
            ~s(The agent listed an item Rail could not save: item "a": has evidence or assumptions Rail could not read.)},
+          {"a rule with an unknown kind",
+           ~s({"message": "m", "reply": "New", "items": [], "rules": [{"key": "r", "rule": "Say so.", "kind": "vibes"}]}),
+           ~s(The agent proposed a rule Rail could not save: rule "r": kind is invalid.)},
           {"a result that is not JSON", "not json", "The agent finished without writing a result Rail could read."},
           {"a result without a reply", ~s({"message": "m", "items": []}),
            "The agent finished without writing a result Rail could read."}

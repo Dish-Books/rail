@@ -117,7 +117,7 @@ Pick a small issue and start Plan. Starting makes you the issue's owner, which R
 
 ## 9. People's Claude
 
-A person adds Rail to their own Claude Code, Claude Desktop or claude.ai at `<Rail's URL>/mcp`, and Claude signs in through Rail's consent page (Settings > Connected accounts shows the command and the address). Claude calls Rail from outside, with no Cloudflare Access cookie, so behind Access these paths need an application of their own with a Bypass policy:
+A person adds Rail to their own Claude Code, Claude Desktop or claude.ai at `<Rail's URL>/mcp`, and Claude signs in through Rail's consent page (Settings > Connected accounts shows the command and the address). Only testers and devs with GitHub connected can connect; Rail refuses a support person's Claude. Claude calls Rail from outside, with no Cloudflare Access cookie, so behind Access these paths need an application of their own with a Bypass policy:
 
 | Path | Why |
 |---|---|

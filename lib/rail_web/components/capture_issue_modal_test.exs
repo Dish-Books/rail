@@ -135,7 +135,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     refute has_element?(view, "#capture-idea-dialog")
 
     expect(Rail.Issues, :create_issue, fn _scope, project, attrs ->
-      {:ok, %Issue{id: "iss_close", identifier: "CAP-501", title: attrs.title, state: :triage, project: project}}
+      {:ok, %Issue{id: "iss_close", identifier: "CAP-501", title: attrs.title, state: :todo, project: project}}
     end)
 
     view |> element("#global-capture-idea-button") |> render_click()
@@ -303,7 +303,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
              priority: :high
            } = Repo.get_by!(Issue, title: "Capture via LiveView")
 
-    assert has_element?(view, "#capture-idea-dialog #capture-created[role='status']", "Created in Triage")
+    assert has_element?(view, "#capture-idea-dialog #capture-created[role='status']", "Created in Todo")
     assert has_element?(view, "#capture-created-issue[href='/issues/#{issue_id}']", identifier)
     assert has_element?(view, "#capture-created-issue", "Capture via LiveView")
     assert has_element?(view, "#capture-created", "#{project.name} (#{project.key})")
@@ -408,7 +408,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         project_id: project_id,
         identifier: "CAP-301",
         title: attrs.title,
-        state: :triage,
+        state: :todo,
         url: "https://rail.test/issues/cap-301"
       })
       |> Repo.insert()
@@ -445,18 +445,18 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         project_id: project_id,
         identifier: "CAP-302",
         title: attrs.title,
-        state: :backlog
+        state: :in_progress
       })
       |> Repo.insert()
       |> then(fn {:ok, issue} -> {:ok, %{issue | project: project}} end)
     end)
 
     view
-    |> form("#capture-issue-form", %{"title" => "No triage here", "project_id" => project.id, "priority" => "medium"})
+    |> form("#capture-issue-form", %{"title" => "Not in Todo", "project_id" => project.id, "priority" => "medium"})
     |> render_submit()
 
-    assert has_element?(view, "#capture-created", "Created in Backlog")
-    refute has_element?(view, "#capture-created", "Created in Triage")
+    assert has_element?(view, "#capture-created", "Created in In Progress")
+    refute has_element?(view, "#capture-created", "Created in Todo")
   end
 
   test "an issue a teammate creates never appears in the confirmation", %{conn: conn, project: project} do
@@ -474,7 +474,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     view |> element("#global-capture-idea-button") |> render_click()
 
     expect(Rail.Issues, :create_issue, fn _scope, project, attrs ->
-      {:ok, %Issue{id: "iss_mine", identifier: "CAP-401", title: attrs.title, state: :triage, project: project}}
+      {:ok, %Issue{id: "iss_mine", identifier: "CAP-401", title: attrs.title, state: :todo, project: project}}
     end)
 
     view
@@ -487,7 +487,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
           project_id: project.id,
           identifier: "CAP-402",
           title: "A teammate's issue",
-          state: :triage
+          state: :todo
         })
       )
 
@@ -519,7 +519,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         number: 214,
         title: title,
         priority: :urgent,
-        state: :triage,
+        state: :todo,
         url: "https://rail.test/issues/tgh-214"
       })
 
@@ -571,7 +571,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
              live(init_test_session(log_in_user(conn, user), %{selected_project_id: project.id}), ~p"/issues")
 
     stub(Rail.Issues, :create_issue, fn _scope, project, attrs ->
-      {:ok, %Issue{id: "iss_reset", identifier: "OTHCIM-1", title: attrs.title, state: :triage, project: project}}
+      {:ok, %Issue{id: "iss_reset", identifier: "OTHCIM-1", title: attrs.title, state: :todo, project: project}}
     end)
 
     filled = %{"title" => "Filed", "description" => "Body", "project_id" => other.id, "priority" => "low"}

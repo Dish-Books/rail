@@ -5,8 +5,13 @@ defmodule Rail.Pipeline.Actions.ListTasks do
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Round
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
+  alias Rail.Roles.Schemas.Role
+
+  # A run in flight, as `Run.running?/1` reads one: executing, or waiting for a sandbox or an account.
+  @running [:starting, :running, :waiting_for_resources, :waiting_for_usage]
 
   @doc """
   Lists tasks, filtered and preloaded as `opts` asks.
@@ -18,9 +23,10 @@ defmodule Rail.Pipeline.Actions.ListTasks do
   `:parent_task_id` keeps one split's children, in their order unless `:order_by` says otherwise, and
   `split_child: true` every child of every split.
   `ready: true` keeps the review queue: tasks at Finalize marked ready and not merged, whose issue has
-  not closed, oldest mark first.
+  not closed and with no agent at work on them, oldest mark first.
   `plan_ready: true` keeps the tech leads' plans to approve: tasks whose first round's plan was sent and is not
-  approved, started or not, oldest sent first, with that round alone as `rounds`.
+  approved, started or not, and whose Plan agent is not at work on it, oldest sent first, with that round alone as
+  `rounds`.
   Cleaned-up tasks are left out unless `include_cleaned_up: true`.
   """
   def list_tasks(opts \\ []) do
@@ -98,6 +104,8 @@ defmodule Rail.Pipeline.Actions.ListTasks do
     |> with_named_binding(:issue, &join(&1, :inner, [task: t], i in assoc(t, :issue), as: ^&2))
     |> where([task: t], t.stage == :finalize and not is_nil(t.marked_ready_at) and is_nil(t.merged_at))
     |> where([issue: i], is_nil(i.completed_at) and i.state not in ^Issue.finished_states())
+    # Any agent at work, the curator too, holds back the task's Approve and Merge, so it waits until they stop.
+    |> where([task: t], not exists(runs_in_flight()))
   end
 
   defp filter_ready(query, nil), do: query
@@ -106,10 +114,24 @@ defmodule Rail.Pipeline.Actions.ListTasks do
     query
     |> join(:inner, [task: t], r in Round, as: :round, on: r.task_id == t.id and r.number == 1)
     |> where([round: r], not is_nil(r.ready_at) and is_nil(r.approved_at))
+    # The plan is still changing while Plan works, and the task's header offers no Approve until it stops.
+    |> where(
+      [task: t],
+      not exists(
+        runs_in_flight()
+        |> join(:inner, [run], role in Role, on: role.id == run.role_id)
+        |> where([_run, role], role.stage == :plan)
+      )
+    )
     # From the join, so a plan saved again between two queries cannot hand back a round the filter never matched.
     |> preload([round: r], rounds: r)
     |> order_by([task: t, round: r], asc: r.ready_at, asc: t.id)
   end
 
   defp filter_plan_ready(query, nil), do: query
+
+  # The runs in flight on the task the outer query names `:task`.
+  defp runs_in_flight do
+    from run in Run, where: run.task_id == parent_as(:task).id and run.status in ^@running
+  end
 end

@@ -68,7 +68,7 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
               number: 1,
               identifier: ^identifier_1,
               branch_name: ^branch_1,
-              state: :triage,
+              state: :todo,
               priority: :high,
               title: "Comments left on diff lines",
               description: "They vanish on reload"
@@ -169,7 +169,7 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
   end
 
   test "defaults to medium priority", %{project: project} do
-    assert {:ok, %Issue{priority: :medium, state: :triage, description: nil}} =
+    assert {:ok, %Issue{priority: :medium, state: :todo, description: nil}} =
              Issues.create_issue(system_scope(), project, %{title: "No priority"})
   end
 
@@ -221,7 +221,7 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
                identifier: "taken",
                number: 1,
                title: "Same number",
-               state: :triage
+               state: :todo
              })
              |> Repo.insert()
 
@@ -235,14 +235,14 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
                project_id: project.id,
                identifier: "OLD-7",
                title: "Named already",
-               state: :triage
+               state: :todo
              })
              |> Repo.insert!()
   end
 
   test "only an insert goes without an identifier", %{project: project} do
     assert %Ecto.Changeset{valid?: true} =
-             Issue.changeset(%Issue{}, %{project_id: project.id, title: "t", state: :triage})
+             Issue.changeset(%Issue{}, %{project_id: project.id, title: "t", state: :todo})
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Named"})
     assert %{identifier: ["can't be blank"]} = issue |> Issue.changeset(%{identifier: nil}) |> errors_on()

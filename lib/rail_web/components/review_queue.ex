@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.ReviewQueue do
   @moduledoc """
-  Overview's review queue: every task a teammate marked ready at Finalize and nobody has merged, oldest mark
-  first, whoever owns it. A row opens the task, whose header merges it.
+  Overview's review queue: every task a teammate marked ready at Finalize and nobody has merged, left out while
+  an agent works on it, oldest mark first, whoever owns it. A row opens the task, whose header merges it.
   """
   use RailWeb, :html
 

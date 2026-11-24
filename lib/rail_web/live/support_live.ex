@@ -3,11 +3,16 @@ defmodule RailWeb.SupportLive do
   use RailWeb, :live_view
 
   alias Phoenix.LiveView.JS
+  alias Rail.Learnings.Schemas.LearningProposal
   alias Rail.Scope
   alias Rail.Support
   alias Rail.Support.Schemas.ChatMessage
+  alias Rail.Support.Schemas.Conversation
   alias Rail.Support.Schemas.Message
   alias Rail.Users
+  alias RailWeb.Hooks.NavHook
+
+  on_mount {RailWeb.UserAuth, {:require_tab, :support}}
 
   @filters ["waiting", "drafting", "done"]
   # An import broadcasts once per conversation, so an open page reloads at most once a second.
@@ -66,6 +71,7 @@ defmodule RailWeb.SupportLive do
       current_scope={@current_scope}
       attention_count={@attention_count}
       triage_count={@triage_count}
+      support_count={@support_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}
@@ -110,7 +116,26 @@ defmodule RailWeb.SupportLive do
           />
         </div>
 
-        <.support_chat :if={@conversation} conversation={@conversation} form={@chat_form} />
+        <.agent_chat
+          :if={@conversation}
+          id="support-chat"
+          key={@conversation.id}
+          lines={Conversation.calculate_chat_lines(@conversation)}
+          running={Conversation.drafting?(@conversation)}
+          form={@chat_form}
+          empty="The agent reads the conversation, the code and the tickets when you ask for a draft, or when you ask it anything here."
+          placeholder="Ask the agent to change the reply or the list"
+          gone_author="Support"
+          class="w-[400px] max-xl:w-[260px] shrink-0"
+        >
+          <:composer :if={@show_rule}>
+            <.support_rule
+              proposal={@next_rule}
+              waiting={@rules_waiting}
+              running={Conversation.drafting?(@conversation)}
+            />
+          </:composer>
+        </.agent_chat>
 
         <section
           :if={!@conversation}
@@ -161,6 +186,9 @@ defmodule RailWeb.SupportLive do
   def handle_event("chat_change", %{"chat_message" => attrs}, socket),
     do: {:noreply, assign(socket, :chat_form, Ecto.Changeset.change(%ChatMessage{}, text: attrs["text"]))}
 
+  # A reconnect while the agent works recovers the disabled chat box with no text: nothing changed.
+  def handle_event("chat_change", _params, socket), do: {:noreply, socket}
+
   def handle_event("chat", %{"chat_message" => attrs}, socket) do
     socket =
       case Support.send_support_chat(socket.assigns.current_scope, socket.assigns.conversation, attrs) do
@@ -176,6 +204,9 @@ defmodule RailWeb.SupportLive do
 
     {:noreply, socket}
   end
+
+  def handle_event("approve_rule", %{"id" => id}, socket), do: {:noreply, decide_rule(socket, id, :approved)}
+  def handle_event("reject_rule", %{"id" => id}, socket), do: {:noreply, decide_rule(socket, id, :rejected)}
 
   # What is typed to the customer stays through the reloads broadcasts bring.
   def handle_event("message_change", %{"support_message" => %{"text" => text}}, socket),
@@ -258,6 +289,14 @@ defmodule RailWeb.SupportLive do
   defp result(socket, {:error, reason}),
     do: socket |> assign(:send_error, Map.get(@errors, reason, "That did not save.")) |> load()
 
+  # A rule decided in another tab, or held by a pass that started, reloads to show where it stands.
+  defp decide_rule(socket, id, choice) do
+    case Support.decide_support_rule(socket.assigns.current_scope, socket.assigns.conversation, id, choice) do
+      {:ok, _decided} -> load(socket)
+      {:error, reason} when reason in [:already_decided, :drafting, :not_found, :retired] -> load(socket)
+    end
+  end
+
   defp step_image(%{assigns: %{open_image: %{message_id: message_id, index: index}}} = socket, step),
     do: assign(socket, :open_image, resolve_image(socket.assigns.conversation, message_id, index, step))
 
@@ -300,13 +339,19 @@ defmodule RailWeb.SupportLive do
         _none -> nil
       end
 
+    {next_rule, waiting} = if conversation, do: Conversation.next_rule(conversation), else: {nil, 0}
+
     socket
     |> assign(:now, DateTime.utc_now())
     |> assign(:conversations, conversations)
     |> assign(:counts, Support.count_support_conversations(project_id: project_filter))
+    |> assign(:support_count, NavHook.count_support(scope))
     |> assign(:workspace_names, Enum.map(Support.list_intercom_workspaces(project_id: project_filter), & &1.name))
     |> assign(:author_name, scope.user.intercom_name || scope.user.name || scope.user.login)
     |> assign(:conversation, conversation)
+    |> assign(:next_rule, next_rule)
+    |> assign(:rules_waiting, waiting)
+    |> assign(:show_rule, is_struct(next_rule, LearningProposal))
     |> then(fn socket ->
       open = socket.assigns.open_image
       assign(socket, :open_image, open && resolve_image(conversation, open.message_id, open.index, 0))

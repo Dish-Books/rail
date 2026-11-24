@@ -33,9 +33,10 @@ defmodule Rail.Triage.Actions.ListTriageThreads do
       :project,
       :dismissed_by,
       :forwarded_by,
+      :reply_posted_by,
       :slack_channel,
       messages: ^first_messages,
-      items: ^from(i in Item, order_by: [asc: i.position], preload: [:issue_created_by, :reply_posted_by, :created_issue])
+      items: ^from(i in Item, order_by: [asc: i.position, asc: i.id], preload: [:issue_created_by, :created_issue])
     ])
     |> Repo.all()
   end

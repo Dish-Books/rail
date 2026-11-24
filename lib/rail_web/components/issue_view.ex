@@ -5,7 +5,8 @@ defmodule RailWeb.Components.IssueView do
 
   The issue page and the task page's first tab are the same view of the same
   thing, so both render this; the task page hides the section pointing at the
-  task the reader is already on. The testing page renders it read-only, raising no events. The events it raises - `assign`,
+  task the reader is already on. The testing page renders it read-only, raising no events, as does the issue page for
+  someone without GitHub. The events it raises - `assign`,
   `filter_assignees`, `set_cycle`, `comment`, `draft_comment`, `start_task`, `adopt_pull_request`, `edit_issue` and
   `remove_relation` - belong to whichever LiveView renders it.
   """
@@ -27,7 +28,8 @@ defmodule RailWeb.Components.IssueView do
   attr :assignee_query, :string, default: ""
   # One counter per comment box, by the thread it replies to or "issue", which a post from that box moves on.
   attr :comment_nonce, :map, default: %{}
-  # The testing page shows the ticket with no status or owner menu and no comment box.
+  # The testing page, and the issue page for someone without GitHub, show the ticket with no status or owner menu, no
+  # comment box and no Start.
   attr :read_only, :boolean, default: false
   attr :show_task, :boolean, default: true
   # While GitHub is asked for a pull request the issue's work was opened as, which it would start at Review on.
@@ -282,15 +284,18 @@ defmodule RailWeb.Components.IssueView do
               id="issue-start"
               class="space-y-2"
             >
-              <p class="text-xs text-slate-500 dark:text-slate-400">Start at</p>
+              <p :if={@read_only} id="issue-not-started" class="text-slate-400 dark:text-slate-500">
+                Not started
+              </p>
+              <p :if={!@read_only} class="text-xs text-slate-500 dark:text-slate-400">Start at</p>
               <p
-                :if={@checking_pull_request}
+                :if={@checking_pull_request and !@read_only}
                 id="issue-start-checking"
                 class="text-xs text-slate-400 dark:text-slate-500"
               >
                 Looking for a pull request...
               </p>
-              <div :if={not @checking_pull_request} class="flex gap-1.5">
+              <div :if={not @checking_pull_request and !@read_only} class="flex gap-1.5">
                 <button
                   :if={is_nil(@issue.pr_number)}
                   type="button"

@@ -411,7 +411,7 @@ defmodule Rail.Pipeline.Schemas.RunTest do
   end
 
   test "a task whose issue was canceled or marked duplicate needs nobody, however its run ended" do
-    for state <- [:canceled, :duplicate] do
+    for state <- [:canceled] do
       failed = %Run{
         status: :finished,
         error: "It went wrong",

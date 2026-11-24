@@ -105,7 +105,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
     pending =
       Repo.all(
         from p in LearningProposal,
-          where: p.project_id == ^project_id and p.status == :pending,
+          where: p.project_id == ^project_id and p.status == :pending and is_nil(p.support_conversation_id),
           order_by: [asc: p.inserted_at],
           preload: :learning
       )
@@ -306,7 +306,8 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
     }
   end
 
-  # A sighting of a pending draft is more evidence for its add, which is what can activate it.
+  # A sighting of a pending draft is more evidence for its add, which is what can activate it. A support rule waits on
+  # the support person in its chat, so no sighting here can activate it.
   defp link(%{"observation" => id, "outcome" => "link", "learning" => learning_id}, project_id, read, rules)
        when is_binary(id) and is_binary(learning_id) do
     if MapSet.member?(read, id) and Map.has_key?(rules, learning_id) do
@@ -315,7 +316,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
       case Repo.one(
              from p in LearningProposal,
                where: p.project_id == ^project_id and p.learning_id == ^learning_id,
-               where: p.action == :add and p.status == :pending,
+               where: p.action == :add and p.status == :pending and is_nil(p.support_conversation_id),
                limit: 1
            ) do
         %LearningProposal{} = proposal ->
@@ -400,11 +401,9 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
 
     #{checkout} is a checkout of the default branch. Read it to check whether the code a rule names still exists. Change nothing in it, and write no file but #{result}.
 
-    Every rule is an instruction to every run that meets it, so a bad one costs every run it reaches and a missing one costs a person correcting the same thing again. A good rule:
+    Every rule is an instruction to every run that meets it, so a bad one costs every run it reaches and a missing one costs a person correcting the same thing again.
 
-    - is one instruction an agent can follow without having seen the task it came from: "context functions take the scope first", not "the scope was wrong on the last task";
-    - is scoped as narrowly as it holds, to the roles that act on it and, where it is about some files and not others, a path glob;
-    - says in its why what breaks without it, so an agent can tell when it does not apply.
+    #{Learning.writing_guide()}
 
     Weigh the evidence before you propose:
 

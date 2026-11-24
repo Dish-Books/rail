@@ -8,6 +8,7 @@ defmodule RailWeb.Components.CitedRules do
 
   attr :html, :string, required: true, doc: "the line's HTML, where each cited id is a code span"
   attr :rules, :map, required: true, doc: "the rules the plan cites, by id"
+  attr :open_learnings, :boolean, default: true, doc: "the reader opens Learnings, where each rule links"
 
   def cited_rules(assigns) do
     assigns = assign(assigns, :cited, cited(assigns.html, assigns.rules))
@@ -27,6 +28,7 @@ defmodule RailWeb.Components.CitedRules do
           {rule.rule}
         </p>
         <.link
+          :if={@open_learnings}
           navigate={~p"/learnings/#{rule.id}"}
           class="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
         >

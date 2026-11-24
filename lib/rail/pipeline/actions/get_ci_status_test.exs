@@ -38,7 +38,7 @@ defmodule Rail.Pipeline.Actions.GetCiStatusTest do
         project_id: project.id,
         identifier: "CIS-1",
         title: "CI",
-        state: :backlog
+        state: :todo
       })
       |> Repo.insert!()
 

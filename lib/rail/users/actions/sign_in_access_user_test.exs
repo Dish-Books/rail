@@ -59,6 +59,13 @@ defmodule Rail.Users.Actions.SignInAccessUserTest do
     assert_receive {:users_changed, ^user_id}
   end
 
+  test "a person invited as a tester signs in as a tester", %{key: key, admin: admin, claims: claims, email: email} do
+    {:ok, %Invite{}} = Users.invite_user(Scope.for_user(admin), %{email: email, role: :tester})
+    {_jws, token} = key |> JOSE.JWT.sign(%{"alg" => "RS256"}, claims) |> JOSE.JWS.compact()
+
+    assert {:ok, %User{email: ^email, role: :tester}} = Users.sign_in_access_user(token)
+  end
+
   test "signs a returning developer in to their account by email, leaving their GitHub as it was", %{
     key: key,
     claims: claims,

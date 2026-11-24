@@ -45,6 +45,7 @@ defmodule RailWeb.TaskLive do
   alias RailWeb.Live.TaskActions
   alias RailWeb.Live.TaskDetail
 
+  on_mount {RailWeb.UserAuth, {:require_tab, :issues}}
   on_mount {RailWeb.UserAuth, :require_github}
 
   # The engineer writes files as it works and the pane reads them off disk, so a
@@ -201,6 +202,7 @@ defmodule RailWeb.TaskLive do
       current_scope={@current_scope}
       attention_count={@attention_count}
       triage_count={@triage_count}
+      support_count={@support_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}

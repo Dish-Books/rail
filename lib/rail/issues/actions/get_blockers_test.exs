@@ -62,7 +62,7 @@ defmodule Rail.Issues.Actions.GetBlockersTest do
     assert %{
              ^issue_id => %{
                blocked_by: [
-                 %{issue: %Issue{id: ^open_id, state: :triage}, in_project: true},
+                 %{issue: %Issue{id: ^open_id, state: :todo}, in_project: true},
                  %{issue: %Issue{id: ^finished_id, state: :done}, in_project: true}
                ],
                blocks: []

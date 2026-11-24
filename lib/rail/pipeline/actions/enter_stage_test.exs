@@ -247,7 +247,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
         project_id: other_project.id,
         identifier: "OTHES-1",
         title: "Other",
-        state: :backlog
+        state: :todo
       })
       |> Repo.insert!()
 

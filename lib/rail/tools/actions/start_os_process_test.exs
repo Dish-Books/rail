@@ -81,7 +81,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
         project_id: project.id,
         identifier: "SR#{unique}-1",
         title: "Start Run Issue",
-        state: :backlog
+        state: :todo
       })
       |> Repo.insert!()
 

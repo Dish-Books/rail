@@ -287,7 +287,7 @@ defmodule Rail.Pipeline.Schemas.Task do
     canceled =
       for position <- builds_on,
           %__MODULE__{issue: %Issue{completed_at: nil, state: state} = issue} <- [by_position[position]],
-          state in [:canceled, :duplicate],
+          state == :canceled,
           do: issue.identifier
 
     {canceled, for(position <- builds_on, not Map.has_key?(by_position, position), do: "child #{position}")}

@@ -24,15 +24,13 @@ defmodule Rail.Issues.Actions.CreateIssue do
   `:priority`, `:estimate`,
   `:owner_user_id`, `:workflow_id`, the workflow opening it, `:skipped_steps`, the steps its file
   turned off, `:stages`, the `IssueStage`s its file named, `:parent`, the issue it is a sub-issue of, and `:cycle_id`,
-  the cycle the ticket opens in, which the caller has already checked. The ticket is opened in triage, or in
-  Todo for a sub-issue, whose work is already planned. Broadcasts `{:issue_created, issue_id}` on `"issues"`.
+  the cycle the ticket opens in, which the caller has already checked. The ticket is opened in Todo. Broadcasts
+  `{:issue_created, issue_id}` on `"issues"`.
   """
   def create_issue(%Scope{} = scope, %Project{} = project, %{} = attrs) do
-    state = if attrs[:parent], do: :todo, else: :triage
-
     case Issue.edit_changeset(%Issue{}, Map.take(attrs, [:title, :estimate])) do
       %Ecto.Changeset{valid?: true} ->
-        {:ok, tracked} = Tracker.create_issue(scope, project, Map.put(attrs, :state, state))
+        {:ok, tracked} = Tracker.create_issue(scope, project, Map.put(attrs, :state, :todo))
 
         local =
           Map.merge(tracked, %{
