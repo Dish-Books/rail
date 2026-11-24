@@ -3,6 +3,15 @@ defmodule RailWeb.Settings.UsersLive do
   use RailWeb, :live_view
 
   alias Rail.Users
+  alias Rail.Users.Schemas.User
+
+  @role_labels %{support: "Support", tester: "Tester", dev: "Dev"}
+  @role_icons %{support: "pi-headset", tester: "pi-test-tube", dev: "pi-code"}
+  @role_sees %{
+    support: "The Support tab only.",
+    tester: "Testing and Issues, and the issue and task pages.",
+    dev: "Overview, Support, Triage, Testing, Issues, Learnings and Sandboxes."
+  }
 
   def mount(_params, _session, socket) do
     if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "users")
@@ -17,6 +26,7 @@ defmodule RailWeb.Settings.UsersLive do
       |> assign(:sheet_user_id, nil)
       |> assign(:invite_email, "")
       |> assign(:invite_admin, false)
+      |> assign(:invite_role, :dev)
       |> assign(:invite_project_ids, [])
       |> assign(:error_message, nil)
       |> load_directory(scope)
@@ -104,7 +114,7 @@ defmodule RailWeb.Settings.UsersLive do
                   <col class="w-[30%]" />
                   <col class="w-[22%]" />
                   <col />
-                  <col class="w-32" />
+                  <col class="w-60" />
                   <col class="w-12" />
                 </colgroup>
                 <thead class="bg-slate-50 dark:bg-slate-800/60">
@@ -174,20 +184,14 @@ defmodule RailWeb.Settings.UsersLive do
                       <.accounts user={user} />
                     </td>
                     <td class="px-4 py-3 whitespace-nowrap">
-                      <div class="flex flex-col items-start gap-1">
+                      <div class="flex flex-wrap items-center gap-1">
+                        <.role_badge id={"user-role-#{user.id}"} role={user.role} />
                         <span
                           :if={user.admin}
                           id={"user-role-badge-#{user.id}"}
                           class="inline-flex items-center rounded-md bg-indigo-50 dark:bg-indigo-400/10 px-2.5 py-1 text-xs font-semibold text-indigo-700 dark:text-indigo-300 ring-1 ring-inset ring-indigo-600/20 dark:ring-indigo-400/30"
                         >
                           Admin
-                        </span>
-                        <span
-                          :if={!user.admin}
-                          id={"user-role-badge-#{user.id}"}
-                          class="inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-700 px-2.5 py-1 text-xs font-medium text-slate-500 dark:text-slate-400 ring-1 ring-inset ring-zinc-500/20"
-                        >
-                          User
                         </span>
                         <span
                           :if={user.tech_lead}
@@ -216,7 +220,7 @@ defmodule RailWeb.Settings.UsersLive do
               class="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 px-5 py-4 text-sm text-slate-500 dark:text-slate-400"
               id="invites-empty"
             >
-              No invites yet.
+              No pending invites.
             </p>
             <div
               :if={@invites != []}
@@ -227,7 +231,7 @@ defmodule RailWeb.Settings.UsersLive do
                   <col class="w-[30%]" />
                   <col class="w-[22%]" />
                   <col />
-                  <col class="w-32" />
+                  <col class="w-60" />
                   <col class="w-12" />
                 </colgroup>
                 <tbody>
@@ -257,16 +261,18 @@ defmodule RailWeb.Settings.UsersLive do
                       />
                     </td>
                     <td class="px-4 py-3 whitespace-nowrap">
-                      <span
-                        id={"invite-status-#{invite.id}"}
-                        class="inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-700 px-2.5 py-1 text-xs font-medium text-slate-500 dark:text-slate-400 ring-1 ring-inset ring-zinc-500/20"
-                      >
-                        {if invite.accepted_at, do: "Accepted", else: "Pending"}
-                      </span>
+                      <div class="flex items-center gap-1.5">
+                        <.role_badge id={"invite-role-#{invite.id}"} role={invite.role} />
+                        <span
+                          id={"invite-status-#{invite.id}"}
+                          class="inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-700 px-2.5 py-1 text-xs font-medium text-slate-500 dark:text-slate-400 ring-1 ring-inset ring-zinc-500/20"
+                        >
+                          Pending
+                        </span>
+                      </div>
                     </td>
                     <td class="px-4 py-3 text-right whitespace-nowrap" colspan="2">
                       <.button
-                        :if={is_nil(invite.accepted_at)}
                         size="sm"
                         variant="danger"
                         id={"revoke-invite-button-#{invite.id}"}
@@ -308,6 +314,7 @@ defmodule RailWeb.Settings.UsersLive do
 
         <form id="user-access-form" phx-change="update_access" class="space-y-6">
           <input type="hidden" name="user_id" value={@sheet_user.id} />
+          <.role_choices id="user-sheet-role" name="user[role]" selected={@sheet_user.role} />
           <label class="flex items-start gap-3 cursor-pointer">
             <input
               :if={@sheet_user.id != @current_scope.user.id}
@@ -358,6 +365,27 @@ defmodule RailWeb.Settings.UsersLive do
             all={@sheet_user.admin}
           />
         </form>
+
+        <div
+          :if={@sheet_user.id != @current_scope.user.id}
+          id="remove-user"
+          class="border-t border-slate-200 dark:border-slate-700 pt-5"
+        >
+          <.button
+            size="sm"
+            variant="danger"
+            id="remove-user-button"
+            data-qa="remove_user_button"
+            phx-click="remove_user"
+            phx-value-user_id={@sheet_user.id}
+            data-confirm={"Remove #{@sheet_user.name || @sheet_user.login || @sheet_user.email}? They are signed out and cannot sign in again unless you invite them."}
+          >
+            <.icon name="pi-user-minus" class="h-3.5 w-3.5" /> Remove user
+          </.button>
+          <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+            Their comments and the work they did stay, under their name.
+          </p>
+        </div>
       </.side_sheet>
 
       <.side_sheet :if={@sheet == :invite} id="invite-sheet" label="Invite" on_close="close_sheet">
@@ -381,6 +409,8 @@ defmodule RailWeb.Settings.UsersLive do
             phx-debounce="300"
             data-qa="invite_email_input"
           />
+
+          <.role_choices id="invite-role" name="role" selected={@invite_role} />
 
           <label class="flex items-center gap-3 cursor-pointer">
             <input
@@ -464,6 +494,7 @@ defmodule RailWeb.Settings.UsersLive do
       socket
       |> assign(:invite_email, Map.get(params, "email") || "")
       |> assign(:invite_admin, admin)
+      |> assign(:invite_role, Map.get(params, "role", "dev"))
       |> assign(
         :invite_project_ids,
         if(keep_ticks?, do: socket.assigns.invite_project_ids, else: params["project_ids"] || [])
@@ -478,6 +509,7 @@ defmodule RailWeb.Settings.UsersLive do
     attrs = %{
       email: Map.get(params, "email") || "",
       admin: Map.get(params, "admin") == "on",
+      role: Map.get(params, "role", "dev"),
       project_ids: params["project_ids"] || []
     }
 
@@ -488,6 +520,7 @@ defmodule RailWeb.Settings.UsersLive do
           |> assign(:sheet, nil)
           |> assign(:invite_email, "")
           |> assign(:invite_admin, false)
+          |> assign(:invite_role, :dev)
           |> assign(:invite_project_ids, [])
           |> assign(:error_message, nil)
           |> load_directory(scope)
@@ -531,6 +564,31 @@ defmodule RailWeb.Settings.UsersLive do
     end
   end
 
+  def handle_event("remove_user", %{"user_id" => user_id}, socket) do
+    scope = socket.assigns.current_scope
+
+    case Users.remove_user(scope, user_id) do
+      {:ok, _user} ->
+        socket =
+          socket
+          |> assign(:sheet, nil)
+          |> assign(:sheet_user_id, nil)
+          |> assign(:error_message, nil)
+          |> load_directory(scope)
+
+        {:noreply, socket}
+
+      {:error, :self} ->
+        {:noreply, assign(socket, :error_message, "You cannot remove yourself.")}
+
+      {:error, :not_authorized} ->
+        {:noreply, assign(socket, :error_message, "You are not authorized to remove users.")}
+
+      {:error, :not_found} ->
+        {:noreply, assign(socket, :error_message, "That user was already removed.")}
+    end
+  end
+
   def handle_event("clear_error", _params, socket) do
     socket = assign(socket, :error_message, nil)
     {:noreply, socket}
@@ -566,6 +624,70 @@ defmodule RailWeb.Settings.UsersLive do
     <span id={@id} class="block truncate text-slate-800 dark:text-slate-200" title={@summary}>
       {@summary}
     </span>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :role, :atom, required: true
+
+  defp role_badge(assigns) do
+    assigns =
+      assigns
+      |> assign(:label, @role_labels[assigns.role])
+      |> assign(:icon, @role_icons[assigns.role])
+
+    ~H"""
+    <span
+      id={@id}
+      class="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-700/60 px-2 py-1 text-xs font-medium text-slate-800 dark:text-slate-100 ring-1 ring-inset ring-slate-400/40 dark:ring-slate-500/50"
+    >
+      <.icon name={@icon} class="size-3.5" />{@label}
+    </span>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :name, :string, required: true
+  attr :selected, :any, required: true, doc: "the picked role, as an atom or as the form sent it"
+
+  defp role_choices(assigns) do
+    assigns =
+      assigns
+      |> assign(:selected, to_string(assigns.selected))
+      |> assign(:roles, for(role <- User.roles(), do: {role, @role_labels[role], @role_icons[role], @role_sees[role]}))
+
+    ~H"""
+    <fieldset id={@id}>
+      <legend class="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+        Role
+      </legend>
+      <div class="rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-200 dark:divide-slate-700 overflow-hidden bg-white dark:bg-slate-900/40">
+        <label
+          :for={{role, label, icon, sees} <- @roles}
+          id={"#{@id}-#{role}"}
+          class={[
+            "flex items-start gap-3 px-3.5 py-2.5 cursor-pointer",
+            @selected == to_string(role) && "bg-indigo-500/10",
+            @selected != to_string(role) && "hover:bg-slate-100 dark:hover:bg-slate-700/50"
+          ]}
+        >
+          <input
+            type="radio"
+            id={"#{@id}-#{role}-input"}
+            name={@name}
+            value={role}
+            checked={@selected == to_string(role)}
+            class="h-4 w-4 shrink-0 accent-indigo-500 mt-0.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-indigo-500"
+          />
+          <span class="min-w-0">
+            <span class="flex items-center gap-1.5 text-sm font-medium text-slate-900 dark:text-slate-100">
+              <.icon name={icon} class="size-3.5 text-slate-400" />{label}
+            </span>
+            <span class="block text-xs text-slate-500 dark:text-slate-400">{sees}</span>
+          </span>
+        </label>
+      </div>
+    </fieldset>
     """
   end
 

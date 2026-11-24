@@ -24,10 +24,12 @@ import { IssueTitle } from "./hooks/issue_title";
 import { JumpToLine } from "./hooks/jump_to_line";
 import { LocalResetTime } from "./hooks/local_reset_time";
 import { LocalTime } from "./hooks/local_time";
+import { MarkdownPaste } from "./hooks/markdown_paste";
 import { MenuKeys } from "./hooks/menu_keys";
 import { ScrollSelectedTab } from "./hooks/scroll_selected_tab";
 import { Shortcuts } from "./hooks/shortcuts";
 import { SidebarResize } from "./hooks/sidebar_resize";
+import { SketchesToggle } from "./hooks/sketches_toggle";
 import { StartFocus } from "./hooks/start_focus";
 import { StatusMenu } from "./hooks/status_menu";
 import { Theme } from "./hooks/theme";
@@ -65,9 +67,11 @@ const Hooks = {
   IssueTitle,
   ImagePaste,
   IssueDescription,
+  MarkdownPaste,
   TodosDrop,
   TodosOpen,
-  StartFocus
+  StartFocus,
+  SketchesToggle
 };
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content");

@@ -13,6 +13,11 @@ export function uploadableFiles(fileList) {
   return Array.from(fileList ?? []).filter((file) => UPLOADABLE_TYPES.includes(file.type));
 }
 
+// A comment box or the New Issue dialog takes its own files, through its own hook.
+export function droppedOnOwnBox(target) {
+  return Boolean(target?.closest?.("[data-file-drop]"));
+}
+
 // TipTap's paragraph parser lifts an image alone on its line out of its paragraph, where an inline image may not be.
 export function wrapLoneImages(node) {
   if (!node.content) return node;
@@ -272,6 +277,7 @@ export const IssueDescription = {
       "dragover",
       (event) => {
         if (!hasFiles(event)) return;
+        if (droppedOnOwnBox(event.target)) return showOverlay(false);
         event.preventDefault();
         showOverlay(true);
       },
@@ -284,11 +290,11 @@ export const IssueDescription = {
       },
       { signal }
     );
-    // Capture, so a drop on the comment box or the editor itself lands in the description too.
+    // Capture, so a drop on the editor itself lands in the description too; a box that takes its own files keeps them.
     window.addEventListener(
       "drop",
       (event) => {
-        if (!hasFiles(event)) return;
+        if (!hasFiles(event) || droppedOnOwnBox(event.target)) return;
         event.preventDefault();
         event.stopPropagation();
         showOverlay(false);
@@ -299,12 +305,17 @@ export const IssueDescription = {
       { signal, capture: true }
     );
 
-    this.handleEvent("upload_started", ({ ref, name }) => {
+    const mine = (payload) => payload.form === this.el.dataset.uploadForm;
+    this.handleEvent("upload_started", (payload) => {
+      if (!mine(payload)) return;
+      const { ref, name } = payload;
       const held = this.placeholders.find((placeholder) => placeholder.name === name && placeholder.ref === null);
       if (held) held.ref = ref;
     });
     // A link mark takes in what is typed right after it, so a plain space follows a file's link.
-    this.handleEvent("insert_file", ({ ref, url, name, image }) =>
+    this.handleEvent("insert_file", (payload) => {
+      if (!mine(payload)) return;
+      const { ref, url, name, image } = payload;
       this.settleFile(
         ref,
         image
@@ -313,9 +324,11 @@ export const IssueDescription = {
               { type: "text", text: name, marks: [{ type: "link", attrs: { href: url } }] },
               { type: "text", text: " " }
             ]
-      )
-    );
-    this.handleEvent("upload_failed", ({ ref }) => this.settleFile(ref, null));
+      );
+    });
+    this.handleEvent("upload_failed", (payload) => {
+      if (mine(payload)) this.settleFile(payload.ref, null);
+    });
   },
 
   // Outside the undo history, so Ctrl+Z never goes back past the text that was loaded.

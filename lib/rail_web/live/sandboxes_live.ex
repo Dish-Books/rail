@@ -10,6 +10,8 @@ defmodule RailWeb.SandboxesLive do
   alias Rail.Tools.Schemas.ToolchainInstall
   alias Rail.Users.Schemas.User
 
+  on_mount {RailWeb.UserAuth, {:require_tab, :sandboxes}}
+
   # Usage is read from Docker, which takes a moment per container, so it is
   # re-read on its own clock rather than with everything else.
   @usage_interval_ms 5_000

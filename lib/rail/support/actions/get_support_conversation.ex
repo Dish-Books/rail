@@ -3,6 +3,7 @@ defmodule Rail.Support.Actions.GetSupportConversation do
 
   import Ecto.Query
 
+  alias Rail.Learnings.Schemas.LearningProposal
   alias Rail.Repo
   alias Rail.Scope
   alias Rail.Support.Schemas.ChatMessage
@@ -25,7 +26,9 @@ defmodule Rail.Support.Actions.GetSupportConversation do
       :done_by,
       messages: ^from(m in Message, order_by: [asc: m.posted_at, asc: m.id]),
       items: ^from(i in Item, order_by: [asc: i.position, asc: i.id], preload: :existing_issue),
-      chat_messages: ^from(c in ChatMessage, order_by: [asc: c.inserted_at, asc: c.id], preload: :user)
+      chat_messages: ^from(c in ChatMessage, order_by: [asc: c.inserted_at, asc: c.id], preload: :user),
+      learning_proposals:
+        ^from(p in LearningProposal, order_by: [asc: p.inserted_at, asc: p.id], preload: [:learning, :decided_by])
     ])
     |> Repo.one()
     |> case do

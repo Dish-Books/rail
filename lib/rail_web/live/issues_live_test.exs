@@ -44,6 +44,23 @@ defmodule RailWeb.IssuesLiveTest do
     :ok
   end
 
+  test "a role without the Issues tab is sent to its own first tab", %{conn: conn} do
+    id = System.unique_integer([:positive])
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "issues_live_role_#{id}",
+        login: "issues_live-role-#{id}",
+        email: "issues_live_role_#{id}@example.com"
+      })
+
+    for {role, home} <- [support: "/support"] do
+      {:ok, user} = Users.update_user(system_scope(), user, %{role: role})
+
+      assert {:error, {:redirect, %{to: ^home}}} = live(log_in_user(conn, user), ~p"/issues")
+    end
+  end
+
   test "redirects an unauthenticated user to the sign-in page", %{conn: conn} do
     assert {:error, {:redirect, %{to: "/sign-in"}}} = live(conn, ~p"/issues")
   end

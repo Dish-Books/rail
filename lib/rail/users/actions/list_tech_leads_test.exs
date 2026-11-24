@@ -22,6 +22,8 @@ defmodule Rail.Users.Actions.ListTechLeadsTest do
     %User{} = register.("dano", %{name: "Dan Okafor", project_ids: ["prj_tl"]})
     %User{} = register.("admin", %{name: "Ada Admin", admin: true})
     %User{} = register.("sam", %{name: "Sam Ito", tech_lead: true, project_ids: ["prj_other"]})
+    # Support cannot open the task Finalize would send them to.
+    %User{} = register.("sofia", %{name: "Sofia Ruiz", tech_lead: true, role: :support, project_ids: ["prj_tl"]})
 
     assert [%User{id: ^michael_id}, %User{id: ^priya_id}] = Users.list_tech_leads("prj_tl")
   end

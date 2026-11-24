@@ -75,7 +75,7 @@ defmodule Rail.Triage.Runner do
   end
 
   # A pass that crashed never let go of its thread, so that happens here, with the reason
-  # shown where "Triage again" can retry it.
+  # shown on the page until someone asks the agent again in the chat.
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{running: running} = state) when is_map_key(running, ref) do
     {thread_id, state} = finish(state, ref)
     Logger.error("[triage] pass on #{thread_id} crashed: #{inspect(reason)}")

@@ -39,6 +39,7 @@ defmodule RailWeb.Layouts do
     <div class="flex h-dvh w-full overflow-clip bg-white dark:bg-slate-900" id="app-scaffold">
       <.nav
         current_section={@current_section}
+        current_scope={@current_scope}
         attention_count={@attention_count}
         triage_count={@triage_count}
         support_count={@support_count}

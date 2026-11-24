@@ -10,6 +10,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias RailWeb.Components.IssueUpload
 
   @id "capture-issue"
 
@@ -39,18 +40,24 @@ defmodule RailWeb.Components.CaptureIssueModal do
   end
 
   def render(assigns) do
+    project = Enum.find(assigns.projects, &(&1.id == assigns.project_id))
+
     assigns =
       assigns
       |> assign(:active_projects, Enum.filter(assigns.projects, & &1.active))
       |> assign(:can_submit, String.trim(assigns.title) != "")
+      # Files go up before the issue exists, under the id it will be created with.
+      |> assign(:draft_issue, %Issue{id: assigns.issue_id, project_id: project && project.id})
 
     ~H"""
     <div id={id()} class="contents">
+      <%!-- The whole overlay takes a drop, so a file dropped on the dialog never reaches the description behind it. --%>
       <div
         :if={@open}
         id="capture-idea-dialog"
         data-qa="capture_idea_dialog"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        data-file-drop
+        class="group/drop fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       >
         <div
           id="new-issue-modal"
@@ -204,11 +211,24 @@ defmodule RailWeb.Components.CaptureIssueModal do
                 name="description"
                 data-qa="capture_description_input"
                 rows="3"
+                phx-hook="MarkdownPaste"
+                data-upload-form="capture-issue-upload"
                 placeholder="Details, context, acceptance criteria"
-                class="w-full min-h-[90px] px-3 py-2 text-sm rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500"
+                class="w-full min-h-[90px] max-h-80 field-sizing-content px-3 py-2 text-sm rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 [overflow-wrap:anywhere] focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500 group-[.is-drop-target]/drop:ring-2 group-[.is-drop-target]/drop:ring-blue-500 group-[.is-drop-target]/drop:bg-blue-500/10"
               >{@description}</textarea>
             </div>
+          </form>
 
+          <.live_component
+            :if={!@created}
+            module={IssueUpload}
+            id="capture-issue-upload"
+            issue={@draft_issue}
+            current_scope={@current_scope}
+          />
+
+          <%!-- Outside the form, which cannot hold the upload's own; each field and button joins it by its id. --%>
+          <div :if={!@created} class="space-y-4">
             <div>
               <label
                 for="capture-priority-dropdown"
@@ -219,6 +239,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
               <select
                 id="capture-priority-dropdown"
                 name="priority"
+                form="capture-issue-form"
                 data-qa="capture_priority_dropdown"
                 class="w-full px-3 py-2 text-xs rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500"
               >
@@ -242,6 +263,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
                 type="button"
                 id="capture-cancel-button"
                 data-qa="capture_cancel_button"
+                form="capture-issue-form"
                 phx-click="close"
                 phx-target={@myself}
                 class="px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
@@ -253,24 +275,31 @@ defmodule RailWeb.Components.CaptureIssueModal do
                 type="submit"
                 id="capture-submit-button"
                 data-qa="capture_submit_button"
+                form="capture-issue-form"
                 disabled={not @can_submit}
                 data-busy-self
                 class={[
                   "group px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-opacity",
                   "[&.phx-submit-loading]:opacity-60 [&.phx-submit-loading]:cursor-not-allowed",
+                  "data-uploading:opacity-60 data-uploading:cursor-not-allowed",
                   not @can_submit &&
                     "bg-slate-500 dark:bg-slate-400 text-white dark:text-slate-900 opacity-50 cursor-not-allowed",
                   @can_submit &&
                     "bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer"
                 ]}
               >
-                <span class="group-[.phx-submit-loading]:hidden">Add to Triage (⌘Enter)</span>
+                <span class="group-[.phx-submit-loading]:hidden group-data-uploading:hidden">
+                  Add to Triage (⌘Enter)
+                </span>
+                <span class="hidden items-center gap-1.5 group-data-uploading:inline-flex">
+                  <span class="inline-block size-3 rounded-full border-2 border-current border-t-transparent motion-safe:animate-spin" />Uploading...
+                </span>
                 <span class="hidden items-center gap-1.5 group-[.phx-submit-loading]:inline-flex">
                   <span class="inline-block size-3 rounded-full border-2 border-current border-t-transparent motion-safe:animate-spin" />Adding...
                 </span>
               </button>
             </div>
-          </form>
+          </div>
         </div>
       </div>
     </div>
@@ -313,6 +342,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
     with false <- String.trim(title) == "",
          %{} = project <- Enum.find(socket.assigns.projects, &(&1.id == project_id)) do
       case Issues.create_issue(socket.assigns.current_scope, project, %{
+             id: socket.assigns.issue_id,
              title: title,
              description: description,
              priority: priority
@@ -334,8 +364,10 @@ defmodule RailWeb.Components.CaptureIssueModal do
     |> assign(:priority, Enum.find(Issue.priorities(), :medium, &(to_string(&1) == params["priority"])))
   end
 
+  # A fresh id each time, so files pasted into one new issue are never stored under another's.
   defp reset_form(socket, project_id) do
     socket
+    |> assign(:issue_id, UXID.generate!(prefix: "iss"))
     |> assign(:title, "")
     |> assign(:description, "")
     |> assign(:project_id, project_id)

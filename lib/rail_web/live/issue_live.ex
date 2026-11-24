@@ -16,8 +16,9 @@ defmodule RailWeb.IssueLive do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Scope
   alias Rail.Users
+  alias Rail.Users.Schemas.User
 
-  on_mount {RailWeb.UserAuth, :require_github}
+  on_mount {RailWeb.UserAuth, {:require_tab, :issues}}
 
   @issue_events [
     "assign",
@@ -32,15 +33,18 @@ defmodule RailWeb.IssueLive do
 
   def mount(_params, _session, socket) do
     # Workflows too, since the byline names the workflow that opened the issue, and Rail's cycles, which the nightly
-    # run moves issues between without a word on "issues". "pipeline" carries the Task section's stage and run, and
-    # "initiatives" the Initiative row's names.
+    # run moves issues between without a word on "issues". "pipeline" carries the Task section's stage and run,
+    # "initiatives" the Initiative row's names, and "users" whether the reader has GitHub connected.
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
       Phoenix.PubSub.subscribe(Rail.PubSub, "workflows")
       Phoenix.PubSub.subscribe(Rail.PubSub, "cycles")
       Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
       Phoenix.PubSub.subscribe(Rail.PubSub, "initiatives")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "users")
     end
+
+    %Scope{user: %User{github_id: github_id}} = socket.assigns.current_scope
 
     socket =
       socket
@@ -49,11 +53,12 @@ defmodule RailWeb.IssueLive do
       |> assign(:issue, nil)
       |> assign(:assignees, [])
       |> assign(:assignee_query, "")
-      |> assign(:comment_nonce, 0)
+      |> assign(:comment_nonce, %{})
       |> assign(:checking_pull_request, false)
       |> assign(:blockers, nil)
       |> assign(:cycles, nil)
       |> assign(:initiatives, nil)
+      |> assign(:github_connected, is_binary(github_id))
 
     {:ok, socket}
   end
@@ -74,6 +79,19 @@ defmodule RailWeb.IssueLive do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} {assigns}>
+      <p
+        :if={@issue && !@github_connected}
+        id="issue-github-required"
+        data-qa="issue-github-required"
+        class="max-w-5xl mx-auto mb-6 flex items-start gap-2 rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-3 text-sm text-slate-600 dark:text-slate-300"
+      >
+        <.icon name="pi-github-logo" class="size-4 mt-0.5 shrink-0 text-slate-400" />
+        <span>
+          Connect GitHub in
+          <.link navigate={~p"/settings/connected-accounts"} class="underline">Connected accounts</.link>
+          to change, comment on or start this issue.
+        </span>
+      </p>
       <.issue_view
         :if={@issue}
         issue={@issue}
@@ -89,9 +107,15 @@ defmodule RailWeb.IssueLive do
         blockers={@blockers}
         cycles={@cycles}
         initiatives={@initiatives}
+        read_only={!@github_connected}
       />
     </Layouts.app>
     """
+  end
+
+  # Someone without GitHub reads the issue but changes nothing on it, whatever a stale page or a crafted event sends.
+  def handle_event(_event, _params, %{assigns: %{github_connected: false}} = socket) do
+    {:noreply, put_flash(socket, :error, "Connect GitHub in Connected accounts to work on this issue.")}
   end
 
   # The page stays put either way: reloaded, its Task section shows the task in place of Start.
@@ -111,6 +135,14 @@ defmodule RailWeb.IssueLive do
   def handle_event(event, params, socket) when event in @issue_events do
     {:noreply, handle_issue_event(event, params, socket, &load_issue(&1, &1.assigns.issue.id))}
   end
+
+  # Connecting or disconnecting GitHub with the page open turns its controls on or off in place.
+  def handle_info({:users_changed, id}, %{assigns: %{current_scope: %Scope{user: %User{id: id}}}} = socket) do
+    github_connected = match?({:ok, %User{github_id: github_id}} when is_binary(github_id), Users.get_user(id: id))
+    {:noreply, assign(socket, :github_connected, github_connected)}
+  end
+
+  def handle_info({:users_changed, _someone_else}, socket), do: {:noreply, socket}
 
   def handle_info({:issue_comments_changed, issue_id}, %{assigns: %{issue: %{id: issue_id}}} = socket) do
     {:noreply, load_issue(socket, issue_id)}

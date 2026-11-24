@@ -21,18 +21,20 @@ defmodule Rail.Users.Actions.ListInvitesTest do
     %{admin_id: admin_id, scope: Scope.for_user(admin), id: id}
   end
 
-  test "lists pending invites before accepted ones, with the inviter preloaded", %{
+  test "lists the pending invites, newest first, with the inviter preloaded, and leaves out accepted ones", %{
     admin_id: admin_id,
     scope: scope
   } do
     assert {:ok, %Invite{} = accepted} = Users.invite_user(scope, %{email: "accepted-list-invites@example.com"})
     assert {:ok, _updated} = accepted |> Invite.changeset(%{accepted_at: DateTime.utc_now()}) |> Repo.update()
+    assert {:ok, %Invite{} = older} = Users.invite_user(scope, %{email: "older@example.com"})
+    older |> Ecto.Changeset.change(inserted_at: DateTime.shift(older.inserted_at, minute: -1)) |> Repo.update!()
     assert {:ok, %Invite{}} = Users.invite_user(scope, %{email: "pending@example.com"})
 
     assert {:ok,
             [
               %Invite{email: "pending@example.com", accepted_at: nil, invited_by: %User{id: ^admin_id}},
-              %Invite{email: "accepted-list-invites@example.com", accepted_at: %DateTime{}}
+              %Invite{email: "older@example.com", accepted_at: nil}
             ]} = Users.list_invites(scope)
   end
 

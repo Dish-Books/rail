@@ -92,8 +92,14 @@ defmodule RailWeb.Utils.HandleIssueEvent do
 
   defp post_comment(%{assigns: %{issue: issue, current_scope: scope}} = socket, attrs, reload) do
     case Issues.comment(scope, issue, attrs) do
-      {:ok, _comment} -> socket |> update(:comment_nonce, &(&1 + 1)) |> reload.()
-      {:error, _reason} -> put_flash(socket, :error, "Could not post the comment")
+      # Only the box that posted starts over, so a draft or an upload in another box is kept.
+      {:ok, _comment} ->
+        socket
+        |> update(:comment_nonce, &Map.update(&1, attrs.parent_id || "issue", 1, fn nonce -> nonce + 1 end))
+        |> reload.()
+
+      {:error, _reason} ->
+        put_flash(socket, :error, "Could not post the comment")
     end
   end
 end

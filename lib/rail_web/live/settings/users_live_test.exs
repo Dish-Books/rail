@@ -105,8 +105,10 @@ defmodule RailWeb.Settings.UsersLiveTest do
     assert has_element?(view, "#user-projects-#{regular_user.id}[title='#{project.name}']", project.name)
     assert has_element?(view, "#user-projects-#{nobody.id}", "No projects")
 
+    assert has_element?(view, "#user-role-#{admin_user.id}", "Dev")
     assert has_element?(view, "#user-role-badge-#{admin_user.id}", "Admin")
-    assert has_element?(view, "#user-role-badge-#{regular_user.id}", "User")
+    assert has_element?(view, "#user-role-#{regular_user.id}", "Dev")
+    refute has_element?(view, "#user-role-badge-#{regular_user.id}")
     assert has_element?(view, "#user-accounts-#{regular_user.id}[aria-label='Connected: GitHub']")
     assert has_element?(view, "#user-github-chip-#{regular_user.id}[data-connected='true']", "GitHub")
     refute has_element?(view, "#user-sheet")
@@ -224,12 +226,33 @@ defmodule RailWeb.Settings.UsersLiveTest do
     assert %User{tech_lead: true} = Repo.get!(User, regular_user.id)
     assert has_element?(view, "#user-sheet-tech-lead[checked]")
     assert has_element?(view, "#user-tech-lead-badge-#{regular_user.id}", "Tech lead")
-    assert has_element?(view, "#user-role-badge-#{regular_user.id}", "User")
+    refute has_element?(view, "#user-role-badge-#{regular_user.id}")
 
     view |> form("#user-access-form", %{"user" => %{"tech_lead" => "false"}}) |> render_change()
 
     assert %User{tech_lead: false} = Repo.get!(User, regular_user.id)
     refute has_element?(view, "#user-tech-lead-badge-#{regular_user.id}")
+  end
+
+  test "an admin picks a role in a person's sheet, and every admin's open list shows it", %{
+    admin_conn: conn,
+    regular_user: regular_user
+  } do
+    assert {:ok, view, _html} = live(conn, ~p"/settings/users")
+    assert {:ok, other_tab, _html} = live(conn, ~p"/settings/users")
+    view |> element("#user-row-#{regular_user.id}") |> render_click()
+
+    assert has_element?(view, "#user-sheet-role legend", "Role")
+    assert has_element?(view, "#user-sheet-role-dev-input[checked]")
+    assert has_element?(view, "#user-sheet-role-support", "The Support tab only.")
+    assert has_element?(view, "#user-sheet-role-tester", "Testing and Issues, and the issue and task pages.")
+
+    view |> form("#user-access-form", %{"user" => %{"role" => "tester"}}) |> render_change()
+
+    assert %User{role: :tester} = Repo.get!(User, regular_user.id)
+    assert has_element?(view, "#user-sheet-role-tester-input[checked]")
+    assert has_element?(view, "#user-role-#{regular_user.id}", "Tester")
+    assert has_element?(other_tab, "#user-role-#{regular_user.id}", "Tester")
   end
 
   test "your own Admin box is disabled, and a crafted change to it does nothing", %{
@@ -360,7 +383,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
     |> form("#invite-form", %{"email" => "invited@example.com", "project_ids" => [project.id]})
     |> render_submit()
 
-    assert %Invite{admin: false, project_ids: [^granted], invited_by_id: ^inviter_id} =
+    assert %Invite{admin: false, role: :dev, project_ids: [^granted], invited_by_id: ^inviter_id} =
              invite = Repo.get_by(Invite, email: "invited@example.com")
 
     refute has_element?(view, "#invite-sheet")
@@ -372,6 +395,30 @@ defmodule RailWeb.Settings.UsersLiveTest do
     assert has_element?(view, "#invite-status-#{invite.id}", "Pending")
     assert has_element?(view, "#revoke-invite-button-#{invite.id}", "Revoke")
     refute has_element?(view, "#invites-empty")
+  end
+
+  test "an invite carries the role picked for it, keeps it when the sheet is reopened, and the next invite starts on Dev",
+       %{admin_conn: conn} do
+    assert {:ok, view, _html} = live(conn, ~p"/settings/users")
+    view |> element("#invite-button") |> render_click()
+    assert has_element?(view, "#invite-role-dev-input[checked]")
+
+    view |> form("#invite-form", %{"email" => "helper@example.com", "role" => "tester"}) |> render_change()
+    assert has_element?(view, "#invite-role-tester-input[checked]")
+
+    # A half-filled invite keeps its role along with its email.
+    view |> element("#invite-sheet-close") |> render_click()
+    view |> element("#invite-button") |> render_click()
+    assert has_element?(view, "#invite-role-tester-input[checked]")
+
+    view |> form("#invite-form", %{"email" => "helper@example.com", "role" => "support"}) |> render_submit()
+
+    assert %Invite{role: :support} = invite = Repo.get_by(Invite, email: "helper@example.com")
+    assert has_element?(view, "#invite-role-#{invite.id}", "Support")
+    assert has_element?(view, "#invite-status-#{invite.id}", "Pending")
+
+    view |> element("#invite-button") |> render_click()
+    assert has_element?(view, "#invite-role-dev-input[checked]")
   end
 
   test "an admin invite gets every project", %{admin_conn: conn} do
@@ -396,17 +443,64 @@ defmodule RailWeb.Settings.UsersLiveTest do
     assert Repo.get(Invite, invite_id) == nil
   end
 
-  test "an accepted invite cannot be revoked from the list", %{admin_conn: conn, admin_scope: scope} do
+  test "an accepted invite is left off the list, and cannot be revoked", %{admin_conn: conn, admin_scope: scope} do
     assert {:ok, %Invite{id: invite_id} = invite} = Users.invite_user(scope, %{email: "accepted-users-live@example.com"})
     assert {:ok, _updated} = invite |> Invite.changeset(%{accepted_at: DateTime.utc_now()}) |> Repo.update()
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/users")
 
-    assert has_element?(view, "#invite-status-#{invite_id}", "Accepted")
-    refute has_element?(view, "#revoke-invite-button-#{invite_id}")
+    refute has_element?(view, "#invite-row-#{invite_id}")
+    assert has_element?(view, "#invites-empty", "No pending invites.")
 
     render_click(view, "revoke_invite", %{"invite_id" => invite_id})
     assert has_element?(view, "#users-error-text", "That invite has already been accepted.")
+  end
+
+  test "an admin removes a person from their sheet, who leaves the list and is signed out", %{
+    admin_conn: conn,
+    regular_conn: regular_conn,
+    regular_user: regular_user
+  } do
+    assert {:ok, regular_view, _html} = live(regular_conn, ~p"/settings/connected-accounts")
+    assert {:ok, view, _html} = live(conn, ~p"/settings/users")
+
+    view |> element("#user-row-#{regular_user.id}") |> render_click()
+    assert has_element?(view, "#remove-user-button[data-confirm*='Regular User']")
+
+    view |> element("#remove-user-button") |> render_click()
+
+    refute has_element?(view, "#user-row-#{regular_user.id}")
+    refute has_element?(view, "#user-sheet")
+    assert %User{removed_at: %DateTime{}} = Repo.get(User, regular_user.id)
+
+    assert_redirect(regular_view, ~p"/sign-in")
+    assert {:error, {:redirect, %{to: "/sign-in"}}} = live(regular_conn, ~p"/settings/connected-accounts")
+  end
+
+  test "your own sheet has no Remove, and a crafted removal of yourself says why", %{
+    admin_conn: conn,
+    admin_user: admin_user
+  } do
+    assert {:ok, view, _html} = live(conn, ~p"/settings/users")
+
+    view |> element("#user-row-#{admin_user.id}") |> render_click()
+    refute has_element?(view, "#remove-user-button")
+
+    render_click(view, "remove_user", %{"user_id" => admin_user.id})
+    assert has_element?(view, "#users-error-text", "You cannot remove yourself.")
+    assert has_element?(view, "#user-row-#{admin_user.id}")
+  end
+
+  test "surfaces removal failures", %{admin_conn: conn, regular_user: regular_user} do
+    assert {:ok, view, _html} = live(conn, ~p"/settings/users")
+
+    expect(Users, :remove_user, fn _scope, _id -> {:error, :not_authorized} end)
+    render_click(view, "remove_user", %{"user_id" => regular_user.id})
+    assert has_element?(view, "#users-error-text", "You are not authorized to remove users.")
+
+    expect(Users, :remove_user, fn _scope, _id -> {:error, :not_found} end)
+    render_click(view, "remove_user", %{"user_id" => regular_user.id})
+    assert has_element?(view, "#users-error-text", "That user was already removed.")
   end
 
   test "surfaces a bad email address", %{admin_conn: conn} do

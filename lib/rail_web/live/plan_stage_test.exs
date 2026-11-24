@@ -629,6 +629,25 @@ defmodule RailWeb.Live.PlanStageTest do
                view |> render() |> Floki.parse_document!() |> Floki.find("#plan-decisions [data-qa='plan_cited_rule']")
     end
 
+    test "a tester reads each cited rule with no link to Learnings", %{conn: conn, user: user, task: task} do
+      {:ok, _user} = Users.update_user(system_scope(), user, %{role: :tester})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+      assert has_element?(
+               view,
+               "#plan-group-web [data-qa='plan_cited_rule']",
+               "Every write is broadcast after it commits"
+             )
+
+      assert has_element?(
+               view,
+               "#plan-decisions [data-qa='plan_cited_rule']",
+               "Every write is broadcast after it commits"
+             )
+
+      refute has_element?(view, "#plan-sheet a[href^='/learnings']")
+    end
+
     test "a cited rule retired while the Plan tab is open reads Retired without a reload", %{
       conn: conn,
       task: task,

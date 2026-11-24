@@ -80,4 +80,25 @@ defmodule Rail.Mcp.Actions.ResolveAccessTokenTest do
     assert {:error, :github_required} = Mcp.resolve_access_token(access_token)
     assert [%OauthAccessToken{last_used_at: nil}] = Repo.all(where(OauthAccessToken, user_id: ^user_id))
   end
+
+  test "a Claude connected as a tester is refused once their role is Support, and works again when it changes back", %{
+    user: %{id: user_id} = user,
+    access_token: access_token
+  } do
+    {:ok, user} = Users.update_user(system_scope(), user, %{role: :tester})
+    assert {:ok, %Scope{user: %{role: :tester}}} = Mcp.resolve_access_token(access_token)
+    assert_receive {:mcp_authorizations_changed, ^user_id}
+    Repo.update_all(OauthAccessToken, set: [last_used_at: nil])
+
+    {:ok, user} = Users.update_user(system_scope(), user, %{role: :support})
+    assert {:error, :not_authorized} = Mcp.resolve_access_token(access_token)
+    assert [%OauthAccessToken{last_used_at: nil}] = Repo.all(where(OauthAccessToken, user_id: ^user_id))
+
+    # The role is checked before GitHub, so support is never told to connect it.
+    {:ok, user} = Users.unlink_github(Scope.for_user(user))
+    assert {:error, :not_authorized} = Mcp.resolve_access_token(access_token)
+
+    {:ok, _user} = Users.update_user(system_scope(), user, %{role: :dev, github_id: "rs_back_#{user_id}"})
+    assert {:ok, %Scope{user: %{role: :dev}}} = Mcp.resolve_access_token(access_token)
+  end
 end

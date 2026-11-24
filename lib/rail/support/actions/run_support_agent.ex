@@ -13,6 +13,7 @@ defmodule Rail.Support.Actions.RunSupportAgent do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Learnings
   alias Rail.Learnings.Schemas.Learning
+  alias Rail.Learnings.Schemas.LearningProposal
   alias Rail.Mcp
   alias Rail.Mcp.RunContext
   alias Rail.Pipeline
@@ -97,7 +98,8 @@ defmodule Rail.Support.Actions.RunSupportAgent do
       project: :triage_user,
       messages: from(m in Message, order_by: [asc: m.posted_at, asc: m.id]),
       items: from(i in Item, order_by: [asc: i.position, asc: i.id], preload: :existing_issue),
-      chat_messages: from(c in ChatMessage, order_by: [asc: c.inserted_at, asc: c.id], preload: :user)
+      chat_messages: from(c in ChatMessage, order_by: [asc: c.inserted_at, asc: c.id], preload: :user),
+      learning_proposals: from(p in LearningProposal, order_by: [asc: p.inserted_at, asc: p.id], preload: :learning)
     ])
   end
 
@@ -152,7 +154,9 @@ defmodule Rail.Support.Actions.RunSupportAgent do
     with {:ok, body} <- File.read(Path.join(Conversation.scratch_path(conversation), "result.json")),
          {:ok, %{"reply" => reply, "message" => message, "items" => items} = result}
          when is_binary(message) and is_list(items) and (is_binary(reply) or is_nil(reply)) <- Jason.decode(body) do
-      {:ok, result}
+      # A result without rules proposes none, and drops the undecided ones, as an item left out is dropped.
+      rules = if is_list(result["rules"]), do: Enum.filter(result["rules"], &is_map/1), else: []
+      {:ok, Map.put(result, "rules", rules)}
     else
       _unreadable -> {:error, "The agent finished without writing a result Rail could read."}
     end
@@ -201,13 +205,29 @@ defmodule Rail.Support.Actions.RunSupportAgent do
       |> Ecto.Changeset.change(reply_text: reply, title: current.title || title)
       |> Repo.update!()
 
-      Repo.insert!(%ChatMessage{
-        conversation_id: conversation.id,
-        author: :agent,
-        text: String.slice(result["message"], 0, 4000),
-        changes: calculate_changes(current, reply, before, kept)
-      })
+      answer(current, result, reply, before, kept)
     end)
+  end
+
+  # The agent's chat line, saved before its rules so each new rule names the turn that proposed it.
+  defp answer(%Conversation{} = current, result, reply, before, kept) do
+    line =
+      Repo.insert!(%ChatMessage{
+        conversation_id: current.id,
+        author: :agent,
+        text: String.slice(result["message"], 0, 4000)
+      })
+
+    rules =
+      case Learnings.save_support_proposals(current, line, result["rules"]) do
+        {:ok, rules} ->
+          rules
+
+        {:error, {key, %Ecto.Changeset{errors: errors}}} ->
+          Repo.rollback("The agent proposed a rule Rail could not save: rule #{inspect(key)}: #{fields(errors)}.")
+      end
+
+    line |> Ecto.Changeset.change(changes: calculate_changes(current, reply, before, kept, rules)) |> Repo.update!()
   end
 
   # Each field's error in words, such as "verdict is invalid". With none, the item's evidence or assumptions failed.
@@ -246,8 +266,8 @@ defmodule Rail.Support.Actions.RunSupportAgent do
     }
   end
 
-  # The one-line note under the agent's answer, such as "Edited the reply · Added item 3".
-  defp calculate_changes(%Conversation{reply_text: old_reply}, new_reply, before, kept) do
+  # The one-line note under the agent's answer, such as "Edited the reply · Added item 3 · Proposed a rule".
+  defp calculate_changes(%Conversation{reply_text: old_reply}, new_reply, before, kept, rules) do
     edited_reply = if is_binary(old_reply) and old_reply != new_reply, do: "Edited the reply"
 
     items =
@@ -261,11 +281,20 @@ defmodule Rail.Support.Actions.RunSupportAgent do
         end
       end
 
-    case Enum.reject([edited_reply | items], &is_nil/1) do
+    ruled = [
+      if(rules.added != [], do: "Proposed #{count_rules(rules.added)}"),
+      if(rules.edited != [], do: "Edited #{count_rules(rules.edited)}"),
+      if(rules.dropped != [], do: "Dropped #{count_rules(rules.dropped)}")
+    ]
+
+    case Enum.reject([edited_reply | items] ++ ruled, &is_nil/1) do
       [] -> nil
       changes -> Enum.join(changes, " · ")
     end
   end
+
+  defp count_rules([_one]), do: "a rule"
+  defp count_rules(rules), do: "#{length(rules)} rules"
 
   defp finish(%Conversation{id: id} = conversation, outcome, started_at) do
     retrying =
@@ -336,9 +365,23 @@ defmodule Rail.Support.Actions.RunSupportAgent do
               estimate: item.issue_estimate
             }
           }
+        end),
+      rules:
+        Enum.map(conversation.learning_proposals, fn %LearningProposal{} = proposal ->
+          %{
+            key: proposal.support_key,
+            state: rule_state(proposal),
+            title: proposal.title,
+            rule: proposal.learning.rule,
+            why: proposal.learning.why,
+            kind: proposal.learning.kind
+          }
         end)
     }
   end
+
+  defp rule_state(%LearningProposal{status: :pending}), do: "undecided"
+  defp rule_state(%LearningProposal{status: status}), do: "#{status} by the teammate, closed to this pass"
 
   defp item_state(%Item{forwarded_at: %DateTime{}}), do: "forwarded, closed to this pass"
   defp item_state(%Item{existing_issue: %Issue{identifier: identifier}}), do: "tracked in #{identifier}"
@@ -421,6 +464,9 @@ defmodule Rail.Support.Actions.RunSupportAgent do
           "existing_issue": null,
           "issue": {"title": "the behavior the product should have, once the issue is done", "description": "the problem, its cause and its evidence", "priority": "medium", "estimate": 2}
         }
+      ],
+      "rules": [
+        {"key": "short-stable-slug", "title": "one line naming the rule", "rule": "the rule, as an instruction", "why": "why it holds", "kind": "product"}
       ]
     }
     JSON
@@ -437,6 +483,11 @@ defmodule Rail.Support.Actions.RunSupportAgent do
     - Every item you list goes to the dev team, who decide on it. Drop an item only when the teammate asks you to in the chat.
     - An issue's `title` states the behavior the product should have, as a sentence that is true once the issue is done, never the fault. `priority` is `urgent`, `high`, `medium` or `low`; `estimate` is 1, 2, 3, 5 or 8, or null.
     - Never propose a fix, a design or a plan, anywhere.
+    - `rules` is what the teammate taught you in the chat that a later pass, on another conversation, would get wrong again: a fact about the product, how a feature works, or how replies should read. Write each as one instruction an agent can follow without having seen this conversation, with why it holds. A message that only changes this draft, such as "make it shorter" or "drop item 2", teaches no rule.
+    - Keep every rule draft.json marks "undecided" under its key, as it is. A rule the teammate approved or rejected is closed: never restate it. When they rejected one and say what to propose instead, propose that under a new key.
+    - A rule's `kind` is product, convention, decision or environment. The teammate approves each rule before any agent is given it, so propose only what they said, never a rule of your own.
+
+    #{Learning.writing_guide()}
     """)
   end
 

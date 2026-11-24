@@ -5,6 +5,7 @@ defmodule Rail.Scope do
   Implements scope without tenancy (D9): `%Rail.Scope{user: user, system: system}`.
   Actions take a scope, then a `%Project{}` or a project-owned struct.
   `users.admin` boolean gates admin settings (Projects, Users, Roles).
+  `users.role` (support, tester or dev) decides which tabs the user sees; see `Rail.Users.can?/3`.
   """
 
   defstruct user: nil,
@@ -77,7 +78,7 @@ defmodule Rail.Scope do
 
   @doc """
   Helper to build a user scope.
-  Supports `:admin` (boolean), `:project_ids` (list), and `:user` overrides.
+  Supports `:admin` (boolean), `:role`, `:project_ids` (list), and `:user` overrides.
   """
   def user_scope(attrs \\ []) do
     admin = Keyword.get(attrs, :admin, false)
@@ -91,6 +92,7 @@ defmodule Rail.Scope do
           %{
             id: UXID.generate!(prefix: "usr"),
             admin: admin,
+            role: Keyword.get(attrs, :role, :dev),
             project_ids: Keyword.get(attrs, :project_ids, []),
             email: "user@example.com",
             name: "Test User"

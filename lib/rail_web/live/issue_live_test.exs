@@ -7,6 +7,7 @@ defmodule RailWeb.IssueLiveTest do
 
   alias Rail.Git
   alias Rail.Issues
+  alias Rail.Issues.Clients.R2
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.LinkTrackerUrl
@@ -24,6 +25,8 @@ defmodule RailWeb.IssueLiveTest do
   alias Rail.Users
   alias Rail.Workflows.Schemas.Workflow
   alias Rail.Workflows.Schemas.WorkflowDefinition
+
+  setup {Req.Test, :verify_on_exit!}
 
   setup %{conn: conn, project: project} do
     # A role's prompt is read from the project's clone, which another test may have made, so reading it here
@@ -49,6 +52,22 @@ defmodule RailWeb.IssueLiveTest do
     stub(Issues, :get_blockers, fn _issues -> %{} end)
 
     %{conn: log_in_user(conn, user), user: user, project: project}
+  end
+
+  test "a support person without GitHub is sent to Support, not shown the issue read-only", %{conn: conn} do
+    id = System.unique_integer([:positive])
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "issue_live_role_#{id}",
+        login: "issue_live-role-#{id}",
+        email: "issue_live_role_#{id}@example.com"
+      })
+
+    {:ok, user} = Users.update_user(system_scope(), user, %{role: :support})
+    {:ok, user} = Users.unlink_github(Scope.for_user(user))
+
+    assert {:error, {:redirect, %{to: "/support"}}} = live(log_in_user(conn, user), ~p"/issues/RAIL-41")
   end
 
   test "shows the issue's title, description and properties", %{conn: conn, user: user, project: project} do
@@ -980,6 +999,117 @@ defmodule RailWeb.IssueLiveTest do
     assert [_thread, _reply] = Repo.all(from(c in Comment, where: c.issue_id == ^issue.id))
   end
 
+  test "a file put into a reply box goes up through that box, and its refusal shows under it alone", %{
+    conn: conn,
+    project: project
+  } do
+    %Issue{id: issue_id} =
+      issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{project_id: project.id, identifier: "IUP-1", title: "Show me", state: :todo})
+      |> Repo.insert!()
+
+    %Comment{id: thread_id} =
+      %Comment{} |> Comment.changeset(%{issue_id: issue_id, body: "Where does it land?"}) |> Repo.insert!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    reply_upload = "comment-reply-form-#{thread_id}-upload"
+
+    assert has_element?(
+             view,
+             "#comment-reply-form-#{thread_id}[data-file-drop] textarea[phx-hook='MarkdownPaste'][data-upload-form='#{reply_upload}']"
+           )
+
+    Req.Test.expect(R2, fn r2 -> Plug.Conn.send_resp(r2, 200, "") end)
+
+    view
+    |> file_input("##{reply_upload}", :file, [%{name: "after ruling.png", content: "PNG_BYTES", type: "image/png"}])
+    |> render_upload("after ruling.png")
+
+    render_async(view)
+    assert_push_event(view, "upload_started", %{form: ^reply_upload, ref: ref, name: "after ruling.png"})
+    assert_push_event(view, "insert_file", %{form: ^reply_upload, ref: ^ref, url: url, image: true})
+    assert url =~ "/issues/#{issue_id}/assets/"
+
+    view
+    |> file_input("##{reply_upload}", :file, [%{name: "build-logs.zip", content: "PK", type: "application/zip"}])
+    |> preflight_upload()
+
+    view |> element("##{reply_upload}") |> render_change(%{})
+
+    assert has_element?(view, "##{reply_upload}-error", "build-logs.zip is not a PNG, JPEG, GIF, WebP or PDF file.")
+    refute has_element?(view, "#issue-comment-form-upload-error")
+    refute has_element?(view, "#issue-description-editor-#{issue_id}-upload-error")
+  end
+
+  test "a sent reply clears only its own box, and a sent comment only the comment box", %{
+    conn: conn,
+    project: project
+  } do
+    %Issue{id: issue_id} =
+      issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{project_id: project.id, identifier: "IUP-2", title: "Two boxes", state: :todo})
+      |> Repo.insert!()
+
+    %Comment{id: thread_id} =
+      %Comment{} |> Comment.changeset(%{issue_id: issue_id, body: "First"}) |> Repo.insert!()
+
+    %Comment{id: other_id} =
+      %Comment{} |> Comment.changeset(%{issue_id: issue_id, body: "Second"}) |> Repo.insert!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    for box <- ["comment-reply-form-#{thread_id}-upload", "issue-comment-form-upload"] do
+      view
+      |> file_input("##{box}", :file, [%{name: "build-logs.zip", content: "PK", type: "application/zip"}])
+      |> preflight_upload()
+
+      view |> element("##{box}") |> render_change(%{})
+      assert has_element?(view, "##{box}-error", "build-logs.zip is not a PNG, JPEG, GIF, WebP or PDF file.")
+    end
+
+    view
+    |> element("#comment-reply-form-#{thread_id}")
+    |> render_submit(%{"body" => "A reply", "parent_id" => thread_id})
+
+    assert has_element?(view, "#comment-reply-form-#{thread_id}-body-1")
+    assert has_element?(view, "#comment-reply-form-#{other_id}-body-0")
+    assert has_element?(view, "#issue-comment-form-body-0")
+    refute has_element?(view, "#comment-reply-form-#{thread_id}-upload-error")
+    assert has_element?(view, "#issue-comment-form-upload-error", "build-logs.zip")
+
+    view |> element("#issue-comment-form") |> render_submit(%{"body" => "A comment"})
+
+    assert has_element?(view, "#issue-comment-form-body-1")
+    assert has_element?(view, "#comment-reply-form-#{thread_id}-body-1")
+    assert has_element?(view, "#comment-reply-form-#{other_id}-body-0")
+  end
+
+  test "a comment with an image shows it, and the same issue open elsewhere shows it without a reload", %{
+    conn: conn,
+    project: project
+  } do
+    %Issue{id: issue_id} =
+      issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{project_id: project.id, identifier: "IUP-3", title: "Pictured", state: :todo})
+      |> Repo.insert!()
+
+    url = RailWeb.Endpoint.url() <> "/issues/#{issue_id}/assets/3f2a9c1e-77b0-4c1d-9e1a-8d2f0c6b5a41-shot.png"
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    assert {:ok, other, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    view |> element("#issue-comment-form") |> render_submit(%{"body" => "Before and after:\n\n![shot.png](#{url})"})
+
+    assert has_element?(view, "#issue-comments img[src='#{url}'][alt='shot.png']")
+    assert has_element?(other, "#issue-comments img[src='#{url}'][alt='shot.png']")
+
+    assert {:ok, reloaded, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    assert has_element?(reloaded, "#issue-comments img[src='#{url}'][alt='shot.png']")
+  end
+
   test "each reason a start fails is said plainly", %{conn: conn, project: project} do
     [issue, dispatch_issue, other_issue] =
       for n <- [12, 13, 16] do
@@ -1075,7 +1205,7 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#flash-error", "Could not post the comment")
   end
 
-  test "someone who disconnected GitHub is sent to connect it rather than shown the issue", %{
+  test "someone without GitHub reads the issue with nothing to change, comment on or start", %{
     conn: conn,
     user: user,
     project: project
@@ -1092,13 +1222,48 @@ defmodule RailWeb.IssueLiveTest do
 
     {:ok, _user} = Users.unlink_github(Scope.for_user(user))
 
-    assert {:error,
-            {:redirect,
-             %{to: "/settings/connected-accounts", flash: %{"error" => "Connect GitHub to work on issues and tasks."}}}} =
-             live(conn, ~p"/issues/#{issue.identifier}")
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    assert has_element?(view, "#issue-title", "Needs GitHub")
+    assert has_element?(view, "#issue-github-required", "to change, comment on or start this issue")
+    assert has_element?(view, "#issue-github-required a[href='/settings/connected-accounts']")
+    assert has_element?(view, "#issue-not-started", "Not started")
+    refute has_element?(view, "#issue-title-#{issue.id}")
+    refute has_element?(view, "#issue-comment-form")
+    refute has_element?(view, "#issue-start-plan")
   end
 
-  test "an open issue page sends its person to connect GitHub once they disconnect it, and no one else's change does", %{
+  test "someone without GitHub changes nothing on the issue, whatever events the page is sent", %{
+    conn: conn,
+    user: user,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        identifier: "IPG-93",
+        title: "Untouched",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    {:ok, _user} = Users.unlink_github(Scope.for_user(user))
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    render_hook(view, "comment", %{"body" => "Sent anyway"})
+    render_hook(view, "edit_issue", %{"title" => "Renamed anyway"})
+    render_hook(view, "assign", %{"user_id" => user.id})
+    render_hook(view, "start_task", %{})
+
+    assert has_element?(view, "#flash-error", "Connect GitHub in Connected accounts to work on this issue.")
+
+    assert %Issue{title: "Untouched", owner_user_id: nil} = Repo.get!(Issue, issue.id)
+    assert Repo.all(from(c in Comment, where: c.issue_id == ^issue.id)) == []
+    assert Repo.all(from(t in Task, where: t.issue_id == ^issue.id)) == []
+  end
+
+  test "an open issue page turns read-only when its person disconnects GitHub and back when they reconnect", %{
     conn: conn,
     user: user,
     project: project
@@ -1116,11 +1281,28 @@ defmodule RailWeb.IssueLiveTest do
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
 
     send(view.pid, {:users_changed, "usr_someone_else"})
-    send(view.pid, {:users_changed, user.id})
-    assert has_element?(view, "#issue-title-#{issue.id}")
+    assert has_element?(view, "#issue-comment-form")
+    refute has_element?(view, "#issue-github-required")
 
-    {:ok, _user} = Users.unlink_github(Scope.for_user(user))
-    assert_redirect(view, "/settings/connected-accounts")
+    {:ok, user} = Users.unlink_github(Scope.for_user(user))
+
+    eventually(fn ->
+      assert has_element?(view, "#issue-github-required")
+      refute has_element?(view, "#issue-comment-form")
+    end)
+
+    auth = %Ueberauth.Auth{
+      uid: "relinked_#{user.id}",
+      info: %Ueberauth.Auth.Info{nickname: "relinked-#{user.id}", name: "Relinked"},
+      credentials: %Ueberauth.Auth.Credentials{token: "gho_relinked"}
+    }
+
+    {:ok, _linked} = Users.link_github(Scope.for_user(user), auth)
+
+    eventually(fn ->
+      assert has_element?(view, "#issue-comment-form")
+      refute has_element?(view, "#issue-github-required")
+    end)
   end
 
   test "reloads when it or its own comments change", %{conn: conn, project: project} do

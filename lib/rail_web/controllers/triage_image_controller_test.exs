@@ -41,7 +41,15 @@ defmodule RailWeb.TriageImageControllerTest do
 
     {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
 
-    %{conn: log_in_user(conn, user), message_id: message_id}
+    %{conn: log_in_user(conn, user), user: user, message_id: message_id}
+  end
+
+  test "a tester is sent to Testing rather than served", %{conn: conn, user: user, message_id: message_id} do
+    {:ok, user} = Users.update_user(system_scope(), user, %{role: :tester})
+
+    conn = get(log_in_user(conn, user), ~p"/triage/messages/#{message_id}/images/F_SHOT")
+
+    assert redirected_to(conn) == ~p"/testing"
   end
 
   test "a teammate with the project gets the image, typed as stored and never run as a page", %{

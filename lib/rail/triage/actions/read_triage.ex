@@ -3,8 +3,8 @@ defmodule Rail.Triage.Actions.ReadTriage do
   Reads the result a triage pass wrote into its thread's scratch directory.
 
   What comes out of it is the agent's word, not Rail's, so an item missing its
-  key or kind, or carrying a verdict that does not fit its kind, is no item
-  rather than a crash.
+  key or kind, or carrying a verdict that does not fit its kind, is named as
+  rejected rather than a crash.
   """
 
   alias Rail.Issues.Schemas.Issue
@@ -15,18 +15,23 @@ defmodule Rail.Triage.Actions.ReadTriage do
   @changes ["raised", "widened", "narrowed", "added"]
 
   @doc """
-  Returns `%{title:, messages:, items:}`, or `nil` for a file that is missing or
-  not the shape agreed.
+  Returns `%{title:, message:, reply:, messages:, items:, rejected:}`, or `nil` for a file that is missing
+  or not the shape agreed. `rejected` names each item that was there but could not be read.
   """
   def read_triage(%Thread{} = thread) do
     path = Path.join(Thread.scratch_path(thread), "result.json")
 
     with {:ok, content} <- File.read(path),
          {:ok, %{"items" => items} = result} when is_list(items) <- Jason.decode(content) do
+      {read, rejected} = Enum.split_with(items, &match?([_item], item(&1)))
+
       %{
         title: text(result["title"]),
+        message: text(result["message"]),
+        reply: text(result["reply"]),
         messages: result |> Map.get("messages") |> List.wrap() |> Enum.flat_map(&message/1),
-        items: Enum.flat_map(items, &item/1)
+        items: Enum.flat_map(read, &item/1),
+        rejected: Enum.map(rejected, &key/1)
       }
     else
       _unreadable -> nil
@@ -73,7 +78,7 @@ defmodule Rail.Triage.Actions.ReadTriage do
           issue_description: text(issue["description"]),
           issue_priority: enum(issue["priority"], Enum.map(Issue.priorities(), &Atom.to_string/1)),
           issue_estimate: if(issue["estimate"] in Item.estimates(), do: issue["estimate"]),
-          reply_text: text(item["reply"])
+          followup_text: text(item["followup"])
         }
       ]
     else
@@ -82,6 +87,9 @@ defmodule Rail.Triage.Actions.ReadTriage do
   end
 
   defp item(_malformed), do: []
+
+  defp key(%{"key" => key}) when is_binary(key), do: key
+  defp key(_keyless), do: "one without a key"
 
   defp evidence(evidence) do
     %{

@@ -8,10 +8,12 @@ defmodule Rail.Mcp.Actions.ResolveAccessToken do
   alias Rail.Mcp.Schemas.OauthAccessToken
   alias Rail.Repo
   alias Rail.Scope
+  alias Rail.Users
 
   @doc """
   The scope a bearer token for `/mcp` acts as: its user's. Returns `{:error, :invalid_token}`, `:revoked` or `:expired`
-  for a token that does not resolve, and `:github_required` once its user has disconnected GitHub. Marks the token used at most once a minute, and broadcasts
+  for a token that does not resolve, `:not_authorized` when its user's role does not open Issues, and `:github_required`
+  once its user has disconnected GitHub. Marks a resolved token used at most once a minute, and broadcasts
   `{:mcp_authorizations_changed, user_id}` on `"mcp_authorizations"` when it does.
   """
   def resolve_access_token(plaintext) do
@@ -22,13 +24,18 @@ defmodule Rail.Mcp.Actions.ResolveAccessToken do
            Repo.one(from(t in OauthAccessToken, where: t.selector == ^selector, preload: :user)),
          :ok <- verify_token(verifier, token.verifier_hash),
          nil <- token.revoked_at,
+         # Removal revokes the tokens too; this holds for one issued to a removed user anyway.
+         nil <- token.user.removed_at,
          true <- DateTime.after?(token.expires_at, now),
+         scope = Scope.for_user(token.user),
+         :ok <- if(Users.can?(scope, :issues, :view), do: :ok, else: :not_authorized),
          %{github_id: github_id} when is_binary(github_id) <- token.user do
       touch_last_used(token, now)
-      {:ok, Scope.for_user(token.user)}
+      {:ok, scope}
     else
       %DateTime{} -> {:error, :revoked}
       false -> {:error, :expired}
+      :not_authorized -> {:error, :not_authorized}
       %{github_id: nil} -> {:error, :github_required}
       _unknown -> {:error, :invalid_token}
     end

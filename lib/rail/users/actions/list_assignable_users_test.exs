@@ -43,4 +43,25 @@ defmodule Rail.Users.Actions.ListAssignableUsersTest do
 
     refute user_id in Enum.map(Users.list_assignable_users(), & &1.id)
   end
+
+  test "a support person is not assignable, while a tester is" do
+    register = fn login, role ->
+      {:ok, user} =
+        Users.register_oauth_user(%{
+          github_id: "gh_#{login}_assignable_role",
+          login: "#{login}-assignable-role",
+          email: "#{login}-assignable-role@example.com"
+        })
+
+      {:ok, user} = Users.update_user(system_scope(), user, %{role: role})
+      user
+    end
+
+    %User{id: support_id} = register.("support", :support)
+    %User{id: tester_id} = register.("tester", :tester)
+
+    ids = Enum.map(Users.list_assignable_users(), & &1.id)
+    refute support_id in ids
+    assert tester_id in ids
+  end
 end

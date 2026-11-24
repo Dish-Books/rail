@@ -19,7 +19,15 @@ defmodule RailWeb.IssueAssetControllerTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Issue Asset Issue"})
 
-    %{conn: log_in_user(conn, user), issue: issue}
+    %{conn: log_in_user(conn, user), user: user, issue: issue}
+  end
+
+  test "a support person is sent to Support rather than served", %{conn: conn, user: user, issue: issue} do
+    {:ok, user} = Users.update_user(system_scope(), user, %{role: :support})
+
+    conn = get(log_in_user(conn, user), ~p"/issues/#{issue.id}/assets/ws_id/issue_id/screenshot.png")
+
+    assert redirected_to(conn) == ~p"/support"
   end
 
   test "an issue that is not there has no files", %{conn: conn} do

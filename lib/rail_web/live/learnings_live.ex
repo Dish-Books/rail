@@ -11,6 +11,8 @@ defmodule RailWeb.LearningsLive do
   alias Rail.Projects.Schemas.Project
   alias Rail.Scope
 
+  on_mount {RailWeb.UserAuth, {:require_tab, :learnings}}
+
   @statuses [:review, :active, :provisional, :retired]
   @double_click_ms 400
 
@@ -358,6 +360,7 @@ defmodule RailWeb.LearningsLive do
      Learnings.list_learning_proposals(
        project_id: project_id,
        task_id: :none,
+       support_conversation_id: :none,
        kind: assigns.kind,
        embedding: embedding
      ), false}

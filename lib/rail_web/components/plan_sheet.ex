@@ -35,6 +35,7 @@ defmodule RailWeb.Components.PlanSheet do
     doc: "whose GitHub repository and default branch a path links to, with `default_paths`"
 
   attr :rules, :map, default: %{}, doc: "the rules the plan cites, by id"
+  attr :open_learnings, :boolean, default: true, doc: "the reader opens Learnings, where each rule links"
 
   def plan_sheet(assigns) do
     assigns =
@@ -117,7 +118,7 @@ defmodule RailWeb.Components.PlanSheet do
               </div>
             </.line>
             <div class="pl-[7.25rem]">
-              <.cited_rules html={decision.html} rules={@rules} />
+              <.cited_rules html={decision.html} rules={@rules} open_learnings={@open_learnings} />
             </div>
           </li>
         </ul>
@@ -133,6 +134,7 @@ defmodule RailWeb.Components.PlanSheet do
         default_paths={@default_paths}
         project={@project}
         rules={@rules}
+        open_learnings={@open_learnings}
         on={@on}
         target={@target}
       >

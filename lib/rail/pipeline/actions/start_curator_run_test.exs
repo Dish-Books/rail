@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Actions.StartCuratorRunTest do
   use Rail.DataCase, async: true
 
   alias Rail.Git
+  alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Roles
@@ -23,6 +24,7 @@ defmodule Rail.Pipeline.Actions.StartCuratorRunTest do
   } do
     expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt, "--model", "claude-opus-5-5" | rest] ->
       assert prompt =~ dir
+      assert prompt =~ Learning.writing_guide()
       assert "You are the curator agent." in rest
       refute "--resume" in rest
       {:ok, %OsProcess{run: spawned}}

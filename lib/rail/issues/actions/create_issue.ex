@@ -20,7 +20,8 @@ defmodule Rail.Issues.Actions.CreateIssue do
 
   A blank title or an estimate below 0 is the changeset's error.
 
-  `attrs` carries `:title` and `:description`, and optionally `:priority`, `:estimate`,
+  `attrs` carries `:title` and `:description`, and optionally `:id`, drawn by a caller that stored files under it first,
+  `:priority`, `:estimate`,
   `:owner_user_id`, `:workflow_id`, the workflow opening it, `:skipped_steps`, the steps its file
   turned off, `:stages`, the `IssueStage`s its file named, `:parent`, the issue it is a sub-issue of, and `:cycle_id`,
   the cycle the ticket opens in, and `:initiative_id`, the initiative it joins, both of which the caller has already

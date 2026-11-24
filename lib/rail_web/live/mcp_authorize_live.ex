@@ -4,6 +4,7 @@ defmodule RailWeb.McpAuthorizeLive do
 
   alias Rail.Mcp
   alias Rail.Projects
+  alias Rail.Users
 
   @loopback_hosts ["localhost", "127.0.0.1", "::1"]
   @kept_params ["client_id", "redirect_uri", "scope", "state", "resource", "code_challenge", "code_challenge_method"]
@@ -17,7 +18,8 @@ defmodule RailWeb.McpAuthorizeLive do
       |> assign(:authorized, false)
 
     socket =
-      with true <- is_binary(scope.user.github_id) || {:error, :github_required},
+      with true <- Users.can?(scope, :issues, :view) || {:error, :not_authorized},
+           true <- is_binary(scope.user.github_id) || {:error, :github_required},
            {:ok, client} <- Mcp.validate_authorize_request(params),
            [_first | _rest] = projects <- Projects.list_projects(scope) do
         redirect_host = URI.parse(params["redirect_uri"]).host
@@ -182,6 +184,10 @@ defmodule RailWeb.McpAuthorizeLive do
 
   defp describe(:github_required),
     do: "Connect GitHub under Settings, Connected accounts before you connect Claude to Rail."
+
+  defp describe(:not_authorized),
+    do:
+      "Your role in Rail does not open Issues, so Claude has nothing to work on as you. An admin changes roles under Settings, Users."
 
   defp describe(:access_denied),
     do:

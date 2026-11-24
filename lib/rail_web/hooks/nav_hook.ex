@@ -8,6 +8,7 @@ defmodule RailWeb.Hooks.NavHook do
   alias Rail.Support
   alias Rail.Tools
   alias Rail.Triage
+  alias Rail.Users
   alias RailWeb.Components.TodosPanel
 
   # An import broadcasts once per conversation, so the Support badge recounts at most once a second.
@@ -21,7 +22,10 @@ defmodule RailWeb.Hooks.NavHook do
 
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Rail.PubSub, "todos:#{scope.user.id}")
-      if support_listener?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "support")
+
+      if support_listener?(socket) and Users.can?(scope, :support, :view),
+        do: Phoenix.PubSub.subscribe(Rail.PubSub, "support")
+
       params = get_connect_params(socket)
 
       # Handled once this mount has rendered, when the panel exists; a reconnect joins again and sends it again.
@@ -39,9 +43,19 @@ defmodule RailWeb.Hooks.NavHook do
       # The badge is what waits on this user, as the Overview's Waiting on you counts it.
       |> assign(
         :attention_count,
-        Pipeline.count_attention(project_id: Scope.project_ids(scope), owner_user_id: scope.user.id)
+        if(Users.can?(scope, :overview, :view),
+          do: Pipeline.count_attention(project_id: Scope.project_ids(scope), owner_user_id: scope.user.id),
+          else: 0
+        )
       )
-      |> assign(:triage_count, Triage.count_triage_threads(project_id: Scope.project_ids(scope)).waiting)
+      # A role without the tab never sees its badge, so its count is not loaded.
+      |> assign(
+        :triage_count,
+        if(Users.can?(scope, :triage, :view),
+          do: Triage.count_triage_threads(project_id: Scope.project_ids(scope)).waiting,
+          else: 0
+        )
+      )
       |> assign(:support_count, count_support(scope))
       |> assign(:support_recount_scheduled, false)
       |> assign(:current_project_id, current_project_id)
@@ -57,8 +71,13 @@ defmodule RailWeb.Hooks.NavHook do
     {:cont, socket}
   end
 
-  # The badge is what the Support queue's Waiting filter lists, across every project the user can see.
-  def count_support(scope), do: Support.count_support_conversations(project_id: Scope.project_ids(scope)).waiting
+  # The badge is what the Support queue's Waiting filter lists, across every project the user can see. A role without
+  # the tab never sees it, so it is not counted.
+  def count_support(scope) do
+    if Users.can?(scope, :support, :view),
+      do: Support.count_support_conversations(project_id: Scope.project_ids(scope)).waiting,
+      else: 0
+  end
 
   defp handle_nav_params(params, uri, socket) do
     socket =

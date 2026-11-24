@@ -3,11 +3,14 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Issues.Clients.R2
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Users
   alias RailWeb.Components.CaptureIssueModal
+
+  setup {Req.Test, :verify_on_exit!}
 
   test "renders closed until opened" do
     html = render_component(CaptureIssueModal, id: "capture-issue", projects: [], current_project_id: nil)
@@ -320,6 +323,70 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
 
     view |> element("#capture-created-issue") |> render_click()
     assert_redirect(view, ~p"/issues/#{issue_id}")
+  end
+
+  test "a screenshot pasted into Description goes up under the id the new issue is then created with", %{
+    conn: conn,
+    project: %{id: project_id} = project
+  } do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_capture_paste",
+        login: "capture_user_paste",
+        email: "capture_user_paste@example.com",
+        admin: true
+      })
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/")
+
+    view |> element("#global-capture-idea-button") |> render_click()
+
+    assert has_element?(view, "#capture-idea-dialog[data-file-drop]")
+
+    assert has_element?(
+             view,
+             "#capture-description-input[phx-hook='MarkdownPaste'][data-upload-form='capture-issue-upload']"
+           )
+
+    assert has_element?(view, "#capture-priority-dropdown[form='capture-issue-form']")
+    assert has_element?(view, "#capture-submit-button[form='capture-issue-form']", "Uploading...")
+
+    Req.Test.expect(R2, 2, fn r2 -> Plug.Conn.send_resp(r2, 200, "") end)
+
+    view
+    |> file_input("#capture-issue-upload", :file, [%{name: "round 1.png", content: "PNG_BYTES", type: "image/png"}])
+    |> render_upload("round 1.png")
+
+    render_async(view)
+    assert_push_event(view, "insert_file", %{form: "capture-issue-upload", url: url, image: true})
+    assert [_url, "iss_" <> _drawn = drawn_id] = Regex.run(~r"/issues/(iss_\w+)/assets/", url)
+
+    view
+    |> form("#capture-issue-form", %{
+      "title" => "Fix round count reads 0",
+      "description" => "Header after round 1:\n\n![round 1.png](#{url})",
+      "project_id" => project.id,
+      "priority" => "medium"
+    })
+    |> render_submit()
+
+    assert %Issue{id: ^drawn_id, project_id: ^project_id, description: "Header after round 1:" <> _image} =
+             Repo.get_by!(Issue, title: "Fix round count reads 0")
+
+    stub(Rail.Issues, :link_pull_request, fn _scope, _issue -> {:ok, nil} end)
+    {:ok, page, _html} = live(log_in_user(conn, user), ~p"/issues/#{drawn_id}")
+    assert has_element?(page, "#issue-description-#{drawn_id} img[src='#{url}']")
+
+    view |> element("#capture-created-new") |> render_click()
+
+    view
+    |> file_input("#capture-issue-upload", :file, [%{name: "next.png", content: "PNG_BYTES", type: "image/png"}])
+    |> render_upload("next.png")
+
+    render_async(view)
+    assert_push_event(view, "insert_file", %{form: "capture-issue-upload", url: next_url})
+    refute next_url =~ drawn_id
+    assert next_url =~ ~r"/issues/iss_\w+/assets/"
   end
 
   test "a second submit while the created issue shows creates nothing more", %{conn: conn, project: project} do

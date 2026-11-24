@@ -12,7 +12,8 @@ defmodule Rail.Learnings.Actions.ListLearningProposals do
 
   @doc """
   The pending proposals, oldest first, each with its draft or subject rule and who decided it.
-  Filters by `:project_id`, one id or a list, by `:task_id`, `:none` for those of no task, and by `:kind`, the rule's; `:statuses` widens it past pending.
+  Filters by `:project_id`, one id or a list, by `:task_id`, `:none` for those of no task, by `:support_conversation_id`,
+  `:none` for those Support did not propose, and by `:kind`, the rule's; `:statuses` widens it past pending.
   An `:embedding` ranks the 50 whose rule is nearest it first, leaving out a rule not embedded yet. `targets: true` loads the
   rules each one replaces.
   """
@@ -26,6 +27,7 @@ defmodule Rail.Learnings.Actions.ListLearningProposals do
     )
     |> filter_project(opts[:project_id])
     |> filter_task(opts[:task_id])
+    |> filter_support(opts[:support_conversation_id])
     |> filter_kind(opts[:kind])
     |> rank(opts[:embedding])
     |> Repo.all()
@@ -41,6 +43,9 @@ defmodule Rail.Learnings.Actions.ListLearningProposals do
   defp filter_task(query, task_id) when is_binary(task_id), do: where(query, [proposal: p], p.task_id == ^task_id)
   defp filter_task(query, :none), do: where(query, [proposal: p], is_nil(p.task_id))
   defp filter_task(query, nil), do: query
+
+  defp filter_support(query, :none), do: where(query, [proposal: p], is_nil(p.support_conversation_id))
+  defp filter_support(query, nil), do: query
 
   defp filter_kind(query, kind) when kind in @kinds, do: where(query, [learning: l], l.kind == ^kind)
   defp filter_kind(query, nil), do: query

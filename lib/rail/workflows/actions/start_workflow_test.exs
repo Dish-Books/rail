@@ -6,6 +6,7 @@ defmodule Rail.Workflows.Actions.StartWorkflowTest do
   alias Rail.Issues.Schemas.IssueStage
   alias Rail.Projects
   alias Rail.Users
+  alias Rail.Users.Schemas.User
   alias Rail.Workflows
   alias Rail.Workflows.Schemas.Workflow
   alias Rail.Workflows.Schemas.WorkflowDefinition
@@ -108,9 +109,10 @@ defmodule Rail.Workflows.Actions.StartWorkflowTest do
            } = Repo.get!(Issue, issue_id)
   end
 
-  test "the issue a workflow opens is owned by its file's assignee, or by nobody when they have no Rail account", %{
-    workflow: workflow
-  } do
+  test "the issue a workflow opens is owned by its file's assignee, or by nobody when they have no Rail account or were removed",
+       %{
+         workflow: workflow
+       } do
     stub(DateTime, :utc_now, fn -> ~U[2026-10-12 09:00:30.000000Z] end)
 
     {:ok, %{id: owner_id}} =
@@ -128,6 +130,12 @@ defmodule Rail.Workflows.Actions.StartWorkflowTest do
 
     Repo.update_all(from(i in Issue, where: i.id == ^issue_id), set: [state: :done])
     set_assignee.("nobody_here")
+
+    assert {:ok, %Issue{id: unowned_id, owner_user_id: nil}} = Workflows.start_workflow(workflow)
+
+    Repo.update_all(from(i in Issue, where: i.id == ^unowned_id), set: [state: :done])
+    Repo.update_all(from(u in User, where: u.id == ^owner_id), set: [removed_at: DateTime.utc_now()])
+    set_assignee.("wf_assignee")
 
     assert {:ok, %Issue{owner_user_id: nil}} = Workflows.start_workflow(workflow)
   end

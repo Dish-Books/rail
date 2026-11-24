@@ -525,6 +525,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
         </div>
 
         <section
+          :if={Users.can?(@current_scope, :issues, :view)}
           id="rail-mcp-section"
           class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 overflow-hidden"
         >
