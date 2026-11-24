@@ -114,6 +114,7 @@ defmodule RailWeb.Components.Nav do
           />
 
           <.nav_item
+            :if={Users.can?(@current_scope, :issues, :view)}
             section={:initiatives}
             active={@current_section == :initiatives}
             label="Initiatives"

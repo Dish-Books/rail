@@ -732,6 +732,24 @@ defmodule RailWeb.Components.IssueView do
               <span :if={!@cycle} class="text-slate-400 dark:text-slate-500">No cycle</span>
             </div>
 
+            <%!-- No link: the initiative page asks for GitHub. --%>
+            <div
+              :if={@initiatives && @read_only}
+              id="issue-initiative"
+              data-qa="issue-initiative"
+              class="flex items-center gap-2.5"
+            >
+              <.icon
+                name="pi-flag-banner"
+                class="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400"
+              />
+              <span :if={@initiative} class="min-w-0 truncate" title={@initiative.name}>{@initiative.name}</span>
+              <span :if={@initiative} class="shrink-0 text-xs text-slate-500 dark:text-slate-400">
+                {Initiative.calculate_percent(@initiative)}%
+              </span>
+              <span :if={!@initiative} class="text-slate-400 dark:text-slate-500">No initiative</span>
+            </div>
+
             <.live_component
               :if={@editable}
               module={IssuePicker}

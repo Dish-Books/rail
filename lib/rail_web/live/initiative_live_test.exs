@@ -114,6 +114,49 @@ defmodule RailWeb.InitiativeLiveTest do
     assert has_element?(view, "section[aria-label='Todo'] #issue-card-#{child.id}", "A part")
   end
 
+  test "a sub-issue whose parent is not in the initiative stands alone, and its parent is not listed", %{
+    conn: conn,
+    local: local,
+    initiative: initiative
+  } do
+    {:ok, parent} = Issues.create_issue(system_scope(), local, %{title: "Umbrella"})
+    {:ok, child} = Issues.create_issue(system_scope(), local, %{title: "A part", parent: parent})
+    {:ok, _child} = Issues.set_issue_initiative(system_scope(), child, initiative.id)
+
+    {:ok, view, _html} = live(conn, ~p"/initiatives/#{initiative.id}")
+
+    assert has_element?(view, "section[aria-label='Todo'] #issue-card-#{child.id}", "A part")
+    refute has_element?(view, "#initiative-tickets [data-context]")
+    refute has_element?(view, "#initiative-tickets", "Umbrella")
+    assert has_element?(view, "section[aria-label='Todo']", "2 issues")
+  end
+
+  test "a sub-issue under a parent in another status group stands alone, and its parent shows once", %{
+    conn: conn,
+    local: local,
+    initiative: initiative,
+    tickets: [_done, started, _todo]
+  } do
+    {:ok, child} = Issues.create_issue(system_scope(), local, %{title: "A part", parent: started})
+    {:ok, _child} = Issues.set_issue_initiative(system_scope(), child, initiative.id)
+
+    {:ok, view, _html} = live(conn, ~p"/initiatives/#{initiative.id}")
+
+    assert has_element?(view, "section[aria-label='Todo'] #issue-card-#{child.id}", "A part")
+    assert has_element?(view, "section[aria-label='In Progress'] #issue-card-#{started.id}")
+    refute has_element?(view, "section[aria-label='Todo'] #issue-card-#{started.id}")
+    refute has_element?(view, "#initiative-tickets [data-context]")
+  end
+
+  test "someone whose role has no Issues tab is sent to their own home tab", %{
+    conn: conn,
+    user: user,
+    initiative: initiative
+  } do
+    {:ok, user} = Users.update_user(system_scope(), user, %{role: :support})
+    assert {:error, {:redirect, %{to: "/support"}}} = live(log_in_user(conn, user), ~p"/initiatives/#{initiative.id}")
+  end
+
   test "a new initiative reads as empty, with no notes, tickets or date", %{conn: conn, local: local} do
     {:ok, empty} = Initiatives.create_initiative(system_scope(), local, %{name: "Payroll v2"})
     {:ok, view, _html} = live(conn, ~p"/initiatives/#{empty.id}")
@@ -140,6 +183,7 @@ defmodule RailWeb.InitiativeLiveTest do
 
     view |> element("#edit-notes") |> render_click()
     assert has_element?(view, "#initiative-notes-input[phx-update='ignore']", "### Plan")
+    assert has_element?(view, ~s(#notes-form[phx-hook="CommentBox"][data-reopen='{"event":"edit_notes"}']))
     view |> element("#cancel-notes") |> render_click()
     refute has_element?(view, "#notes-form")
 
@@ -167,7 +211,7 @@ defmodule RailWeb.InitiativeLiveTest do
     {:ok, _issue} = Issues.set_issue_status(system_scope(), started, @done)
 
     assert has_element?(view, "#initiative-name", "Credo cleanup")
-    assert has_element?(view, "#initiative-percent", "66%")
+    assert has_element?(view, "#initiative-percent", "67%")
     assert has_element?(view, "#notes-form")
   end
 
@@ -257,7 +301,7 @@ defmodule RailWeb.InitiativeLiveTest do
     {:ok, view, _html} = live(conn, ~p"/initiatives/#{initiative.id}")
 
     fn -> Issues.set_issue_status(system_scope(), started, @done) end |> Task.async() |> Task.await()
-    assert has_element?(view, "#initiative-percent", "66%")
+    assert has_element?(view, "#initiative-percent", "67%")
     assert has_element?(view, "#initiative-counts", "2 of 3 tickets")
 
     {:ok, _issue} = Issues.set_issue_status(system_scope(), todo, @canceled)

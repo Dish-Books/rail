@@ -3,9 +3,10 @@ defmodule Rail.Initiatives.Schemas.InitiativeTest do
 
   alias Rail.Initiatives.Schemas.Initiative
 
-  test "percent done counts Done tickets out of the counted ones, rounded down, and none counted reads 0" do
+  test "percent done counts Done tickets out of the counted ones, to the nearest, 100 only with all Done" do
     assert Initiative.calculate_percent(%Initiative{done_count: 1, ticket_count: 3}) == 33
-    assert Initiative.calculate_percent(%Initiative{done_count: 2, ticket_count: 3}) == 66
+    assert Initiative.calculate_percent(%Initiative{done_count: 2, ticket_count: 3}) == 67
+    assert Initiative.calculate_percent(%Initiative{done_count: 199, ticket_count: 200}) == 99
     assert Initiative.calculate_percent(%Initiative{done_count: 2, ticket_count: 2}) == 100
     assert Initiative.calculate_percent(%Initiative{done_count: 0, ticket_count: 0}) == 0
   end

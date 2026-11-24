@@ -8,6 +8,7 @@ defmodule RailWeb.InitiativesLive do
   @sorts %{"expected" => :expected, "name" => :name, "progress" => :progress}
   @columns "grid grid-cols-[minmax(0,1fr)_120px_96px_170px] xl:grid-cols-[minmax(0,1fr)_200px_96px_170px] gap-6 items-center px-4"
 
+  on_mount {RailWeb.UserAuth, {:require_tab, :issues}}
   on_mount {RailWeb.UserAuth, :require_github}
 
   def mount(_params, _session, socket) do

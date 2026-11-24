@@ -32,9 +32,10 @@ defmodule Rail.Initiatives.Schemas.Initiative do
     |> unique_constraint(:name, name: :initiatives_project_id_name_index, message: "is already an initiative here")
   end
 
-  @doc "Done tickets as a whole percent of the counted ones, rounded down; 0 with none counted."
+  @doc "Done tickets as a whole percent of the counted ones, to the nearest; 100 only with all Done, 0 with none counted."
   def calculate_percent(%__MODULE__{ticket_count: 0}), do: 0
-  def calculate_percent(%__MODULE__{done_count: done, ticket_count: total}), do: div(done * 100, total)
+  def calculate_percent(%__MODULE__{done_count: total, ticket_count: total}), do: 100
+  def calculate_percent(%__MODULE__{done_count: done, ticket_count: total}), do: min(round(done * 100 / total), 99)
 
   @doc "nil with no expected date, else `{:left, days}`, `:today` or `{:late, days}`."
   def calculate_due(%__MODULE__{expected_on: nil}, _today), do: nil

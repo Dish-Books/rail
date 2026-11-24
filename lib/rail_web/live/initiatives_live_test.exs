@@ -136,9 +136,9 @@ defmodule RailWeb.InitiativesLiveTest do
     {:ok, view, _html} = live(conn, ~p"/initiatives")
     assert has_element?(view, "#initiative-#{credo_id}", "1 of 3 tickets")
 
-    # Rounded down, as the plan decides, so 2 of 3 reads 66%.
+    # 2 of 3 reads 67%, the ticket's number.
     fn -> Issues.set_issue_status(system_scope(), second, @done) end |> Task.async() |> Task.await()
-    assert has_element?(view, "#initiative-#{credo_id} [role='progressbar'][aria-valuenow='66']")
+    assert has_element?(view, "#initiative-#{credo_id} [role='progressbar'][aria-valuenow='67']")
     assert has_element?(view, "#initiative-#{credo_id}", "2 of 3 tickets")
 
     {:ok, _issue} = Issues.set_issue_status(system_scope(), third, @canceled)
@@ -219,6 +219,11 @@ defmodule RailWeb.InitiativesLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/initiatives")
     assert has_element?(view, "#initiatives-empty", "No initiatives in your projects yet")
+  end
+
+  test "someone whose role has no Issues tab is sent to their own home tab", %{conn: conn, user: user} do
+    {:ok, user} = Users.update_user(system_scope(), user, %{role: :support})
+    assert {:error, {:redirect, %{to: "/support"}}} = live(log_in_user(conn, user), ~p"/initiatives")
   end
 
   test "someone without access to a project sees none of its initiatives with All projects", %{

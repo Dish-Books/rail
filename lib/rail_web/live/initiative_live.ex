@@ -19,6 +19,7 @@ defmodule RailWeb.InitiativeLive do
     task: [:rounds, runs: [:role, :questions], parent_task: [children: :issue]]
   ]
 
+  on_mount {RailWeb.UserAuth, {:require_tab, :issues}}
   on_mount {RailWeb.UserAuth, :require_github}
 
   def mount(%{"id" => id}, _session, socket) do
@@ -223,12 +224,15 @@ defmodule RailWeb.InitiativeLive do
             >
               No notes yet.
             </p>
+            <%!-- A reconnect draws the form away: the hook pushes edit_notes and gives the textarea back what was typed. --%>
             <.form
               :if={@show_notes_form}
               for={@notes_form}
               id="notes-form"
               phx-change="change_notes"
               phx-submit="save_notes"
+              phx-hook="CommentBox"
+              data-reopen={Jason.encode!(%{event: "edit_notes"})}
               class="space-y-2"
             >
               <label for="initiative-notes-input" class="sr-only">Notes</label>
@@ -678,14 +682,24 @@ defmodule RailWeb.InitiativeLive do
     end
   end
 
-  # Grouped as the cycle view groups them, from the same statuses, each row with its cycle's chip.
+  # Grouped as the cycle view groups them, from the same statuses, each row with its cycle's chip. A parent the group
+  # does not hold is not drawn as context: its sub-issues stand as rows of their own.
   defp assign_groups(socket, %Initiative{project: project, issues: issues}) do
     {:ok, %{cycles: cycles, statuses: statuses}} = Issues.get_cycles(project)
 
+    groups =
+      for group <- Issue.calculate_status_groups(issues, statuses, %{project.id => Cycle.default_estimate()}),
+          do: %{group | rows: Enum.flat_map(group.rows, &own_rows/1)}
+
     socket
     |> assign(:cycles_by_id, Map.new(cycles, &{&1.id, &1}))
-    |> assign(:groups, Issue.calculate_status_groups(issues, statuses, %{project.id => Cycle.default_estimate()}))
+    |> assign(:groups, groups)
   end
+
+  defp own_rows(%{dimmed: true, sub_issues: sub_issues}),
+    do: Enum.map(sub_issues, &%{issue: &1.issue, key: &1.key, dimmed: false, sub_issues: []})
+
+  defp own_rows(row), do: [row]
 
   defp save(socket, attrs, form_key) do
     case Initiatives.update_initiative(socket.assigns.current_scope, socket.assigns.initiative, attrs) do

@@ -1939,5 +1939,23 @@ defmodule RailWeb.IssueLiveTest do
       send(view.pid, {:initiatives_changed, "prj_elsewhere"})
       assert has_element?(view, "#issue-initiative", "Credo cleanup")
     end
+
+    test "someone without GitHub reads the issue's initiative with no menu or link", %{
+      conn: conn,
+      user: user,
+      issue: %{id: issue_id} = issue,
+      credo: credo
+    } do
+      {:ok, _issue} = Issues.set_issue_initiative(system_scope(), issue, credo.id)
+      {:ok, _user} = Users.unlink_github(Scope.for_user(user))
+
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+      render_async(view)
+
+      assert has_element?(view, "#issue-initiative", "Credo exclusions")
+      assert has_element?(view, "#issue-initiative", "50%")
+      refute has_element?(view, "#issue-initiative-menu")
+      refute has_element?(view, "#issue-initiative-link")
+    end
   end
 end
