@@ -360,6 +360,7 @@ defmodule RailWeb.LearningsLive do
      Learnings.list_learning_proposals(
        project_id: project_id,
        task_id: :none,
+       support_conversation_id: :none,
        kind: assigns.kind,
        embedding: embedding
      ), false}

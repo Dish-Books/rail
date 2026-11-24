@@ -105,7 +105,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
     pending =
       Repo.all(
         from p in LearningProposal,
-          where: p.project_id == ^project_id and p.status == :pending,
+          where: p.project_id == ^project_id and p.status == :pending and is_nil(p.support_conversation_id),
           order_by: [asc: p.inserted_at],
           preload: :learning
       )
@@ -306,7 +306,8 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
     }
   end
 
-  # A sighting of a pending draft is more evidence for its add, which is what can activate it.
+  # A sighting of a pending draft is more evidence for its add, which is what can activate it. A support rule waits on
+  # the support person in its chat, so no sighting here can activate it.
   defp link(%{"observation" => id, "outcome" => "link", "learning" => learning_id}, project_id, read, rules)
        when is_binary(id) and is_binary(learning_id) do
     if MapSet.member?(read, id) and Map.has_key?(rules, learning_id) do
@@ -315,7 +316,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
       case Repo.one(
              from p in LearningProposal,
                where: p.project_id == ^project_id and p.learning_id == ^learning_id,
-               where: p.action == :add and p.status == :pending,
+               where: p.action == :add and p.status == :pending and is_nil(p.support_conversation_id),
                limit: 1
            ) do
         %LearningProposal{} = proposal ->

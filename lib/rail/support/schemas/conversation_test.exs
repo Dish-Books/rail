@@ -1,7 +1,9 @@
 defmodule Rail.Support.Schemas.ConversationTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Learnings.Schemas.LearningProposal
   alias Rail.Projects.Schemas.Project
+  alias Rail.Support.Schemas.ChatMessage
   alias Rail.Support.Schemas.Conversation
   alias Rail.Support.Schemas.Item
   alias Rail.Support.Schemas.Message
@@ -78,5 +80,42 @@ defmodule Rail.Support.Schemas.ConversationTest do
 
     assert String.ends_with?(Conversation.scratch_path(conversation), "/prj_1/support/scv_1")
     assert "/clones/x/.worktrees/support-scv_1" = Conversation.worktree_path(conversation)
+  end
+
+  test "the chat box gives way to nothing with no rule waiting, and to the oldest undecided one with the count" do
+    assert {nil, 0} = Conversation.next_rule(%Conversation{learning_proposals: []})
+    assert {nil, 0} = Conversation.next_rule(%Conversation{learning_proposals: [%LearningProposal{status: :approved}]})
+
+    proposals = [
+      %LearningProposal{id: "lpr_decided", status: :rejected},
+      %LearningProposal{id: "lpr_oldest", status: :pending},
+      %LearningProposal{id: "lpr_newer", status: :pending}
+    ]
+
+    assert {%LearningProposal{id: "lpr_oldest"}, 2} = Conversation.next_rule(%Conversation{learning_proposals: proposals})
+  end
+
+  test "a proposing line's note ends with who decided each rule, falling back to their login" do
+    conversation = %Conversation{
+      chat_messages: [
+        %ChatMessage{id: "sct_1", author: :agent, changes: "Edited the reply · Proposed 2 rules"},
+        %ChatMessage{id: "sct_2", author: :agent, changes: nil},
+        %ChatMessage{id: "sct_3", author: :agent, changes: "Proposed a rule"},
+        %ChatMessage{id: "sct_4", author: :agent, changes: "Proposed a rule"}
+      ],
+      learning_proposals: [
+        %LearningProposal{support_chat_message_id: "sct_1", status: :approved, decided_by: %{name: "Dana Kim"}},
+        %LearningProposal{support_chat_message_id: "sct_1", status: :rejected, decided_by: %{name: "", login: "dkim"}},
+        %LearningProposal{support_chat_message_id: "sct_2", status: :approved, decided_by: nil},
+        %LearningProposal{support_chat_message_id: "sct_3", status: :pending}
+      ]
+    }
+
+    assert [
+             %ChatMessage{changes: "Edited the reply · Proposed 2 rules · Approved by Dana Kim · Rejected by dkim"},
+             %ChatMessage{changes: "Approved by someone"},
+             %ChatMessage{changes: "Proposed a rule"},
+             %ChatMessage{changes: "Proposed a rule"}
+           ] = Conversation.calculate_chat_lines(conversation)
   end
 end

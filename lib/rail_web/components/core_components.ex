@@ -99,6 +99,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate support_conversation(assigns), to: Components.SupportConversation
   defdelegate support_draft(assigns), to: Components.SupportDraft
   defdelegate support_message(assigns), to: Components.SupportMessage
+  defdelegate support_rule(assigns), to: Components.SupportRule
   defdelegate support_queue(assigns), to: Components.SupportQueue
   defdelegate triage_image(assigns), to: Components.TriageImage
   defdelegate triage_image_view(assigns), to: Components.TriageImageView

@@ -5,6 +5,7 @@ defmodule Rail.Support.Schemas.Conversation do
   """
   use Rail.Schema
 
+  alias Rail.Learnings.Schemas.LearningProposal
   alias Rail.Projects.Schemas.Project
   alias Rail.Support.Schemas.ChatMessage
   alias Rail.Support.Schemas.IntercomWorkspace
@@ -43,6 +44,7 @@ defmodule Rail.Support.Schemas.Conversation do
     has_many :messages, Message
     has_many :items, Item
     has_many :chat_messages, ChatMessage
+    has_many :learning_proposals, LearningProposal, foreign_key: :support_conversation_id
 
     timestamps()
   end
@@ -96,6 +98,31 @@ defmodule Rail.Support.Schemas.Conversation do
     end
   end
 
+  @doc """
+  The oldest undecided rule, which takes the chat box's place, with how many wait. Needs the proposals preloaded.
+  """
+  def next_rule(%__MODULE__{learning_proposals: proposals}) do
+    case Enum.filter(proposals, &(&1.status == :pending)) do
+      [] -> {nil, 0}
+      [first | _rest] = waiting -> {first, length(waiting)}
+    end
+  end
+
+  @doc """
+  The chat lines as the page shows them: each agent line's change note ends with who decided the rules its turn proposed.
+  Needs the chat lines and the proposals with their deciders preloaded.
+  """
+  def calculate_chat_lines(%__MODULE__{chat_messages: lines, learning_proposals: proposals}) do
+    decided = Enum.group_by(Enum.reject(proposals, &(&1.status == :pending)), & &1.support_chat_message_id)
+
+    Enum.map(lines, fn %ChatMessage{} = line ->
+      case Enum.map(Map.get(decided, line.id, []), &decision/1) do
+        [] -> line
+        notes -> %{line | changes: Enum.join(Enum.reject([line.changes | notes], &is_nil/1), " · ")}
+      end
+    end)
+  end
+
   def title_or_preview(%__MODULE__{title: title}) when is_binary(title) and title != "", do: title
 
   def title_or_preview(%__MODULE__{messages: [%Message{text: text} | _rest]}) when is_binary(text) and text != "",
@@ -113,4 +140,11 @@ defmodule Rail.Support.Schemas.Conversation do
 
   def worktree_path(%__MODULE__{id: id, project: %Project{clone_path: clone_path}}),
     do: Path.join(clone_path, ".worktrees/support-#{id}")
+
+  defp decision(%LearningProposal{status: :approved, decided_by: user}), do: "Approved by #{decider(user)}"
+  defp decision(%LearningProposal{status: :rejected, decided_by: user}), do: "Rejected by #{decider(user)}"
+
+  defp decider(%{name: name}) when is_binary(name) and name != "", do: name
+  defp decider(%{login: login}) when is_binary(login), do: login
+  defp decider(_gone), do: "someone"
 end

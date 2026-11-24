@@ -1,11 +1,14 @@
 defmodule RailWeb.SupportLiveTest do
   use RailWeb.ConnCase, async: true
 
+  import Ecto.Query
   import Phoenix.LiveViewTest
 
   alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Learnings.Schemas.Learning
+  alias Rail.Learnings.Schemas.LearningProposal
   alias Rail.Repo
   alias Rail.Scope
   alias Rail.Support
@@ -565,6 +568,137 @@ defmodule RailWeb.SupportLiveTest do
     assert has_element?(view, "[data-qa='support-chat-line']", "Drop the workaround.")
     assert has_element?(view, "#support-drafting")
     refute has_element?(view, "#support-chat-text", "Drop the")
+  end
+
+  test "a rule the agent proposes takes the chat form's place on an open tab, and Approve brings the form back", %{
+    conn: conn,
+    conversation: conversation,
+    pass: pass,
+    result: result,
+    user: %{id: user_id}
+  } do
+    {:ok, view, _html} = live(conn, ~p"/support/#{conversation.id}")
+    assert has_element?(view, "#support-chat-form")
+
+    rule = %{
+      "key" => "print",
+      "title" => "Never offer printing for export",
+      "rule" => "Never suggest printing a recipe as a workaround for exporting it.",
+      "why" => "The print layout leaves out ingredient costs.",
+      "kind" => "product"
+    }
+
+    pass.(Map.put(result, "rules", [rule]))
+    [%LearningProposal{id: id, learning_id: draft_id}] = Repo.all(LearningProposal)
+
+    eventually(fn -> assert has_element?(view, "#support-rule-#{id}") end, 4_000)
+    assert has_element?(view, "#support-chat-composer #support-rule-hint", "Approve or reject this rule to keep chatting")
+    refute has_element?(view, "#support-rule-hint", "1 of")
+    assert has_element?(view, "#support-rule-#{id}", "New rule")
+    assert has_element?(view, "#support-rule-#{id} [data-qa='learning-kind']", "Product")
+    assert has_element?(view, "#support-rule-#{id}", "Triage")
+    assert has_element?(view, "#support-rule-#{id}", "Never suggest printing a recipe as a workaround for exporting it.")
+    assert has_element?(view, "#support-rule-#{id}", "The print layout leaves out ingredient costs.")
+    refute has_element?(view, "#support-chat-form")
+    assert has_element?(view, "[data-qa='support-chat-line']", "Proposed a rule")
+
+    view |> element("#approve-rule-#{id}") |> render_click()
+
+    assert has_element?(view, "#support-chat-form")
+    refute has_element?(view, "#support-chat-composer")
+    assert has_element?(view, "[data-qa='support-chat-line']", "Proposed a rule · Approved by Dana Whitfield")
+    assert %Learning{status: :active, roles: [:triage], approved_by_id: ^user_id} = Repo.get!(Learning, draft_id)
+  end
+
+  test "rules wait one at a time, oldest first, and Reject records who rejected it", %{
+    conn: conn,
+    conversation: conversation,
+    pass: pass,
+    result: result
+  } do
+    rules = [
+      %{"key" => "print", "title" => "No printing", "rule" => "Never offer printing.", "kind" => "product"},
+      %{"key" => "pdf", "title" => "No PDF", "rule" => "Never offer a PDF export.", "kind" => "product"}
+    ]
+
+    pass.(Map.put(result, "rules", rules))
+
+    [%LearningProposal{id: first_id, learning_id: draft_id}, %LearningProposal{id: second_id}] =
+      Repo.all(from p in LearningProposal, order_by: [asc: p.inserted_at, asc: p.id])
+
+    {:ok, view, _html} = live(conn, ~p"/support/#{conversation.id}")
+    assert has_element?(view, "#support-rule-hint", "Approve or reject this rule to keep chatting · 1 of 2")
+    assert has_element?(view, "#support-rule-#{first_id}")
+    refute has_element?(view, "#support-rule-#{second_id}")
+
+    view |> element("#reject-rule-#{first_id}") |> render_click()
+
+    assert has_element?(view, "#support-rule-#{second_id}")
+    refute has_element?(view, "#support-rule-hint", "1 of")
+    assert has_element?(view, "[data-qa='support-chat-line']", "Proposed 2 rules · Rejected by Dana Whitfield")
+    assert %Learning{status: :proposed} = Repo.get!(Learning, draft_id)
+  end
+
+  test "a second tab's Approve on a rule already decided changes nothing and shows the first decision", %{
+    conn: conn,
+    conversation: conversation,
+    pass: pass,
+    result: result
+  } do
+    rule = %{"key" => "print", "title" => "No printing", "rule" => "Never offer printing.", "kind" => "product"}
+    pass.(Map.put(result, "rules", [rule]))
+    [%LearningProposal{id: id}] = Repo.all(LearningProposal)
+
+    {:ok, first, _html} = live(conn, ~p"/support/#{conversation.id}")
+    {:ok, second, _html} = live(conn, ~p"/support/#{conversation.id}")
+
+    first |> element("#reject-rule-#{id}") |> render_click()
+    second |> element("#approve-rule-#{id}") |> render_click()
+
+    assert %LearningProposal{status: :rejected} = Repo.get!(LearningProposal, id)
+    assert has_element?(second, "#support-chat-form")
+    assert has_element?(second, "[data-qa='support-chat-line']", "Proposed a rule · Rejected by Dana Whitfield")
+    refute has_element?(second, "#support-send-failed")
+  end
+
+  test "Approve and Reject wait on the agent, and Send and Mark done do not wait on the rule", %{
+    conn: conn,
+    conversation: conversation,
+    pass: pass,
+    result: result,
+    user: user,
+    link: link
+  } do
+    rule = %{"key" => "print", "title" => "No printing", "rule" => "Never offer printing.", "kind" => "product"}
+    pass.(Map.put(result, "rules", [rule]))
+    [%LearningProposal{id: id}] = Repo.all(LearningProposal)
+    {:ok, _drafting} = Support.draft_support_reply(system_scope(), conversation)
+    link.(user)
+
+    {:ok, view, _html} = live(conn, ~p"/support/#{conversation.id}")
+    assert has_element?(view, "#approve-rule-#{id}[disabled]")
+    assert has_element?(view, "#reject-rule-#{id}[disabled]")
+
+    # A click from a tab that had not heard the pass start is refused, and the rule waits.
+    render_click(view, "approve_rule", %{"id" => id})
+    assert %LearningProposal{status: :pending} = Repo.get!(LearningProposal, id)
+    assert has_element?(view, "#support-rule-#{id}")
+
+    Repo.update_all(Conversation, set: [drafting_since: nil])
+    send(view.pid, :reload)
+    refute has_element?(view, "#approve-rule-#{id}[disabled]")
+
+    Req.Test.allow(Rail.Intercom, self(), view.pid)
+    Req.Test.expect(Rail.Intercom, &Req.Test.json(&1, %{"type" => "conversation"}))
+    view |> element("#support-send-button") |> render_click()
+    assert has_element?(view, "#support-sent", "Sent by Dana Whitfield")
+
+    view |> element("#mark-done-button") |> render_click()
+    assert has_element?(view, "#support-done", "Marked done by Dana Whitfield")
+
+    {:ok, reopened, _html} = live(conn, ~p"/support/#{conversation.id}?filter=done")
+    assert has_element?(reopened, "#support-chat-composer #support-rule-#{id}")
+    refute has_element?(reopened, "#support-chat-form")
   end
 
   test "a chat from a tab that has lost the project finds the conversation gone", %{
