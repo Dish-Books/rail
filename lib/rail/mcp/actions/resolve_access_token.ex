@@ -24,6 +24,8 @@ defmodule Rail.Mcp.Actions.ResolveAccessToken do
            Repo.one(from(t in OauthAccessToken, where: t.selector == ^selector, preload: :user)),
          :ok <- verify_token(verifier, token.verifier_hash),
          nil <- token.revoked_at,
+         # Removal revokes the tokens too; this holds for one issued to a removed user anyway.
+         nil <- token.user.removed_at,
          true <- DateTime.after?(token.expires_at, now),
          scope = Scope.for_user(token.user),
          :ok <- if(Users.can?(scope, :issues, :view), do: :ok, else: :not_authorized),

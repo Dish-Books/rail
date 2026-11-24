@@ -38,6 +38,9 @@ defmodule Rail.Users.Schemas.User do
     field :signing_key, EncryptedBinary, redact: true
     field :signing_public_key, :string
     field :signing_key_github_id, :integer
+    # Set when an admin removes the person: they cannot sign in, and are left off the lists. Only `RemoveUser` sets it
+    # and only an accepted invite clears it, so it is in no changeset.
+    field :removed_at, :utc_datetime_usec
 
     has_many :tokens, Rail.Users.Schemas.UserToken, on_delete: :delete_all
 

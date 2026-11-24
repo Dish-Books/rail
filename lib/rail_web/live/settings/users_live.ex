@@ -220,7 +220,7 @@ defmodule RailWeb.Settings.UsersLive do
               class="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 px-5 py-4 text-sm text-slate-500 dark:text-slate-400"
               id="invites-empty"
             >
-              No invites yet.
+              No pending invites.
             </p>
             <div
               :if={@invites != []}
@@ -267,13 +267,12 @@ defmodule RailWeb.Settings.UsersLive do
                           id={"invite-status-#{invite.id}"}
                           class="inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-700 px-2.5 py-1 text-xs font-medium text-slate-500 dark:text-slate-400 ring-1 ring-inset ring-zinc-500/20"
                         >
-                          {if invite.accepted_at, do: "Accepted", else: "Pending"}
+                          Pending
                         </span>
                       </div>
                     </td>
                     <td class="px-4 py-3 text-right whitespace-nowrap" colspan="2">
                       <.button
-                        :if={is_nil(invite.accepted_at)}
                         size="sm"
                         variant="danger"
                         id={"revoke-invite-button-#{invite.id}"}
@@ -366,6 +365,27 @@ defmodule RailWeb.Settings.UsersLive do
             all={@sheet_user.admin}
           />
         </form>
+
+        <div
+          :if={@sheet_user.id != @current_scope.user.id}
+          id="remove-user"
+          class="border-t border-slate-200 dark:border-slate-700 pt-5"
+        >
+          <.button
+            size="sm"
+            variant="danger"
+            id="remove-user-button"
+            data-qa="remove_user_button"
+            phx-click="remove_user"
+            phx-value-user_id={@sheet_user.id}
+            data-confirm={"Remove #{@sheet_user.name || @sheet_user.login || @sheet_user.email}? They are signed out and cannot sign in again unless you invite them."}
+          >
+            <.icon name="pi-user-minus" class="h-3.5 w-3.5" /> Remove user
+          </.button>
+          <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+            Their comments and the work they did stay, under their name.
+          </p>
+        </div>
       </.side_sheet>
 
       <.side_sheet :if={@sheet == :invite} id="invite-sheet" label="Invite" on_close="close_sheet">
@@ -541,6 +561,31 @@ defmodule RailWeb.Settings.UsersLive do
 
       {:error, _other} ->
         {:noreply, assign(socket, :error_message, "Failed to revoke the invite.")}
+    end
+  end
+
+  def handle_event("remove_user", %{"user_id" => user_id}, socket) do
+    scope = socket.assigns.current_scope
+
+    case Users.remove_user(scope, user_id) do
+      {:ok, _user} ->
+        socket =
+          socket
+          |> assign(:sheet, nil)
+          |> assign(:sheet_user_id, nil)
+          |> assign(:error_message, nil)
+          |> load_directory(scope)
+
+        {:noreply, socket}
+
+      {:error, :self} ->
+        {:noreply, assign(socket, :error_message, "You cannot remove yourself.")}
+
+      {:error, :not_authorized} ->
+        {:noreply, assign(socket, :error_message, "You are not authorized to remove users.")}
+
+      {:error, :not_found} ->
+        {:noreply, assign(socket, :error_message, "That user was already removed.")}
     end
   end
 
