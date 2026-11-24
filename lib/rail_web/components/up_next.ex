@@ -6,13 +6,17 @@ defmodule RailWeb.Components.UpNext do
   reading a ticket or answering a question, needs the task in front of them, so
   every entry is a way there. The one exception is a task whose review finished and
   that nobody has marked ready: marking it is one decision with nothing to read, so
-  its row carries a Finalize button that marks it, unless its fix round's plan waits
-  on approval, which the row opens instead.
+  its row carries a Finalize button that marks it. A fix plan not yet approved takes
+  the button away, as it takes Ready for review off the task page: a plan waiting on
+  approval is what the row opens, and one still being written leaves the row a way
+  to the task.
   """
   use RailWeb, :html
 
   import RailWeb.Utils.StageLabel
 
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -42,6 +46,13 @@ defmodule RailWeb.Components.UpNext do
           into: MapSet.new(),
           do: run.id
 
+    # Only what `Rail.Pipeline.mark_ready/2` would take gets the button: any fix plan not yet approved holds the mark.
+    markable =
+      for run <- assigns.runs,
+          finalizing?(run) and not match?(%FixPlan{approved_at: nil}, Pipeline.read_fix_plan(run.task)),
+          into: MapSet.new(),
+          do: run.id
+
     # Marking ready is one click, not something to read, so it is never the card that leads.
     featured = Enum.find(assigns.runs, &(not finalizing?(&1) or MapSet.member?(fix_plans, &1.id)))
 
@@ -52,6 +63,7 @@ defmodule RailWeb.Components.UpNext do
       |> assign(:picking, picking)
       |> assign(:fix_plans, fix_plans)
       |> assign(:approving, approving)
+      |> assign(:markable, markable)
       |> assign(:featured_icon, featured_icon(featured, fix_plans))
       |> assign(:refusal_line, assigns.refusal && refusal_line(assigns.refusal))
       |> assign(:show_connect_github, match?(%{reason: :github_not_linked}, assigns.refusal))
@@ -147,7 +159,7 @@ defmodule RailWeb.Components.UpNext do
         path={waiting_path(run, MapSet.member?(@fix_plans, run.id))}
         detail={detail(run, @picking, @fix_plans, @approving)}
         verb={verb(run, @picking, @fix_plans, @approving)}
-        finalize={finalizing?(run) and not MapSet.member?(@fix_plans, run.id)}
+        finalize={MapSet.member?(@markable, run.id)}
       />
 
       <.link
@@ -175,18 +187,19 @@ defmodule RailWeb.Components.UpNext do
     """
   end
 
-  # The rest of a Finalize row still opens the task, so it can be read without marking it.
+  # The rest of a Finalize row still opens the task, so it can be read without marking it: the link's ::after
+  # layer covers the whole row, and the button sits above it.
   defp row(%{finalize: true} = assigns) do
     ~H"""
     <div
       id={"up-next-finalize-row-#{@run.id}"}
       data-qa="up-next-row"
-      class="group flex items-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-800/40 pl-5 pr-3 py-2.5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/70"
+      class="group relative flex items-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-800/40 pl-5 pr-3 py-2.5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/70"
     >
       <.link
         navigate={@path}
         title={"Open #{@run.task.issue.identifier} without marking it"}
-        class="flex min-w-0 flex-1 items-center gap-4 rounded focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-500"
+        class="flex min-w-0 flex-1 items-center gap-4 rounded after:absolute after:inset-0 after:rounded-xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-500"
       >
         <.row_text run={@run} detail={@detail} />
       </.link>
@@ -194,6 +207,7 @@ defmodule RailWeb.Components.UpNext do
         id={"up-next-finalize-#{@run.id}"}
         variant="primary"
         size="sm"
+        class="relative z-10"
         phx-click="mark_ready"
         phx-value-task_id={@run.task_id}
         title="Mark ready for a tech lead"
@@ -241,7 +255,7 @@ defmodule RailWeb.Components.UpNext do
   defp refusal_line(%{reason: :github_not_linked}), do: "Connect GitHub to mark a task ready."
   defp refusal_line(%{identifier: identifier, reason: reason}), do: "#{identifier} is not marked ready. #{why(reason)}"
 
-  defp why(:agent_working), do: "An agent is working on it again."
+  defp why(:stage_running), do: "An agent is working on it again."
   defp why(:fix_plan_waiting), do: "Its fix plan waits on approval."
   defp why(:no_pull_request), do: "It has no pull request yet."
   defp why(:not_found), do: "It is not in a project you can open."

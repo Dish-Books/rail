@@ -171,7 +171,7 @@ defmodule RailWeb.Live.TaskActionsTest do
     Repo.update_all(from(r in Run, where: r.conversation_id == "sess_tat_lead"), set: [status: :running])
 
     view |> element("#task-ready-for-review") |> render_click()
-    assert has_element?(view, "#task-actions-error", "An agent is working on this task again.")
+    assert has_element?(view, "#task-actions-error", "Something is still running on this task.")
     assert %Task{marked_ready_at: nil} = Repo.reload!(task)
   end
 

@@ -105,7 +105,7 @@ defmodule Rail.Pipeline.Actions.MarkReadyTest do
     {:ok, _reading} = Pipeline.create_run(Map.put(running, :role_id, curator.id))
     {:ok, resumed} = Pipeline.create_run(Map.put(running, :role_id, lead.id))
 
-    assert {:error, :agent_working} = Pipeline.mark_ready(Scope.for_user(dan), task)
+    assert {:error, :stage_running} = Pipeline.mark_ready(Scope.for_user(dan), task)
     assert %Task{marked_ready_at: nil} = Repo.reload!(task)
 
     {:ok, _done} = Pipeline.update_run(resumed, %{status: :finished, stage_outcome: :done})

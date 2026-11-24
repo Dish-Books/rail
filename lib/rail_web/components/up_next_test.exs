@@ -532,7 +532,7 @@ defmodule RailWeb.Components.UpNextTest do
     end
   end
 
-  # Only Finalize acts on the spot; every other row, and a Finalize row whose fix plan waits, only opens the task.
+  # Only Finalize acts on the spot; every other row, and a Finalize row whose fix plan is not approved, only opens the task.
   test "no other row has a button", %{waiting: waiting, scratch: scratch} do
     asked = %{
       waiting.(:review)
@@ -560,6 +560,26 @@ defmodule RailWeb.Components.UpNextTest do
 
     assert ["/tasks/tsk_finalize?item=fix_plan"] =
              html |> Floki.find("#up-next-row-run_finalize") |> Floki.attribute("href")
+
+    # A fix plan still being written, or saved before a newer comment, holds the mark too: the row only opens the task.
+    writing = %{round: 1, findings: [], comments: []}
+
+    revising = %{
+      round: 1,
+      findings: [],
+      comments: [%{number: 1, kind: "diff", text: "Why?"}],
+      plan: "p",
+      covered_comments: 0
+    }
+
+    for unsettled <- [writing, revising] do
+      File.write!(Path.join(scratch, "fix_plans/UPN-1.json"), Jason.encode!(unsettled))
+      html = (&UpNext.up_next/1) |> render_component(runs: [waiting.(:plan), lead]) |> Floki.parse_fragment!()
+
+      assert [] = Floki.find(html, "button")
+      assert ["/tasks/tsk_finalize"] = html |> Floki.find("a#up-next-row-run_finalize") |> Floki.attribute("href")
+      assert html |> Floki.find("a#up-next-row-run_finalize") |> Floki.text() =~ "Finalize"
+    end
   end
 
   test "a refused Finalize says why above the rows, with a way to connect GitHub when that is why", %{waiting: waiting} do
@@ -574,7 +594,7 @@ defmodule RailWeb.Components.UpNextTest do
              (&UpNext.up_next/1) |> render_component(runs: []) |> Floki.parse_fragment!() |> Floki.find("#up-next-error")
 
     for {reason, said} <- [
-          agent_working: "UPN-1 is not marked ready. An agent is working on it again.",
+          stage_running: "UPN-1 is not marked ready. An agent is working on it again.",
           fix_plan_waiting: "UPN-1 is not marked ready. Its fix plan waits on approval.",
           no_pull_request: "UPN-1 is not marked ready. It has no pull request yet.",
           not_found: "UPN-1 is not marked ready. It is not in a project you can open.",

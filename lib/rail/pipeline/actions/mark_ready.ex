@@ -19,7 +19,7 @@ defmodule Rail.Pipeline.Actions.MarkReady do
   @doc """
   Marks `task` ready as the scope's user. Returns `{:ok, task}` as it now stands, or `{:error, reason}` for a
   project the scope cannot open, a user without GitHub, a task not at Finalize, one with no pull request, one an
-  agent other than the curator works on (`:agent_working`), or one whose fix plan waits on approval.
+  agent other than the curator works on (`:stage_running`), or one whose fix plan waits on approval.
   """
   def mark_ready(%Scope{} = scope, %Task{} = task) do
     # Overview offers the mark on a row a deletion may have taken since it was drawn.
@@ -68,7 +68,7 @@ defmodule Rail.Pipeline.Actions.MarkReady do
   # A page may still offer the mark after a comment resumed the review agent or its fix plan was saved.
   defp settled(%Task{} = task) do
     cond do
-      Task.running?(task) -> {:error, :agent_working}
+      Task.running?(task) -> {:error, :stage_running}
       match?(%FixPlan{approved_at: nil}, Pipeline.read_fix_plan(task)) -> {:error, :fix_plan_waiting}
       true -> :ok
     end
