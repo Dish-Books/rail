@@ -35,7 +35,10 @@ defmodule RailWeb.Components.SupportRule do
           {Learning.roles_label(@proposal.learning)}
         </span>
       </div>
-      <div class="px-3 py-2">
+      <div
+        id={"support-rule-#{@proposal.id}-text"}
+        class="px-3 py-2 max-h-[min(16rem,35vh)] overflow-y-auto"
+      >
         <p class="text-[13px] font-medium leading-snug text-slate-900 dark:text-slate-100 break-words">
           {@proposal.learning.rule}
         </p>
