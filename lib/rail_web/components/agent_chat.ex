@@ -14,6 +14,7 @@ defmodule RailWeb.Components.AgentChat do
   attr :gone_author, :string, required: true, doc: "the name shown for a line whose author was deleted"
   attr :class, :any, default: nil
   slot :header, doc: "replaces the Agent title, such as triage's Chat / Thread switch"
+  slot :composer, doc: "drawn in the chat form's place while it is given, such as Support's rule to decide"
 
   def agent_chat(assigns) do
     ~H"""
@@ -74,7 +75,15 @@ defmodule RailWeb.Components.AgentChat do
           </div>
         </div>
       </div>
+      <div
+        :if={@composer != []}
+        id={"#{@id}-composer"}
+        class="border-t border-slate-200 dark:border-slate-700 px-3 py-3 space-y-2"
+      >
+        {render_slot(@composer)}
+      </div>
       <.form
+        :if={@composer == []}
         for={@form}
         id={"#{@id}-form"}
         phx-change="chat_change"

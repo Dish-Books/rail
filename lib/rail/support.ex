@@ -26,6 +26,7 @@ defmodule Rail.Support do
   defdelegate run_support_agent(conversation), to: Actions.RunSupportAgent
   defdelegate draft_support_reply(scope, conversation), to: Actions.DraftSupportReply
   defdelegate send_support_chat(scope, conversation, attrs), to: Actions.SendSupportChat
+  defdelegate decide_support_rule(scope, conversation, proposal_id, choice), to: Actions.DecideSupportRule
   defdelegate update_support_draft(scope, conversation, attrs), to: Actions.UpdateSupportDraft
   defdelegate mark_support_done(scope, conversation), to: Actions.MarkSupportDone
   defdelegate send_support_reply(scope, conversation), to: Actions.SendSupportReply

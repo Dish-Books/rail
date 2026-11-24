@@ -13,6 +13,8 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Projects
   alias Rail.Roles
+  alias Rail.Support
+  alias Rail.Support.Schemas.ChatMessage
   alias Rail.Tools
 
   setup do
@@ -287,6 +289,63 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
              Repo.get_by!(LearningProposal, learning_id: draft.id)
 
     assert later.id in evidence
+  end
+
+  test "a support rule waits on its chat: proposals.md leaves it out, and three tasks' sightings leave it pending", %{
+    project: project,
+    tasks: [one, two, three | _rest],
+    sighting: sighting
+  } do
+    app_id = "app_#{System.unique_integer([:positive])}"
+
+    Req.Test.stub(Rail.Intercom, fn
+      %{request_path: "/me"} = conn ->
+        Req.Test.json(conn, %{"app" => %{"id_code" => app_id}})
+
+      %{request_path: "/conversations/91"} = conn ->
+        Req.Test.json(conn, %{
+          "id" => "91",
+          "updated_at" => 1_790_000_100,
+          "created_at" => 1_790_000_000,
+          "state" => "open",
+          "source" => %{"id" => "s91", "author" => %{"type" => "user", "name" => "Maya"}, "body" => "<p>Export?</p>"}
+        })
+    end)
+
+    {:ok, workspace} =
+      Support.create_intercom_workspace(system_scope(), project, %{
+        "name" => "Acme Support",
+        "access_token" => "tok",
+        "client_id" => "cid",
+        "client_secret" => "secret"
+      })
+
+    {:ok, conversation} = Support.sync_intercom_conversation(workspace, "91")
+    line = Repo.insert!(%ChatMessage{conversation_id: conversation.id, author: :agent, text: "Proposed it."})
+    rule = %{"key" => "print", "title" => "No printing", "rule" => "Use the factory", "kind" => "convention"}
+
+    {:ok, %{added: [%LearningProposal{id: proposal_id, learning_id: draft_id}]}} =
+      Learnings.save_support_proposals(conversation, line, [rule])
+
+    sightings = Enum.map([one, two, three], &sighting.(&1, %{}))
+
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
+      refute File.read!(Path.join(opts[:cd], "proposals.md")) =~ draft_id
+
+      File.write!(
+        Path.join(opts[:cd], "result.json"),
+        Jason.encode!(%{
+          "outcomes" => Enum.map(sightings, &%{"observation" => &1.id, "outcome" => "link", "learning" => draft_id})
+        })
+      )
+
+      {:ok, ""}
+    end)
+
+    {:ok, _pass} = Learnings.curate_learnings(project)
+
+    assert %Learning{status: :proposed} = Repo.get!(Learning, draft_id)
+    assert %LearningProposal{status: :pending, evidence_ids: []} = Repo.get!(LearningProposal, proposal_id)
   end
 
   test "a provisional rule is confirmed, rules are linked to, and conflicts and promotions are proposed", %{

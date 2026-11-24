@@ -13,6 +13,8 @@ defmodule Rail.Learnings.Schemas.LearningProposal do
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
+  alias Rail.Support.Schemas.ChatMessage
+  alias Rail.Support.Schemas.Conversation
   alias Rail.Users.Schemas.User
 
   @actions [:add, :merge, :rewrite, :retire, :conflict, :promote, :override]
@@ -32,6 +34,8 @@ defmodule Rail.Learnings.Schemas.LearningProposal do
     field :status, Ecto.Enum, values: @statuses, default: :pending
     field :choice, Ecto.Enum, values: @choices
     field :decided_at, :utc_datetime_usec
+    # The support agent's key for a rule it proposed, stable across its passes.
+    field :support_key, :string
 
     # The rules and sightings `target_ids` and `evidence_ids` name, loaded by `get_learning_proposal/1`.
     field :targets, {:array, :any}, virtual: true, default: []
@@ -44,12 +48,15 @@ defmodule Rail.Learnings.Schemas.LearningProposal do
     belongs_to :curator_pass, CuratorPass
     # The task whose curator conversation proposed it; nil for the daily pass's.
     belongs_to :task, Task
+    # The support conversation whose agent proposed it, and the chat line of the turn that did.
+    belongs_to :support_conversation, Conversation
+    belongs_to :support_chat_message, ChatMessage
 
     timestamps()
   end
 
   @doc """
-  Builds a changeset for a proposal. The project, its task, its status and who
+  Builds a changeset for a proposal. The project, its task or support conversation, its status and who
   decided it are set by the caller.
   """
   def changeset(proposal, attrs) do
@@ -68,6 +75,7 @@ defmodule Rail.Learnings.Schemas.LearningProposal do
     |> validate_required([:action, :learning_id])
     |> unique_constraint([:project_id, :source_key])
     |> unique_constraint(:learning_id, name: :learning_proposals_pending_override_index)
+    |> unique_constraint([:support_conversation_id, :support_key])
   end
 
   def promote_targets, do: @promote_targets

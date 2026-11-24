@@ -15,6 +15,8 @@ defmodule RailWeb.LearningsLiveTest do
   alias Rail.Pipeline.Schemas.PlanCommentCapture
   alias Rail.Projects
   alias Rail.Repo
+  alias Rail.Support
+  alias Rail.Support.Schemas.ChatMessage
   alias Rail.Users
 
   # Stubbed, never called, so it is named rather than imported.
@@ -257,6 +259,43 @@ defmodule RailWeb.LearningsLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/learnings?status=retired")
     assert has_element?(view, "#learnings-empty", "No rules match these filters")
+  end
+
+  test "a support rule waits in its chat, so To review neither counts nor lists it", %{conn: conn, project: project} do
+    app_id = "app_#{System.unique_integer([:positive])}"
+
+    Req.Test.stub(Rail.Intercom, fn
+      %{request_path: "/me"} = conn ->
+        Req.Test.json(conn, %{"app" => %{"id_code" => app_id}})
+
+      %{request_path: "/conversations/92"} = conn ->
+        Req.Test.json(conn, %{
+          "id" => "92",
+          "updated_at" => 1_790_000_100,
+          "created_at" => 1_790_000_000,
+          "state" => "open",
+          "source" => %{"id" => "s92", "author" => %{"type" => "user", "name" => "Maya"}, "body" => "<p>Export?</p>"}
+        })
+    end)
+
+    {:ok, workspace} =
+      Support.create_intercom_workspace(system_scope(), project, %{
+        "name" => "Acme Support",
+        "access_token" => "tok",
+        "client_id" => "cid",
+        "client_secret" => "secret"
+      })
+
+    {:ok, conversation} = Support.sync_intercom_conversation(workspace, "92")
+    line = Repo.insert!(%ChatMessage{conversation_id: conversation.id, author: :agent, text: "Proposed it."})
+    rule = %{"key" => "print", "title" => "No printing", "rule" => "Never offer printing.", "kind" => "product"}
+    {:ok, %{added: [_proposal]}} = Learnings.save_support_proposals(conversation, line, [rule])
+
+    {:ok, view, _html} = live(conn, ~p"/learnings")
+
+    assert has_element?(view, "#learnings-empty", "Nothing to review")
+    assert has_element?(view, "#learnings-segment-review span.text-amber-600", "0")
+    refute render(view) =~ "Never offer printing."
   end
 
   test "approving a proposal applies it and opens the next, and a second approval is refused", %{
