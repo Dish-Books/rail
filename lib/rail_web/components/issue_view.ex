@@ -844,6 +844,7 @@ defmodule RailWeb.Components.IssueView do
       id={"#{@id}-upload"}
       issue={@issue}
       current_scope={@current_scope}
+      nonce={@nonce}
       class="px-4 pb-3"
     />
     """

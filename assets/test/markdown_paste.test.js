@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   calculateFileText,
   calculateLabel,
+  calculateLostText,
   calculateSettledText,
   calculateUploadingText,
   holdSubmit,
@@ -103,5 +104,22 @@ describe("holdSubmit", () => {
 
     assert.equal(holdSubmit(event, 0), false);
     assert.deepEqual(calls, []);
+  });
+});
+
+describe("calculateLostText", () => {
+  it("takes out every lost file's Uploading line and leaves the typed text as it was", () => {
+    const shot = calculateUploadingText("shot.png");
+    const spec = calculateUploadingText("spec.pdf");
+    assert.equal(calculateLostText(`Typed\n${shot}\n\n${spec}\n`, ["shot.png", "spec.pdf"]), "Typed");
+  });
+
+  it("takes out two lost files of the same name", () => {
+    const line = calculateUploadingText("image.png");
+    assert.equal(calculateLostText(`Typed\n${line}\n\n${line}\n`, ["image.png", "image.png"]), "Typed");
+  });
+
+  it("leaves a line the person already deleted alone", () => {
+    assert.equal(calculateLostText("Typed only", ["gone.png"]), "Typed only");
   });
 });

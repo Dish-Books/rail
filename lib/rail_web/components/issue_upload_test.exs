@@ -137,4 +137,53 @@ defmodule RailWeb.Components.IssueUploadTest do
 
     assert has_element?(view, "#issue-comment-form-body-0")
   end
+
+  test "a refusal under the comment box goes once that box's comment is sent", %{
+    conn: conn,
+    issue: %Issue{id: issue_id}
+  } do
+    {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+
+    notes =
+      file_input(view, "#issue-comment-form-upload", :file, [
+        %{name: "build-logs.zip", content: "PK", type: "application/zip"}
+      ])
+
+    preflight_upload(notes)
+    view |> element("#issue-comment-form-upload") |> render_change(%{})
+
+    assert has_element?(
+             view,
+             "#issue-comment-form-upload-error",
+             "build-logs.zip is not a PNG, JPEG, GIF, WebP or PDF file."
+           )
+
+    view |> element("#issue-comment-form") |> render_submit(%{"body" => "Logs from the run that jumped:"})
+
+    assert has_element?(view, "#issue-comment-form-body-1")
+    refute has_element?(view, "#issue-comment-form-upload-error")
+    assert has_element?(view, "form#issue-comment-form-upload.hidden")
+  end
+
+  test "files a reconnect cut off are refused under their box, and anything malformed is ignored", %{
+    conn: conn,
+    issue: %Issue{id: issue_id}
+  } do
+    {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+    upload = with_target(view, "#issue-comment-form-upload")
+
+    render_hook(upload, "upload_lost", %{"names" => [%{}]})
+    render_hook(upload, "upload_lost", %{})
+    refute has_element?(view, "#issue-comment-form-upload-error")
+
+    render_hook(upload, "upload_lost", %{"names" => ["shot.png", "spec.pdf"]})
+
+    assert has_element?(
+             view,
+             "#issue-comment-form-upload-error",
+             "Couldn't upload shot.png. Try adding it again. Couldn't upload spec.pdf. Try adding it again."
+           )
+
+    refute has_element?(view, "#issue-description-editor-#{issue_id}-upload-error")
+  end
 end

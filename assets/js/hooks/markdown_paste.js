@@ -30,6 +30,11 @@ export function calculateSettledText(text, name, replacement) {
   return replaceFirst(text, line, replacement);
 }
 
+// Each lost file's Uploading line comes out with the breaks it came in with, as a refused file's does.
+export function calculateLostText(text, names) {
+  return names.reduce((settled, name) => calculateSettledText(settled, name, ""), text);
+}
+
 export function holdSubmit(event, pendingCount) {
   if (pendingCount === 0) return false;
   event.preventDefault();
@@ -104,11 +109,25 @@ export const MarkdownPaste = {
     this.handleEvent("upload_failed", (payload) => {
       if (mine(payload)) this.settle(payload.ref, "");
     });
+
+    // A rejoin can replace a box's textarea while its file was going up, and the old hook's mark on Send outlives it.
+    this.markSubmit();
   },
 
   // The form outlives a sent comment's textarea, so its listeners go with the hook.
   destroyed() {
     this.listeners.abort();
+  },
+
+  // A reconnect starts a new LiveView process that never saw the files this box is waiting on, so none will be
+  // answered. Each comes out, Send is released, and the box's upload says which did not go up.
+  reconnected() {
+    if (this.pending.length === 0) return;
+    const names = this.pending.map((file) => file.name);
+    this.pending = [];
+    this.el.value = calculateLostText(this.el.value, names);
+    this.changed();
+    this.pushEventTo(`#${this.el.dataset.uploadForm}`, "upload_lost", { names });
   },
 
   addFiles(files, uploadForm) {
@@ -128,9 +147,14 @@ export const MarkdownPaste = {
     this.changed();
   },
 
-  // Through the input event, so the form's phx-change sees the text. The mark is a JS command, so a patch keeps it.
+  // Through the input event, so the form's phx-change sees the text.
   changed() {
     this.el.dispatchEvent(new Event("input", { bubbles: true }));
+    this.markSubmit();
+  },
+
+  // The mark is a JS command, so a patch keeps it.
+  markSubmit() {
     const submit = formSubmitButton(this.el);
     if (!submit) return;
     if (this.pending.length > 0) {

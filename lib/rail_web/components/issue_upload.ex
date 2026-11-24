@@ -13,6 +13,7 @@ defmodule RailWeb.Components.IssueUpload do
     socket =
       socket
       |> assign(:upload_error, nil)
+      |> assign(:nonce, nil)
       |> assign(:started, %{})
       |> allow_upload(:file,
         accept: [".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf"],
@@ -32,6 +33,7 @@ defmodule RailWeb.Components.IssueUpload do
       |> assign(:issue, assigns.issue)
       |> assign(:current_scope, assigns.current_scope)
       |> assign(:class, assigns[:class])
+      |> forget_refusal(assigns[:nonce])
 
     {:ok, socket}
   end
@@ -80,6 +82,20 @@ defmodule RailWeb.Components.IssueUpload do
 
     {:noreply, Enum.reduce(refused, socket, &refuse/2)}
   end
+
+  # The hook names the files a reconnect cut off. This process never saw them, so it says they did not go up.
+  def handle_event("upload_lost", %{"names" => names}, socket) when is_list(names) do
+    case Enum.filter(names, &is_binary/1) do
+      [] ->
+        {:noreply, socket}
+
+      lost ->
+        {:noreply,
+         assign(socket, :upload_error, Enum.map_join(lost, " ", &"Couldn't upload #{&1}. Try adding it again."))}
+    end
+  end
+
+  def handle_event("upload_lost", _malformed, socket), do: {:noreply, socket}
 
   def handle_progress(:file, %{done?: true} = entry, socket) do
     %{issue: issue, current_scope: scope} = socket.assigns
@@ -155,4 +171,8 @@ defmodule RailWeb.Components.IssueUpload do
     |> assign(:upload_error, reason)
     |> push_event("upload_failed", %{form: socket.assigns.id, ref: ref})
   end
+
+  # A box that sent its comment gets a new counter, so a refusal about its files goes with the sent text.
+  defp forget_refusal(%{assigns: %{nonce: nonce}} = socket, nonce), do: socket
+  defp forget_refusal(socket, nonce), do: socket |> assign(:nonce, nonce) |> assign(:upload_error, nil)
 end

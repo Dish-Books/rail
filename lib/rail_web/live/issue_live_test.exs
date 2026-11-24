@@ -1060,6 +1060,15 @@ defmodule RailWeb.IssueLiveTest do
 
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
 
+    for box <- ["comment-reply-form-#{thread_id}-upload", "issue-comment-form-upload"] do
+      view
+      |> file_input("##{box}", :file, [%{name: "build-logs.zip", content: "PK", type: "application/zip"}])
+      |> preflight_upload()
+
+      view |> element("##{box}") |> render_change(%{})
+      assert has_element?(view, "##{box}-error", "build-logs.zip is not a PNG, JPEG, GIF, WebP or PDF file.")
+    end
+
     view
     |> element("#comment-reply-form-#{thread_id}")
     |> render_submit(%{"body" => "A reply", "parent_id" => thread_id})
@@ -1067,6 +1076,8 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#comment-reply-form-#{thread_id}-body-1")
     assert has_element?(view, "#comment-reply-form-#{other_id}-body-0")
     assert has_element?(view, "#issue-comment-form-body-0")
+    refute has_element?(view, "#comment-reply-form-#{thread_id}-upload-error")
+    assert has_element?(view, "#issue-comment-form-upload-error", "build-logs.zip")
 
     view |> element("#issue-comment-form") |> render_submit(%{"body" => "A comment"})
 
