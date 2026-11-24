@@ -38,6 +38,7 @@ defmodule Rail.Tools.Boot do
 
   @default_starting_timeout_seconds 60
   @label "dev.railai.sandbox"
+  @agent_label "dev.railai.agent"
 
   @doc """
   Starts the Boot reconciliation task in the supervision tree, unless adoption on
@@ -54,10 +55,15 @@ defmodule Rail.Tools.Boot do
   @doc """
   Adopts every in-flight os process, once the runs tables exist, then starts
   whatever now fits in the line and removes containers whose rows have settled.
-  With `boot: true`, a toolchain install the last BEAM left unsettled is queued again.
+  With `boot: true`, a toolchain install the last BEAM left unsettled is queued again, and an agent pass's container
+  that went down with it is removed.
   """
   def reconcile(opts \\ []) do
-    if Keyword.get(opts, :boot, false), do: requeue_toolchain_installs()
+    if Keyword.get(opts, :boot, false) do
+      requeue_toolchain_installs()
+      remove_agent_containers()
+    end
+
     adopted = adopt_live_os_processes(opts)
     _browsers = Tools.reconcile_browser_sessions(opts)
     _admitted = admit_sandboxes()
@@ -76,6 +82,19 @@ defmodule Rail.Tools.Boot do
   defp requeue_toolchain_installs do
     for id <- Repo.all(from i in ToolchainInstall, where: i.status in [:queued, :installing], select: i.id) do
       {:ok, _job} = %{install_id: id} |> InstallToolchain.new() |> Oban.insert()
+    end
+  end
+
+  # Oban and the triage runner start passes before this runs, so only a container older than this BEAM is orphaned.
+  defp remove_agent_containers do
+    {up_ms, _since_last_call} = :erlang.statistics(:wall_clock)
+    booted_at = System.os_time(:second) - div(up_ms, 1000)
+
+    with :docker <- Rail.sandbox_runtime(),
+         {:ok, containers} <- Docker.list_containers(@agent_label) do
+      for %{"Id" => id, "Created" => created} <- containers, created < booted_at do
+        Docker.remove_container(id, force: true)
+      end
     end
   end
 

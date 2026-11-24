@@ -82,7 +82,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
       with {:ok, _queued} <- enqueue_pull_requests(project, since),
            {:ok, checkout} <- Git.checkout_detached_worktree(project, checkout),
            :ok <- write_files(project, dir, observations, since),
-           {:ok, result} <- run_curator_role(project, dir, brief(project, dir, checkout)) do
+           {:ok, result} <- run_curator_role(project, dir, brief(project, dir, checkout), [checkout]) do
         fold(project, pass, observations, result)
       end
     after

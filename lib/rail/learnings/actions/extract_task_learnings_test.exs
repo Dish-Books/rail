@@ -134,6 +134,7 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
 
     expect(Tools, :run_agent, fn _role, argv, opts ->
       dir = opts[:cd]
+      assert opts[:read_only_mounts] == []
 
       send(
         test,

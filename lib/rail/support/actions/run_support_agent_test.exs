@@ -129,7 +129,13 @@ defmodule Rail.Support.Actions.RunSupportAgentTest do
     item: item,
     result_path: result_path
   } do
-    expect(Tools, :run_agent, fn _role, _argv, _opts ->
+    scratch = Path.dirname(result_path)
+
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
+      # The sandbox may write only the scratch folder, and reads the checkout it starts in.
+      assert %{cd: worktree, mounts: [^scratch], read_only_mounts: [worktree]} = Map.new(opts)
+      assert worktree =~ ".worktrees/support-#{conversation_id}"
+
       File.write!(
         result_path,
         Jason.encode!(%{
