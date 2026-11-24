@@ -31,9 +31,10 @@ defmodule Rail.Issues.Tracker do
   }
   @asset_name ~r/\A[0-9a-f]{8}-[0-9a-f-]{27}-[\w.-]+\z/
 
-  # The id is drawn here because the URL names it, and the identifier is unknown until Postgres numbers the row.
+  # The URL names the id, so it is drawn here unless the caller drew it to store files under it first. The identifier is
+  # unknown until Postgres numbers the row.
   def create_issue(_scope, %Project{}, %{state: state} = attrs) do
-    id = UXID.generate!(prefix: "iss")
+    id = attrs[:id] || UXID.generate!(prefix: "iss")
 
     {:ok,
      Map.merge(status_attrs(state), %{

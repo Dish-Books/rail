@@ -16,8 +16,8 @@ defmodule Rail.Issues.Actions.UploadFile do
   }
 
   @doc """
-  Stores an image or a PDF a person put into an issue's description and returns its URL. Only a PNG, JPEG,
-  GIF, WebP or PDF name is taken.
+  Stores an image or a PDF a person put into an issue's description or a comment on it, or into a new issue not yet
+  saved, and returns its URL. Only a PNG, JPEG, GIF, WebP or PDF name is taken.
   """
   def upload_file(%Scope{} = scope, %Issue{} = issue, filename, data) when is_binary(filename) and is_binary(data) do
     content_type = @types[filename |> Path.extname() |> String.downcase()]

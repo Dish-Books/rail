@@ -7,6 +7,7 @@ defmodule RailWeb.IssueLiveTest do
 
   alias Rail.Git
   alias Rail.Issues
+  alias Rail.Issues.Clients.R2
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.LinkTrackerUrl
@@ -24,6 +25,8 @@ defmodule RailWeb.IssueLiveTest do
   alias Rail.Users
   alias Rail.Workflows.Schemas.Workflow
   alias Rail.Workflows.Schemas.WorkflowDefinition
+
+  setup {Req.Test, :verify_on_exit!}
 
   setup %{conn: conn, project: project} do
     # A role's prompt is read from the project's clone, which another test may have made, so reading it here
@@ -994,6 +997,117 @@ defmodule RailWeb.IssueLiveTest do
     # A blank comment saves nothing.
     view |> element("#issue-comment-form") |> render_submit(%{"body" => "   "})
     assert [_thread, _reply] = Repo.all(from(c in Comment, where: c.issue_id == ^issue.id))
+  end
+
+  test "a file put into a reply box goes up through that box, and its refusal shows under it alone", %{
+    conn: conn,
+    project: project
+  } do
+    %Issue{id: issue_id} =
+      issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{project_id: project.id, identifier: "IUP-1", title: "Show me", state: :todo})
+      |> Repo.insert!()
+
+    %Comment{id: thread_id} =
+      %Comment{} |> Comment.changeset(%{issue_id: issue_id, body: "Where does it land?"}) |> Repo.insert!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    reply_upload = "comment-reply-form-#{thread_id}-upload"
+
+    assert has_element?(
+             view,
+             "#comment-reply-form-#{thread_id}[data-file-drop] textarea[phx-hook='MarkdownPaste'][data-upload-form='#{reply_upload}']"
+           )
+
+    Req.Test.expect(R2, fn r2 -> Plug.Conn.send_resp(r2, 200, "") end)
+
+    view
+    |> file_input("##{reply_upload}", :file, [%{name: "after ruling.png", content: "PNG_BYTES", type: "image/png"}])
+    |> render_upload("after ruling.png")
+
+    render_async(view)
+    assert_push_event(view, "upload_started", %{form: ^reply_upload, ref: ref, name: "after ruling.png"})
+    assert_push_event(view, "insert_file", %{form: ^reply_upload, ref: ^ref, url: url, image: true})
+    assert url =~ "/issues/#{issue_id}/assets/"
+
+    view
+    |> file_input("##{reply_upload}", :file, [%{name: "build-logs.zip", content: "PK", type: "application/zip"}])
+    |> preflight_upload()
+
+    view |> element("##{reply_upload}") |> render_change(%{})
+
+    assert has_element?(view, "##{reply_upload}-error", "build-logs.zip is not a PNG, JPEG, GIF, WebP or PDF file.")
+    refute has_element?(view, "#issue-comment-form-upload-error")
+    refute has_element?(view, "#issue-description-editor-#{issue_id}-upload-error")
+  end
+
+  test "a sent reply clears only its own box, and a sent comment only the comment box", %{
+    conn: conn,
+    project: project
+  } do
+    %Issue{id: issue_id} =
+      issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{project_id: project.id, identifier: "IUP-2", title: "Two boxes", state: :todo})
+      |> Repo.insert!()
+
+    %Comment{id: thread_id} =
+      %Comment{} |> Comment.changeset(%{issue_id: issue_id, body: "First"}) |> Repo.insert!()
+
+    %Comment{id: other_id} =
+      %Comment{} |> Comment.changeset(%{issue_id: issue_id, body: "Second"}) |> Repo.insert!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    for box <- ["comment-reply-form-#{thread_id}-upload", "issue-comment-form-upload"] do
+      view
+      |> file_input("##{box}", :file, [%{name: "build-logs.zip", content: "PK", type: "application/zip"}])
+      |> preflight_upload()
+
+      view |> element("##{box}") |> render_change(%{})
+      assert has_element?(view, "##{box}-error", "build-logs.zip is not a PNG, JPEG, GIF, WebP or PDF file.")
+    end
+
+    view
+    |> element("#comment-reply-form-#{thread_id}")
+    |> render_submit(%{"body" => "A reply", "parent_id" => thread_id})
+
+    assert has_element?(view, "#comment-reply-form-#{thread_id}-body-1")
+    assert has_element?(view, "#comment-reply-form-#{other_id}-body-0")
+    assert has_element?(view, "#issue-comment-form-body-0")
+    refute has_element?(view, "#comment-reply-form-#{thread_id}-upload-error")
+    assert has_element?(view, "#issue-comment-form-upload-error", "build-logs.zip")
+
+    view |> element("#issue-comment-form") |> render_submit(%{"body" => "A comment"})
+
+    assert has_element?(view, "#issue-comment-form-body-1")
+    assert has_element?(view, "#comment-reply-form-#{thread_id}-body-1")
+    assert has_element?(view, "#comment-reply-form-#{other_id}-body-0")
+  end
+
+  test "a comment with an image shows it, and the same issue open elsewhere shows it without a reload", %{
+    conn: conn,
+    project: project
+  } do
+    %Issue{id: issue_id} =
+      issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{project_id: project.id, identifier: "IUP-3", title: "Pictured", state: :todo})
+      |> Repo.insert!()
+
+    url = RailWeb.Endpoint.url() <> "/issues/#{issue_id}/assets/3f2a9c1e-77b0-4c1d-9e1a-8d2f0c6b5a41-shot.png"
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    assert {:ok, other, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    view |> element("#issue-comment-form") |> render_submit(%{"body" => "Before and after:\n\n![shot.png](#{url})"})
+
+    assert has_element?(view, "#issue-comments img[src='#{url}'][alt='shot.png']")
+    assert has_element?(other, "#issue-comments img[src='#{url}'][alt='shot.png']")
+
+    assert {:ok, reloaded, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    assert has_element?(reloaded, "#issue-comments img[src='#{url}'][alt='shot.png']")
   end
 
   test "each reason a start fails is said plainly", %{conn: conn, project: project} do

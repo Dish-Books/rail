@@ -32,7 +32,12 @@ defmodule RailWeb.Components.DescriptionEditorTest do
     {:ok, issue} = Issues.create_issue(system_scope(), local, %{title: "Has a description", description: "Old *text*"})
     stub(Issues, :link_pull_request, fn _scope, _issue -> {:ok, nil} end)
 
-    %{conn: log_in_user(conn, user), issue: issue, local: local}
+    %{
+      conn: log_in_user(conn, user),
+      issue: issue,
+      local: local,
+      upload_form: "issue-description-editor-#{issue.id}-upload"
+    }
   end
 
   test "carries the issue's id and saved markdown for the hook, with the save notice rendered hidden", %{
@@ -92,9 +97,10 @@ defmodule RailWeb.Components.DescriptionEditorTest do
     assert_reply(view, %{ok: false})
   end
 
-  test "a screenshot goes up under its ref and comes back as an address Rail serves", %{
+  test "a screenshot goes up under its ref and comes back to the description's hook as an address Rail serves", %{
     conn: conn,
-    issue: %Issue{id: issue_id}
+    issue: %Issue{id: issue_id},
+    upload_form: upload_form
   } do
     {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
 
@@ -112,8 +118,13 @@ defmodule RailWeb.Components.DescriptionEditorTest do
     render_upload(image, "Screenshot 2026-11-10 at 14.02.11.png", 50)
     render_async(view)
 
-    assert_push_event(view, "upload_started", %{ref: ref, name: "Screenshot 2026-11-10 at 14.02.11.png"})
-    assert_push_event(view, "insert_file", %{ref: ^ref, url: url, image: true})
+    assert_push_event(view, "upload_started", %{
+      form: ^upload_form,
+      ref: ref,
+      name: "Screenshot 2026-11-10 at 14.02.11.png"
+    })
+
+    assert_push_event(view, "insert_file", %{form: ^upload_form, ref: ^ref, url: url, image: true})
     refute has_element?(view, "#issue-description-editor-#{issue_id}-upload-error")
 
     %URI{path: path} = URI.parse(url)
@@ -127,7 +138,8 @@ defmodule RailWeb.Components.DescriptionEditorTest do
 
   test "an image too large is refused for its ref, with the reason under the description", %{
     conn: conn,
-    issue: %Issue{id: issue_id}
+    issue: %Issue{id: issue_id},
+    upload_form: upload_form
   } do
     {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
 
@@ -139,8 +151,8 @@ defmodule RailWeb.Components.DescriptionEditorTest do
     assert {:ok, %{errors: errors}} = preflight_upload(image)
     assert [{ref, [:too_large]}] = Map.to_list(errors)
     view |> element("#issue-description-editor-#{issue_id}-upload") |> render_change(%{})
-    assert_push_event(view, "upload_started", %{ref: ^ref, name: "huge.png"})
-    assert_push_event(view, "upload_failed", %{ref: ^ref})
+    assert_push_event(view, "upload_started", %{form: ^upload_form, ref: ^ref, name: "huge.png"})
+    assert_push_event(view, "upload_failed", %{form: ^upload_form, ref: ^ref})
     assert has_element?(view, "#issue-description-editor-#{issue_id}-upload-error", "huge.png is over 10 MB")
   end
 
@@ -229,7 +241,11 @@ defmodule RailWeb.Components.DescriptionEditorTest do
            )
   end
 
-  test "a PDF goes up and is inserted as a link the page serves", %{conn: conn, issue: %Issue{id: issue_id}} do
+  test "a PDF goes up and is inserted as a link the page serves", %{
+    conn: conn,
+    issue: %Issue{id: issue_id},
+    upload_form: upload_form
+  } do
     {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
 
     Req.Test.expect(R2, fn r2 ->
@@ -246,7 +262,7 @@ defmodule RailWeb.Components.DescriptionEditorTest do
     render_async(view)
 
     assert_push_event(view, "upload_started", %{ref: ref, name: "SPEC.PDF"})
-    assert_push_event(view, "insert_file", %{ref: ^ref, name: "SPEC.PDF", url: url, image: false})
+    assert_push_event(view, "insert_file", %{form: ^upload_form, ref: ^ref, name: "SPEC.PDF", url: url, image: false})
     refute has_element?(view, "#issue-description-editor-#{issue_id}-upload-error")
 
     Req.Test.expect(R2, fn r2 ->

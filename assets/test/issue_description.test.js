@@ -11,6 +11,7 @@ import {
   calculateReplace,
   calculateRestore,
   calculateSaveState,
+  droppedOnOwnBox,
   uploadableFiles,
   wrapLoneImages
 } from "../js/hooks/issue_description.js";
@@ -294,5 +295,21 @@ describe("a PDF's link", () => {
     };
 
     assert.equal(markdown.serialize(doc), "[spec.pdf](https://x/spec.pdf) ");
+  });
+});
+
+describe("droppedOnOwnBox", () => {
+  it("is true for a drop inside an element marked data-file-drop", () => {
+    const target = { closest: (selector) => (selector === "[data-file-drop]" ? { id: "issue-comment-form" } : null) };
+    assert.equal(droppedOnOwnBox(target), true);
+  });
+
+  it("is false for a drop anywhere else on the page", () => {
+    assert.equal(droppedOnOwnBox({ closest: () => null }), false);
+  });
+
+  it("is false for a target that is not an element, such as the document", () => {
+    assert.equal(droppedOnOwnBox({}), false);
+    assert.equal(droppedOnOwnBox(null), false);
   });
 });

@@ -42,7 +42,7 @@ defmodule RailWeb.IssueLive do
       |> assign(:issue, nil)
       |> assign(:assignees, [])
       |> assign(:assignee_query, "")
-      |> assign(:comment_nonce, 0)
+      |> assign(:comment_nonce, %{})
       |> assign(:checking_pull_request, false)
       |> assign(:blockers, nil)
       |> assign(:cycles, nil)

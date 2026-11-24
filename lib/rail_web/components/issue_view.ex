@@ -17,6 +17,7 @@ defmodule RailWeb.Components.IssueView do
   alias Rail.Workflows.Schemas.Workflow
   alias RailWeb.Components.DescriptionEditor
   alias RailWeb.Components.IssuePicker
+  alias RailWeb.Components.IssueUpload
   alias RailWeb.Components.StatusPicker
 
   @estimates [nil, 1, 2, 3, 5, 8, 13]
@@ -25,7 +26,8 @@ defmodule RailWeb.Components.IssueView do
   attr :current_scope, :any, required: true
   attr :assignees, :list, default: []
   attr :assignee_query, :string, default: ""
-  attr :comment_nonce, :integer, default: 0
+  # One counter per comment box, by the thread it replies to or "issue", which a post from that box moves on.
+  attr :comment_nonce, :map, default: %{}
   # The testing page, and the issue page for someone without GitHub, show the ticket with no status or owner menu, no
   # comment box and no Start.
   attr :read_only, :boolean, default: false
@@ -237,9 +239,12 @@ defmodule RailWeb.Components.IssueView do
               <.comment_form
                 :if={!@read_only}
                 id={"comment-reply-form-#{thread.id}"}
-                nonce={@comment_nonce}
+                issue={@issue}
+                current_scope={@current_scope}
+                nonce={Map.get(@comment_nonce, thread.id, 0)}
                 parent_id={thread.id}
                 placeholder="Leave a reply..."
+                drop_hint="Drop to add to this reply"
               />
             </div>
 
@@ -249,8 +254,11 @@ defmodule RailWeb.Components.IssueView do
             >
               <.comment_form
                 id="issue-comment-form"
-                nonce={@comment_nonce}
+                issue={@issue}
+                current_scope={@current_scope}
+                nonce={Map.get(@comment_nonce, "issue", 0)}
                 placeholder="Leave a comment..."
+                drop_hint="Drop to add to this comment"
               />
             </div>
           </section>
@@ -658,7 +666,7 @@ defmodule RailWeb.Components.IssueView do
         </aside>
       </div>
 
-      <%!-- The description's hook shows this while files are dragged over the page; a drop anywhere goes into it. --%>
+      <%!-- The description's hook shows this while files are dragged over the page; a drop outside a comment box goes into it. --%>
       <div
         :if={@editable}
         id={"issue-drop-overlay-#{@issue.id}"}
@@ -785,35 +793,60 @@ defmodule RailWeb.Components.IssueView do
   end
 
   attr :id, :string, required: true
+  attr :issue, Issue, required: true
+  attr :current_scope, :any, required: true
   attr :nonce, :integer, required: true
   attr :parent_id, :string, default: nil
   attr :placeholder, :string, required: true
+  attr :drop_hint, :string, required: true
 
-  # The textarea's id changes with each post, so a sent comment clears it.
+  # The textarea's id changes with its own form's post, so only a sent comment clears; LiveView never rewrites its text.
   defp comment_form(assigns) do
     ~H"""
     <form
       id={@id}
       phx-change="draft_comment"
       phx-submit="comment"
-      class="flex items-end gap-2 px-4 py-3 border-t first:border-t-0 border-slate-200 dark:border-slate-700"
+      data-file-drop
+      class="group/drop relative flex items-end gap-2 px-4 py-3 border-t first:border-t-0 border-slate-200 dark:border-slate-700 rounded-b-xl first:rounded-t-xl [&.is-drop-target]:outline-2 [&.is-drop-target]:outline-dashed [&.is-drop-target]:outline-blue-500 [&.is-drop-target]:-outline-offset-4 [&.is-drop-target]:bg-blue-500/10"
     >
       <input :if={@parent_id} type="hidden" name="parent_id" value={@parent_id} />
       <textarea
         id={"#{@id}-body-#{@nonce}"}
         name="body"
         rows="1"
+        phx-hook="MarkdownPaste"
+        phx-update="ignore"
+        data-upload-form={"#{@id}-upload"}
         placeholder={@placeholder}
-        class="flex-1 min-h-9 resize-y bg-transparent border-0 p-1.5 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-0"
+        class="flex-1 min-w-0 min-h-9 max-h-80 field-sizing-content resize-y bg-transparent border-0 p-1.5 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 [overflow-wrap:anywhere] focus:outline-none focus:ring-0"
       ></textarea>
       <button
         type="submit"
         title="Send"
-        class="flex items-center justify-center h-8 w-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white cursor-pointer"
+        aria-label="Send"
+        class="group shrink-0 flex items-center justify-center h-8 w-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500 data-uploading:cursor-not-allowed data-uploading:opacity-60 data-uploading:hover:bg-slate-100 data-uploading:hover:text-slate-600 dark:data-uploading:hover:bg-slate-800 dark:data-uploading:hover:text-slate-300"
       >
-        <.icon name="pi-arrow-up" class="h-4 w-4" />
+        <.icon name="pi-arrow-up" class="h-4 w-4 group-data-uploading:hidden" />
+        <.icon
+          name="pi-circle-notch"
+          class="hidden h-4 w-4 group-data-uploading:block motion-safe:animate-spin"
+        />
       </button>
+      <p class="hidden group-[.is-drop-target]/drop:flex absolute inset-0 items-center justify-center pointer-events-none">
+        <span class="flex items-center gap-2 px-4 py-1.5 rounded-full bg-white dark:bg-slate-900 border border-blue-500 shadow-lg text-sm font-medium text-slate-900 dark:text-slate-100">
+          <.icon name="pi-image" class="h-4 w-4 text-blue-500 dark:text-blue-400" />{@drop_hint}
+        </span>
+      </p>
     </form>
+    <.live_component
+      module={IssueUpload}
+      id={"#{@id}-upload"}
+      issue={@issue}
+      current_scope={@current_scope}
+      nonce={@nonce}
+      class="px-4 pb-3"
+    />
     """
   end
 

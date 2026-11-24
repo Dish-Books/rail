@@ -1,5 +1,7 @@
-// A modal can hold several forms, so ⌘Enter submits only the one the cursor is in.
-export const formSubmitButton = (target) => target.form?.querySelector("button[type='submit']") ?? null;
+// A modal can hold several forms, so ⌘Enter submits only the one the cursor is in. `elements` takes in a button outside
+// the form that joins it by its `form` attribute.
+export const formSubmitButton = (target) =>
+  Array.from(target.form?.elements ?? []).find((element) => element.type === "submit") ?? null;
 
 // A page's own modal overlay paints over New Issue, so ⌘N waits until it is closed; a button whose key ends in "-modal" is no overlay.
 export const modalOpen = (doc) => doc.querySelector("div.fixed[id$='-modal'], [role='dialog']") !== null;

@@ -14,6 +14,7 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Clients.R2
+  alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueStage
   alias Rail.Learnings
@@ -1847,6 +1848,42 @@ defmodule RailWeb.TaskLiveTest do
 
     assert has_element?(view, "#issue-comments", "From the task")
     assert has_element?(view, "#task-page")
+  end
+
+  test "the Issue tab's comment and reply boxes each take files through their own upload", %{
+    conn: conn,
+    task: %Task{issue_id: issue_id} = task
+  } do
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
+
+    assert has_element?(
+             view,
+             "#issue-comment-form[data-file-drop] textarea[phx-hook='MarkdownPaste'][data-upload-form='issue-comment-form-upload']"
+           )
+
+    Req.Test.expect(R2, fn r2 -> Plug.Conn.send_resp(r2, 200, "") end)
+
+    view
+    |> file_input("#issue-comment-form-upload", :file, [%{name: "tab.png", content: "PNG_BYTES", type: "image/png"}])
+    |> render_upload("tab.png")
+
+    render_async(view)
+    assert_push_event(view, "insert_file", %{form: "issue-comment-form-upload", url: url, image: true})
+    assert url =~ "/issues/#{issue_id}/assets/"
+
+    view |> element("#issue-comment-form") |> render_submit(%{"body" => "From the task:\n\n![tab.png](#{url})"})
+
+    assert has_element?(view, "#issue-comments img[src='#{url}'][alt='tab.png']")
+    assert has_element?(view, "#issue-comment-form-body-1")
+
+    [thread_id] = Repo.all(from(c in Comment, where: c.issue_id == ^issue_id, select: c.id))
+
+    assert has_element?(
+             view,
+             "#comment-reply-form-#{thread_id} textarea[data-upload-form='comment-reply-form-#{thread_id}-upload']"
+           )
+
+    assert has_element?(view, "form#comment-reply-form-#{thread_id}-upload input[type='file']")
   end
 
   test "the Issue tab edits the issue's priority and follows its blockers without a reload", %{conn: conn} do
