@@ -6,11 +6,12 @@ defmodule RailWeb.Components.IssueView do
   The issue page and the task page's first tab are the same view of the same
   thing, so both render this; the task page hides the section pointing at the
   task the reader is already on. The testing page renders it read-only, raising no events. The events it raises - `assign`,
-  `filter_assignees`, `set_cycle`, `comment`, `draft_comment`, `start_task`, `adopt_pull_request`, `edit_issue` and
+  `filter_assignees`, `set_cycle`, `set_initiative`, `comment`, `draft_comment`, `start_task`, `adopt_pull_request`, `edit_issue` and
   `remove_relation` - belong to whichever LiveView renders it.
   """
   use RailWeb, :html
 
+  alias Rail.Initiatives.Schemas.Initiative
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Workflows.Schemas.Workflow
@@ -38,6 +39,8 @@ defmodule RailWeb.Components.IssueView do
   attr :blockers, :any, default: nil
   # An issue's project's cycles, as `Rail.Issues.get_cycles/1` reads them; nil shows no Cycle row.
   attr :cycles, :list, default: nil
+  # An issue's project's initiatives, as `Rail.Initiatives.list_initiatives/2` reads them; nil shows no Initiative row.
+  attr :initiatives, :list, default: nil
 
   def issue_view(assigns) do
     %Issue{id: issue_id} = issue = assigns.issue
@@ -68,6 +71,8 @@ defmodule RailWeb.Components.IssueView do
       |> assign(:cycle, Enum.find(assigns.cycles || [], &(&1.id == assigns.issue.cycle_id)))
       # An ended cycle keeps what it held as it closed, so nothing more is put in one.
       |> assign(:cycle_options, Enum.reject(assigns.cycles || [], &(&1.status == :ended)))
+      |> assign(:initiative, Enum.find(assigns.initiatives || [], &(&1.id == assigns.issue.initiative_id)))
+      |> assign(:today, Date.utc_today())
 
     ~H"""
     <div id="issue-page" data-qa="issue-page" class="relative max-w-5xl mx-auto space-y-6">
@@ -583,6 +588,123 @@ defmodule RailWeb.Components.IssueView do
             </div>
 
             <div
+              :if={@initiatives && !@read_only}
+              class="relative"
+              phx-click-away={JS.hide(to: "#issue-initiative-menu")}
+              phx-window-keydown={JS.hide(to: "#issue-initiative-menu")}
+              phx-key="Escape"
+            >
+              <div class="-mx-2 flex items-center gap-1 max-w-full">
+                <button
+                  type="button"
+                  id="issue-initiative"
+                  data-qa="issue-initiative"
+                  aria-haspopup="menu"
+                  phx-click={
+                    JS.toggle(to: "#issue-initiative-menu")
+                    |> JS.focus_first(to: "#issue-initiative-menu")
+                  }
+                  class="min-w-0 flex items-center gap-2.5 px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500"
+                >
+                  <.icon
+                    name="pi-flag-banner"
+                    class="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400"
+                  />
+                  <span :if={@initiative} class="min-w-0 truncate" title={@initiative.name}>
+                    {@initiative.name}
+                  </span>
+                  <span :if={@initiative} class="shrink-0 text-xs text-slate-500 dark:text-slate-400">
+                    {Initiative.calculate_percent(@initiative)}%
+                  </span>
+                  <span :if={!@initiative} class="text-slate-400 dark:text-slate-500">No initiative</span>
+                </button>
+                <.link
+                  :if={@initiative}
+                  navigate={~p"/initiatives/#{@initiative.id}"}
+                  id="issue-initiative-link"
+                  title={"Open #{@initiative.name}"}
+                  aria-label={"Open #{@initiative.name}"}
+                  class="shrink-0 flex items-center justify-center h-7 w-7 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 focus-visible:outline-2 focus-visible:outline-blue-500"
+                >
+                  <.icon name="pi-arrow-up-right" class="h-3.5 w-3.5" />
+                </.link>
+              </div>
+
+              <div
+                id="issue-initiative-menu"
+                role="menu"
+                phx-hook="MenuKeys"
+                class="hidden absolute z-20 left-0 top-full mt-1 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg"
+              >
+                <ul class="max-h-72 overflow-y-auto p-1">
+                  <li>
+                    <button
+                      type="button"
+                      id="issue-initiative-none"
+                      role="menuitem"
+                      phx-keydown={
+                        JS.hide(to: "#issue-initiative-menu") |> JS.focus(to: "#issue-initiative")
+                      }
+                      phx-key="Escape"
+                      phx-click={
+                        JS.push("set_initiative", value: %{initiative_id: ""})
+                        |> JS.hide(to: "#issue-initiative-menu")
+                        |> JS.focus(to: "#issue-initiative")
+                      }
+                      class="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-sm hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500"
+                    >
+                      <.icon
+                        name="pi-minus-circle"
+                        class="h-4 w-4 text-slate-500 dark:text-slate-400"
+                      />
+                      <span class="flex-1 text-left">No initiative</span>
+                      <.icon :if={!@issue.initiative_id} name="pi-check" class="h-4 w-4" />
+                    </button>
+                  </li>
+                  <li :for={initiative <- @initiatives}>
+                    <button
+                      type="button"
+                      id={"issue-initiative-#{initiative.id}"}
+                      role="menuitem"
+                      phx-keydown={
+                        JS.hide(to: "#issue-initiative-menu") |> JS.focus(to: "#issue-initiative")
+                      }
+                      phx-key="Escape"
+                      phx-click={
+                        JS.push("set_initiative", value: %{initiative_id: initiative.id})
+                        |> JS.hide(to: "#issue-initiative-menu")
+                        |> JS.focus(to: "#issue-initiative")
+                      }
+                      class="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-sm hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500"
+                    >
+                      <.icon
+                        name="pi-flag-banner"
+                        class="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400"
+                      />
+                      <span class="flex-1 text-left min-w-0">
+                        <span class="block truncate" title={initiative.name}>{initiative.name}</span>
+                        <span class="block text-xs text-slate-500 dark:text-slate-400">
+                          {initiative.done_count} of {initiative.ticket_count}{menu_due(
+                            initiative,
+                            @today
+                          )}
+                        </span>
+                      </span>
+                      <.icon
+                        :if={@issue.initiative_id == initiative.id}
+                        name="pi-check"
+                        class="h-4 w-4 shrink-0"
+                      />
+                    </button>
+                  </li>
+                </ul>
+                <p class="px-3 py-2 border-t border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400 truncate">
+                  Initiatives in {@issue.project.name}
+                </p>
+              </div>
+            </div>
+
+            <div
               :if={@cycles && @read_only}
               id="issue-cycle"
               data-qa="issue-cycle"
@@ -836,6 +958,16 @@ defmodule RailWeb.Components.IssueView do
   end
 
   defp cycle_label(cycle), do: cycle.name || "Cycle #{cycle.number}"
+
+  # The menu names the date while there is time left, as the design does, and the words once it is due or late.
+  defp menu_due(%Initiative{} = initiative, today) do
+    case Initiative.calculate_due(initiative, today) do
+      {:left, _days} -> " · " <> Calendar.strftime(initiative.expected_on, "%b %-d")
+      :today -> " · Due today"
+      {:late, _days} -> " · " <> Initiative.calculate_due_text(initiative, today)
+      nil -> ""
+    end
+  end
 
   defp cycle_dates(cycle),
     do: "#{Calendar.strftime(cycle.starts_on, "%b %-d")} – #{Calendar.strftime(cycle.ends_on, "%b %-d")}"

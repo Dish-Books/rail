@@ -10,10 +10,12 @@ defmodule RailWeb.Mcp.Server do
     capabilities: [:tools],
     instructions:
       "Rail tracks tickets in projects named by a key, such as RAIL in RAIL-12. Start with list_projects to see the keys. " <>
-        "Each project plans in cycles: list_cycles shows the current one."
+        "Each project plans in cycles: list_cycles shows the current one. " <>
+        "Work that spans cycles is grouped in initiatives: list_initiatives shows them."
 
   component(RailWeb.Mcp.Tools.ListProjects)
   component(RailWeb.Mcp.Tools.ListCycles)
+  component(RailWeb.Mcp.Tools.ListInitiatives)
   component(RailWeb.Mcp.Tools.SearchIssues)
   component(RailWeb.Mcp.Tools.ListIssues)
   component(RailWeb.Mcp.Tools.GetIssue)

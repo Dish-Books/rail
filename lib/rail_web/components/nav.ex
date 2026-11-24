@@ -105,6 +105,16 @@ defmodule RailWeb.Components.Nav do
           />
 
           <.nav_item
+            section={:initiatives}
+            active={@current_section == :initiatives}
+            label="Initiatives"
+            icon_active="pi-flag-banner-fill"
+            icon_inactive="pi-flag-banner"
+            href={~p"/initiatives"}
+            attention_count={0}
+          />
+
+          <.nav_item
             section={:learnings}
             active={@current_section == :learnings}
             label="Learnings"
@@ -412,6 +422,7 @@ defmodule RailWeb.Components.Nav do
 
   defp section_title(:overview), do: "Overview"
   defp section_title(:issues), do: "Issues"
+  defp section_title(:initiatives), do: "Initiatives"
   defp section_title(:sandboxes), do: "Sandboxes"
   defp section_title(:support), do: "Support"
   defp section_title(:triage), do: "Triage"

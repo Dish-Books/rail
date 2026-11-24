@@ -106,6 +106,7 @@ defmodule RailWeb.OAuthAuthorizationControllerTest do
              "create_issue",
              "get_issue",
              "list_cycles",
+             "list_initiatives",
              "list_issues",
              "list_projects",
              "search_issues",

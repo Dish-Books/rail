@@ -1,6 +1,6 @@
 defmodule RailWeb.Utils.HandleIssueEvent do
   @moduledoc """
-  The events `RailWeb.Components.IssueView` raises for its owner menu, cycle menu, comments and the
+  The events `RailWeb.Components.IssueView` raises for its owner menu, cycle and initiative menus, comments and the
   issue's properties and relations, for every LiveView that renders it. Each passes how it reloads the issue afterwards.
   """
   import Phoenix.Component, only: [assign: 3, update: 3]
@@ -32,6 +32,16 @@ defmodule RailWeb.Utils.HandleIssueEvent do
     case Issues.set_issue_cycle(scope, issue, if(cycle_id == "", do: nil, else: cycle_id)) do
       {:ok, _issue} -> reload.(socket)
       {:error, _reason} -> put_flash(socket, :error, "Could not change the cycle")
+    end
+  end
+
+  # The menu's No initiative sends an empty id.
+  def handle_issue_event("set_initiative", %{"initiative_id" => initiative_id}, socket, reload) do
+    %{issue: issue, current_scope: scope} = socket.assigns
+
+    case Issues.set_issue_initiative(scope, issue, if(initiative_id == "", do: nil, else: initiative_id)) do
+      {:ok, _issue} -> reload.(socket)
+      {:error, _reason} -> put_flash(socket, :error, "Could not change the initiative")
     end
   end
 

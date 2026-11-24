@@ -1640,4 +1640,122 @@ defmodule RailWeb.IssueLiveTest do
       assert has_element?(view, "#issue-cycle", "No cycle")
     end
   end
+
+  describe "an issue's initiative" do
+    setup %{conn: conn, user: user, project: project} do
+      key = "IPI#{System.unique_integer([:positive])}"
+
+      {:ok, local} =
+        Projects.create_project(system_scope(), %{
+          name: "Dishbooks",
+          github_repo: "example/#{key}",
+          github_installation_id: 1,
+          key: key,
+          default_branch: "main",
+          clone_path: "/tmp/#{key}"
+        })
+
+      {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id, local.id]})
+      stub(Date, :utc_today, fn -> ~D[2026-11-23] end)
+
+      {:ok, credo} =
+        Rail.Initiatives.create_initiative(system_scope(), local, %{name: "Credo exclusions", expected_on: ~D[2026-12-12]})
+
+      {:ok, issue} = Issues.create_issue(system_scope(), local, %{title: "DIS-2364"})
+      {:ok, done} = Issues.create_issue(system_scope(), local, %{title: "DIS-2363"})
+      {:ok, done} = Issues.set_issue_initiative(system_scope(), done, credo.id)
+      {:ok, _done} = Issues.set_issue_status(system_scope(), done, %{id: "done", name: "Done", state: :done})
+      %{conn: log_in_user(conn, user), local: local, issue: issue, credo: credo}
+    end
+
+    test "the menu offers only the project's initiatives, and a pick shows its name, percent and link", %{
+      conn: conn,
+      local: local,
+      issue: %{id: issue_id},
+      credo: %{id: credo_id} = credo,
+      github_project: other
+    } do
+      {:ok, today} =
+        Rail.Initiatives.create_initiative(system_scope(), local, %{name: "Square POS", expected_on: ~D[2026-11-23]})
+
+      {:ok, late} =
+        Rail.Initiatives.create_initiative(system_scope(), local, %{name: "Bank feeds", expected_on: ~D[2026-11-20]})
+
+      {:ok, none} = Rail.Initiatives.create_initiative(system_scope(), local, %{name: "Payroll v2"})
+      {:ok, elsewhere} = Rail.Initiatives.create_initiative(system_scope(), other, %{name: "Elsewhere #{local.key}"})
+
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+      render_async(view)
+
+      assert has_element?(view, "#issue-initiative", "No initiative")
+      refute has_element?(view, "#issue-initiative-link")
+      assert has_element?(view, "#issue-initiative-#{credo.id}", "1 of 1 · Dec 12")
+      assert has_element?(view, "#issue-initiative-#{today.id}", "0 of 0 · Due today")
+      assert has_element?(view, "#issue-initiative-#{late.id}", "0 of 0 · 3 days late")
+      assert has_element?(view, "#issue-initiative-#{none.id}", "0 of 0")
+      refute has_element?(view, "#issue-initiative-#{elsewhere.id}")
+      assert has_element?(view, "#issue-initiative-menu", "Initiatives in Dishbooks")
+      assert has_element?(view, "#issue-initiative-menu[phx-hook='MenuKeys']")
+
+      assert has_element?(
+               view,
+               ~s(#issue-initiative-none[phx-key='Escape'][phx-keydown*='"focus",{"to":"#issue-initiative"}'])
+             )
+
+      view |> element("#issue-initiative-#{credo.id}") |> render_click()
+
+      assert has_element?(view, "#issue-initiative", "Credo exclusions")
+      assert has_element?(view, "#issue-initiative", "50%")
+
+      assert has_element?(
+               view,
+               "#issue-initiative-link[href='/initiatives/#{credo.id}'][aria-label='Open Credo exclusions']"
+             )
+
+      assert %Issue{initiative_id: ^credo_id} = Repo.get!(Issue, issue_id)
+
+      view |> element("#issue-initiative-none") |> render_click()
+      assert has_element?(view, "#issue-initiative", "No initiative")
+
+      render_hook(view, "set_initiative", %{"initiative_id" => elsewhere.id})
+      assert render(view) =~ "Could not change the initiative"
+      assert %Issue{initiative_id: nil} = Repo.get!(Issue, issue_id)
+    end
+
+    test "its percent moves as the issue is done on its page, and deleting the initiative reads No initiative", %{
+      conn: conn,
+      issue: %{id: issue_id} = issue,
+      credo: credo
+    } do
+      {:ok, _issue} = Issues.set_issue_initiative(system_scope(), issue, credo.id)
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+      render_async(view)
+      assert has_element?(view, "#issue-initiative", "50%")
+
+      view |> element("#issue-status") |> render_click()
+      render_async(view)
+      view |> element("#issue-status-picker-#{issue_id}-status-done") |> render_click()
+      assert has_element?(view, "#issue-initiative", "100%")
+
+      :ok = Rail.Initiatives.delete_initiative(system_scope(), credo)
+      assert has_element?(view, "#issue-initiative", "No initiative")
+      refute has_element?(view, "#issue-initiative-#{credo.id}")
+    end
+
+    test "a rename shows without a reload, and another project's initiatives leave the page as it is", %{
+      conn: conn,
+      issue: %{id: issue_id} = issue,
+      credo: credo
+    } do
+      {:ok, _issue} = Issues.set_issue_initiative(system_scope(), issue, credo.id)
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+      render_async(view)
+
+      {:ok, _renamed} = Rail.Initiatives.update_initiative(system_scope(), credo, %{name: "Credo cleanup"})
+      assert has_element?(view, "#issue-initiative", "Credo cleanup")
+
+      send(view.pid, {:initiatives_changed, "prj_elsewhere"})
+      assert has_element?(view, "#issue-initiative", "Credo cleanup")
+    end
+  end
 end

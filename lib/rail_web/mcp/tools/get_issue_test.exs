@@ -1,6 +1,7 @@
 defmodule RailWeb.Mcp.Tools.GetIssueTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Initiatives
   alias Rail.Issues
   alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.Issue
@@ -55,6 +56,8 @@ defmodule RailWeb.Mcp.Tools.GetIssueTest do
       Issues.create_issue(system_scope(), local, %{title: "Blocker"})
 
     {:ok, _issue} = Issues.set_issue_cycle(system_scope(), issue, cycle_id)
+    {:ok, initiative} = Initiatives.create_initiative(system_scope(), local, %{name: "Credo exclusions"})
+    {:ok, _issue} = Issues.set_issue_initiative(system_scope(), issue, initiative.id)
     :ok = Issues.block_issue(system_scope(), blocker, issue)
     {:ok, _comment} = Issues.comment(scope, issue, %{body: "First thoughts"})
 
@@ -65,6 +68,7 @@ defmodule RailWeb.Mcp.Tools.GetIssueTest do
                 "description" => "All of it",
                 "assignee" => ^login,
                 "cycle" => %{"number" => 1, "starts_on" => "2026-11-10"},
+                "initiative" => "Credo exclusions",
                 "parent" => %{"identifier" => ^parent_identifier, "title" => "The parent"},
                 "sub_issues" => [%{"identifier" => ^child_identifier}],
                 "blocked_by" => [%{"identifier" => ^blocker_identifier}],

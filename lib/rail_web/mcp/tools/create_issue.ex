@@ -1,8 +1,8 @@
 defmodule RailWeb.Mcp.Tools.CreateIssue do
   @moduledoc """
   Files a ticket in a project, or a sub-issue under one of its tickets, as you. It is assigned to you unless you name
-  someone else, or no one with an empty assignee. A project's ticket can open in a cycle; list_cycles shows
-  which is current.
+  someone else, or no one with an empty assignee. A project's ticket can open in a cycle, which list_cycles shows,
+  and in an initiative, which list_initiatives shows.
   """
 
   use Anubis.Server.Component, type: :tool
@@ -11,6 +11,7 @@ defmodule RailWeb.Mcp.Tools.CreateIssue do
   import RailWeb.Utils.ReadMcpIssue
 
   alias Anubis.Server.Response
+  alias Rail.Initiatives
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
@@ -30,6 +31,9 @@ defmodule RailWeb.Mcp.Tools.CreateIssue do
 
     field :cycle, :string, description: "`current`, `next` or an open cycle's number, in a project. Left out, no cycle."
 
+    field :initiative, :string,
+      description: "An initiative's name in the project, from list_initiatives. Left out or empty, none."
+
     field :assignee, :string, description: "A GitHub login, or empty for no one. Left out, you."
   end
 
@@ -41,6 +45,7 @@ defmodule RailWeb.Mcp.Tools.CreateIssue do
     with {:ok, project} <- Projects.find_project(scope, params.project),
          {:ok, parent} <- find_parent(scope, project, params[:parent]),
          {:ok, cycle_id} <- find_cycle(project, params[:cycle]),
+         {:ok, initiative_id} <- find_initiative(scope, project, params[:initiative]),
          {:ok, owner_user_id, note} <- find_owner(scope, project, params) do
       attrs = %{
         title: params.title,
@@ -49,7 +54,8 @@ defmodule RailWeb.Mcp.Tools.CreateIssue do
         estimate: params[:estimate],
         owner_user_id: owner_user_id,
         parent: parent,
-        cycle_id: cycle_id
+        cycle_id: cycle_id,
+        initiative_id: initiative_id
       }
 
       with {:ok, issue} <- Issues.create_issue(scope, project, attrs),
@@ -74,6 +80,14 @@ defmodule RailWeb.Mcp.Tools.CreateIssue do
 
   defp find_cycle(%Project{}, nil), do: {:ok, nil}
   defp find_cycle(%Project{} = project, wanted), do: Issues.find_cycle(project, wanted)
+
+  defp find_initiative(_scope, %Project{}, nil), do: {:ok, nil}
+
+  defp find_initiative(scope, %Project{} = project, name) do
+    if String.trim(name) == "",
+      do: {:ok, nil},
+      else: with({:ok, initiative} <- Initiatives.find_initiative(scope, project, name), do: {:ok, initiative.id})
+  end
 
   # Someone who can't be assigned tickets, such as before they connect GitHub, files it unassigned.
   defp find_owner(scope, %Project{} = project, params) do

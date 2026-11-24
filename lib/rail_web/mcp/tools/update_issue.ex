@@ -22,6 +22,7 @@ defmodule RailWeb.Mcp.Tools.UpdateIssue do
     field :parent, :string, description: "The identifier of its new parent, or empty for none."
     field :status, :string, description: "A status name, such as Todo or In Progress."
     field :cycle, :string, description: "`current`, `next`, a cycle's number, or `none`."
+    field :initiative, :string, description: "An initiative's name in the ticket's project, or empty for none."
     field :assignee, :string, description: "A GitHub login, `me`, or empty for no one."
     field :blocked_by, {:list, :string}, description: "Every ticket that blocks this one, replacing the list."
   end

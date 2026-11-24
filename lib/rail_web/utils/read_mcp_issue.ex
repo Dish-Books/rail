@@ -6,7 +6,7 @@ defmodule RailWeb.Utils.ReadMcpIssue do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
 
-  @preload [:owner_user, :parent, :children, comments: [:author_user, replies: :author_user]]
+  @preload [:owner_user, :parent, :children, :initiative, comments: [:author_user, replies: :author_user]]
 
   @doc """
   The ticket `identifier` names in the scope's projects, with what it shows loaded, its blockers and its cycle. Returns `{:error, {:issue_not_found, identifier}}` for one the person cannot open.

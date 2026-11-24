@@ -4,6 +4,7 @@ defmodule Rail.Issues.Actions.ChangeIssueTest do
 
   import Rail.Pipeline.Utils.BuildTask
 
+  alias Rail.Initiatives
   alias Rail.Issues
   alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.Issue
@@ -118,6 +119,8 @@ defmodule Rail.Issues.Actions.ChangeIssueTest do
           {%{status: 3}, :status},
           {%{cycle: "later"}, :cycle},
           {%{cycle: 1_000}, :cycle},
+          {%{initiative: "Nothing by that name"}, :initiative},
+          {%{initiative: 7}, :initiative},
           {%{assignee: "nobody_here"}, :assignee},
           {%{assignee: 7}, :assignee},
           {%{parent: identifier}, :parent},
@@ -136,6 +139,43 @@ defmodule Rail.Issues.Actions.ChangeIssueTest do
     assert {:error, %Ecto.Changeset{}} = Issues.change_issue(scope, issue, %{title: " ", priority: "soon"})
     assert %Issue{title: "Change me"} = Repo.get!(Issue, id)
     assert {:ok, %Issue{title: "Change me"}} = Issues.change_issue(scope, issue, %{})
+  end
+
+  test "sets an initiative of the ticket's project by name, and empty takes it out", %{
+    local: local,
+    issue: %Issue{id: id} = issue,
+    scope: scope
+  } do
+    {:ok, %{id: initiative_id}} = Initiatives.create_initiative(system_scope(), local, %{name: "Credo exclusions"})
+
+    assert {:ok, %Issue{id: ^id, initiative_id: ^initiative_id}} =
+             Issues.change_issue(scope, issue, %{initiative: " credo exclusions "})
+
+    assert {:ok, %Issue{initiative_id: nil}} = Issues.change_issue(scope, issue, %{initiative: ""})
+  end
+
+  test "an initiative not in the ticket's project names the project's own, and a good title with it writes nothing",
+       %{local: local, issue: %Issue{id: id} = issue, scope: scope} do
+    {:ok, _ours} = Initiatives.create_initiative(system_scope(), local, %{name: "Credo exclusions"})
+
+    {:ok, elsewhere} =
+      Projects.create_project(system_scope(), %{
+        name: "Elsewhere",
+        github_repo: "example/#{local.key}-else",
+        github_installation_id: 1,
+        key: "#{local.key}X",
+        default_branch: "main",
+        clone_path: "/tmp/#{local.key}-else"
+      })
+
+    {:ok, _theirs} = Initiatives.create_initiative(system_scope(), elsewhere, %{name: "Payroll v2"})
+
+    message = "is not one in #{local.key}: Credo exclusions"
+
+    assert {:error, {:invalid, :initiative, ^message}} =
+             Issues.change_issue(scope, issue, %{title: "Renamed", initiative: "Payroll v2"})
+
+    assert %Issue{title: "Change me", initiative_id: nil} = Repo.get!(Issue, id)
   end
 
   test "a write that fails after others says which were saved, and a first failure is its own error", %{

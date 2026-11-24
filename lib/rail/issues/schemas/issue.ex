@@ -2,6 +2,7 @@ defmodule Rail.Issues.Schemas.Issue do
   @moduledoc false
   use Rail.Schema
 
+  alias Rail.Initiatives.Schemas.Initiative
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.IssueLink
@@ -32,7 +33,8 @@ defmodule Rail.Issues.Schemas.Issue do
     field :state, Ecto.Enum, values: @states
     field :branch_name, :string
     field :url, :string
-    field :completed_at, :utc_datetime
+    # To the microsecond, so an update brief can tell a ticket finished just before it from one just after.
+    field :completed_at, :utc_datetime_usec
 
     # Set while the tracker has it archived. It still counts as shipped, but leaves the Issues list unless a task holds it.
     field :archived_at, :utc_datetime
@@ -60,6 +62,8 @@ defmodule Rail.Issues.Schemas.Issue do
     # Its cycle, which Rail sets itself.
     belongs_to :cycle, Cycle
     belongs_to :parent, __MODULE__
+    # Its initiative, which Rail sets itself, apart from its parent.
+    belongs_to :initiative, Initiative
     has_many :children, __MODULE__, foreign_key: :parent_id, preload_order: [asc: :inserted_at, asc: :id]
 
     belongs_to :project, Project
@@ -108,11 +112,12 @@ defmodule Rail.Issues.Schemas.Issue do
   end
 
   @doc """
-  `changeset/2` with no change announced, plus the cycle and the parent, which Rail sets through it.
+  `changeset/2` with no change announced, plus the cycle, the parent and the initiative, which Rail sets through it.
   """
   def tracker_changeset(issue, attrs) do
     issue
-    |> cast(attrs, [:cycle_id, :parent_id])
+    |> cast(attrs, [:cycle_id, :parent_id, :initiative_id])
+    |> foreign_key_constraint(:initiative_id)
     |> base_changeset(attrs)
   end
 

@@ -142,6 +142,8 @@ defmodule RailWeb.Router do
       live "/", OverviewLive
       live "/issues", IssuesLive
       live "/issues/:id", IssueLive
+      live "/initiatives", InitiativesLive
+      live "/initiatives/:id", InitiativeLive
       live "/learnings", LearningsLive, :index
       live "/learnings/proposals/:id", LearningsLive, :proposal
       live "/learnings/:id", LearningsLive, :rule
