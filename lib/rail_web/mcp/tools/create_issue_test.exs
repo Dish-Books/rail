@@ -1,6 +1,7 @@
 defmodule RailWeb.Mcp.Tools.CreateIssueTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Initiatives
   alias Rail.Issues
   alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.Issue
@@ -155,6 +156,50 @@ defmodule RailWeb.Mcp.Tools.CreateIssueTest do
                 "note" => "Filed unassigned: you can't be assigned tickets in this project yet."
               }
             }} = call_mcp_tool(scope, "create_issue", %{"project" => local.key, "title" => "Mine, later"})
+  end
+
+  test "files a ticket into an initiative of the project by name, and empty or left out means none", %{
+    local: local,
+    scope: scope
+  } do
+    {:ok, %{id: initiative_id}} = Initiatives.create_initiative(system_scope(), local, %{name: "Credo exclusions"})
+
+    assert {:ok, %{"issue" => %{"identifier" => identifier, "initiative" => "Credo exclusions"}}} =
+             call_mcp_tool(scope, "create_issue", %{
+               "project" => local.key,
+               "title" => "Grouped",
+               "initiative" => "credo exclusions"
+             })
+
+    assert %Issue{initiative_id: ^initiative_id} = Repo.get_by!(Issue, identifier: identifier)
+
+    for initiative <- [" ", nil] do
+      assert {:ok, %{"issue" => %{"initiative" => nil}}} =
+               call_mcp_tool(scope, "create_issue", %{
+                 "project" => local.key,
+                 "title" => "Loose",
+                 "initiative" => initiative
+               })
+    end
+  end
+
+  test "an initiative not in the project is refused, names the project's, and files nothing", %{
+    local: %{id: local_id} = local,
+    scope: scope,
+    github_project: other
+  } do
+    {:ok, _theirs} = Initiatives.create_initiative(system_scope(), other, %{name: "Elsewhere #{local.key}"})
+
+    message = "initiative names none: #{local.key} has no initiatives."
+
+    assert {:error, ^message} =
+             call_mcp_tool(scope, "create_issue", %{
+               "project" => local.key,
+               "title" => "Misfiled",
+               "initiative" => "Elsewhere #{local.key}"
+             })
+
+    refute Repo.exists?(from(i in Issue, where: i.project_id == ^local_id))
   end
 
   test "an estimate below 0 is refused and files nothing", %{local: %{id: local_id} = local, scope: scope} do

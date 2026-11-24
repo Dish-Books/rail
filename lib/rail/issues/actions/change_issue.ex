@@ -4,6 +4,7 @@ defmodule Rail.Issues.Actions.ChangeIssue do
   and checked before any is written, then each group is written through the action the issue page uses.
   """
 
+  alias Rail.Initiatives
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Scope
@@ -13,8 +14,9 @@ defmodule Rail.Issues.Actions.ChangeIssue do
 
   @doc """
   Changes any of `:title`, `:description`, `:priority`, `:estimate`, `:parent` (an identifier, or `""` for none),
-  `:status` (a status name), `:cycle` (`"current"`, `"next"`, a number or `"none"`), `:assignee` (a GitHub login, `"me"`,
-  or `""` for none) and `:blocked_by` (identifiers), counting only the keys `attrs` holds.
+  `:status` (a status name), `:cycle` (`"current"`, `"next"`, a number or `"none"`), `:initiative` (a name, or `""` for
+  none), `:assignee` (a GitHub login, `"me"`, or `""` for none) and `:blocked_by` (identifiers), counting only the keys
+  `attrs` holds.
 
   Returns the ticket as it now reads. A field that does not resolve is
   `{:error, {:invalid, field, message}}` or the changeset's error, with nothing written. A write that fails after others
@@ -48,6 +50,7 @@ defmodule Rail.Issues.Actions.ChangeIssue do
     with {:ok, edit} <- resolve_edit(scope, issue, Map.take(attrs, @edit_fields)),
          {:ok, status} <- resolve_status(scope, issue, attrs),
          {:ok, cycle} <- resolve_cycle(issue, attrs),
+         {:ok, initiative} <- resolve_initiative(scope, issue, attrs),
          {:ok, owner} <- resolve_assignee(scope, issue, attrs),
          {:ok, blockers} <- resolve_blockers(scope, issue, attrs) do
       steps =
@@ -56,6 +59,7 @@ defmodule Rail.Issues.Actions.ChangeIssue do
             edit && {edit_fields(attrs), &Issues.edit_issue(scope, &1, edit)},
             status && {[:status], &Issues.set_issue_status(scope, &1, status)},
             cycle && {[:cycle], &Issues.set_issue_cycle(scope, &1, elem(cycle, 1))},
+            initiative && {[:initiative], &Issues.set_issue_initiative(scope, &1, elem(initiative, 1))},
             owner && {[:assignee], &Issues.assign_issue(scope, &1, elem(owner, 1))},
             blockers && {[:blocked_by], &Issues.set_blockers(scope, &1, blockers)}
           ],
@@ -114,6 +118,17 @@ defmodule Rail.Issues.Actions.ChangeIssue do
   end
 
   defp resolve_cycle(_issue, _attrs), do: {:ok, nil}
+
+  defp resolve_initiative(scope, %Issue{project: project}, %{initiative: name}) when is_binary(name) do
+    if blank?(name),
+      do: {:ok, {:set, nil}},
+      else: with({:ok, found} <- Initiatives.find_initiative(scope, project, name), do: {:ok, {:set, found.id}})
+  end
+
+  defp resolve_initiative(_scope, _issue, %{initiative: _not_a_name}),
+    do: {:error, {:invalid, :initiative, "must be an initiative's name, or empty for none"}}
+
+  defp resolve_initiative(_scope, _issue, _attrs), do: {:ok, nil}
 
   defp resolve_assignee(scope, %Issue{} = issue, %{assignee: login}) when is_binary(login) do
     assignable = Users.list_assignable_users(project_id: issue.project_id)

@@ -1,6 +1,7 @@
 defmodule RailWeb.Mcp.IssueJSON do
   @moduledoc false
 
+  alias Rail.Initiatives.Schemas.Initiative
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Users.Schemas.User
@@ -11,7 +12,7 @@ defmodule RailWeb.Mcp.IssueJSON do
   end
 
   @doc """
-  The ticket in full: its project, owner, parent, sub-issues and comments with their authors must be loaded. A
+  The ticket in full: its project, owner, parent, sub-issues, initiative and comments with their authors must be loaded. A
   ticket carries the `cycle` and `blockers` it was read with.
   """
   def show(%{issue: %Issue{} = issue} = assigns) do
@@ -34,9 +35,10 @@ defmodule RailWeb.Mcp.IssueJSON do
     %{issue: Map.merge(full, Map.take(assigns, [:note]))}
   end
 
-  defp kept(%Issue{}, assigns) do
+  defp kept(%Issue{} = issue, assigns) do
     %{
       cycle: cycle(assigns[:cycle]),
+      initiative: initiative(issue.initiative),
       blocked_by: Enum.map(assigns[:blockers][:blocked_by] || [], &related(&1.issue)),
       blocks: Enum.map(assigns[:blockers][:blocks] || [], &related(&1.issue))
     }
@@ -69,6 +71,9 @@ defmodule RailWeb.Mcp.IssueJSON do
 
   defp cycle(cycle),
     do: %{number: cycle.number, starts_on: cycle.starts_on, ends_on: cycle.ends_on, current: cycle.current}
+
+  defp initiative(%Initiative{name: name}), do: name
+  defp initiative(nil), do: nil
 
   defp comment(%Comment{} = comment), do: %{author: author(comment), body: comment.body, created_at: comment.inserted_at}
 

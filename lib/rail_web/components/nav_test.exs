@@ -287,12 +287,13 @@ defmodule RailWeb.Components.NavTest do
   end
 
   test "each role sees only its tabs, and Settings only as an admin" do
-    tabs = ["overview", "support", "triage", "testing", "issues", "learnings", "sandboxes", "settings"]
+    tabs = ["overview", "support", "triage", "testing", "issues", "initiatives", "learnings", "sandboxes", "settings"]
 
     for {scope, expected} <- [
           {temp_user_scope(role: :support), ["support"]},
-          {temp_user_scope(role: :tester), ["testing", "issues"]},
-          {temp_user_scope(role: :dev), ["overview", "support", "triage", "testing", "issues", "learnings", "sandboxes"]},
+          {temp_user_scope(role: :tester), ["testing", "issues", "initiatives"]},
+          {temp_user_scope(role: :dev),
+           ["overview", "support", "triage", "testing", "issues", "initiatives", "learnings", "sandboxes"]},
           {temp_user_scope(role: :support, admin: true), ["support", "settings"]}
         ] do
       html = render_component(&Nav.nav/1, current_scope: scope, current_section: :overview)

@@ -35,6 +35,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate diff_pane(assigns), to: Components.DiffPane
   defdelegate diff_row(assigns), to: Components.DiffRow
   defdelegate diff_stat(assigns), to: Components.DiffStat
+  defdelegate due_label(assigns), to: Components.DueLabel
   defdelegate demo_player(assigns), to: Components.DemoPlayer
   defdelegate discard_dialog(assigns), to: Components.DiscardDialog
   defdelegate dispatch_banner(assigns), to: Components.DispatchBanner
@@ -68,6 +69,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate plan_cards(assigns), to: Components.PlanCards
   defdelegate plan_sheet(assigns), to: Components.PlanSheet
   defdelegate priority_icon(assigns), to: Components.IssueIcons
+  defdelegate progress_bar(assigns), to: Components.ProgressBar
   defdelegate project_badge(assigns), to: Components.ProjectBadge
   defdelegate review_comment_tray(assigns), to: Components.ReviewCommentTray
   defdelegate review_items(assigns), to: Components.ReviewItems

@@ -168,6 +168,15 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
              })
   end
 
+  test "opens a ticket in the initiative given", %{project: project} do
+    {:ok, %{id: initiative_id}} = Rail.Initiatives.create_initiative(system_scope(), project, %{name: "Credo"})
+
+    assert {:ok, %Issue{id: id, initiative_id: ^initiative_id}} =
+             Issues.create_issue(system_scope(), project, %{title: "Grouped", initiative_id: initiative_id})
+
+    assert %Issue{initiative_id: ^initiative_id} = Repo.get!(Issue, id)
+  end
+
   test "defaults to medium priority", %{project: project} do
     assert {:ok, %Issue{priority: :medium, state: :todo, description: nil}} =
              Issues.create_issue(system_scope(), project, %{title: "No priority"})

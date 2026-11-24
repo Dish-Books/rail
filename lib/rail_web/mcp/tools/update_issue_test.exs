@@ -1,6 +1,7 @@
 defmodule RailWeb.Mcp.Tools.UpdateIssueTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Initiatives
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
@@ -61,6 +62,43 @@ defmodule RailWeb.Mcp.Tools.UpdateIssueTest do
 
     assert %Issue{title: "Renamed", description: "Kept", owner_user_id: ^user_id, state: :in_progress} =
              Repo.get!(Issue, id)
+  end
+
+  test "puts the ticket in an initiative of its project by name, and empty takes it out", %{
+    local: local,
+    issue: %Issue{id: id, identifier: identifier},
+    scope: scope
+  } do
+    {:ok, %{id: initiative_id}} = Initiatives.create_initiative(system_scope(), local, %{name: "Credo exclusions"})
+
+    assert {:ok, %{"issue" => %{"identifier" => ^identifier, "initiative" => "Credo exclusions"}}} =
+             call_mcp_tool(scope, "update_issue", %{"identifier" => identifier, "initiative" => "Credo exclusions"})
+
+    assert %Issue{initiative_id: ^initiative_id} = Repo.get!(Issue, id)
+
+    assert {:ok, %{"issue" => %{"initiative" => nil}}} =
+             call_mcp_tool(scope, "update_issue", %{"identifier" => identifier, "initiative" => ""})
+  end
+
+  test "an initiative not in the ticket's project is refused, names the project's, and writes nothing", %{
+    local: local,
+    issue: %Issue{id: id, identifier: identifier},
+    scope: scope,
+    github_project: other
+  } do
+    {:ok, _ours} = Initiatives.create_initiative(system_scope(), local, %{name: "Credo exclusions"})
+    {:ok, _theirs} = Initiatives.create_initiative(system_scope(), other, %{name: "Elsewhere #{local.key}"})
+
+    message = "initiative is not one in #{local.key}: Credo exclusions."
+
+    assert {:error, ^message} =
+             call_mcp_tool(scope, "update_issue", %{
+               "identifier" => identifier,
+               "title" => "Renamed",
+               "initiative" => "Elsewhere #{local.key}"
+             })
+
+    assert %Issue{title: "Change me", initiative_id: nil} = Repo.get!(Issue, id)
   end
 
   test "a status sent with null fields moves the ticket, the nulls counted as left out", %{

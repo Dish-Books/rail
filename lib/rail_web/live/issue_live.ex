@@ -2,7 +2,7 @@ defmodule RailWeb.IssueLive do
   @moduledoc """
   One issue: the title and description on
   the left with its comment threads beneath, its properties down the right. The
-  issue is edited here in full, its cycle included.
+  issue is edited here in full, its cycle and initiative included.
   """
   use RailWeb, :live_view
 
@@ -10,6 +10,7 @@ defmodule RailWeb.IssueLive do
   import RailWeb.Utils.IssueRelative
   import RailWeb.Utils.StartIssue
 
+  alias Rail.Initiatives
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
@@ -19,17 +20,27 @@ defmodule RailWeb.IssueLive do
 
   on_mount {RailWeb.UserAuth, {:require_tab, :issues}}
 
-  @issue_events ["assign", "filter_assignees", "set_cycle", "draft_comment", "comment", "edit_issue", "remove_relation"]
+  @issue_events [
+    "assign",
+    "filter_assignees",
+    "set_cycle",
+    "set_initiative",
+    "draft_comment",
+    "comment",
+    "edit_issue",
+    "remove_relation"
+  ]
 
   def mount(_params, _session, socket) do
     # Workflows too, since the byline names the workflow that opened the issue, and Rail's cycles, which the nightly
-    # run moves issues between without a word on "issues". "pipeline" carries the Task section's stage and run, and
-    # "users" whether the reader has GitHub connected.
+    # run moves issues between without a word on "issues". "pipeline" carries the Task section's stage and run,
+    # "initiatives" the Initiative row's names, and "users" whether the reader has GitHub connected.
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
       Phoenix.PubSub.subscribe(Rail.PubSub, "workflows")
       Phoenix.PubSub.subscribe(Rail.PubSub, "cycles")
       Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "initiatives")
       Phoenix.PubSub.subscribe(Rail.PubSub, "users")
     end
 
@@ -46,6 +57,7 @@ defmodule RailWeb.IssueLive do
       |> assign(:checking_pull_request, false)
       |> assign(:blockers, nil)
       |> assign(:cycles, nil)
+      |> assign(:initiatives, nil)
       |> assign(:github_connected, is_binary(github_id))
 
     {:ok, socket}
@@ -60,7 +72,7 @@ defmodule RailWeb.IssueLive do
         do: assign(socket, :assignees, Users.list_assignable_users(project_id: issue.project_id)),
         else: socket
 
-    socket = socket |> link_pull_request() |> read_blockers() |> read_cycles()
+    socket = socket |> link_pull_request() |> read_blockers() |> read_cycles() |> read_initiatives()
     {:noreply, socket}
   end
 
@@ -94,6 +106,7 @@ defmodule RailWeb.IssueLive do
         workflow={@issue.workflow}
         blockers={@blockers}
         cycles={@cycles}
+        initiatives={@initiatives}
         read_only={!@github_connected}
       />
     </Layouts.app>
@@ -145,13 +158,15 @@ defmodule RailWeb.IssueLive do
   def handle_info({:pipeline_changed, _other_task_id}, socket), do: {:noreply, socket}
 
   # The tracker may have closed the issue, which takes away the offer to start it, or changed its parent, a sub-issue
-  # or a blocker. Blockers are read again when this issue or one of them changes.
+  # or a blocker. Blockers are read again when this issue or one of them changes, and the initiatives on any change,
+  # since a ticket moving can move this one's initiative's percent.
   def handle_info({event, changed_id}, %{assigns: %{issue: %Issue{} = issue, blockers: blockers}} = socket)
       when event in [:issue_changed, :issue_created] do
     socket = if issue_relative?(issue, blockers, changed_id), do: load_issue(socket, issue.id), else: socket
     blocker_ids = for %{issue: %Issue{id: id}} <- (blockers && blockers.blocked_by ++ blockers.blocks) || [], do: id
 
     socket = if changed_id == issue.id or changed_id in blocker_ids, do: read_blockers(socket), else: socket
+    socket = read_initiatives(socket)
     {:noreply, socket}
   end
 
@@ -173,6 +188,14 @@ defmodule RailWeb.IssueLive do
   end
 
   def handle_info({:cycles_changed, _other_project_id}, socket), do: {:noreply, socket}
+
+  # Its initiative may have been renamed, or deleted, which leaves the issue with none.
+  def handle_info({:initiatives_changed, project_id}, %{assigns: %{issue: %{project_id: project_id}}} = socket) do
+    socket = socket |> load_issue(socket.assigns.issue.id) |> read_initiatives()
+    {:noreply, socket}
+  end
+
+  def handle_info({:initiatives_changed, _other_project_id}, socket), do: {:noreply, socket}
 
   # Looking up GitHub is not something the page waits on: it offers Plan once GitHub has nothing, or cannot say.
   def handle_async(:link_pull_request, {:ok, {:ok, _pull_request}}, socket) do
@@ -258,4 +281,9 @@ defmodule RailWeb.IssueLive do
   end
 
   defp read_cycles(socket), do: socket
+
+  defp read_initiatives(%{assigns: %{issue: %Issue{project_id: project_id}}} = socket),
+    do: assign(socket, :initiatives, Initiatives.list_initiatives(socket.assigns.current_scope, project_id: project_id))
+
+  defp read_initiatives(socket), do: socket
 end

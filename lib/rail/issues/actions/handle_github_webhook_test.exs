@@ -74,7 +74,7 @@ defmodule Rail.Issues.Actions.HandleGithubWebhookTest do
     assert :ok = Issues.handle_github_webhook(project, "pull_request", closed.(true, 42, "elsewhere", "main"))
     assert %Issue{state: :done} = Repo.get!(Issue, issue_id)
 
-    first_write = ~U[2026-11-01 09:00:00Z]
+    first_write = ~U[2026-11-01 09:00:00.000000Z]
     Repo.update_all(from(i in Issue, where: i.id == ^issue_id), set: [completed_at: first_write])
 
     assert :ok = Issues.handle_github_webhook(project, "pull_request", closed.(true, 42, "elsewhere", "main"))

@@ -189,6 +189,6 @@ defmodule Rail.Issues.Tracker do
   end
 
   defp status_attrs(state) do
-    %{state: state, completed_at: if(state == :done, do: DateTime.utc_now(:second))}
+    %{state: state, completed_at: if(state == :done, do: DateTime.utc_now())}
   end
 end
