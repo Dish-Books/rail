@@ -574,6 +574,7 @@ defmodule RailWeb.Live.TaskActions do
   defp message(:up_to_date), do: "The branch is already up to date."
   defp message(:not_retryable), do: "That run is not one to retry now."
   defp message(:no_pull_request), do: "This task has no pull request yet."
+  defp message(:fix_plan_waiting), do: "This task's fix plan waits on approval."
   defp message(:no_ticket), do: "Plan has not saved a ticket yet."
   defp message(:no_plan), do: "Plan has not saved a plan yet."
   defp message(:nothing_picked), do: "Pick a design before approving."

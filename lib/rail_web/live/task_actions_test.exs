@@ -152,6 +152,29 @@ defmodule RailWeb.Live.TaskActionsTest do
     refute has_element?(view, "#task-ready-for-review")
   end
 
+  # Neither a fix plan's file nor a run started elsewhere has reached this page yet, so it still offers the button.
+  test "Ready for review on a page that has not heard of the fix plan or the agent at work marks nothing", %{
+    conn: conn,
+    task: task,
+    dan: dan
+  } do
+    assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+    File.mkdir_p!(Path.join(task.scratch_path, "fix_plans"))
+    plan = %{"version" => 1, "round" => 1, "plan" => "### What changes\n\nRename the heading."}
+    File.write!(Path.join([task.scratch_path, "fix_plans", "TAT-1.json"]), Jason.encode!(plan))
+
+    view |> element("#task-ready-for-review") |> render_click()
+    assert has_element?(view, "#task-actions-error", "This task's fix plan waits on approval.")
+
+    File.rm!(Path.join([task.scratch_path, "fix_plans", "TAT-1.json"]))
+    assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+    Repo.update_all(from(r in Run, where: r.conversation_id == "sess_tat_lead"), set: [status: :running])
+
+    view |> element("#task-ready-for-review") |> render_click()
+    assert has_element?(view, "#task-actions-error", "Something is still running on this task.")
+    assert %Task{marked_ready_at: nil} = Repo.reload!(task)
+  end
+
   test "Ready for review marks the task ready, and the header then waits on a tech lead", %{
     conn: conn,
     task: task,

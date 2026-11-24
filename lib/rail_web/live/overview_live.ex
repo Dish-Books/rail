@@ -31,6 +31,7 @@ defmodule RailWeb.OverviewLive do
       socket
       |> assign(:page_title, "Overview")
       |> assign(:current_section, :overview)
+      |> assign(:up_next_refusal, nil)
 
     {:ok, socket}
   end
@@ -38,12 +39,7 @@ defmodule RailWeb.OverviewLive do
   # Whose work is in the URL, so it can be linked to and survive a reload; the
   # project is the switcher's.
   def handle_params(params, _uri, socket) do
-    everyone = params["everyone"] == "true"
-
-    socket =
-      socket
-      |> assign(:view, if(everyone, do: :everyone, else: :mine))
-      |> load_overview_state(socket.assigns.project_filter, everyone)
+    socket = socket |> assign(:view, if(params["everyone"] == "true", do: :everyone, else: :mine)) |> reload()
 
     {:noreply, socket}
   end
@@ -88,7 +84,7 @@ defmodule RailWeb.OverviewLive do
             <h2 class="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
               Up next
             </h2>
-            <.up_next runs={@waiting} blocked={@blocked} />
+            <.up_next runs={@waiting} blocked={@blocked} refusal={@up_next_refusal} />
           </section>
 
           <.plan_queue tasks={@plan_queue} now={@now} />
@@ -137,19 +133,28 @@ defmodule RailWeb.OverviewLive do
     {:noreply, push_patch(socket, to: overview_path(socket.assigns, everyone: view == "everyone"))}
   end
 
+  # The click reloads the page itself, since a refusal usually means the task moved under it.
+  def handle_event("mark_ready", %{"task_id" => task_id}, socket) do
+    %{current_scope: scope, waiting: waiting, project_filter: project_filter, view: view} = socket.assigns
+
+    case Enum.find(waiting, &(&1.task_id == task_id)) do
+      %Run{task: task} ->
+        result = Pipeline.mark_ready(scope, task)
+        socket = socket |> assign(:up_next_refusal, nil) |> load_overview_state(project_filter, view == :everyone)
+        {:noreply, assign(socket, :up_next_refusal, refusal(result, task, socket.assigns.waiting))}
+
+      nil ->
+        {:noreply, socket}
+    end
+  end
+
   # Every section comes from the one reload, so they never disagree; reassigning
   # without a patch keeps the view, the open switcher and the scroll where they were.
-  def handle_info({:pipeline_changed, _task_id}, socket) do
-    {:noreply, load_overview_state(socket, socket.assigns.project_filter, socket.assigns.view == :everyone)}
-  end
+  def handle_info({:pipeline_changed, _task_id}, socket), do: {:noreply, reload(socket)}
 
-  def handle_info(:sandboxes_changed, socket) do
-    {:noreply, load_overview_state(socket, socket.assigns.project_filter, socket.assigns.view == :everyone)}
-  end
+  def handle_info(:sandboxes_changed, socket), do: {:noreply, reload(socket)}
 
-  def handle_info({:issue_changed, _issue_id}, socket) do
-    {:noreply, load_overview_state(socket, socket.assigns.project_filter, socket.assigns.view == :everyone)}
-  end
+  def handle_info({:issue_changed, _issue_id}, socket), do: {:noreply, reload(socket)}
 
   # Neither moves a task.
   def handle_info({:issue_created, _issue_id}, socket), do: {:noreply, socket}
@@ -220,6 +225,34 @@ defmodule RailWeb.OverviewLive do
       :attention_count,
       Pipeline.count_attention(project_id: Scope.project_ids(socket.assigns.current_scope), owner_user_id: user_id)
     )
+  end
+
+  defp refusal({:ok, _marked}, _task, _waiting), do: nil
+
+  defp refusal({:error, reason}, %Task{} = task, waiting) do
+    %{task_id: task.id, identifier: task.issue.identifier, reason: reason, basis: refusal_basis(waiting, task.id)}
+  end
+
+  # A refusal speaks of the task's Up next entry as it stood, so it goes once that entry changes.
+  defp reload(socket) do
+    socket = load_overview_state(socket, socket.assigns.project_filter, socket.assigns.view == :everyone)
+
+    case socket.assigns.up_next_refusal do
+      %{task_id: task_id, basis: basis} ->
+        if refusal_basis(socket.assigns.waiting, task_id) == basis,
+          do: socket,
+          else: assign(socket, :up_next_refusal, nil)
+
+      nil ->
+        socket
+    end
+  end
+
+  defp refusal_basis(waiting, task_id) do
+    case Enum.find(waiting, &(&1.task_id == task_id)) do
+      %Run{} = run -> {run.id, run.updated_at, run.task.updated_at}
+      nil -> nil
+    end
   end
 
   # A split is one piece of work, so its children are read through their parent, which they are cleaned up with.

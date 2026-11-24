@@ -2,16 +2,21 @@ defmodule RailWeb.Components.UpNext do
   @moduledoc """
   The runs waiting on a human, longest-waiting first.
 
-  The first leads as a card and the rest follow as rows. Nothing here acts on a
-  run: what the human does next — reading a ticket, answering a question — needs
-  the task in front of them, so every entry is only a way there. A task whose
-  review finished and that nobody has marked ready is a Finalize row, opening on
-  Finalize, unless its fix round's plan waits on approval, which opens the plan.
+  The first leads as a card and the rest follow as rows. What the human does next,
+  reading a ticket or answering a question, needs the task in front of them, so
+  every entry is a way there. The one exception is a task whose review finished and
+  that nobody has marked ready: marking it is one decision with nothing to read, so
+  its row carries a Finalize button that marks it. A fix plan not yet approved takes
+  the button away, as it takes Ready for review off the task page: a plan waiting on
+  approval is what the row opens, and one still being written leaves the row a way
+  to the task.
   """
   use RailWeb, :html
 
   import RailWeb.Utils.StageLabel
 
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -20,6 +25,8 @@ defmodule RailWeb.Components.UpNext do
   # Children of a split a canceled or deleted sibling keeps from starting: `%{status:, parent:}`, a
   # `RailWeb.Utils.ChildStatus` map and the split's parent. They have no run, so they come apart.
   attr :blocked, :list, default: []
+  # Why the last Finalize marked nothing: `%{identifier:, reason:}`, a reason from `Rail.Pipeline.mark_ready/2`.
+  attr :refusal, :map, default: nil
 
   def up_next(assigns) do
     # Read once per render: whether a Plan run waits on a pick is a file on disk, not a field.
@@ -39,6 +46,13 @@ defmodule RailWeb.Components.UpNext do
           into: MapSet.new(),
           do: run.id
 
+    # Only what `Rail.Pipeline.mark_ready/2` would take gets the button: any fix plan not yet approved holds the mark.
+    markable =
+      for run <- assigns.runs,
+          finalizing?(run) and not match?(%FixPlan{approved_at: nil}, Pipeline.read_fix_plan(run.task)),
+          into: MapSet.new(),
+          do: run.id
+
     # Marking ready is one click, not something to read, so it is never the card that leads.
     featured = Enum.find(assigns.runs, &(not finalizing?(&1) or MapSet.member?(fix_plans, &1.id)))
 
@@ -49,10 +63,32 @@ defmodule RailWeb.Components.UpNext do
       |> assign(:picking, picking)
       |> assign(:fix_plans, fix_plans)
       |> assign(:approving, approving)
+      |> assign(:markable, markable)
       |> assign(:featured_icon, featured_icon(featured, fix_plans))
+      |> assign(:refusal_line, assigns.refusal && refusal_line(assigns.refusal))
+      |> assign(:show_connect_github, match?(%{reason: :github_not_linked}, assigns.refusal))
 
     ~H"""
     <div id="up-next" data-qa="up-next" class="space-y-3">
+      <p
+        :if={@refusal_line}
+        id="up-next-error"
+        role="alert"
+        class="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400"
+      >
+        <.icon name="pi-warning-circle" class="size-3.5" />
+        <span>
+          {@refusal_line}
+          <.link
+            :if={@show_connect_github}
+            navigate={~p"/settings/connected-accounts"}
+            class="font-semibold underline underline-offset-2 hover:text-red-500 dark:hover:text-red-300"
+          >
+            Connected accounts
+          </.link>
+        </span>
+      </p>
+
       <p
         :if={@runs == [] and @blocked == []}
         id="up-next-empty"
@@ -117,36 +153,14 @@ defmodule RailWeb.Components.UpNext do
         </div>
       </.link>
 
-      <.link
+      <.row
         :for={run <- @rest}
-        navigate={waiting_path(run, MapSet.member?(@fix_plans, run.id))}
-        id={if finalizing?(run), do: "up-next-finalize-row-#{run.id}", else: "up-next-row-#{run.id}"}
-        data-qa="up-next-row"
-        class="group flex items-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-800/40 px-5 py-3.5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/70"
-      >
-        <span class="font-mono text-xs text-slate-500 dark:text-slate-400 shrink-0 w-16">
-          {run.task.issue.identifier}
-        </span>
-        <span class="min-w-0 flex-1 truncate text-sm text-slate-900 dark:text-slate-100">
-          {run.task.issue.title} ·
-          <span class="text-slate-500 dark:text-slate-400">{detail(
-            run,
-            @picking,
-            @fix_plans,
-            @approving
-          )}</span>
-        </span>
-        <span
-          :if={parent_identifier(run)}
-          data-qa="up-next-parent"
-          class="shrink-0 font-mono text-xs text-slate-500 dark:text-slate-400"
-        >
-          in {parent_identifier(run)}
-        </span>
-        <span class="shrink-0 text-sm font-semibold text-blue-600 dark:text-blue-400 group-hover:underline">
-          {verb(run, @picking, @fix_plans, @approving)}
-        </span>
-      </.link>
+        run={run}
+        path={waiting_path(run, MapSet.member?(@fix_plans, run.id))}
+        detail={detail(run, @picking, @fix_plans, @approving)}
+        verb={verb(run, @picking, @fix_plans, @approving)}
+        finalize={MapSet.member?(@markable, run.id)}
+      />
 
       <.link
         :for={%{status: status, parent: parent} <- @blocked}
@@ -172,6 +186,80 @@ defmodule RailWeb.Components.UpNext do
     </div>
     """
   end
+
+  # The rest of a Finalize row still opens the task, so it can be read without marking it: the link's ::after
+  # layer covers the whole row, and the button sits above it.
+  defp row(%{finalize: true} = assigns) do
+    ~H"""
+    <div
+      id={"up-next-finalize-row-#{@run.id}"}
+      data-qa="up-next-row"
+      class="group relative flex items-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-800/40 pl-5 pr-3 py-2.5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/70"
+    >
+      <.link
+        navigate={@path}
+        title={"Open #{@run.task.issue.identifier} without marking it"}
+        class="flex min-w-0 flex-1 items-center gap-4 rounded after:absolute after:inset-0 after:rounded-xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-500"
+      >
+        <.row_text run={@run} detail={@detail} />
+      </.link>
+      <.button
+        id={"up-next-finalize-#{@run.id}"}
+        variant="primary"
+        size="sm"
+        class="relative z-10"
+        phx-click="mark_ready"
+        phx-value-task_id={@run.task_id}
+        title="Mark ready for a tech lead"
+      >
+        <.icon name="pi-flag" class="size-3.5" />Finalize
+      </.button>
+    </div>
+    """
+  end
+
+  defp row(assigns) do
+    ~H"""
+    <.link
+      navigate={@path}
+      id={"up-next-row-#{@run.id}"}
+      data-qa="up-next-row"
+      class="group flex items-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-800/40 px-5 py-3.5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+    >
+      <.row_text run={@run} detail={@detail} />
+      <span class="shrink-0 text-sm font-semibold text-blue-600 dark:text-blue-400 group-hover:underline">
+        {@verb}
+      </span>
+    </.link>
+    """
+  end
+
+  defp row_text(assigns) do
+    ~H"""
+    <span class="font-mono text-xs text-slate-500 dark:text-slate-400 shrink-0 w-16">
+      {@run.task.issue.identifier}
+    </span>
+    <span class="min-w-0 flex-1 truncate text-sm text-slate-900 dark:text-slate-100">
+      {@run.task.issue.title} · <span class="text-slate-500 dark:text-slate-400">{@detail}</span>
+    </span>
+    <span
+      :if={parent_identifier(@run)}
+      data-qa="up-next-parent"
+      class="shrink-0 font-mono text-xs text-slate-500 dark:text-slate-400"
+    >
+      in {parent_identifier(@run)}
+    </span>
+    """
+  end
+
+  defp refusal_line(%{reason: :github_not_linked}), do: "Connect GitHub to mark a task ready."
+  defp refusal_line(%{identifier: identifier, reason: reason}), do: "#{identifier} is not marked ready. #{why(reason)}"
+
+  defp why(:stage_running), do: "An agent is working on it again."
+  defp why(:fix_plan_waiting), do: "Its fix plan waits on approval."
+  defp why(:no_pull_request), do: "It has no pull request yet."
+  defp why(:not_found), do: "It is not in a project you can open."
+  defp why({:invalid_stage, stage}), do: "It is at #{Task.stage_label(stage)}."
 
   # A child of a split is named with its parent, which is what the person planned.
   defp parent_identifier(%Run{task: %Task{parent_task: %Task{issue: %{identifier: identifier}}}}), do: identifier
