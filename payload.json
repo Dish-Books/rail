@@ -1,0 +1,24 @@
+{
+  "spec": 3,
+  "tree": "1972a01ad06284d6e92591280e4fbd21bfc4e14a",
+  "commit": "5680348c64067390a0220112db2ff80bd0e704f3",
+  "ran_at": "2026-11-24T21:28:17Z",
+  "ran_by": "paulo@dishbooks.com",
+  "tools": {
+    "elixir": "1.20.5",
+    "otp": "29",
+    "node": "26.13.1",
+    "pnpm": "12.23.0"
+  },
+  "gates": [
+    "compile",
+    "format",
+    "credo",
+    "deps.audit",
+    "sobelow",
+    "assets",
+    "tests",
+    "biome",
+    "credo_subproject"
+  ]
+}
