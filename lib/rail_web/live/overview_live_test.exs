@@ -1,6 +1,8 @@
 defmodule RailWeb.OverviewLiveTest do
   use RailWeb.ConnCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
+  import Ecto.Query
   import Phoenix.LiveViewTest
   import Rail.Pipeline.Utils.BuildTask
 
@@ -12,6 +14,8 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.StartCurator
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -394,6 +398,155 @@ defmodule RailWeb.OverviewLiveTest do
       refute has_element?(view, "#review-queue-row-#{reviewing.issue.identifier}")
       refute has_element?(view, "#review-queue-row-#{unmarked.issue.identifier}")
       refute has_element?(view, "#{row} button")
+    end
+
+    test "Finalize on an Up next row marks the task ready there, and every other Overview hears it", %{
+      conn: conn,
+      user: %{id: user_id},
+      roles: roles,
+      rival: rival,
+      task_for: task_for
+    } do
+      %Task{id: task_id} = task = task_for.("Comments go as one round", %{stage: :finalize, pr_number: 151})
+      {:ok, rival} = Users.update_user(system_scope(), rival, %{admin: true})
+      now = DateTime.utc_now()
+      done = %{role_id: roles[:review_lead].id, status: :finished, stage_outcome: :done, started_at: now}
+      {:ok, %Run{id: run_id}} = Pipeline.create_run(Map.put(done, :task_id, task.id))
+      row = "#up-next-finalize-row-#{run_id}"
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+      assert {:ok, other, _html} = live(conn, ~p"/")
+      assert {:ok, rivals, _html} = live(log_in_user(build_conn(), rival), ~p"/?everyone=true")
+      assert has_element?(view, "#{row} a[href='/tasks/#{task_id}']", "Comments go as one round")
+      assert has_element?(rivals, row)
+
+      view |> element("#up-next-finalize-#{run_id}") |> render_click()
+
+      refute has_element?(view, row)
+      refute has_element?(view, "#up-next-error")
+      assert has_element?(view, "#review-queue-row-#{task.issue.identifier}", "marked by overview_queue_user")
+      assert %Task{marked_ready_by_id: ^user_id} = Repo.reload!(task)
+      assert_enqueued(worker: StartCurator, args: %{task_id: task_id})
+
+      for page <- [other, rivals] do
+        refute has_element?(page, row)
+        assert has_element?(page, "#review-queue-row-#{task.issue.identifier}", "marked by overview_queue_user")
+      end
+    end
+
+    test "a Finalize on a tab that has not heard of the mark keeps the first one", %{
+      conn: conn,
+      roles: roles,
+      rival: %{id: rival_id},
+      task_for: task_for
+    } do
+      %Task{id: task_id} = task = task_for.("Comments go as one round", %{stage: :finalize, pr_number: 151})
+      now = DateTime.utc_now()
+      done = %{role_id: roles[:review_lead].id, status: :finished, stage_outcome: :done, started_at: now}
+      {:ok, %Run{id: run_id}} = Pipeline.create_run(Map.put(done, :task_id, task.id))
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+      # Marked in another tab whose broadcast has not reached this one.
+      Repo.update_all(from(t in Task, where: t.id == ^task_id), set: [marked_ready_at: now, marked_ready_by_id: rival_id])
+
+      view |> element("#up-next-finalize-#{run_id}") |> render_click()
+
+      refute has_element?(view, "#up-next-finalize-row-#{run_id}")
+      refute has_element?(view, "#up-next-error")
+      assert has_element?(view, "#review-queue-row-#{task.issue.identifier}", "marked by overview_rival_user")
+      assert %Task{marked_ready_by_id: ^rival_id} = Repo.reload!(task)
+
+      # Gone from the page, the row's task marks nothing.
+      render_hook(view, "mark_ready", %{"task_id" => task_id})
+      assert %Task{marked_ready_by_id: ^rival_id} = Repo.reload!(task)
+    end
+
+    test "a Finalize on a task an agent works on again marks nothing, and the line goes once the agent is done", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      %Task{id: task_id} = task = task_for.("Comments go as one round", %{stage: :finalize, pr_number: 151})
+      now = DateTime.utc_now()
+      done = %{role_id: roles[:review_lead].id, status: :finished, stage_outcome: :done, started_at: now}
+      {:ok, %Run{id: run_id} = run} = Pipeline.create_run(Map.put(done, :task_id, task.id))
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+      # A comment resumed the review agent after this tab drew the row.
+      Repo.update_all(from(r in Run, where: r.id == ^run_id), set: [status: :running])
+
+      view |> element("#up-next-finalize-#{run_id}") |> render_click()
+
+      assert has_element?(
+               view,
+               "#up-next-error[role='alert']",
+               "#{task.issue.identifier} is not marked ready. An agent is working on it again."
+             )
+
+      refute has_element?(view, "#up-next-finalize-row-#{run_id}")
+      refute has_element?(view, "#review-queue-row-#{task.issue.identifier}")
+      assert %Task{marked_ready_at: nil} = Repo.reload!(task)
+
+      # Another task's news leaves the line, since this one's row is as it was.
+      Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, "tsk_elsewhere"})
+      assert has_element?(view, "#up-next-error")
+
+      {:ok, _done} = Pipeline.update_run(%{run | status: :running}, %{status: :finished, stage_outcome: :done})
+      Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, task_id})
+      assert has_element?(view, "#up-next-finalize-row-#{run_id}")
+      refute has_element?(view, "#up-next-error")
+    end
+
+    test "a Finalize on a task whose fix plan now waits marks nothing, and its row opens the plan", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      task = task_for.("Comments go as one round", %{stage: :finalize, pr_number: 151})
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+      now = DateTime.utc_now()
+      done = %{role_id: roles[:review_lead].id, status: :finished, stage_outcome: :done, started_at: now}
+      {:ok, %Run{id: run_id}} = Pipeline.create_run(Map.put(done, :task_id, task.id))
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+      path = Path.join([task.scratch_path, "fix_plans", "#{task.issue.identifier}.json"])
+      File.mkdir_p!(Path.dirname(path))
+      File.write!(path, Jason.encode!(%{round: 1, findings: [], comments: [], plan: "p", covered_comments: 0}))
+
+      view |> element("#up-next-finalize-#{run_id}") |> render_click()
+
+      assert has_element?(
+               view,
+               "#up-next-error",
+               "#{task.issue.identifier} is not marked ready. Its fix plan waits on approval."
+             )
+
+      # With nothing else waiting it leads, as a fix plan to approve does.
+      assert has_element?(view, "#up-next-featured-#{run_id}[href='/tasks/#{task.id}?item=fix_plan']", "Review")
+      refute has_element?(view, "#up-next-finalize-#{run_id}")
+      assert %Task{marked_ready_at: nil} = Repo.reload!(task)
+    end
+
+    test "a Finalize from someone without GitHub marks nothing and points them to Connected accounts", %{
+      roles: roles,
+      rival: rival,
+      task_for: task_for
+    } do
+      {:ok, rival} = Users.update_user(system_scope(), rival, %{admin: true})
+      {:ok, unlinked} = rival |> Ecto.Changeset.change(github_id: nil) |> Repo.update()
+      task = task_for.("Comments go as one round", %{stage: :finalize, pr_number: 151})
+      now = DateTime.utc_now()
+      done = %{role_id: roles[:review_lead].id, status: :finished, stage_outcome: :done, started_at: now}
+      {:ok, %Run{id: run_id}} = Pipeline.create_run(Map.put(done, :task_id, task.id))
+
+      assert {:ok, view, _html} = live(log_in_user(build_conn(), unlinked), ~p"/?everyone=true")
+      view |> element("#up-next-finalize-#{run_id}") |> render_click()
+
+      assert has_element?(view, "#up-next-error", "Connect GitHub to mark a task ready.")
+      assert has_element?(view, "#up-next-error a[href='/settings/connected-accounts']", "Connected accounts")
+      assert has_element?(view, "#up-next-finalize-row-#{run_id}")
+      assert %Task{marked_ready_at: nil} = Repo.reload!(task)
+      refute_enqueued(worker: StartCurator)
     end
 
     test "a fix round's plan joins Up next when the planning turn ends, and leaves it once approved, without a reload", %{
@@ -1612,7 +1765,8 @@ defmodule RailWeb.OverviewLiveTest do
 
       {:ok, _done} = Pipeline.update_run(resumed, %{status: :finished})
       assert {:ok, view, _html} = live(conn, ~p"/")
-      assert has_element?(view, "#up-next-finalize-row-#{run_id}[href='/tasks/#{task.id}']", "Finalize")
+      assert has_element?(view, "#up-next-finalize-row-#{run_id} a[href='/tasks/#{task.id}']", "review finished")
+      assert has_element?(view, "#up-next-finalize-#{run_id}", "Finalize")
       assert has_element?(view, "#in-progress-task-#{task.id}.bg-amber-50", "Ready to finalize")
 
       # Marked ready, it waits on a tech lead, so its owner's row, the stat and Up next all let it go.

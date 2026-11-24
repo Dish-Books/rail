@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.MarkReadyTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.StartCurator
+  alias Rail.Roles
   alias Rail.Scope
   alias Rail.Users
   alias Rail.Users.Schemas.User
@@ -75,7 +76,53 @@ defmodule Rail.Pipeline.Actions.MarkReadyTest do
 
     {:ok, _with_pr} = Pipeline.update_task(no_pr, %{pr_number: 151})
     assert {:error, :not_found} = Pipeline.mark_ready(Scope.for_user(%{dan | project_ids: []}), task)
+    assert {:error, :not_found} = Pipeline.mark_ready(Scope.for_user(dan), %Task{id: "tsk_deleted_since"})
     assert %Task{marked_ready_at: nil} = Repo.reload!(task)
     assert [] = all_enqueued(worker: StartCurator)
+  end
+
+  test "someone without GitHub is refused, read again in case they disconnected since the page loaded", %{
+    task: task,
+    dan: dan
+  } do
+    {:ok, unlinked} = dan |> Ecto.Changeset.change(github_id: nil) |> Repo.update()
+
+    assert {:error, :github_not_linked} = Pipeline.mark_ready(Scope.for_user(dan), task)
+    assert {:error, :github_not_linked} = Pipeline.mark_ready(Scope.for_user(unlinked), task)
+    assert %Task{marked_ready_at: nil} = Repo.reload!(task)
+    assert [] = all_enqueued(worker: StartCurator)
+  end
+
+  test "a task an agent works on again is refused, though the curator reading it is not", %{
+    project: project,
+    task: task,
+    dan: dan,
+    dan_id: dan_id
+  } do
+    {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
+    {:ok, curator} = Roles.get_role(project_id: project.id, stage: :curator)
+    running = %{task_id: task.id, status: :running, started_at: DateTime.utc_now()}
+    {:ok, _reading} = Pipeline.create_run(Map.put(running, :role_id, curator.id))
+    {:ok, resumed} = Pipeline.create_run(Map.put(running, :role_id, lead.id))
+
+    assert {:error, :agent_working} = Pipeline.mark_ready(Scope.for_user(dan), task)
+    assert %Task{marked_ready_at: nil} = Repo.reload!(task)
+
+    {:ok, _done} = Pipeline.update_run(resumed, %{status: :finished, stage_outcome: :done})
+    assert {:ok, %Task{marked_ready_by_id: ^dan_id}} = Pipeline.mark_ready(Scope.for_user(dan), task)
+  end
+
+  test "a task whose fix plan waits on approval is refused", %{task: task, dan: dan} do
+    task = Repo.preload(task, :issue)
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    path = Path.join([task.scratch_path, "fix_plans", "#{task.issue.identifier}.json"])
+    File.mkdir_p!(Path.dirname(path))
+    File.write!(path, Jason.encode!(%{round: 1, findings: [], comments: [], plan: "p"}))
+
+    assert {:error, :fix_plan_waiting} = Pipeline.mark_ready(Scope.for_user(dan), task)
+    assert %Task{marked_ready_at: nil} = Repo.reload!(task)
+
+    File.write!(path, Jason.encode!(%{round: 1, findings: [], comments: [], plan: "p", approved_at: DateTime.utc_now()}))
+    assert {:ok, %Task{marked_ready_at: %DateTime{}}} = Pipeline.mark_ready(Scope.for_user(dan), task)
   end
 end

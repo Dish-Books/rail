@@ -103,8 +103,8 @@ defmodule RailWeb.Components.UpNextTest do
     assert html =~ "plan ready for review"
   end
 
-  # Marking ready is one click on Finalize, so the run never leads and its row opens the Finalize tab.
-  test "a task at Finalize nobody marked ready is a Finalize row that opens the Finalize tab", %{waiting: waiting} do
+  # Marking ready is one click on Finalize, so the run never leads, and the rest of its row opens the task unmarked.
+  test "a task at Finalize nobody marked ready is a row whose Finalize button marks it", %{waiting: waiting} do
     finalize = %{waiting.(:finalize) | id: "run_finalize", task_id: "tsk_finalize"}
     plan = waiting.(:plan)
 
@@ -112,9 +112,17 @@ defmodule RailWeb.Components.UpNextTest do
     row = html |> Floki.parse_fragment!() |> Floki.find("#up-next-finalize-row-run_finalize")
 
     assert html =~ "up-next-featured-run_plan"
-    assert ["/tasks/tsk_finalize"] = Floki.attribute(row, "href")
+
+    assert ["/tasks/tsk_finalize"] =
+             row |> Floki.find("a[title='Open UPN-1 without marking it']") |> Floki.attribute("href")
+
     assert Floki.text(row) =~ "review finished"
-    assert Floki.text(row) =~ "Finalize"
+
+    assert [{"button", _attrs, _children} = button] = Floki.find(row, "button#up-next-finalize-run_finalize")
+    assert ["mark_ready"] = Floki.attribute(button, "phx-click")
+    assert ["tsk_finalize"] = Floki.attribute(button, "phx-value-task_id")
+    assert ["Mark ready for a tech lead"] = Floki.attribute(button, "title")
+    assert button |> Floki.text() |> String.trim() == "Finalize"
 
     html = render_component(&UpNext.up_next/1, runs: [finalize])
     refute html =~ "up-next-featured"
@@ -522,5 +530,66 @@ defmodule RailWeb.Components.UpNextTest do
       # A flagged row in the cycle view reads the same place off the run alone.
       assert waiting_path(run) == href
     end
+  end
+
+  # Only Finalize acts on the spot; every other row, and a Finalize row whose fix plan waits, only opens the task.
+  test "no other row has a button", %{waiting: waiting, scratch: scratch} do
+    asked = %{
+      waiting.(:review)
+      | id: "run_asked",
+        status: :blocked_on_input,
+        stage_outcome: :in_progress,
+        questions: [%Question{status: :pending, prompt: "Which vendor field?"}]
+    }
+
+    failed = %{waiting.(:engineer) | id: "run_failed", stage_outcome: :in_progress, error: "It went wrong"}
+    rows = [waiting.(:plan), waiting.(:plan), waiting.(:engineer), asked, failed]
+    rows = Enum.with_index(rows, &%{&1 | id: "#{&1.id}_#{&2}"})
+
+    html = (&UpNext.up_next/1) |> render_component(runs: rows) |> Floki.parse_fragment!()
+    assert [] = Floki.find(html, "button")
+    assert 4 = html |> Floki.find("a[data-qa=up-next-row]") |> length()
+
+    lead = %{waiting.(:finalize) | role_id: "rol_lead", task: %{waiting.(:finalize).task | id: "tsk_finalize"}}
+    File.mkdir_p!(Path.join(scratch, "fix_plans"))
+    plan = %{round: 1, findings: [], comments: [], plan: "p", covered_comments: 0}
+    File.write!(Path.join(scratch, "fix_plans/UPN-1.json"), Jason.encode!(plan))
+
+    html = (&UpNext.up_next/1) |> render_component(runs: [waiting.(:plan), lead]) |> Floki.parse_fragment!()
+    assert [] = Floki.find(html, "button")
+
+    assert ["/tasks/tsk_finalize?item=fix_plan"] =
+             html |> Floki.find("#up-next-row-run_finalize") |> Floki.attribute("href")
+  end
+
+  test "a refused Finalize says why above the rows, with a way to connect GitHub when that is why", %{waiting: waiting} do
+    line = fn reason ->
+      (&UpNext.up_next/1)
+      |> render_component(runs: [waiting.(:finalize)], refusal: %{identifier: "UPN-1", reason: reason})
+      |> Floki.parse_fragment!()
+      |> Floki.find("#up-next-error[role=alert]")
+    end
+
+    assert [] =
+             (&UpNext.up_next/1) |> render_component(runs: []) |> Floki.parse_fragment!() |> Floki.find("#up-next-error")
+
+    for {reason, said} <- [
+          agent_working: "UPN-1 is not marked ready. An agent is working on it again.",
+          fix_plan_waiting: "UPN-1 is not marked ready. Its fix plan waits on approval.",
+          no_pull_request: "UPN-1 is not marked ready. It has no pull request yet.",
+          not_found: "UPN-1 is not marked ready. It is not in a project you can open.",
+          invalid_stage: "UPN-1 is not marked ready. It is at Merged."
+        ] do
+      error = line.(if reason == :invalid_stage, do: {:invalid_stage, :merged}, else: reason)
+      assert error |> Floki.text() |> String.split() |> Enum.join(" ") == said
+      assert [] = Floki.find(error, "a")
+    end
+
+    error = line.(:github_not_linked)
+
+    assert error |> Floki.text() |> String.split() |> Enum.join(" ") ==
+             "Connect GitHub to mark a task ready. Connected accounts"
+
+    assert ["/settings/connected-accounts"] = error |> Floki.find("a") |> Floki.attribute("href")
   end
 end
