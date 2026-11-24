@@ -24,6 +24,9 @@ defmodule Rail.Users do
   @decorate can?(resource: :users, action: :manage)
   defdelegate update_user(scope, user, attrs), to: Actions.UpdateUser
 
+  @decorate can?(resource: :users, action: :manage)
+  defdelegate remove_user(scope, user_id), to: Actions.RemoveUser
+
   @decorate can?(resource: :users, action: :list)
   defdelegate list_invites(scope), to: Actions.ListInvites
 

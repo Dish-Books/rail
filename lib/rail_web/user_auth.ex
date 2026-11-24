@@ -122,10 +122,13 @@ defmodule RailWeb.UserAuth do
   def on_mount(:require_authenticated, _params, session, socket) do
     socket = mount_current_scope(socket, session)
 
-    if socket.assigns[:current_scope] && socket.assigns.current_scope.user do
-      {:cont, socket}
-    else
-      {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/sign-in")}
+    case socket.assigns[:current_scope] do
+      %Scope{user: %User{id: id}} ->
+        if Phoenix.LiveView.connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "user:#{id}")
+        {:cont, Phoenix.LiveView.attach_hook(socket, :user_removed, :handle_info, &leave_when_removed/2)}
+
+      _signed_out ->
+        {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/sign-in")}
     end
   end
 
@@ -159,6 +162,10 @@ defmodule RailWeb.UserAuth do
     if Phoenix.LiveView.connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "users")
     {:cont, Phoenix.LiveView.attach_hook(socket, :require_github, :handle_info, &recheck_github/2)}
   end
+
+  # Removal deletes the session's token, so the full page load this redirect makes finds no one signed in.
+  defp leave_when_removed({:user_removed, _id}, socket), do: {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/sign-in")}
+  defp leave_when_removed(_message, socket), do: {:cont, socket}
 
   defp recheck_github({:users_changed, id}, %{assigns: %{current_scope: %Scope{user: %User{id: id}}}} = socket) do
     case Users.get_user(id: id) do

@@ -11,7 +11,11 @@ defmodule Rail.Users.Actions.ListTechLeads do
   """
   def list_tech_leads(project_id) when is_binary(project_id) do
     User
-    |> where([u], u.tech_lead and u.role != :support and (u.admin or ^project_id in u.project_ids))
+    # Removal clears tech_lead, but a reader should not have to know that.
+    |> where(
+      [u],
+      u.tech_lead and is_nil(u.removed_at) and u.role != :support and (u.admin or ^project_id in u.project_ids)
+    )
     |> order_by([u], asc: u.name, asc: u.login)
     |> Repo.all()
   end

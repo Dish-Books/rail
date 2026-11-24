@@ -313,12 +313,13 @@ defmodule RailWeb.UserAuthTest do
                UserAuth.on_mount(:require_authenticated, %{}, session, socket)
     end
 
-    test "require_authenticated continues when user is authenticated", %{user: user} do
+    test "require_authenticated continues when user is authenticated, watching for their removal", %{user: user} do
       user_token = Users.generate_user_session_token(user)
       session = %{"user_token" => user_token}
-      socket = %LiveView.Socket{endpoint: RailWeb.Endpoint}
+      socket = %LiveView.Socket{endpoint: RailWeb.Endpoint, private: %{live_temp: %{}, lifecycle: %LiveView.Lifecycle{}}}
 
-      assert {:cont, _socket} = UserAuth.on_mount(:require_authenticated, %{}, session, socket)
+      assert {:cont, %LiveView.Socket{private: %{lifecycle: %{handle_info: [%{id: :user_removed}]}}}} =
+               UserAuth.on_mount(:require_authenticated, %{}, session, socket)
     end
 
     test "require_admin continues when user is admin", %{user: user} do

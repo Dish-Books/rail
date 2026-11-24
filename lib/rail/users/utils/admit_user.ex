@@ -10,6 +10,7 @@ defmodule Rail.Users.Utils.AdmitUser do
   @doc """
   Lets a signed-in identity become a user, inside the caller's transaction: a returning user, the first one,
   or an open invite's address, whose role, projects and admin it grants. `register` creates or refreshes the user, rolling back when it cannot.
+  A removed user is not a returning one: only a new invite lets them back, and redeeming it restores them.
   """
   def admit_user(github_id, email, register) when is_function(register, 0) do
     cond do
@@ -23,15 +24,22 @@ defmodule Rail.Users.Utils.AdmitUser do
   end
 
   defp existing_user?(github_id, email) do
-    (not blank?(github_id) and Repo.exists?(from u in User, where: u.github_id == ^github_id)) or
-      (not blank?(email) and Repo.exists?(from u in User, where: u.email == ^email))
+    active = from u in User, where: is_nil(u.removed_at)
+
+    (not blank?(github_id) and Repo.exists?(from u in active, where: u.github_id == ^github_id)) or
+      (not blank?(email) and Repo.exists?(from u in active, where: u.email == ^email))
   end
 
   defp open_invite(email), do: Repo.one(from i in Invite, where: i.email == ^email and is_nil(i.accepted_at))
 
   defp redeem(register, %Invite{} = invite) do
     user = if invite.admin, do: promote(register.()), else: register.()
-    user = user |> User.changeset(%{project_ids: invite.project_ids, role: invite.role}) |> Repo.update!()
+
+    user =
+      user
+      |> User.changeset(%{project_ids: invite.project_ids, role: invite.role})
+      |> Ecto.Changeset.change(removed_at: nil)
+      |> Repo.update!()
 
     # Two server-side fields on a row just read, so a failure here is a bug, not a refused sign-in.
     invite

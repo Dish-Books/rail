@@ -15,6 +15,8 @@ defmodule Rail.Users.Actions.GetUserBySessionToken do
         join: user in assoc(t, :user),
         where: t.token == ^hashed and t.context == "session",
         where: t.inserted_at > ^cutoff,
+        # Removal deletes the tokens too; this holds if one is minted for a removed user anyway.
+        where: is_nil(user.removed_at),
         select: {user, t.inserted_at}
 
     Repo.one(query)

@@ -76,8 +76,12 @@ defmodule Rail.Workflows.Utils.OpenWorkflowIssue do
 
   defp owner_user_id(%Workflow{definition: %WorkflowDefinition{assignee: login}} = workflow) do
     case Users.list_users_by_logins([login]) do
-      [%User{id: id}] ->
+      [%User{id: id, removed_at: nil}] ->
         id
+
+      [%User{}] ->
+        Logger.warning("#{workflow.project.name}'s #{workflow.path} assigns #{login}, who was removed from Rail")
+        nil
 
       [] ->
         Logger.warning("#{workflow.project.name}'s #{workflow.path} assigns #{login}, who has no Rail account")

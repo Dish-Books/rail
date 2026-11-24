@@ -443,17 +443,64 @@ defmodule RailWeb.Settings.UsersLiveTest do
     assert Repo.get(Invite, invite_id) == nil
   end
 
-  test "an accepted invite cannot be revoked from the list", %{admin_conn: conn, admin_scope: scope} do
+  test "an accepted invite is left off the list, and cannot be revoked", %{admin_conn: conn, admin_scope: scope} do
     assert {:ok, %Invite{id: invite_id} = invite} = Users.invite_user(scope, %{email: "accepted-users-live@example.com"})
     assert {:ok, _updated} = invite |> Invite.changeset(%{accepted_at: DateTime.utc_now()}) |> Repo.update()
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/users")
 
-    assert has_element?(view, "#invite-status-#{invite_id}", "Accepted")
-    refute has_element?(view, "#revoke-invite-button-#{invite_id}")
+    refute has_element?(view, "#invite-row-#{invite_id}")
+    assert has_element?(view, "#invites-empty", "No pending invites.")
 
     render_click(view, "revoke_invite", %{"invite_id" => invite_id})
     assert has_element?(view, "#users-error-text", "That invite has already been accepted.")
+  end
+
+  test "an admin removes a person from their sheet, who leaves the list and is signed out", %{
+    admin_conn: conn,
+    regular_conn: regular_conn,
+    regular_user: regular_user
+  } do
+    assert {:ok, regular_view, _html} = live(regular_conn, ~p"/settings/connected-accounts")
+    assert {:ok, view, _html} = live(conn, ~p"/settings/users")
+
+    view |> element("#user-row-#{regular_user.id}") |> render_click()
+    assert has_element?(view, "#remove-user-button[data-confirm*='Regular User']")
+
+    view |> element("#remove-user-button") |> render_click()
+
+    refute has_element?(view, "#user-row-#{regular_user.id}")
+    refute has_element?(view, "#user-sheet")
+    assert %User{removed_at: %DateTime{}} = Repo.get(User, regular_user.id)
+
+    assert_redirect(regular_view, ~p"/sign-in")
+    assert {:error, {:redirect, %{to: "/sign-in"}}} = live(regular_conn, ~p"/settings/connected-accounts")
+  end
+
+  test "your own sheet has no Remove, and a crafted removal of yourself says why", %{
+    admin_conn: conn,
+    admin_user: admin_user
+  } do
+    assert {:ok, view, _html} = live(conn, ~p"/settings/users")
+
+    view |> element("#user-row-#{admin_user.id}") |> render_click()
+    refute has_element?(view, "#remove-user-button")
+
+    render_click(view, "remove_user", %{"user_id" => admin_user.id})
+    assert has_element?(view, "#users-error-text", "You cannot remove yourself.")
+    assert has_element?(view, "#user-row-#{admin_user.id}")
+  end
+
+  test "surfaces removal failures", %{admin_conn: conn, regular_user: regular_user} do
+    assert {:ok, view, _html} = live(conn, ~p"/settings/users")
+
+    expect(Users, :remove_user, fn _scope, _id -> {:error, :not_authorized} end)
+    render_click(view, "remove_user", %{"user_id" => regular_user.id})
+    assert has_element?(view, "#users-error-text", "You are not authorized to remove users.")
+
+    expect(Users, :remove_user, fn _scope, _id -> {:error, :not_found} end)
+    render_click(view, "remove_user", %{"user_id" => regular_user.id})
+    assert has_element?(view, "#users-error-text", "That user was already removed.")
   end
 
   test "surfaces a bad email address", %{admin_conn: conn} do
