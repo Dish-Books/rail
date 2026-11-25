@@ -19,9 +19,10 @@ Create it in the org: Settings > Developer settings > GitHub Apps > New GitHub A
   | Pull requests | Read and write | open, update, mark ready, read reviews |
   | Issues | Read and write | GitHub-tracked projects: issues, comments, `rail:` labels |
   | Workflows | Read and write | only if agents may edit `.github/workflows`; GitHub refuses those pushes without it |
+  | Checks | Read | CodeRabbit's check run, which says when a review Rail asked for is done |
   | Metadata | Read | set by GitHub |
 
-- Subscribe to events: **Issues**, **Issue comment** and **Pull request**, the last so a merge on GitHub finishes a Rail-tracked ticket.
+- Subscribe to events: **Issues**, **Issue comment**, **Pull request**, so a merge on GitHub finishes a Rail-tracked ticket, and **Check run**, so Rail hears when CodeRabbit finishes a review.
 - Where can it be installed: only this account.
 
 Then on the App's page:
@@ -66,6 +67,8 @@ Outside Rail none of these is set, so nothing changes for people.
 **A setup script.** It runs once in each new task's checkout, from its root, before any agent starts there, except Plan's, which starts beside it. It should leave a checkout that can compile, test and serve: fetch dependencies, install assets, create and migrate the databases. Copying `deps`, `_build` and `node_modules` from the project's clone at `$RAIL_CLONE_PATH` (`cp -a --reflink=auto`) makes the first compile incremental. A task's checkout is a clone of its own, so `git worktree list` there lists only the task. Find the project's clone through `RAIL_CLONE_PATH`, and never treat a checkout as the main one while `RAIL_WORKTREE_SLOT` is set. Commit it executable (`chmod +x`); Rail runs it as `./<path>`.
 
 **A CI command.** What Rail runs on every commit the engineer finishes, before it is pushed, for example `mix test`.
+
+**CodeRabbit (optional).** Install the CodeRabbit GitHub App on the repository and commit a `.coderabbit.yaml` that turns automatic reviews off (`reviews.auto_review.enabled: false`), as Rail's own does. Rail pushes every round, and each push would otherwise spend a review from the hourly allowance. A person asks for a review from the task page instead, with a comment from their own GitHub account, so they need GitHub connected. Leave `reviews.review_progress` on: its check run is how Rail knows the review is done.
 
 **Prompts (optional).** A stage runs `.rail/prompts/<stage>.md` from the repository's default branch when it exists, and the role's own prompt otherwise.
 

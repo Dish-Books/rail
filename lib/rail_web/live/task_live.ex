@@ -117,6 +117,9 @@ defmodule RailWeb.TaskLive do
       |> assign(:conversation_questions, [])
       |> assign(:suggestions, %{})
       |> assign(:discard_open, false)
+      |> assign(:coderabbit_open, false)
+      |> assign(:coderabbit_reviews, [])
+      |> assign(:coderabbit_error, nil)
       |> assign(:discarding, false)
       |> assign(:discard_error, nil)
       |> assign(:discard_choice, :discard)
@@ -324,6 +327,14 @@ defmodule RailWeb.TaskLive do
       </div>
     </Layouts.app>
 
+    <.coderabbit_dialog
+      :if={@coderabbit_open and @task != nil}
+      task={@task}
+      reviews={@coderabbit_reviews}
+      login={@current_scope.user && @current_scope.user.login}
+      error={@coderabbit_error}
+    />
+
     <.discard_dialog
       :if={@discard_open and @task != nil}
       task={@task}
@@ -354,6 +365,44 @@ defmodule RailWeb.TaskLive do
       |> assign(:discard_choice, :discard)
 
     {:noreply, socket}
+  end
+
+  # Read as it opens, so a review someone else asked for meanwhile holds Ask CodeRabbit.
+  def handle_event("open_coderabbit", _params, socket) do
+    socket =
+      socket
+      |> assign(:coderabbit_open, true)
+      |> assign(:coderabbit_error, nil)
+      |> assign(:coderabbit_reviews, Pipeline.list_coderabbit_reviews(socket.assigns.task))
+
+    {:noreply, socket}
+  end
+
+  def handle_event("close_coderabbit", _params, socket) do
+    socket =
+      socket
+      |> assign(:coderabbit_open, false)
+      |> assign(:coderabbit_error, nil)
+
+    {:noreply, socket}
+  end
+
+  def handle_event("request_coderabbit", _params, socket) do
+    %{current_scope: scope, task: task} = socket.assigns
+
+    case Pipeline.request_coderabbit_review(scope, task) do
+      {:ok, _review} ->
+        socket = socket |> assign(:coderabbit_open, false) |> refresh_task()
+        {:noreply, socket}
+
+      {:error, reason} ->
+        socket =
+          socket
+          |> assign(:coderabbit_error, coderabbit_error(reason))
+          |> assign(:coderabbit_reviews, Pipeline.list_coderabbit_reviews(task))
+
+        {:noreply, socket}
+    end
   end
 
   def handle_event("pick_discard", _params, %{assigns: %{discarding: true}} = socket), do: {:noreply, socket}
@@ -1484,6 +1533,20 @@ defmodule RailWeb.TaskLive do
     |> assign(:discard_error, nil)
     |> assign(:discard_stopped, false)
   end
+
+  defp coderabbit_error(:coderabbit_pending), do: "CodeRabbit is already reviewing this pull request."
+  defp coderabbit_error(:no_github_token), do: "Connect GitHub in Connected accounts to ask CodeRabbit. Nothing was sent."
+  defp coderabbit_error(:no_pull_request), do: "This task has no pull request yet."
+  defp coderabbit_error(:no_worktree), do: "This task's checkout is gone, so there is no commit to review."
+  defp coderabbit_error(:cleaned_up), do: "This task is cleaned up."
+  defp coderabbit_error(:merged), do: "This task is already merged."
+  defp coderabbit_error(:merging), do: "A merge is under way."
+  defp coderabbit_error(:not_found), do: "This task is not in a project you can open."
+  defp coderabbit_error({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}."
+  defp coderabbit_error({:github_api_error, _status, %{"message" => said}}), do: "GitHub refused the comment: #{said}"
+  # coveralls-ignore-start (a refusal nobody has written a sentence for yet)
+  defp coderabbit_error(reason), do: "That did not go through: #{inspect(reason)}"
+  # coveralls-ignore-stop
 
   defp discard_error(:plan, :not_discardable, _stopped),
     do: "This task already went back to Plan, or was discarded or cleaned up."

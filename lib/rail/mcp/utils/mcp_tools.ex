@@ -406,7 +406,7 @@ defmodule Rail.Mcp.Utils.McpTools do
           "kind" => %{"type" => "string", "enum" => ["code", "screen"], "description" => "In the diff, or on screen."},
           "raised_by" => %{
             "type" => "string",
-            "enum" => ["code_reviewer", "explorer", "review_lead"],
+            "enum" => ["code_reviewer", "explorer", "review_lead", "coderabbit"],
             "description" => "Who found it."
           },
           "title" => %{

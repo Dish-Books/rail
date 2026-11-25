@@ -7,7 +7,7 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
 
   @human_prefix ~r/^\[human(?::([^\]\s]+))?\]\s*/
   @human_image ~r/^\[human-image(?::([^\]\s]+))?\] (\S+)$/
-  @reminder_prefix ~r/^\[(reminder \d+ of \d+|answered from past answers)\]\s*/
+  @reminder_prefix ~r/^\[(reminder \d+ of \d+|answered from past answers|CodeRabbit review)\]\s*/
   @subagent_call ~r/^\[subagent ([^\]\s]+)\] ([^·]*?)\s*·\s?(.*)$/
   @subagent_end ~r/^\[subagent end ([^\]\s]+)\]\s?(.*)$/
   @within ~r/^\[within ([^\]\s]+)\] (.*)$/

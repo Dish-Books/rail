@@ -10,7 +10,8 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
 
   A review that leaves nothing to rule, nothing to fix and no plan finishes by itself, taking the pull request out
   of draft. A message the human queued holds it, as anyone's unsent finding, diff or screen comment does: they
-  have more to say. So does a finding ruled New issue and not yet filed, since only a person's Send files it.
+  have more to say. So does a finding ruled New issue and not yet filed, since only a person's Send files it, and a
+  CodeRabbit review still waiting, whose comments come to the lead when it answers.
   """
 
   import Ecto.Query
@@ -18,6 +19,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
 
   alias Rail.Git
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.CoderabbitReview
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FindingComment
@@ -51,7 +53,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
       plan != nil or run.pending_chat != nil or List.last(passes).finished_at != nil ->
         run
 
-      waiting_on_person?(findings, task) ->
+      waiting_on_person?(findings, task) or coderabbit_pending?(task) ->
         run
 
       true ->
@@ -62,6 +64,14 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
   # Only a person's Send files a New issue finding, so one unfiled waits on them as an unruled one does.
   defp waiting_on_person?(findings, %Task{} = task),
     do: Enum.any?(findings, &(Finding.undecided?(&1) or Finding.awaiting_issue?(&1))) or unsent_comments?(task)
+
+  defp coderabbit_pending?(%Task{} = task) do
+    Repo.exists?(
+      from r in CoderabbitReview,
+        where:
+          r.task_id == ^task.id and r.project_id == ^task.project_id and r.status in ^CoderabbitReview.pending_statuses()
+    )
+  end
 
   defp unsent_comments?(%Task{id: task_id}) do
     Repo.exists?(from c in FindingComment, where: c.task_id == ^task_id and c.status == :unsent) or

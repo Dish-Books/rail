@@ -38,6 +38,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate due_label(assigns), to: Components.DueLabel
   defdelegate demo_player(assigns), to: Components.DemoPlayer
   defdelegate discard_dialog(assigns), to: Components.DiscardDialog
+  defdelegate coderabbit_dialog(assigns), to: Components.CoderabbitDialog
   defdelegate dispatch_banner(assigns), to: Components.DispatchBanner
   defdelegate document_comment(assigns), to: Components.DocumentComment
   defdelegate element_preview(assigns), to: Components.ElementPreview

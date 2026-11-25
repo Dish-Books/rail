@@ -1,0 +1,4 @@
+# Rail asks CodeRabbit for each review from the task page, so a push never spends the hourly allowance.
+reviews:
+  auto_review:
+    enabled: false

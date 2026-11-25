@@ -96,6 +96,11 @@ defmodule Rail.Pipeline do
 
   defdelegate list_approvals(task), to: Actions.ListApprovals
 
+  defdelegate request_coderabbit_review(scope, task), to: Actions.RequestCoderabbitReview
+  defdelegate handle_coderabbit_check(project, payload), to: Actions.HandleCoderabbitCheck
+  defdelegate time_out_coderabbit_review(review_id), to: Actions.TimeOutCoderabbitReview
+  defdelegate list_coderabbit_reviews(task), to: Actions.ListCoderabbitReviews
+
   defdelegate write_qa_checklist(task, checks), to: Actions.WriteQaChecklist
   defdelegate read_qa_checklist(task), to: Actions.ReadQaChecklist
   defdelegate record_qa_check(task, key, outcome, note \\ nil), to: Actions.RecordQaCheck

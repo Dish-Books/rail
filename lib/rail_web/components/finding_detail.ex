@@ -977,6 +977,7 @@ defmodule RailWeb.Components.FindingDetail do
 
   defp raised_by(%Finding{raised_by: :code_reviewer}), do: "Code reviewer"
   defp raised_by(%Finding{raised_by: :review_lead}), do: "Review lead"
+  defp raised_by(%Finding{raised_by: :coderabbit}), do: "CodeRabbit"
 
   defp raised_by(%Finding{raised_by: :explorer, evidence: evidence}) do
     case Enum.find_value(evidence, & &1.browser) do

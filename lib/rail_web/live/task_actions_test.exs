@@ -9,6 +9,7 @@ defmodule RailWeb.Live.TaskActionsTest do
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.CoderabbitReview
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
@@ -1050,6 +1051,121 @@ defmodule RailWeb.Live.TaskActionsTest do
       expect(Pipeline, :update_branch, fn _scope, _task -> {:error, :up_to_date} end)
       view |> element("#task-update") |> render_click()
       assert has_element?(view, "#task-actions-error[role='alert']", "The branch is already up to date.")
+    end
+  end
+
+  describe "CodeRabbit" do
+    # Nothing is asked of GitHub until the dialog is confirmed, so an accidental click spends no review.
+    test "a click opens a confirmation, and only its Ask CodeRabbit asks", %{
+      conn: conn,
+      task: %Task{id: task_id} = task,
+      dan: dan
+    } do
+      assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+      refute has_element?(view, "#task-coderabbit-count")
+      assert has_element?(view, "#task-coderabbit[title*='goes back to Review']", "CodeRabbit review")
+
+      view |> element("#task-coderabbit") |> render_click()
+      assert has_element?(view, "#coderabbit-dialog", "Ask CodeRabbit to review PR #151?")
+      assert has_element?(view, "#coderabbit-finalize", "Takes the task back to Review")
+
+      view |> element("#cancel-coderabbit") |> render_click()
+      refute has_element?(view, "#coderabbit-dialog")
+
+      view |> element("#task-coderabbit") |> render_click()
+      expect(Pipeline, :request_coderabbit_review, fn _scope, %Task{id: ^task_id} -> {:ok, %CoderabbitReview{}} end)
+      view |> element("#confirm-coderabbit") |> render_click()
+      refute has_element?(view, "#coderabbit-dialog")
+    end
+
+    test "a refusal stays in the dialog, and one because a review is waiting holds Ask CodeRabbit", %{
+      conn: conn,
+      task: task,
+      dan: dan
+    } do
+      assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+      view |> element("#task-coderabbit") |> render_click()
+
+      refusals = [
+        {:no_github_token, "Connect GitHub in Connected accounts to ask CodeRabbit. Nothing was sent."},
+        {:no_pull_request, "This task has no pull request yet."},
+        {:no_worktree, "This task's checkout is gone, so there is no commit to review."},
+        {:cleaned_up, "This task is cleaned up."},
+        {:merged, "This task is already merged."},
+        {:merging, "A merge is under way."},
+        {:not_found, "This task is not in a project you can open."},
+        {{:invalid_stage, :engineer}, "This task is at Implement."},
+        {{:github_api_error, 403, %{"message" => "Forbidden"}}, "GitHub refused the comment: Forbidden"}
+      ]
+
+      for {reason, said} <- refusals do
+        expect(Pipeline, :request_coderabbit_review, fn _scope, _task -> {:error, reason} end)
+        view |> element("#confirm-coderabbit") |> render_click()
+        assert has_element?(view, "#coderabbit-error[role='alert']", said)
+      end
+
+      # Someone else asked while this dialog was open.
+      Repo.insert!(%CoderabbitReview{
+        project_id: task.project_id,
+        task_id: task.id,
+        pr_number: 151,
+        round: 1,
+        head_sha: String.duplicate("f", 40),
+        command: :full
+      })
+
+      expect(Pipeline, :request_coderabbit_review, fn _scope, _task -> {:error, :coderabbit_pending} end)
+      view |> element("#confirm-coderabbit") |> render_click()
+      assert has_element?(view, "#coderabbit-error", "CodeRabbit is already reviewing this pull request.")
+      assert has_element?(view, "#coderabbit-waiting")
+      assert has_element?(view, "#confirm-coderabbit[disabled]")
+
+      render_keydown(view, "close_coderabbit", %{"key" => "Escape"})
+      refute has_element?(view, "#coderabbit-dialog")
+    end
+
+    test "counts the reviews the pull request has had, and while one is waiting nobody can ask again", %{
+      conn: conn,
+      task: task,
+      dan: dan,
+      priya: priya
+    } do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+      head = String.duplicate("f", 40)
+      base = %CoderabbitReview{project_id: task.project_id, task_id: task.id, pr_number: 151, head_sha: head}
+
+      Repo.insert!(%{base | round: 1, command: :full, status: :done, comment_count: 3, requested_by_id: priya.id})
+      Repo.insert!(%{base | round: 2, command: :incremental, status: :reviewing})
+
+      assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#task-coderabbit-count", "CodeRabbit ×2")
+
+      assert has_element?(
+               view,
+               "#task-coderabbit-count[title*='Round 1, fffffff: Done, 3 comments, asked by Priya Raman']"
+             )
+
+      assert has_element?(view, "#task-coderabbit-count[title*='Round 2, fffffff: Reviewing, asked by someone']")
+      assert has_element?(view, "#task-coderabbit[disabled][title^='CodeRabbit is reviewing']", "CodeRabbit reviewing…")
+    end
+
+    test "at Review it asks without moving the task, and a merged task offers none", %{
+      conn: conn,
+      task: task,
+      dan: dan
+    } do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+      assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+
+      assert has_element?(
+               view,
+               "#task-coderabbit[title='Ask CodeRabbit to review the pull request from your GitHub account.']"
+             )
+
+      {:ok, task} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
+      assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+      refute has_element?(view, "#task-coderabbit")
     end
   end
 

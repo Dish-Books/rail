@@ -369,7 +369,7 @@ defmodule Rail.Pipeline.Schemas.FindingTest do
   test "the lists a reader groups and labels by" do
     assert Finding.severities() == [:blocker, :major, :minor, :nit]
     assert Finding.kinds() == [:code, :screen]
-    assert Finding.raised_by() == [:code_reviewer, :explorer, :review_lead]
+    assert Finding.raised_by() == [:code_reviewer, :explorer, :review_lead, :coderabbit]
     assert Enum.map(Finding.severities(), &Finding.severity_label/1) == ["Blocker", "Major", "Minor", "Nit"]
     refute Finding.markup?(nil)
   end

@@ -92,4 +92,22 @@ defmodule RailWeb.GithubWebhookControllerTest do
 
     assert %Issue{state: :done} = Repo.get!(Issue, issue_id)
   end
+
+  test "hands a project's check runs to the pipeline, which ignores one it is not waiting on", %{
+    conn: conn,
+    sign: sign,
+    project: project
+  } do
+    check =
+      Jason.encode!(%{
+        "action" => "completed",
+        "check_run" => %{"name" => "CodeRabbit", "app" => %{"slug" => "coderabbitai"}, "pull_requests" => []},
+        "repository" => %{"full_name" => project.github_repo},
+        "installation" => %{"id" => project.github_installation_id}
+      })
+
+    assert conn |> sign.(check, "check_run") |> post(~p"/webhooks/github", check) |> json_response(200) == %{
+             "received" => true
+           }
+  end
 end
