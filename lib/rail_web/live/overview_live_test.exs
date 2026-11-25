@@ -11,6 +11,7 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.CoderabbitReview
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
@@ -1688,6 +1689,52 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']", "Review running")
       # Starting the round reopened the lead's run, but it had handed its round over before that.
       assert has_element?(view, "#activity-ended-#{last_round.id}", "is ready for review")
+    end
+
+    # CodeRabbit's answer goes to the lead, so the task is at work until it comes, as with an agent running.
+    test "a Review task leaves Up next while CodeRabbit reviews it, and comes back when it answers", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      task = task_for.("Asked CodeRabbit", %{stage: :review, pr_number: 151})
+
+      {:ok, lead} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:review_lead].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.shift(now, hour: -1),
+          completed_at: now
+        })
+
+      review =
+        Repo.insert!(%CoderabbitReview{
+          project_id: task.project_id,
+          task_id: task.id,
+          pr_number: 151,
+          round: 1,
+          head_sha: String.duplicate("c", 40),
+          command: :full
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#up-next-empty")
+      refute has_element?(view, "#up-next-featured-#{lead.id}")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
+      refute has_element?(view, "#attention-badge")
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']", "CodeRabbit reviewing")
+
+      review |> CoderabbitReview.status_changeset(:done, %{comment_count: 2}) |> Repo.update!()
+      Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, task.id})
+
+      assert has_element?(view, "#up-next-featured-#{lead.id}")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='done']")
+      refute has_element?(view, "#in-progress-task-#{task.id}", "CodeRabbit reviewing")
     end
 
     test "a Review round whose QA failed waits on QA, not on its lead's last run", %{

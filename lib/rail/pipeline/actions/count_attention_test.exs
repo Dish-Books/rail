@@ -7,6 +7,7 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.CoderabbitReview
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
@@ -124,6 +125,40 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
         started_at: DateTime.utc_now(),
         completed_at: DateTime.utc_now()
       })
+
+    assert Pipeline.count_attention() == 1
+  end
+
+  test "a task at Review waits on nobody while CodeRabbit reviews it, and on its owner once it answers", %{
+    roles: roles,
+    task_for: task_for
+  } do
+    task = task_for.(:review)
+
+    {:ok, _finished} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:review_lead].id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: DateTime.utc_now(),
+        completed_at: DateTime.utc_now()
+      })
+
+    review =
+      Repo.insert!(%CoderabbitReview{
+        project_id: task.project_id,
+        task_id: task.id,
+        pr_number: 151,
+        round: 1,
+        head_sha: String.duplicate("a", 40),
+        command: :full,
+        status: :reviewing
+      })
+
+    assert Pipeline.count_attention() == 0
+
+    review |> CoderabbitReview.status_changeset(:done, %{comment_count: 0}) |> Repo.update!()
 
     assert Pipeline.count_attention() == 1
   end
