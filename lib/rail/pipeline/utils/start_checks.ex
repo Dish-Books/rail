@@ -35,7 +35,7 @@ defmodule Rail.Pipeline.Utils.StartChecks do
   cleared and every checking run open again. Returns `:ok`. A role the project does not have starts nothing.
   """
   def start_checks(%Task{} = task) do
-    for role <- [:qa, :review], do: File.rm(Path.join([task.scratch_path, "reports", "#{role}.md"]))
+    for role <- [:qa, :review, :coderabbit], do: File.rm(Path.join([task.scratch_path, "reports", "#{role}.md"]))
 
     # A run done in the last round reads as not done in this one, so nothing waiting on it starts early.
     Repo.update_all(

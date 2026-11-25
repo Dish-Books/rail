@@ -234,6 +234,8 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
   defp raiser_role(%Finding{raised_by: :code_reviewer}), do: :review
   defp raiser_role(%Finding{raised_by: :explorer}), do: :qa
   defp raiser_role(%Finding{raised_by: :review_lead}), do: :review_lead
+  # CodeRabbit learns nothing from Rail, so the lead that chose to raise its comment does.
+  defp raiser_role(%Finding{raised_by: :coderabbit}), do: :review_lead
 
   defp why(parts), do: parts |> Enum.reject(&is_nil/1) |> Enum.join("\n\n")
 

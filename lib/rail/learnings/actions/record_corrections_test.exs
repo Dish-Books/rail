@@ -376,7 +376,11 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
     assert [%Observation{source_kind: :finding_comment, actor_id: ^user_id, excerpt: "Engineer tab\n1. Click Send"}] =
              Repo.all(from o in Observation, where: o.task_id == ^task_id)
 
-    for {raised_by, role, id} <- [{:explorer, :qa, "fcm_rc_2"}, {:review_lead, :review_lead, "fcm_rc_3"}] do
+    for {raised_by, role, id} <- [
+          {:explorer, :qa, "fcm_rc_2"},
+          {:review_lead, :review_lead, "fcm_rc_3"},
+          {:coderabbit, :review_lead, "fcm_rc_4"}
+        ] do
       raised = %{comment | id: id, finding: %{finding | raised_by: raised_by}}
       assert {:ok, [%Learning{roles: [^role]}]} = Learnings.record_corrections(task, [raised])
     end

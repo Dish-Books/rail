@@ -7,6 +7,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.CoderabbitReview
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles
@@ -143,6 +144,40 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
 
     assert %Run{error: nil} = review_run_finished(%{run | pending_chat: "One more thing"}, [])
     assert [%{finished_at: nil}] = Pipeline.read_review(task)
+  end
+
+  test "a CodeRabbit review still waiting holds the review open, and it finishes once CodeRabbit answers", %{
+    task: task,
+    run: run,
+    head: head
+  } do
+    {:ok, _closed} = Pipeline.save_review(task)
+
+    waiting =
+      Repo.insert!(%CoderabbitReview{
+        project_id: task.project_id,
+        task_id: task.id,
+        pr_number: 42,
+        round: 1,
+        head_sha: head,
+        command: :full
+      })
+
+    assert %Run{error: nil} = review_run_finished(run, [])
+    assert %Task{stage: :review} = Repo.reload!(task)
+
+    {:ok, _done} = waiting |> CoderabbitReview.status_changeset(:done) |> Repo.update()
+
+    Req.Test.expect(Client, 3, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/1/access_tokens"} -> Req.Test.json(conn, %{"token" => "ghs_token"})
+        {"GET", "/repos/example/test-seed/pulls/42"} -> Req.Test.json(conn, %{"number" => 42, "node_id" => "PR_42"})
+        {"POST", "/graphql"} -> Req.Test.json(conn, %{"data" => %{"markPullRequestReadyForReview" => %{}}})
+      end
+    end)
+
+    assert %Run{error: nil} = review_run_finished(run, [])
+    assert %Task{stage: :finalize} = Repo.reload!(task)
   end
 
   # Send or Finish review is theirs, so nobody's comments are left behind a review that finished itself.

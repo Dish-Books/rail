@@ -35,7 +35,8 @@ defmodule Rail.Pipeline.Actions.SendMessage do
   @attachment_name ~r/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|jpeg|gif|webp)\z/
 
   @doc """
-  Sends `text` to `run` from the scope's user or, with `from: :past_answers`, from Rail answering out of past answers.
+  Sends `text` to `run` from the scope's user or, with `from: :past_answers`, from Rail answering out of past answers,
+  or with `from: :coderabbit`, from Rail passing on a CodeRabbit review.
 
   `images:` takes `%{name:, data:}` pictures, kept in the task's scratch folder for the agent to read, and
   `attachments:` the names of pictures an earlier send kept there, which go first; with either, `text` may be blank. Returns `{:ok, :sent, run}` when it went out, `{:ok, :queued, run}` when the agent is still
@@ -130,6 +131,7 @@ defmodule Rail.Pipeline.Actions.SendMessage do
     {tag, image_tag} =
       cond do
         from == :past_answers -> {"[answered from past answers]", "[human-image]"}
+        from == :coderabbit -> {"[CodeRabbit review]", "[human-image]"}
         scope.user -> {"[human:#{scope.user.id}]", "[human-image:#{scope.user.id}]"}
         true -> {"[human]", "[human-image]"}
       end

@@ -1,11 +1,11 @@
 defmodule Rail.Pipeline.Actions.ReadReports do
   @moduledoc """
-  Reads the reports the engineer, QA and the code reviewer saved for the round a task is in.
+  Reads the reports the engineer, QA, the code reviewer and CodeRabbit saved for the round a task is in.
   """
 
   alias Rail.Pipeline.Schemas.Task
 
-  @roles [:engineer, :qa, :review]
+  @roles [:engineer, :qa, :review, :coderabbit]
 
   @doc """
   Returns `task`'s reports as a keyword list of `role: report`, in the order the roles work, leaving out a role

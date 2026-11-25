@@ -2,11 +2,12 @@ defmodule RailWeb.GithubWebhookController do
   @moduledoc """
   Receives the GitHub App's webhooks: checks the HMAC-SHA256 signature against the App's webhook
   secret, finds the project for the payload's repository and installation, and hands a genuine event
-  to `Rail.Issues` when it is a `pull_request`.
+  to `Rail.Issues` when it is a `pull_request` and to `Rail.Pipeline` when it is a `check_run`.
   """
   use RailWeb, :controller
 
   alias Rail.Issues
+  alias Rail.Pipeline
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
 
@@ -22,11 +23,14 @@ defmodule RailWeb.GithubWebhookController do
     repo = get_in(params, ["repository", "full_name"]) || ""
     event = List.first(get_req_header(conn, "x-github-event"))
 
-    # Only a merged pull request matters: it finishes the tickets it belongs to.
-    with "pull_request" <- event,
+    # A merged pull request finishes the tickets it belongs to, and CodeRabbit's check run ends a review Rail asked for.
+    with true <- event in ["pull_request", "check_run"],
          {:ok, %Project{} = project} <- Projects.get_project(github_repo: repo),
          true <- get_in(params, ["installation", "id"]) == project.github_installation_id do
-      Issues.handle_github_webhook(project, event, params)
+      if event == "check_run",
+        do: Pipeline.handle_coderabbit_check(project, params),
+        else: Issues.handle_github_webhook(project, event, params)
+
       json(conn, %{received: true})
     else
       _not_ours -> json(conn, %{ignored: true})

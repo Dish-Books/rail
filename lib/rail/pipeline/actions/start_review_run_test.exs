@@ -45,6 +45,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     File.mkdir_p!(Path.join(task.scratch_path, "reports"))
     File.write!(Path.join([task.scratch_path, "reports", "qa.md"]), "Saving twice shows two rows.")
     File.write!(Path.join([task.scratch_path, "reports", "review.md"]), "Nothing to report.")
+    File.write!(Path.join([task.scratch_path, "reports", "coderabbit.md"]), "lib/a.ex:3 compares tokens with ==.")
     design_dir = Path.join(task.scratch_path, "design")
     File.mkdir_p!(design_dir)
     File.write!(Path.join(design_dir, "manifest.json"), ~s({"options": [{"key": "cards", "title": "Cards"}]}))
@@ -59,6 +60,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       refute "--agents" in argv
       assert prompt =~ "The report QA saved this round:\n\n<report from=\"qa\">\nSaving twice shows two rows.\n</report>"
       assert prompt =~ "<report from=\"review\">\nNothing to report.\n</report>"
+      assert prompt =~ "The report CodeRabbit saved this round:\n\n<report from=\"coderabbit\">"
       refute prompt =~ "<report from=\"engineer\">"
       refute prompt =~ "REVIEW-DESIGN-MARKER"
       refute prompt =~ "data:image"

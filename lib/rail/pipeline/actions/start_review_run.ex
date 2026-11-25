@@ -78,7 +78,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     Findings:
 
     - One finding is one broken rule, with every place it applies listed in `places`, each a `file` with its `line` and `end_line` and a short `label`, or a `screen` with its `steps`. Two symptoms of one cause are one finding.
-    - `kind` is `code` for something in the diff and `screen` for something seen in the app. `raised_by` says who found it: `code_reviewer`, `explorer` or `review_lead`.
+    - `kind` is `code` for something in the diff and `screen` for something seen in the app. `raised_by` says who found it: `code_reviewer`, `explorer`, `review_lead`, or `coderabbit` for one from CodeRabbit's report.
     - `title` is at most 90 characters: the one thing that goes wrong, as the person it happens to would notice it. Name the screen, the button or the record in the app's own words, and leave function and module names to the places.
     - `problem` is at most four plain sentences, 500 characters, the problem first and its cause after. First what goes wrong: who does what and where, what happens, and what should happen instead, with the real value when there is one, such as the amount shown against the amount charged. Then the cause: the code that makes it happen, named exactly.
     - `fix` is at most two sentences, 300 characters, pointing the way rather than writing the patch. `why` is at most 200 characters on why to fix it or leave it. `rule` is at most 160 characters: the rule the change breaks.

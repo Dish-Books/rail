@@ -66,4 +66,5 @@ defmodule Rail.Pipeline.Utils.ChangeContext do
   defp who(:engineer), do: "the engineer"
   defp who(:qa), do: "QA"
   defp who(:review), do: "the code reviewer"
+  defp who(:coderabbit), do: "CodeRabbit"
 end

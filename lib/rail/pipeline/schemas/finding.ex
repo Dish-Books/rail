@@ -22,7 +22,7 @@ defmodule Rail.Pipeline.Schemas.Finding do
   alias Rail.Users.Schemas.User
 
   @kinds [:code, :screen]
-  @raised_by [:code_reviewer, :explorer, :review_lead]
+  @raised_by [:code_reviewer, :explorer, :review_lead, :coderabbit]
   @severities [:blocker, :major, :minor, :nit]
   @recommendations [:fix, :skip, :new_issue]
   @decisions [:fix, :skip, :new_issue]

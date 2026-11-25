@@ -312,6 +312,26 @@ defmodule Rail.GitHub.ClientTest do
     assert {:error, %Req.TransportError{}} = Client.approve_pull_request("gho_lead", "acme/app", 43)
   end
 
+  test "posts a top-level comment on a pull request as the token's holder" do
+    Req.Test.expect(Client, fn conn ->
+      assert {"POST", "/repos/acme/app/issues/43/comments"} = {conn.method, conn.request_path}
+      assert ["Bearer gho_dev"] = Plug.Conn.get_req_header(conn, "authorization")
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"body" => "@coderabbitai review"} = Jason.decode!(body)
+      conn |> Plug.Conn.put_status(201) |> Req.Test.json(%{"id" => 9001, "body" => "@coderabbitai review"})
+    end)
+
+    assert {:ok, %{"id" => 9001}} = Client.create_issue_comment("gho_dev", "acme/app", 43, "@coderabbitai review")
+
+    Req.Test.expect(Client, &(&1 |> Plug.Conn.put_status(403) |> Req.Test.json(%{"message" => "Forbidden"})))
+
+    assert {:error, {:github_api_error, 403, %{"message" => "Forbidden"}}} =
+             Client.create_issue_comment("gho_dev", "acme/app", 43, "@coderabbitai review")
+
+    Req.Test.expect(Client, &Req.Test.transport_error(&1, :econnrefused))
+    assert {:error, %Req.TransportError{}} = Client.create_issue_comment("gho_dev", "acme/app", 43, "x")
+  end
+
   describe "reading pull requests for learnings" do
     test "lists a page of pull requests with GitHub's own params" do
       Req.Test.expect(Client, fn conn ->

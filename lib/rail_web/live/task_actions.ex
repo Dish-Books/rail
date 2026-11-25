@@ -7,6 +7,7 @@ defmodule RailWeb.Live.TaskActions do
     waits on the lead's own unsent plan comments, which approving would delete;
   - a branch the default branch has moved past: Update, which merges it in as a round of its own;
   - a round QA skipped as changing nothing a person sees: Run QA anyway;
+  - a pull request at Review or Finalize: a CodeRabbit review from the reader's GitHub account, with how many it has had;
   - a review with nothing left to fix: Ready for review, then a tech lead's Approve and Merge, none of them while
     the review agent works or its fix plan waits, and Approve and Merge not until the task's learnings are decided.
 
@@ -16,6 +17,7 @@ defmodule RailWeb.Live.TaskActions do
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.CoderabbitReview
   alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
@@ -148,6 +150,30 @@ defmodule RailWeb.Live.TaskActions do
         <.icon name="pi-warning-fill" class="size-3.5" />
         {conflicts(@task.base_conflicts)} with {@task.project.default_branch}
       </span>
+
+      <span
+        :if={@coderabbit_reviews != []}
+        id="task-coderabbit-count"
+        data-qa="task_coderabbit_count"
+        title={coderabbit_history(@coderabbit_reviews)}
+        class="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300"
+      >
+        <.icon name="pi-rabbit" class="size-3.5" />CodeRabbit ×{length(@coderabbit_reviews)}
+      </span>
+
+      <.button
+        :if={@coderabbit.show}
+        id="task-coderabbit"
+        phx-click="open_coderabbit"
+        disabled={@coderabbit.waiting}
+        title={coderabbit_title(@coderabbit.waiting, @task.stage)}
+      >
+        <.icon
+          name={if @coderabbit.waiting, do: "pi-circle-notch", else: "pi-rabbit"}
+          class={["size-4", @coderabbit.waiting && "motion-safe:animate-spin"]}
+        />
+        {if @coderabbit.waiting, do: "CodeRabbit reviewing…", else: "CodeRabbit review"}
+      </.button>
 
       <.button
         :if={@update}
@@ -412,6 +438,7 @@ defmodule RailWeb.Live.TaskActions do
     |> assign(:plan, plan_actions(task, socket.assigns[:rounds] || Pipeline.list_rounds(task), scope, tech_lead))
     |> assign_unsent_comments()
     |> assign(:update, task.stage in [:review, :finalize] and task.base_behind and is_nil(task.cleaned_up_at))
+    |> assign_coderabbit(state)
     |> assign(:learnings_gate, if(state in [:ready, :refused], do: gate(Pipeline.check_learnings(task))))
     |> assign(
       :tech_leads,
@@ -423,6 +450,36 @@ defmodule RailWeb.Live.TaskActions do
   defp revising?(%Task{runs: runs} = task) do
     Enum.any?(runs, &(match?(%Run{role: %Role{stage: :review_lead}}, &1) and Run.running?(&1))) or
       match?(%FixPlan{approved_at: nil}, Pipeline.read_fix_plan(task))
+  end
+
+  # Asked from a person's own GitHub account, on a pull request still open to change and not being merged.
+  defp assign_coderabbit(%{assigns: %{task: task, current_scope: scope}} = socket, state) do
+    reviews = Pipeline.list_coderabbit_reviews(task)
+
+    open? =
+      task.stage in [:review, :finalize] and is_integer(task.pr_number) and is_nil(task.cleaned_up_at) and
+        state not in [:merging, :merged]
+
+    socket
+    |> assign(:coderabbit_reviews, reviews)
+    |> assign(:coderabbit, %{show: open? and scope.user != nil, waiting: Enum.any?(reviews, &CoderabbitReview.pending?/1)})
+  end
+
+  defp coderabbit_title(true, _stage), do: "CodeRabbit is reviewing. Review finishes once its comments are in."
+
+  defp coderabbit_title(false, :finalize),
+    do:
+      "Ask CodeRabbit to review the pull request from your GitHub account. The task goes back to Review for its findings."
+
+  defp coderabbit_title(false, _stage), do: "Ask CodeRabbit to review the pull request from your GitHub account."
+
+  defp coderabbit_history(reviews) do
+    Enum.map_join(reviews, "\n", fn %CoderabbitReview{} = review ->
+      comments = if is_integer(review.comment_count), do: ", #{review.comment_count} comments", else: ""
+
+      "Round #{review.round}, #{String.slice(review.head_sha, 0, 7)}: #{CoderabbitReview.status_label(review)}#{comments}, " <>
+        "asked by #{name(review.requested_by)}"
+    end)
   end
 
   defp plan_run(%Task{runs: runs}) when is_list(runs), do: Enum.find(runs, &match?(%Run{role: %Role{stage: :plan}}, &1))

@@ -782,6 +782,8 @@ defmodule RailWeb.Components.FindingDetailTest do
        "text-blue-600", "bg-red-100", "bg-red-500", "Review lead"},
       {%{@finding | severity: :major}, false, "Needs your call", "text-blue-600", "bg-amber-100", "bg-amber-500",
        "Code reviewer"},
+      {%{@finding | severity: :major, raised_by: :coderabbit}, false, "Needs your call", "text-blue-600", "bg-amber-100",
+       "bg-amber-500", "CodeRabbit"},
       {%{@finding | severity: :minor, decision: :fix}, false, "Fix", "text-slate-700", "bg-amber-50", "bg-amber-400",
        "Code reviewer"},
       {%{@finding | severity: :nit, decision: :fix, status: :not_fixed, recommendation: :skip, notes: [failing]}, false,
