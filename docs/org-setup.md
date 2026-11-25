@@ -22,7 +22,7 @@ Create it in the org: Settings > Developer settings > GitHub Apps > New GitHub A
   | Checks | Read | CodeRabbit's check run, which says when a review Rail asked for is done |
   | Metadata | Read | set by GitHub |
 
-- Subscribe to events: **Issues**, **Issue comment**, **Pull request**, so a merge on GitHub finishes a Rail-tracked ticket, and **Check run**, so Rail hears when CodeRabbit finishes a review.
+- Subscribe to events: **Pull request**, so a merge on GitHub finishes its ticket, and **Check run**, so Rail hears when CodeRabbit finishes a review. Rail answers every other event as ignored. The events only show once the webhook is Active.
 - Where can it be installed: only this account.
 
 Then on the App's page:
