@@ -87,7 +87,16 @@ defmodule Rail.Tools.ClaudeTest do
     assert %{status: :ready} = Claude.probe(backend)
     # Run with no stdin, so the CLI does not sit waiting for input first.
     assert_received {:warmed,
-                     ["-c", ~s(exec "$0" "$@" </dev/null), ^executable, "-p", "/usage", "--output-format", "json"]}
+                     [
+                       "-c",
+                       ~s(exec "$0" "$@" </dev/null),
+                       ^executable,
+                       "-p",
+                       "/usage",
+                       "--output-format",
+                       "json",
+                       "--strict-mcp-config"
+                     ]}
 
     # A warm up that blows up must not take the probe down with it.
     stub(Tools, :run, fn _exe, args, _opts ->
@@ -139,7 +148,10 @@ defmodule Rail.Tools.ClaudeTest do
     Claude.probe(backend)
 
     assert_received {:ran, ["auth", "status", "--json"], %{"CLAUDE_CONFIG_DIR" => ^config_dir}}
-    assert_received {:ran, ["-c", _script, _claude, "-p", "/usage" | _rest], %{"CLAUDE_CONFIG_DIR" => ^config_dir}}
+
+    assert_received {:ran, ["-c", _script, _claude, "-p", "/usage", "--output-format", "json", "--strict-mcp-config"],
+                     %{"CLAUDE_CONFIG_DIR" => ^config_dir}}
+
     assert_received {:read, ^config_path}
   end
 

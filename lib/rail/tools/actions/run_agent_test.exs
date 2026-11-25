@@ -182,13 +182,32 @@ defmodule Rail.Tools.Actions.RunAgentTest do
       Enum.each([scratch, checkout, config_dir], &File.mkdir_p!/1)
       on_exit(fn -> File.rm_rf(config_dir) end)
 
-      %{checkout: checkout, config_dir: config_dir, scratch: scratch}
+      hidden = [
+        "projects",
+        "sessions",
+        "session-env",
+        "shell-snapshots",
+        "todos",
+        "file-history",
+        "backups",
+        "agents",
+        "commands",
+        "skills",
+        "plugins",
+        "output-styles",
+        "rules"
+      ]
+
+      locked = Enum.map(["settings.json", "settings.local.json", "CLAUDE.md"], &Path.join(config_dir, &1))
+      %{checkout: checkout, config_dir: config_dir, hidden: hidden, locked: locked, scratch: scratch}
     end
 
     test "runs in a container of its own that mounts only the pass's folders and its account's login", %{
       checkout: checkout,
       config_dir: config_dir,
       dir: dir,
+      hidden: hidden,
+      locked: locked,
       role: role,
       scratch: scratch,
       script: script
@@ -243,12 +262,16 @@ defmodule Rail.Tools.Actions.RunAgentTest do
                        }}
 
       assert Enum.sort(binds) ==
-               Enum.sort([
-                 "#{dir}:#{dir}",
-                 "#{config_dir}:#{config_dir}",
-                 "#{scratch}:#{scratch}",
-                 "#{checkout}:#{checkout}:ro"
-               ])
+               Enum.sort(
+                 [
+                   "#{dir}:#{dir}",
+                   "#{config_dir}:#{config_dir}",
+                   "#{scratch}:#{scratch}",
+                   "#{checkout}:#{checkout}:ro"
+                 ] ++ Enum.map(locked, &"#{&1}:#{&1}:ro")
+               )
+
+      assert host_config["Tmpfs"] == Map.new(hidden, &{Path.join(config_dir, &1), "uid=1000,gid=1000,mode=0700"})
 
       refute Map.has_key?(labels, "dev.railai.sandbox")
       refute Map.has_key?(host_config, "PidMode")
@@ -257,6 +280,46 @@ defmodule Rail.Tools.Actions.RunAgentTest do
       assert "CLAUDE_CONFIG_DIR=#{config_dir}" in env
       assert_received {:logs, %{"stdout" => "true", "stderr" => "true"}}
       assert_received {:removed, "force=true"}
+    end
+
+    test "hides the account's earlier sessions and what its later runs load, creating each mount point first", %{
+      config_dir: config_dir,
+      dir: dir,
+      hidden: hidden,
+      locked: locked,
+      role: role
+    } do
+      test_pid = self()
+      hook = ~s({"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"true"}]}]}})
+      File.write!(Path.join(config_dir, "settings.json"), hook)
+
+      Req.Test.stub(Docker, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/containers/create"} ->
+            {:ok, body, conn} = Plug.Conn.read_body(conn)
+            folders = Enum.all?(hidden, &File.dir?(Path.join(config_dir, &1)))
+            files = Enum.all?(locked, &File.regular?/1)
+            send(test_pid, {:created, Jason.decode!(body)["HostConfig"], folders and files})
+            conn |> Plug.Conn.put_status(201) |> Req.Test.json(%{"Id" => "c-pass"})
+
+          {"GET", "/containers/c-pass/json"} ->
+            Req.Test.json(conn, %{"State" => %{"Status" => "exited", "ExitCode" => 0}})
+
+          {"GET", "/containers/c-pass/logs"} ->
+            Plug.Conn.send_resp(conn, 200, <<1, 0, 0, 0, 3::32, "ok\n">>)
+
+          {_post_or_delete, _start_or_remove} ->
+            Plug.Conn.send_resp(conn, 204, "")
+        end
+      end)
+
+      assert {:ok, "ok\n"} = Tools.run_agent(role, [], cd: dir)
+      assert_received {:created, %{"Tmpfs" => tmpfs, "Binds" => binds}, true}
+      assert Enum.sort(Map.keys(tmpfs)) == Enum.sort(Enum.map(hidden, &Path.join(config_dir, &1)))
+      assert Enum.all?(locked, &("#{&1}:#{&1}:ro" in binds))
+      assert File.read!(Path.join(config_dir, "settings.json")) == hook
+      assert File.read!(Path.join(config_dir, "settings.local.json")) == "{}"
+      assert File.read!(Path.join(config_dir, "CLAUDE.md")) == ""
     end
 
     test "a folder the pass mounts read-only is not also mounted writable", %{

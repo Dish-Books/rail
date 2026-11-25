@@ -14,6 +14,23 @@ defmodule Rail.Tools.Actions.RunAgent do
   # How the CLI's last stream-json line reports a token Claude would not take.
   @authentication_failed ~r/"error":\s*"authentication_failed"/
   @poll_ms 1_000
+  # Earlier sessions, which a pass must not read, and what later runs load, which a pass must not leave behind.
+  @hidden_dirs [
+    "projects",
+    "sessions",
+    "session-env",
+    "shell-snapshots",
+    "todos",
+    "file-history",
+    "backups",
+    "agents",
+    "commands",
+    "skills",
+    "plugins",
+    "output-styles",
+    "rules"
+  ]
+  @locked_files %{"settings.json" => "{}", "settings.local.json" => "{}", "CLAUDE.md" => ""}
 
   @doc """
   Runs `role`'s CLI with `argv` and waits for it, for work that has no run to
@@ -22,7 +39,7 @@ defmodule Rail.Tools.Actions.RunAgent do
   A pass whose only accounts are signed out does not start, rather than wait.
 
   Takes `:env` (merged over the account's own), `:cd`, `:mounts`, `:read_only_mounts`, `:timeout` and `:into`. Under
-  Docker it runs in a container that sees only `:cd`, the mounts and its account's login, and `:into` does not apply.
+  Docker it runs in a container that sees only `:cd`, the mounts and its account's sign-in, and `:into` does not apply.
   Returns `{:ok, output}`, `{:error, {:exit, code, output}}`, `{:error, :timeout}`,
   `{:error, {:waiting_for_usage, resets_at}}` when every account is used up,
   `{:error, :backend_signed_out}` when only signed-out accounts offer the model,
@@ -68,7 +85,9 @@ defmodule Rail.Tools.Actions.RunAgent do
     cd = Keyword.fetch!(opts, :cd)
     timeout = Keyword.get(opts, :timeout, :infinity)
     read_only = Keyword.get(opts, :read_only_mounts, [])
-    writable = Enum.uniq([cd, Backend.config_dir(backend) | Keyword.get(opts, :mounts, [])]) -- read_only
+    config_dir = Backend.config_dir(backend)
+    writable = Enum.uniq([cd, config_dir | Keyword.get(opts, :mounts, [])]) -- read_only
+    locked = Enum.map(Map.keys(@locked_files), &Path.join(config_dir, &1))
 
     # A container whose caller is gone stops on its own at the same limit.
     cmd =
@@ -84,7 +103,8 @@ defmodule Rail.Tools.Actions.RunAgent do
       "User" => "1000:1000",
       "HostConfig" => %{
         "NetworkMode" => "host",
-        "Binds" => Enum.map(writable, &"#{&1}:#{&1}") ++ Enum.map(read_only, &"#{&1}:#{&1}:ro"),
+        "Binds" => Enum.map(writable, &"#{&1}:#{&1}") ++ Enum.map(read_only ++ locked, &"#{&1}:#{&1}:ro"),
+        "Tmpfs" => Map.new(@hidden_dirs, &{Path.join(config_dir, &1), "uid=1000,gid=1000,mode=0700"}),
         "OomScoreAdj" => 500,
         "Init" => true,
         "LogConfig" => %{"Type" => "json-file"}
@@ -93,6 +113,7 @@ defmodule Rail.Tools.Actions.RunAgent do
 
     # Docker would create a missing folder, owned by root.
     with nil <- Enum.find(writable ++ read_only, &(not File.dir?(&1))),
+         _prepared = prepare_login(config_dir),
          {:ok, %{"Id" => id}} <- Docker.create_agent_container(body) do
       try do
         wait(id, timeout)
@@ -103,6 +124,18 @@ defmodule Rail.Tools.Actions.RunAgent do
       missing when is_binary(missing) -> {:error, {:bad_cwd, missing}}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  # Docker mounts over these, and would make a missing one as root, which later runs on the account could not write.
+  defp prepare_login(config_dir) do
+    Enum.each(@hidden_dirs, &File.mkdir_p!(Path.join(config_dir, &1)))
+
+    Enum.each(@locked_files, fn {name, empty} ->
+      case File.write(Path.join(config_dir, name), empty, [:exclusive]) do
+        :ok -> :ok
+        {:error, :eexist} -> :ok
+      end
+    end)
   end
 
   # As Tools.run does: a crash in the wait comes back as an error, so the container is still removed.

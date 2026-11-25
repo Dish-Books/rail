@@ -81,7 +81,10 @@ defmodule Rail.Tools.Claude do
     File.mkdir_p(temp_dir)
 
     try do
-      Tools.run("/bin/sh", ["-c", @without_stdin, executable, "-p", "/usage", "--output-format", "json"],
+      # A pass can write the account's .claude.json, so none of its MCP servers starts here beside Rail.
+      Tools.run(
+        "/bin/sh",
+        ["-c", @without_stdin, executable, "-p", "/usage", "--output-format", "json", "--strict-mcp-config"],
         timeout: @timeout,
         cd: temp_dir,
         env: backend_env(backend),
