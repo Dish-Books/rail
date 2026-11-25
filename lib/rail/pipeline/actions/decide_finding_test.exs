@@ -162,4 +162,114 @@ defmodule Rail.Pipeline.Actions.DecideFindingTest do
     assert {:error, :review_finished} = Pipeline.decide_finding(system_scope(), finding, :fix)
     assert %Finding{id: ^finding_id, decision: :skip} = Repo.get!(Finding, finding_id)
   end
+
+  test "a ruling read before a new review round opened is refused, and the finding is left as it was", %{
+    task: task,
+    finding: %{id: finding_id} = finding
+  } do
+    read = %{round: 1, updated_at: finding.updated_at}
+    {:ok, %{round: 2}} = Pipeline.save_review(task)
+
+    assert {:error, :round_changed} = Pipeline.decide_finding(system_scope(), finding, :skip, read: read)
+    assert %Finding{decision: nil, notes: [%FindingNote{kind: :raised}]} = Repo.get!(Finding, finding_id)
+  end
+
+  test "a ruling read in an earlier round is refused even when the finding already holds it", %{
+    task: task,
+    finding: %{id: finding_id} = finding
+  } do
+    {:ok, %Finding{updated_at: ruled_at} = ruled} =
+      Pipeline.decide_finding(system_scope(), finding, :skip, read: %{round: 1, updated_at: finding.updated_at})
+
+    {:ok, %{round: 2}} = Pipeline.save_review(task)
+
+    assert {:error, :round_changed} =
+             Pipeline.decide_finding(system_scope(), ruled, :skip, read: %{round: 1, updated_at: ruled_at})
+
+    assert %Finding{decision: :skip, notes: [_raised, _ruled]} = Repo.get!(Finding, finding_id)
+  end
+
+  test "a retry with the read it was first sent with answers with the finding and notes the ruling once", %{
+    finding: %{id: finding_id} = finding
+  } do
+    read = %{round: 1, updated_at: finding.updated_at}
+    {:ok, %Finding{decision: :skip}} = Pipeline.decide_finding(system_scope(), finding, :skip, read: read)
+
+    assert {:ok, %Finding{id: ^finding_id, decision: :skip, notes: [_raised, %FindingNote{kind: :ruling}]}} =
+             Pipeline.decide_finding(system_scope(), finding, :skip, read: read)
+
+    assert %Finding{notes: [_raised, _ruled]} = Repo.get!(Finding, finding_id)
+  end
+
+  test "a ruling on a finding a teammate ruled since it was read is refused, and the teammate's stands", %{
+    finding: %{id: finding_id} = finding
+  } do
+    read = %{round: 1, updated_at: finding.updated_at}
+    {:ok, %Finding{decision: :fix}} = Pipeline.decide_finding(system_scope(), finding, :fix)
+
+    assert {:error, :finding_changed} = Pipeline.decide_finding(system_scope(), finding, :skip, read: read)
+
+    assert %Finding{decision: :fix, notes: [_raised, %FindingNote{kind: :ruling, decision: :fix}]} =
+             Repo.get!(Finding, finding_id)
+  end
+
+  test "a fixed finding takes no ruling", %{task: task} do
+    {:ok, _raised} =
+      Pipeline.save_finding(task, %{
+        key: "stale-cache",
+        kind: :code,
+        raised_by: :code_reviewer,
+        title: "The cache goes stale",
+        problem: "It shows old data.",
+        file: "lib/b.ex",
+        line: 8,
+        fix: "Expire it.",
+        why: "Nobody reads it.",
+        rule: "Caches expire.",
+        severity: :minor,
+        recommendation: :skip,
+        places: [%{file: "lib/b.ex", line: 8}],
+        evidence: [%{name: "range", kind: :code, file: "lib/b.ex", line: 8}]
+      })
+
+    # A later pass found it fixed by the work around it.
+    {:ok, %Finding{id: fixed_id, status: :fixed} = fixed} =
+      Pipeline.save_finding(task, %{key: "stale-cache", status: "fixed", note: "Expired now."})
+
+    for decision <- [:fix, :skip, :new_issue] do
+      assert {:error, :finding_fixed} = Pipeline.decide_finding(system_scope(), fixed, decision)
+    end
+
+    assert %Finding{decision: nil, status: :fixed} = Repo.get!(Finding, fixed_id)
+  end
+
+  test "a finding a rule suppressed takes Fix, and nothing else", %{task: task, project: project} do
+    %{id: rule_id} = learning(project, %{rule: "Don't flag a nil clause", kind: :calibration})
+
+    {:ok, %Finding{id: suppressed_id, suppressed_by_id: ^rule_id} = suppressed} =
+      Pipeline.save_finding(task, %{
+        key: "nil-clause",
+        kind: :code,
+        raised_by: :code_reviewer,
+        title: "A nil clause is missing",
+        problem: "It crashes.",
+        file: "lib/a.ex",
+        line: 5,
+        fix: "Add it.",
+        why: "It crashes.",
+        rule: "Every caller handles nil.",
+        severity: :minor,
+        recommendation: :skip,
+        checklist_rule: rule_id,
+        places: [%{file: "lib/a.ex", line: 5}],
+        evidence: [%{name: "range", kind: :code, file: "lib/a.ex", line: 5}]
+      })
+
+    for decision <- [:skip, :new_issue] do
+      assert {:error, :suppressed} = Pipeline.decide_finding(system_scope(), suppressed, decision)
+    end
+
+    assert %Finding{decision: nil} = Repo.get!(Finding, suppressed_id)
+    assert {:ok, %Finding{decision: :fix}} = Pipeline.decide_finding(system_scope(), suppressed, :fix)
+  end
 end

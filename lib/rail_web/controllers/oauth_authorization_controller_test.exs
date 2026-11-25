@@ -104,11 +104,14 @@ defmodule RailWeb.OAuthAuthorizationControllerTest do
     assert [
              "create_comment",
              "create_issue",
+             "decide_finding",
              "get_issue",
              "list_cycles",
+             "list_findings",
              "list_initiatives",
              "list_issues",
              "list_projects",
+             "list_tasks",
              "search_issues",
              "update_issue"
            ] =
