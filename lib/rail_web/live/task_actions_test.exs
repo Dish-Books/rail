@@ -1150,6 +1150,36 @@ defmodule RailWeb.Live.TaskActionsTest do
       assert has_element?(view, "#task-coderabbit[disabled][title^='CodeRabbit is reviewing']", "CodeRabbit reviewing…")
     end
 
+    # Asking or CodeRabbit answering changes no field of the task, so only the broadcast tells the open page.
+    test "an open page shows a review asked for or answered without a reload", %{conn: conn, task: task, dan: dan} do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+      assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+      refute has_element?(view, "#task-coderabbit-count")
+
+      review =
+        Repo.insert!(%CoderabbitReview{
+          project_id: task.project_id,
+          task_id: task.id,
+          pr_number: 151,
+          round: 1,
+          head_sha: String.duplicate("f", 40),
+          command: :full,
+          status: :reviewing
+        })
+
+      send(view.pid, {:pipeline_changed, task.id})
+      # The header's update is queued behind the broadcast, so one render first lets it land.
+      _rendered = render(view)
+      assert has_element?(view, "#task-coderabbit-count", "CodeRabbit ×1")
+      assert has_element?(view, "#task-coderabbit[disabled]", "CodeRabbit reviewing…")
+
+      review |> CoderabbitReview.status_changeset(:done, %{comment_count: 2}) |> Repo.update!()
+      send(view.pid, {:pipeline_changed, task.id})
+      _rendered = render(view)
+      assert has_element?(view, "#task-coderabbit-count[title*='Done, 2 comments']")
+      refute has_element?(view, "#task-coderabbit[disabled]")
+    end
+
     test "at Review it asks without moving the task, and a merged task offers none", %{
       conn: conn,
       task: task,

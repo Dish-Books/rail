@@ -650,10 +650,12 @@ defmodule RailWeb.TaskLive do
   end
 
   # A task read again can equal the one the stage holds, which then is not updated, so the open Comments item is
-  # told to read its comments again: another person's Review Send arrives only as this.
+  # told to read its comments again: another person's Review Send arrives only as this. So is a CodeRabbit review
+  # asked for or answered, which changes no task field, so the header reads its reviews again.
   def handle_info({:pipeline_changed, task_id}, %{assigns: %{task_id: task_id}} = socket) do
     socket = refresh_task(socket)
     reload_comments(socket)
+    send_update(TaskActions, id: "task-actions")
     {:noreply, socket}
   end
 
