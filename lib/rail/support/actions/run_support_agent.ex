@@ -147,7 +147,14 @@ defmodule Rail.Support.Actions.RunSupportAgent do
         work_dir: worktree
       )
 
-    Tools.run_agent(role, args, env: %{"RAIL_MCP_TOKEN" => token}, cd: worktree, timeout: @timeout)
+    # It reads the conversation and writes its result in the scratch folder, and only reads the code.
+    Tools.run_agent(role, args,
+      env: %{"RAIL_MCP_TOKEN" => token},
+      cd: worktree,
+      mounts: [Conversation.scratch_path(conversation)],
+      read_only_mounts: [worktree],
+      timeout: @timeout
+    )
   end
 
   defp read_result(conversation) do

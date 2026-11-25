@@ -27,6 +27,28 @@ defmodule Rail.Git.Actions.CheckoutDetachedWorktreeTest do
     assert {_branch, 1} = Rail.Tools.run("git", ["symbolic-ref", "-q", "HEAD"], cd: path)
   end
 
+  # A pass's sandbox mounts only the checkout, so its history has to be its own.
+  test "the checkout is a clone of its own, whose history reads with the project's clone gone", %{
+    remote: remote,
+    repo: repo,
+    project: project
+  } do
+    path = Path.join(repo, ".worktrees/support-1")
+    assert {:ok, ^path} = Git.checkout_detached_worktree(project, path)
+
+    assert File.dir?(Path.join(path, ".git"))
+    refute git!(repo, ["worktree", "list"]) =~ path
+
+    moved = Path.join(System.tmp_dir!(), "rail_detached_moved_#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(moved) end)
+    File.rename!(path, moved)
+    File.rm_rf!(repo)
+
+    assert git!(moved, ["log", "--format=%s"]) =~ "initial commit"
+    assert git!(moved, ["show", "--stat", "HEAD"]) =~ "tracked.txt"
+    assert git!(moved, ["rev-parse", "HEAD"]) == git!(remote, ["rev-parse", "main"])
+  end
+
   test "replaces a stale worktree left at the path", %{remote: remote, repo: repo, project: project} do
     path = Path.join(repo, ".worktrees/triage-2")
     assert {:ok, ^path} = Git.checkout_detached_worktree(project, path)
@@ -48,13 +70,13 @@ defmodule Rail.Git.Actions.CheckoutDetachedWorktreeTest do
     assert reason =~ "couldn't find remote ref primary"
   end
 
-  test "says what git said when the worktree cannot be added", %{repo: repo, project: project} do
+  test "says what git said when the checkout cannot be made", %{repo: repo, project: project} do
     blocker = Path.join(repo, ".worktrees/blocked")
     File.mkdir_p!(Path.dirname(blocker))
     File.write!(blocker, "a file where the worktree should go")
 
     assert {:error, reason} = Git.checkout_detached_worktree(project, blocker)
-    assert reason =~ "Failed to create worktree at #{blocker}"
+    assert reason =~ "Failed to create the checkout at #{blocker}"
   end
 
   test "pipeline clones and triage worktrees made and removed at once from one clone all succeed", %{

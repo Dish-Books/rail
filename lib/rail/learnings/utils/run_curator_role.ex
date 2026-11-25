@@ -12,18 +12,17 @@ defmodule Rail.Learnings.Utils.RunCuratorRole do
   @timeout to_timeout(minute: 30)
 
   @doc """
-  Runs the curator over `brief` with `dir` as its working directory. Returns
-  `{:ok, result}`, or an error naming why there is none: a failed agent is
-  `{:error, {:exit, code, reason}}`, with the reason it gave or `nil`, and a
-  curator that waits for usage `{:error, {:waiting_for_usage, resets_at}}`.
+  Runs the curator over `brief` in `dir`, which it writes, and `read_only_mounts`, which it only reads. Returns
+  `{:ok, result}`, or an error naming why there is none: a failed agent is `{:error, {:exit, code, reason}}`, with the
+  reason it gave or `nil`, and a curator that waits for usage `{:error, {:waiting_for_usage, resets_at}}`.
   """
-  def run_curator_role(%Project{id: project_id}, dir, brief) do
+  def run_curator_role(%Project{id: project_id}, dir, brief, read_only_mounts) when is_list(read_only_mounts) do
     result = Path.join(dir, "result.json")
 
     with {:ok, role} <- role(project_id),
          :ok <- File.mkdir_p(dir),
          _cleared = File.rm(result),
-         {:ok, _output} <- agent(role, dir, brief),
+         {:ok, _output} <- agent(role, dir, brief, read_only_mounts),
          {:ok, content} <- File.read(result),
          {:ok, %{} = decoded} <- Jason.decode(content) do
       {:ok, decoded}
@@ -43,7 +42,7 @@ defmodule Rail.Learnings.Utils.RunCuratorRole do
     end
   end
 
-  defp agent(role, dir, brief) do
+  defp agent(role, dir, brief, read_only_mounts) do
     prompt = Pipeline.build_prompt(context_snippet: brief)
 
     args =
@@ -55,6 +54,6 @@ defmodule Rail.Learnings.Utils.RunCuratorRole do
         work_dir: dir
       )
 
-    Tools.run_agent(role, args, cd: dir, timeout: @timeout)
+    Tools.run_agent(role, args, cd: dir, read_only_mounts: read_only_mounts, timeout: @timeout)
   end
 end

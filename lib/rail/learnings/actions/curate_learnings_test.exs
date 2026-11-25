@@ -77,6 +77,9 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
 
     expect(Tools, :run_agent, fn _role, argv, opts ->
       assert Enum.any?(argv, &(&1 =~ Learning.writing_guide()))
+      # The checkout sits outside the scratch folder the curator works in, so it is mounted, to read only.
+      assert [checkout] = opts[:read_only_mounts]
+      assert checkout =~ Path.join(project.clone_path, ".worktrees/curator-")
 
       send(
         test,
