@@ -24,31 +24,27 @@ defmodule Rail.Pipeline.Actions.ParseTranscriptTest do
   end
 
   test "a single log entry holding newlines is still one comment" do
-    [turn] = Pipeline.parse_transcript(["[human] Line 1 of feedback.\nLine 2 of feedback.\nLine 3 of feedback."])
+    [turn] = Pipeline.parse_transcript(["[human:usr_dana] Line 1 of feedback.\nLine 2 of feedback.\nLine 3 of feedback."])
 
     assert turn.author == :human
+    assert turn.sender_id == "usr_dana"
     assert turn.content == "Line 1 of feedback.\nLine 2 of feedback.\nLine 3 of feedback."
   end
 
-  test "a comment runs on until the harness says otherwise" do
+  # A message sent while the agent works is logged at once, and the agent goes on talking until its turn ends.
+  test "what the agent says after a message sent mid-turn is its own, not the message's" do
     logs = [
-      "[human] Please address these points:",
-      "- Item 1",
-      "- Item 2",
-      "[run] claude pid 4321 in /tmp",
-      "I have addressed both items."
+      "[human:usr_dana] oh its not a modal anymore right,",
+      "[human:usr_dana] so just the new/edit page",
+      "This changes where the feature lives, so I'm checking a few things first.",
+      "[rail] Stopped by user."
     ]
 
-    [comment, event, reply] = Pipeline.parse_transcript(logs)
-
-    assert comment.author == :human
-    assert comment.content == "Please address these points:\n- Item 1\n- Item 2"
-
-    assert event.author == :event
-    assert event.content == "[run] claude pid 4321 in /tmp"
-
-    assert reply.author == :role
-    assert reply.content == "I have addressed both items."
+    assert [
+             %Turn{author: :human, content: "oh its not a modal anymore right,\nso just the new/edit page"},
+             %Turn{author: :role, content: "This changes where the feature lives, so I'm checking a few things first."},
+             %Turn{author: :event, content: "[rail] Stopped by user."}
+           ] = Pipeline.parse_transcript(logs)
   end
 
   test "consecutive prefixed human lines are one comment" do
@@ -129,7 +125,7 @@ defmodule Rail.Pipeline.Actions.ParseTranscriptTest do
            ] = Pipeline.parse_transcript(logs)
 
     assert [%Turn{author: :human}, %Turn{author: :reminder, label: "reminder 2 of 2", content: "Again."}] =
-             Pipeline.parse_transcript(["[human] One", "more", "[reminder 2 of 2] Again."])
+             Pipeline.parse_transcript(["[human] One", "[human] more", "[reminder 2 of 2] Again."])
 
     assert [%Turn{label: "reminder 1 of 2", content: "First."}, %Turn{label: "reminder 2 of 2", content: "Second."}] =
              Pipeline.parse_transcript(["[reminder 1 of 2] First.", "[reminder 2 of 2] Second."])

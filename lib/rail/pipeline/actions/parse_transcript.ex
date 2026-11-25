@@ -16,8 +16,8 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
   @doc """
   Reads a run's log lines back as a list of conversational turns.
 
-  Consecutive lines of the same kind group into one turn: everything a human
-  typed until the harness says otherwise, everything the role said until a tool
+  Consecutive lines of the same kind group into one turn: each human's run of
+  tagged lines, everything the role said until a tool
   call interrupts, each run of tool lines as one activity block, and each note
   Rail sent the agent on its own as one reminder. A browser step is the
   exception: each one is its own turn, because each one is a separate thing that
@@ -52,14 +52,7 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
   # A log line may itself hold newlines when the harness wrote a block in one
   # event, so the lines are flattened before anything reads them as lines.
   defp do_parse(logs) do
-    flat_lines =
-      Enum.flat_map(logs, fn entry ->
-        if String.contains?(entry, "\n") do
-          entry |> String.replace("\r\n", "\n") |> String.split("\n")
-        else
-          [entry]
-        end
-      end)
+    flat_lines = Enum.flat_map(logs, &split_entry/1)
 
     initial_state = %{
       human_lines: nil,
@@ -81,6 +74,17 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
       |> flush_role()
 
     state.turns |> Enum.reverse() |> Enum.with_index() |> Enum.map(&nest(&1, state.subagents))
+  end
+
+  # Only a line with a human's tag is theirs, since a message sent mid-turn is logged while the agent is still
+  # talking, so an entry holding a whole message gives each of its lines the tag its first one has.
+  defp split_entry(entry) do
+    [first | rest] = entry |> String.replace("\r\n", "\n") |> String.split("\n")
+
+    case Regex.run(~r/^\[human(?::[^\]\s]+)?\]/, first) do
+      [tag] -> [first | Enum.map(rest, &"#{tag} #{&1}")]
+      nil -> [first | rest]
+    end
   end
 
   # A subagent's lines are only parsed once all of them are in, wherever they landed.
@@ -131,15 +135,6 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
 
       Regex.match?(@human_prefix, line) ->
         append_human_line(state, line)
-
-      # Only the harness ends what a human was saying: a plain line after a
-      # comment is the rest of that comment, however it is indented or wrapped.
-      state.human_lines != nil ->
-        if Regex.match?(@system_prefix, line) do
-          state |> flush_human() |> process_non_human_line(line)
-        else
-          %{state | human_lines: [line | state.human_lines]}
-        end
 
       true ->
         process_non_human_line(state, line)
