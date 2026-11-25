@@ -33,8 +33,6 @@ import { SketchesToggle } from "./hooks/sketches_toggle";
 import { StartFocus } from "./hooks/start_focus";
 import { StatusMenu } from "./hooks/status_menu";
 import { Theme } from "./hooks/theme";
-import { TodosDrop } from "./hooks/todos_drop";
-import { readOpen, TodosOpen } from "./hooks/todos_open";
 import { blockRepeatClicks } from "./no_repeat";
 import { recordDrops } from "./socket_drops";
 
@@ -68,8 +66,6 @@ const Hooks = {
   ImagePaste,
   IssueDescription,
   MarkdownPaste,
-  TodosDrop,
-  TodosOpen,
   StartFocus,
   SketchesToggle
 };
@@ -80,12 +76,7 @@ const drops = recordDrops(window);
 // them beside the last drop.
 const socketParams = { _csrf_token: csrfToken };
 const liveSocket = new LiveSocket("/live", Socket, {
-  // Read on every join, so a reconnect and the next page both show the panel as this browser left it.
-  params: () =>
-    Object.assign(socketParams, drops.params(), {
-      todos_open: readOpen(window.localStorage),
-      time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone
-    }),
+  params: () => Object.assign(socketParams, drops.params()),
   logger: drops.logger,
   hooks: Hooks
 });

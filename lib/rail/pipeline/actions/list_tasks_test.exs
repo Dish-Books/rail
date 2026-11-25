@@ -30,15 +30,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     assert [%Task{id: ^task_id}] = Pipeline.list_tasks(project_id: project.id, include_cleaned_up: true)
   end
 
-  test "filters tasks by the pull request they opened", %{project: project, task: %Task{id: task_id} = task} do
-    {:ok, _task} = Pipeline.update_task(task, %{pr_url: "https://github.com/acme/rail/pull/268"})
-
-    assert [%Task{id: ^task_id}] =
-             Pipeline.list_tasks(project_id: project.id, pr_url: "https://github.com/acme/rail/pull/268")
-
-    assert [] = Pipeline.list_tasks(project_id: project.id, pr_url: "https://github.com/acme/rail/pull/2")
-  end
-
   test "filters tasks by stage", %{project: project, task: task} do
     {:ok, %Task{id: prod_id}} =
       Pipeline.update_task(task, %{

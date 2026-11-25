@@ -166,7 +166,7 @@ defmodule RailWeb.Components.FindingListTest do
              "Fix · changed since the plan"
   end
 
-  # A finding row selects in place on a click, so a drag onto the to-dos panel needs its address on the row.
+  # A finding row selects in place on a click, so a drag elsewhere needs its address on the row.
   test "each finding row drags as a link to its task with the finding open, named by its title" do
     findings = [
       %Finding{key: "F3", kind: :screen, round: 1, title: "Ruling Fix scrolls the list", screen: "Tray", severity: :major}
