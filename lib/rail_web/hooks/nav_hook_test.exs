@@ -9,9 +9,6 @@ defmodule RailWeb.Hooks.NavHookTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias Rail.Scope
-  alias Rail.Todos
-  alias Rail.Todos.Schemas.Todo
   alias Rail.Tools.Schemas.Backend
   alias Rail.Triage
   alias Rail.Users
@@ -81,34 +78,6 @@ defmodule RailWeb.Hooks.NavHookTest do
       other_issue: other_issue,
       other_task: other_task
     }
-  end
-
-  test "opens the to-dos panel as the page connects when this browser left it open", %{conn: conn} do
-    open_conn = put_connect_params(conn, %{"todos_open" => true, "time_zone" => "Asia/Tokyo"})
-    assert {:ok, view, _html} = live(open_conn, ~p"/issues")
-
-    assert has_element?(view, "#todos-sheet")
-    assert has_element?(view, "#todos-footer", "Nothing checked off today")
-    # An open panel comes in with the page, so the field leaves the focus where the page puts it.
-    refute has_element?(view, "#todo-body-0[phx-mounted]")
-
-    assert {:ok, view, _html} = live(put_connect_params(conn, %{"time_zone" => "Asia/Tokyo"}), ~p"/issues")
-    refute has_element?(view, "#todos-sheet")
-    assert has_element?(view, "#todos-button[aria-expanded=false]")
-  end
-
-  test "hands a change to this person's to-dos on to the panel, and other messages on to the page",
-       %{conn: conn, user: user} do
-    assert {:ok, view, _html} = live(put_connect_params(conn, %{"todos_open" => true}), ~p"/issues")
-    assert has_element?(view, "#todos-empty")
-
-    {:ok, %Todo{id: todo_id}} = Todos.create_todo(Scope.for_user(user), %{"body" => "From another tab"}, :last)
-
-    eventually(fn -> assert has_element?(view, "#todo-#{todo_id}") end)
-
-    # IssuesLive's own messages still reach it.
-    send(view.pid, {:issue_comments_changed, "iss_elsewhere"})
-    assert render(view) =~ "From another tab"
   end
 
   test "handles switcher and theme events", %{conn: conn, project: project} do

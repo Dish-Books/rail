@@ -60,7 +60,7 @@ defmodule RailWeb.Layouts do
           id={"lost-backend-banner-#{backend.id}"}
           data-qa="lost_backend_banner"
           role="alert"
-          class="flex items-center space-x-3 px-6 py-2.5 border-b border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200 text-sm font-medium [body:has(#todos-sheet)_&]:mr-[440px]"
+          class="flex items-center space-x-3 px-6 py-2.5 border-b border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200 text-sm font-medium"
         >
           <.icon name="pi-warning" class="h-4.5 w-4.5 shrink-0 text-amber-600 dark:text-amber-400" />
           <span>
@@ -71,11 +71,7 @@ defmodule RailWeb.Layouts do
           </span>
         </div>
 
-        <%!-- An open to-dos panel sits beside the page, so the page makes room rather than being covered. --%>
-        <main
-          class="flex-1 overflow-y-auto p-6 [body:has(#todos-sheet)_&]:mr-[440px]"
-          id="main-content"
-        >
+        <main class="flex-1 overflow-y-auto p-6" id="main-content">
           {render_slot(@inner_block)}
         </main>
       </div>

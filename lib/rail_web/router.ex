@@ -131,7 +131,6 @@ defmodule RailWeb.Router do
 
     get "/settings", SettingsRedirectController, :index
     get "/project-selection", ProjectSelectionController, :select
-    get "/todos/export", TodoExportController, :export
 
     live_session :require_authenticated_user,
       on_mount: [
