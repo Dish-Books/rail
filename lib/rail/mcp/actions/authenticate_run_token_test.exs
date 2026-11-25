@@ -2,6 +2,7 @@ defmodule Rail.Mcp.Actions.AuthenticateRunTokenTest do
   use Rail.DataCase, async: true
 
   alias Rail.Git
+  alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Mcp
   alias Rail.Mcp.RunContext
@@ -9,6 +10,7 @@ defmodule Rail.Mcp.Actions.AuthenticateRunTokenTest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
+  alias Rail.Scope
   alias Rail.Support
   alias Rail.Support.Schemas.Conversation
   alias Rail.Tools.Schemas.OsProcess
@@ -262,6 +264,74 @@ defmodule Rail.Mcp.Actions.AuthenticateRunTokenTest do
 
       Repo.update_all(from(c in Conversation, where: c.id == ^conversation_id),
         set: [agent_started_at: DateTime.utc_now(), mcp_token_hash: hash]
+      )
+
+      assert {:error, :invalid_token} = Mcp.authenticate_run_token(token)
+    end
+  end
+
+  describe "an issue chat pass's token" do
+    setup do
+      %{project: project, role: %{id: triage_role_id}} = triage_project()
+      unique = System.unique_integer([:positive])
+
+      {:ok, %{id: triage_user_id} = triage_user} =
+        Users.register_oauth_user(%{
+          github_id: "ich_tok_#{unique}",
+          login: "ich_tok_#{unique}",
+          email: "ich_tok_#{unique}@example.com"
+        })
+
+      {:ok, project} =
+        Rail.Projects.update_project(system_scope(), project, %{triage_user_id: triage_user.id})
+
+      {:ok, user} = Users.update_user(system_scope(), triage_user, %{project_ids: [project.id]})
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Up next"})
+      {:ok, _line} = Issues.send_issue_chat(Scope.for_user(user), issue, %{"text" => "Still needed?"})
+      %{issue: issue, triage_role_id: triage_role_id, triage_user_id: triage_user_id}
+    end
+
+    test "resolves to the project's triage role and triage user while the pass holds the issue", %{
+      issue: issue,
+      triage_role_id: triage_role_id,
+      triage_user_id: triage_user_id
+    } do
+      expect(Rail.Tools, :run_agent, fn _role, _argv, opts ->
+        assert {:ok,
+                %RunContext{
+                  os_process: nil,
+                  role: %Role{id: ^triage_role_id, stage: :triage},
+                  user: %User{id: ^triage_user_id}
+                }} = Mcp.authenticate_run_token(opts[:env]["RAIL_MCP_TOKEN"])
+
+        send(self(), {:token, opts[:env]["RAIL_MCP_TOKEN"]})
+        {:ok, ""}
+      end)
+
+      assert :ok = Issues.run_issue_chat(issue)
+      assert_received {:token, token}
+      assert {:error, :invalid_token} = Mcp.authenticate_run_token(token)
+    end
+
+    test "is dead once the pass is stale", %{issue: %{id: issue_id} = issue} do
+      expect(Rail.Tools, :run_agent, fn _role, _argv, opts ->
+        stale = DateTime.shift(DateTime.utc_now(), minute: -46)
+        Repo.update_all(from(i in Issue, where: i.id == ^issue_id), set: [chat_started_at: stale])
+
+        assert {:error, :invalid_token} = Mcp.authenticate_run_token(opts[:env]["RAIL_MCP_TOKEN"])
+        {:ok, ""}
+      end)
+
+      assert :ok = Issues.run_issue_chat(issue)
+    end
+
+    test "is refused when the project has no triage role", %{issue: %{id: issue_id}, triage_role_id: triage_role_id} do
+      {:ok, role} = Roles.get_role(id: triage_role_id)
+      {:ok, _deleted} = Roles.delete_role(system_scope(), role)
+      {token, hash} = Mcp.issue_run_token()
+
+      Repo.update_all(from(i in Issue, where: i.id == ^issue_id),
+        set: [chat_started_at: DateTime.utc_now(), chat_token_hash: hash]
       )
 
       assert {:error, :invalid_token} = Mcp.authenticate_run_token(token)

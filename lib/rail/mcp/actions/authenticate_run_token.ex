@@ -3,6 +3,7 @@ defmodule Rail.Mcp.Actions.AuthenticateRunToken do
 
   import Ecto.Query
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Mcp.RunContext
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
@@ -15,8 +16,8 @@ defmodule Rail.Mcp.Actions.AuthenticateRunToken do
 
   @doc """
   Resolves a run token to the turn presenting it. A token is only good while its
-  OS process is live, or while the triage or support pass it was minted for holds its
-  thread or conversation, so a finished turn's token is dead even if it leaked.
+  OS process is live, or while the triage, support or issue chat pass it was minted for holds its
+  thread, conversation or issue, so a finished turn's token is dead even if it leaked.
   """
   def authenticate_run_token(token) when is_binary(token) and token != "" do
     hash = :crypto.hash(:sha256, token)
@@ -31,7 +32,9 @@ defmodule Rail.Mcp.Actions.AuthenticateRunToken do
         {:ok, %RunContext{os_process: os_process, role: role, user: task.issue.owner_user}}
 
       nil ->
-        with {:error, :invalid_token} <- triage(hash), do: support(hash)
+        with {:error, :invalid_token} <- triage(hash),
+             {:error, :invalid_token} <- support(hash),
+             do: issue_chat(hash)
     end
   end
 
@@ -63,6 +66,23 @@ defmodule Rail.Mcp.Actions.AuthenticateRunToken do
         preload: [project: :triage_user]
 
     with %Conversation{project: project} <- Repo.one(query),
+         {:ok, role} <- Roles.get_role(project_id: project.id, stage: :triage) do
+      {:ok, %RunContext{os_process: nil, role: role, user: project.triage_user}}
+    else
+      _no_pass -> {:error, :invalid_token}
+    end
+  end
+
+  # An issue chat pass runs on its project's Triage role, as its triage user, as Support's does.
+  defp issue_chat(hash) do
+    since = DateTime.shift(DateTime.utc_now(), minute: -@triage_minutes)
+
+    query =
+      from i in Issue,
+        where: i.chat_token_hash == ^hash and i.chat_started_at > ^since,
+        preload: [project: :triage_user]
+
+    with %Issue{project: project} <- Repo.one(query),
          {:ok, role} <- Roles.get_role(project_id: project.id, stage: :triage) do
       {:ok, %RunContext{os_process: nil, role: role, user: project.triage_user}}
     else

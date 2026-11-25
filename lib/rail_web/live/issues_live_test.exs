@@ -1907,6 +1907,29 @@ defmodule RailWeb.IssuesLiveTest do
       assert %Issue{state: ^state, owner_user_id: ^owner_user_id} = Repo.get!(Issue, ready_id)
     end
 
+    test "Start on an issue the agent chat is still answering is refused, and starts nothing", %{
+      conn: conn,
+      ready: %Issue{id: ready_id}
+    } do
+      Repo.update_all(from(i in Issue, where: i.id == ^ready_id), set: [chat_requested_at: DateTime.utc_now()])
+      reject(&Pipeline.start_task/2)
+      reject(&Pipeline.adopt_pull_request/2)
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      allow(Pipeline, self(), view.pid)
+      render_async(view)
+
+      view |> element("#issue-start-#{ready_id}") |> render_click()
+      render_async(view)
+
+      assert has_element?(
+               view,
+               "#flash-error",
+               "CYC-3 did not start. The agent is still answering on this issue. Start it once the agent finishes."
+             )
+
+      refute Repo.get_by(Task, issue_id: ready_id)
+    end
+
     test "a Start for an issue gone since the page read it says nothing and starts nothing", %{
       conn: conn,
       ready: ready

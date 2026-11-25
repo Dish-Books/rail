@@ -115,6 +115,12 @@ defmodule Rail.Issues.Actions.EditIssueTest do
     assert %Issue{title: "Filed as it was"} = Repo.get!(Issue, issue.id)
   end
 
+  test "an issue deleted since the page read it is not found", %{issue: issue, scope: scope} do
+    Repo.delete!(issue)
+
+    assert {:error, :not_found} = Issues.edit_issue(scope, issue, %{"title" => "Renamed"})
+  end
+
   test "someone who cannot open the project finds nothing", %{issue: issue} do
     assert {:error, :not_found} = Issues.edit_issue(user_scope(project_ids: []), issue, %{"title" => "Renamed"})
   end

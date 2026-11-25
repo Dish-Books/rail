@@ -35,6 +35,8 @@ defmodule Rail.Issues do
   defdelegate mark_issue_tested(scope, issue), to: Actions.MarkIssueTested
   defdelegate send_issue_to_triage(scope, issue), to: Actions.SendIssueToTriage
   defdelegate edit_issue(scope, issue, attrs), to: Actions.EditIssue
+  defdelegate send_issue_chat(scope, issue, attrs), to: Actions.SendIssueChat
+  defdelegate run_issue_chat(issue), to: Actions.RunIssueChat
   defdelegate upload_file(scope, issue, filename, data), to: Actions.UploadFile
   defdelegate block_issue(scope, blocker, blocked), to: Actions.BlockIssue
   defdelegate unblock_issue(scope, blocker, blocked), to: Actions.UnblockIssue

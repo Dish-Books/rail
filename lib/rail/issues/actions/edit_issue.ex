@@ -16,27 +16,27 @@ defmodule Rail.Issues.Actions.EditIssue do
   the same project, or clears the parent when empty. Returns the row as it now reads.
   """
   def edit_issue(%Scope{} = scope, %Issue{id: id, project_id: project_id}, %{} = attrs) do
-    # Read again: a page's copy can be a pick behind.
-    current = Repo.one(from(i in Issue, where: i.id == ^id and i.project_id == ^project_id))
-
-    if is_nil(current) or not Scope.can_access_project?(scope, project_id) do
-      {:error, :not_found}
-    else
+    if Scope.can_access_project?(scope, project_id) do
       fn ->
-        changeset = Issue.edit_changeset(current, Map.delete(attrs, "parent_id"))
+        # Read again under the row lock the issue chat's pass writes under, so the two take turns.
+        query = from(i in Issue, where: i.id == ^id and i.project_id == ^project_id, lock: "FOR UPDATE")
 
-        with {:ok, changeset} <- put_parent(changeset, current, attrs),
+        with %Issue{} = current <- Repo.one(query) || {:error, :not_found},
+             changeset = Issue.edit_changeset(current, Map.delete(attrs, "parent_id")),
+             {:ok, changeset} <- put_parent(changeset, current, attrs),
              {:ok, issue} <- Repo.update(changeset) do
           issue
         else
-          {:error, changeset} -> Repo.rollback(changeset)
+          {:error, changeset_or_not_found} -> Repo.rollback(changeset_or_not_found)
         end
       end
       |> Repo.transaction()
       |> tap(fn
         {:ok, issue} -> Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
-        {:error, _changeset} -> :ok
+        {:error, _changeset_or_not_found} -> :ok
       end)
+    else
+      {:error, :not_found}
     end
   end
 

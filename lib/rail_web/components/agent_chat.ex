@@ -12,6 +12,7 @@ defmodule RailWeb.Components.AgentChat do
   attr :empty, :string, required: true
   attr :placeholder, :string, required: true
   attr :gone_author, :string, required: true, doc: "the name shown for a line whose author was deleted"
+  attr :error, :string, default: nil, doc: "why the last pass did not finish, shown above the chat box"
   attr :class, :any, default: nil
   slot :header, doc: "replaces the Agent title, such as triage's Chat / Thread switch"
   slot :composer, doc: "drawn in the chat form's place while it is given, such as Support's rule to decide"
@@ -74,6 +75,17 @@ defmodule RailWeb.Components.AgentChat do
             <p class="text-[13px] whitespace-pre-line break-words">{line.text}</p>
           </div>
         </div>
+      </div>
+      <div
+        :if={@error}
+        id={"#{@id}-error"}
+        role="alert"
+        class="mx-3 mt-3 rounded-lg border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30 px-3 py-2 text-[12.5px] text-red-800 dark:text-red-200 flex items-start gap-2"
+      >
+        <.icon name="pi-warning-circle" class="size-4 mt-px shrink-0" />
+        <span class="min-w-0 break-words">
+          <b>The agent did not finish.</b> {@error} Send a message to run it again.
+        </span>
       </div>
       <div
         :if={@composer != []}

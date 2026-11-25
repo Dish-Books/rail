@@ -19,9 +19,18 @@ defmodule RailWeb.Utils.StartIssue do
          {:ok, %Issue{} = issue} <- Issues.get_issue(issue_id, preload: [:project, :task]),
          true <- Scope.can_access_project?(scope, issue.project_id) and not Issue.finished_state?(issue.state) do
       cond do
-        match?(%Task{}, issue.task) -> {:ok, issue.task}
-        is_integer(issue.pr_number) -> scope |> Pipeline.adopt_pull_request(issue) |> explain(&adopt_error/1)
-        true -> scope |> Pipeline.start_task(issue) |> explain(&start_error/1)
+        match?(%Task{}, issue.task) ->
+          {:ok, issue.task}
+
+        # The task starts from the ticket the agent leaves, which may still change.
+        Issue.chatting?(issue) ->
+          {:error, "The agent is still answering on this issue. Start it once the agent finishes."}
+
+        is_integer(issue.pr_number) ->
+          scope |> Pipeline.adopt_pull_request(issue) |> explain(&adopt_error/1)
+
+        true ->
+          scope |> Pipeline.start_task(issue) |> explain(&start_error/1)
       end
     else
       {:ok, %User{}} -> {:error, "Connect GitHub in Connected accounts before you start an issue."}
