@@ -11,6 +11,7 @@ defmodule Rail.Pipeline.Schemas.Run do
   import Rail.Pipeline.Utils.CompactNumber
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline.Schemas.CoderabbitReview
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Pipeline.Schemas.Task
@@ -197,13 +198,16 @@ defmodule Rail.Pipeline.Schemas.Run do
   Only the run of the stage the task is in can be waiting: a stage latches its
   run to `:done` and leaves it that way, so the plan run of a task already at
   engineer is a finished verdict, not an outstanding one. Requires `role`, `task`
-  and the task's `issue` to be preloaded, and at Plan the task's `rounds`.
+  and the task's `issue` to be preloaded, at Plan the task's `rounds`, and at
+  Review its `coderabbit_reviews`.
 
   A blocked run stays blocked until its answers are sent, so it keeps its place
   in the queue while the human works through the batch. A run at a stage a human
   signs off is waiting on that sign-off once it is done: its ticket, design pick
   and plan sent to the tech leads, its diff sent to review, its findings ruled, or,
-  at Finalize, the task marked ready for a tech lead.
+  at Finalize, the task marked ready for a tech lead. A Review lead done while
+  CodeRabbit has yet to answer waits on nobody, as an agent still working does,
+  since the answer comes back to the lead.
 
   A run that failed or stopped is waiting too, and on the same person. Neither
   moves on its own - a failure is fixed by a message and a stopped run is resumed
@@ -282,6 +286,10 @@ defmodule Rail.Pipeline.Schemas.Run do
   defp waiting_state?(:done, %Task{stage: :finalize, marked_ready_at: marked}), do: is_nil(marked)
   # A plan sent to the tech leads is theirs to approve, as a task marked ready is theirs to merge.
   defp waiting_state?(:done, %Task{stage: :plan} = task), do: not Task.plan_sent?(task)
+  # CodeRabbit's answer goes to the lead, whose turn on it is what the task waits for next.
+  defp waiting_state?(:done, %Task{stage: :review, coderabbit_reviews: reviews}),
+    do: not Enum.any?(reviews, &CoderabbitReview.pending?/1)
+
   defp waiting_state?(:done, %Task{stage: stage}), do: stage in [:plan, :engineer, :review]
   defp waiting_state?(_running_or_queued, _task), do: false
 

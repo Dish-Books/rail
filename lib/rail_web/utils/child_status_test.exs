@@ -4,6 +4,7 @@ defmodule RailWeb.Utils.ChildStatusTest do
   import RailWeb.Utils.ChildStatus
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline.Schemas.CoderabbitReview
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -21,6 +22,7 @@ defmodule RailWeb.Utils.ChildStatusTest do
           builds_on: [],
           stage: :engineer,
           runs: [],
+          coderabbit_reviews: [],
           scratch_path: "/nonexistent/child_status",
           issue: %Issue{identifier: "SPL-#{position}", title: "Child #{position}"}
         },
@@ -150,6 +152,9 @@ defmodule RailWeb.Utils.ChildStatusTest do
              badge: :dot,
              action: %{label: "Review", params: [item: "findings"]}
            } = child_status(at_review, [at_review])
+
+    reviewing = %{at_review | coderabbit_reviews: [%CoderabbitReview{status: :reviewing}]}
+    assert %{needs_attention: false} = child_status(reviewing, [reviewing])
   end
 
   test "a child whose Review round waits on a person takes the Findings icon, until it is ready to merge", %{

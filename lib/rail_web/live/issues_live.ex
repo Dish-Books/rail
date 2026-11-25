@@ -26,7 +26,7 @@ defmodule RailWeb.IssuesLive do
     :merged_task,
     parent: [:project, :owner_user, :workflow, :children, :task, :merged_task],
     # A run's questions, without which `Run.state/1` reads one with its round unanswered as stopped.
-    task: [:rounds, runs: [:role, :questions], parent_task: [children: :issue]]
+    task: [:rounds, :coderabbit_reviews, runs: [:role, :questions], parent_task: [children: :issue]]
   ]
 
   def mount(_params, _session, socket) do
