@@ -6,6 +6,7 @@ defmodule RailWeb.Mcp.Tools.ListIssues do
 
   use Anubis.Server.Component, type: :tool, annotations: %{readOnlyHint: true}
 
+  import RailWeb.Utils.FindMcpAssignee
   import RailWeb.Utils.McpErrorResponse
 
   alias Anubis.Server.Response
@@ -14,7 +15,6 @@ defmodule RailWeb.Mcp.Tools.ListIssues do
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Scope
-  alias Rail.Users
   alias RailWeb.Mcp.IssueJSON
 
   @states %{
@@ -42,7 +42,7 @@ defmodule RailWeb.Mcp.Tools.ListIssues do
   def execute(params, %{assigns: %{current_scope: scope}} = frame) do
     with {:ok, project} <- find_project(scope, params[:project]),
          {:ok, cycle_id} <- find_cycle(project, params[:cycle]),
-         {:ok, owner_user_id} <- find_owner(scope, params[:assignee]) do
+         {:ok, owner_user_id} <- find_mcp_assignee(scope, params[:assignee]) do
       state = @states[params[:state]]
 
       %{issues: issues, total: total} =
@@ -89,14 +89,4 @@ defmodule RailWeb.Mcp.Tools.ListIssues do
   end
 
   defp find_cycle(_project, _cycle), do: {:error, :cycle_not_tracked}
-
-  defp find_owner(_scope, nil), do: {:ok, nil}
-
-  defp find_owner(scope, login) do
-    case {String.trim(login), Users.list_users_by_logins([String.trim(login)])} do
-      {"me", _users} -> {:ok, scope.user.id}
-      {_login, [user | _rest]} -> {:ok, user.id}
-      {login, []} -> {:error, {:invalid, :assignee, "#{login} is no one in Rail"}}
-    end
-  end
 end

@@ -70,7 +70,7 @@ defmodule RailWeb.McpAuthorizeLive do
           </ul>
 
           <p class="mt-3 text-sm text-slate-500 dark:text-slate-400">
-            It can search, open, file and edit tickets and comment. It cannot start or approve tasks.
+            It can search, open, file and edit tickets, comment, list tasks and rule on their review findings. It cannot start or approve tasks, or send a review.
           </p>
 
           <p class="mt-5 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">

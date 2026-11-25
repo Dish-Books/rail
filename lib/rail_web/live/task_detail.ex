@@ -2090,6 +2090,8 @@ defmodule RailWeb.Live.TaskDetail do
   defp message_for({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Review."
   defp message_for(:review_finished), do: "The review is finished, so its rulings are settled."
   defp message_for(:issue_filed), do: "That finding is filed as a new issue, so its ruling can no longer change."
+  defp message_for(:finding_fixed), do: "That finding is fixed, so its ruling can no longer change."
+  defp message_for(:suppressed), do: "A rule already leaves that finding alone, so the only ruling it takes is Fix."
   defp message_for(:cleaned_up), do: "This task is cleaned up, so it takes no more comments."
   defp message_for(:not_found), do: "That screen is gone: a retake or a cleanup removed it."
   defp message_for({:unanswered_questions, 1}), do: "Answer or dismiss the open question first. Nothing started."

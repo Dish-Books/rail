@@ -536,6 +536,16 @@ defmodule RailWeb.Live.TaskDetailTest do
              "#review-error",
              "That finding is filed as a new issue, so its ruling can no longer change."
            )
+
+    for {reason, said} <- [
+          finding_fixed: "That finding is fixed, so its ruling can no longer change.",
+          suppressed: "A rule already leaves that finding alone, so the only ruling it takes is Fix."
+        ] do
+      expect(Pipeline, :decide_finding, fn _scope, _finding, :skip -> {:error, reason} end)
+      view |> element("#decide-skip-view-only-send") |> render_click()
+
+      assert has_element?(view, "#review-error", said)
+    end
   end
 
   test "ruling New issue shows the issue Send files, in the list and the tray, and a Send elsewhere shows it filed", %{

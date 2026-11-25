@@ -11,7 +11,9 @@ defmodule RailWeb.Mcp.Server do
     instructions:
       "Rail tracks tickets in projects named by a key, such as RAIL in RAIL-12. Start with list_projects to see the keys. " <>
         "Each project plans in cycles: list_cycles shows the current one. " <>
-        "Work that spans cycles is grouped in initiatives: list_initiatives shows them."
+        "Work that spans cycles is grouped in initiatives: list_initiatives shows them. " <>
+        "A ticket's task is reviewed in Rail: list_tasks finds tasks, such as yours at review, " <>
+        "list_findings reads what Review found on one, and decide_finding rules on a finding."
 
   component(RailWeb.Mcp.Tools.ListProjects)
   component(RailWeb.Mcp.Tools.ListCycles)
@@ -22,6 +24,9 @@ defmodule RailWeb.Mcp.Server do
   component(RailWeb.Mcp.Tools.CreateIssue)
   component(RailWeb.Mcp.Tools.UpdateIssue)
   component(RailWeb.Mcp.Tools.CreateComment)
+  component(RailWeb.Mcp.Tools.ListTasks)
+  component(RailWeb.Mcp.Tools.ListFindings)
+  component(RailWeb.Mcp.Tools.DecideFinding)
 
   @impl true
   def init(_client_info, frame), do: {:ok, frame}

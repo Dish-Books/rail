@@ -134,4 +134,4 @@ A person adds Rail to their own Claude Code, Claude Desktop or claude.ai at `<Ra
 - **`/oauth/mcp/authorize`** stays behind Access. The person opens it in their own browser, signed in to Access already.
 - **Registration is open to any client,** so add a Cloudflare rate-limiting rule on `/oauth/register`: 20 requests an hour from one IP, blocked for an hour.
 
-Check: run `claude mcp add --transport http rail <Rail's URL>/mcp`, then `/mcp` in Claude Code and choose to authenticate. Rail's consent page opens in the browser, Allow returns to Claude, and Claude lists Rail's seven ticket tools, from `list_projects` to `create_comment`. The connection shows on Connected accounts.
+Check: run `claude mcp add --transport http rail <Rail's URL>/mcp`, then `/mcp` in Claude Code and choose to authenticate. Rail's consent page opens in the browser, Allow returns to Claude, and Claude lists Rail's twelve tools: its ticket tools, from `list_projects` to `create_comment`, and its review tools, `list_tasks`, `list_findings` and `decide_finding`. The connection shows on Connected accounts.
