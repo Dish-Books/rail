@@ -51,6 +51,11 @@ defmodule Rail.Support.Schemas.Message do
         }
       end
 
+    # Intercom lists a pasted screenshot as an attachment too, on another host with another signature but the same
+    # path; the listed one keeps its real type and size, so the inline copy goes.
+    listed = MapSet.new(files, &URI.parse(&1.url).path)
+    inline = Enum.reject(inline, &MapSet.member?(listed, URI.parse(&1.url).path))
+
     if text == "" and inline == [] and files == [] do
       nil
     else
