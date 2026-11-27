@@ -137,7 +137,11 @@ defmodule Rail.Tools.Utils.EnsureBrowserHostTest do
     # Its own container, outliving Rail: host networking so every sandbox reaches
     # it on localhost, restarted by Docker if Chrome dies, and held to what it
     # was given.
-    test "a browser container that does not exist is created and started", %{port: port, announce: announce} do
+    test "a browser container that does not exist is created and started", %{
+      port: port,
+      announce: announce,
+      root: root
+    } do
       test_pid = self()
 
       Req.Test.stub(Docker, fn
@@ -158,6 +162,8 @@ defmodule Rail.Tools.Utils.EnsureBrowserHostTest do
 
       assert_received {:created, "name=rail-browser", body}
       assert %{"NetworkMode" => "host", "RestartPolicy" => %{"Name" => "unless-stopped"}} = body["HostConfig"]
+      # Chrome reads and writes nothing on the host but its own folder.
+      assert body["HostConfig"]["Binds"] == ["#{root}:#{root}"]
       refute Map.has_key?(body["HostConfig"], "Memory")
       assert body["HostConfig"]["CpuShares"] == Rail.browser_cpus() * 1024
       refute Map.has_key?(body["HostConfig"], "NanoCpus")

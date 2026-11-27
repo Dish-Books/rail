@@ -5,6 +5,7 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Clients.Docker
@@ -13,9 +14,8 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
 
   @gib 1024 ** 3
 
-  setup %{project: project} do
-    # A role's prompt is read from the project's clone, which another test may have made, so reading it here
-    # would spawn git: these see no prompt file on the default branch, as when there is no clone.
+  setup do
+    # A role's prompt is read from the project's clone, which here is a plain folder rather than a repository.
     stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
     # An engineer turn that ends asks git whether it left uncommitted work; the worktree here is a plain directory.
     stub(Rail.Git, :worktree_dirty?, fn _worktree_path -> false end)
@@ -39,10 +39,28 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
 
     stub(Rail, :sandbox_runtime, fn -> :docker end)
 
+    # The project's clone, the task's folder and the toolchain each of its own, so a sandbox's mounts are this test's.
     tmp_dir = Path.join(System.tmp_dir!(), "launch_sandbox_#{System.unique_integer([:positive])}")
-    worktree_path = Path.join(tmp_dir, "worktree")
-    File.mkdir_p!(worktree_path)
+    clone_path = Path.join(tmp_dir, "clone")
+    task_dir = Path.join(tmp_dir, "launch-1")
+    worktree_path = Path.join(task_dir, "repo")
+    scratch_path = Path.join(tmp_dir, "scratch")
+    mise_dir = Path.join(tmp_dir, "mise")
+    Enum.each([clone_path, worktree_path, scratch_path, mise_dir], &File.mkdir_p!/1)
     on_exit(fn -> File.rm_rf(tmp_dir) end)
+    stub(Rail, :mise_data_dir, fn -> mise_dir end)
+
+    key = "LCH#{System.unique_integer([:positive])}"
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Launch",
+        github_repo: "example/#{key}",
+        github_installation_id: 1,
+        key: key,
+        default_branch: "main",
+        clone_path: clone_path
+      })
 
     model = "claude-launch-#{System.unique_integer([:positive])}"
 
@@ -50,16 +68,24 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
       Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true", models: [%{id: model}]})
 
     backend = Repo.update!(Backend.usage_changeset(backend, %{name: :claude, status: :ready}))
-    {:ok, seeded} = Roles.get_role(project_id: project.id, stage: :engineer)
+    config_dir = Backend.config_dir(backend)
+    on_exit(fn -> File.rm_rf(config_dir) end)
 
     {:ok, role} =
-      Roles.update_role(system_scope(), seeded, %{model: model, reserved_cpus: 2})
+      Roles.create_role(system_scope(), project, %{
+        stage: :engineer,
+        cli: :claude,
+        name: "Engineer",
+        model: model,
+        reserved_cpus: 2,
+        system_prompt: "Build it."
+      })
 
     issue =
       %Issue{}
       |> Issue.changeset(%{
         project_id: project.id,
-        identifier: "LCH-1",
+        identifier: "#{key}-1",
         title: "Launch Issue",
         state: :todo
       })
@@ -73,7 +99,7 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
           stage: :engineer,
           worktree_name: "launch-1",
           worktree_path: worktree_path,
-          scratch_path: Path.join(tmp_dir, "scratch"),
+          scratch_path: scratch_path,
           worktree_slot: 3
         },
         project.id
@@ -83,7 +109,18 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
     {:ok, run} =
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :starting, started_at: DateTime.utc_now()})
 
-    %{backend: backend, run: run, worktree_path: worktree_path}
+    %{
+      backend: backend,
+      clone_path: clone_path,
+      config_dir: config_dir,
+      mise_dir: mise_dir,
+      project: project,
+      role: role,
+      run: run,
+      scratch_path: scratch_path,
+      task_dir: task_dir,
+      worktree_path: worktree_path
+    }
   end
 
   test "runs the turn where it would run beside Rail, with what it needs and none of Rail's own", %{
@@ -100,7 +137,7 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
     env = Map.new(env, &(&1 |> String.split("=", parts: 2) |> List.to_tuple()))
     config_dir = Backend.config_dir(backend)
 
-    assert %{"NetworkMode" => "host", "Binds" => ["/srv/rail:/srv/rail"], "Init" => true} = host_config
+    assert %{"NetworkMode" => "host", "Init" => true} = host_config
 
     assert %{
              "CLAUDE_CONFIG_DIR" => ^config_dir,
@@ -118,6 +155,157 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
     # A turn's compiles may use every CPU the machine leaves idle, so Rail pins no
     # schedulers; only what its own environment carries, as under CI, passes through.
     assert env["ERL_FLAGS"] == System.get_env("ERL_FLAGS")
+  end
+
+  test "an agent's turn mounts only its task's folders, its clone and toolchain read-only, and its account's login", %{
+    backend: backend,
+    clone_path: clone_path,
+    config_dir: config_dir,
+    mise_dir: mise_dir,
+    run: run,
+    scratch_path: scratch_path,
+    task_dir: task_dir,
+    worktree_path: worktree_path
+  } do
+    session_dir = Backend.session_dir(backend, worktree_path)
+
+    assert {:ok, %OsProcess{kind: :agent, status: :running}} = Tools.start_os_process(run, ["-p", "Build it."])
+
+    assert_received {:created, %{"HostConfig" => %{"Binds" => binds, "Tmpfs" => tmpfs}}}
+    locked = Enum.map(["settings.json", "settings.local.json", "CLAUDE.md"], &Path.join(config_dir, &1))
+
+    assert Enum.sort(binds) ==
+             Enum.sort(
+               [
+                 "#{task_dir}:#{task_dir}",
+                 "#{scratch_path}:#{scratch_path}",
+                 "#{clone_path}:#{clone_path}:ro",
+                 "#{mise_dir}:#{mise_dir}:ro",
+                 "#{config_dir}:#{config_dir}",
+                 "#{session_dir}:#{session_dir}"
+               ] ++ Enum.map(locked, &"#{&1}:#{&1}:ro")
+             )
+
+    hidden = [
+      "projects",
+      "sessions",
+      "session-env",
+      "shell-snapshots",
+      "todos",
+      "file-history",
+      "backups",
+      "agents",
+      "commands",
+      "skills",
+      "plugins",
+      "output-styles",
+      "rules"
+    ]
+
+    # The account's earlier conversations are covered, and only this turn's own is bound back inside the cover.
+    assert tmpfs == Map.new(hidden, &{Path.join(config_dir, &1), "uid=1000,gid=1000,mode=0700"})
+    assert Path.dirname(session_dir) == Path.join(config_dir, "projects")
+    # Made as Rail's user, so Docker does not make it as root.
+    assert File.dir?(session_dir)
+  end
+
+  test "setup and CI on a task mount the same folders as its agent, and no account's login", %{
+    clone_path: clone_path,
+    mise_dir: mise_dir,
+    run: run,
+    scratch_path: scratch_path,
+    task_dir: task_dir
+  } do
+    expected =
+      Enum.sort([
+        "#{task_dir}:#{task_dir}",
+        "#{scratch_path}:#{scratch_path}",
+        "#{clone_path}:#{clone_path}:ro",
+        "#{mise_dir}:#{mise_dir}:ro"
+      ])
+
+    assert {:ok, %OsProcess{kind: :setup}} = Tools.start_command_process(run, :setup, "./setup.sh")
+    assert_received {:created, %{"HostConfig" => %{"Binds" => setup_binds, "Tmpfs" => setup_tmpfs}}}
+    assert Enum.sort(setup_binds) == expected
+    assert setup_tmpfs == %{}
+
+    assert {:ok, %OsProcess{kind: :ci}} = Tools.start_command_process(run, :ci, "mix test")
+    assert_received {:created, %{"HostConfig" => %{"Binds" => ci_binds, "Tmpfs" => ci_tmpfs}}}
+    assert Enum.sort(ci_binds) == expected
+    assert ci_tmpfs == %{}
+  end
+
+  test "old tasks' worktrees and triage checkouts in the clone are covered", %{clone_path: clone_path, run: run} do
+    worktrees = Path.join(clone_path, ".worktrees")
+    File.mkdir_p!(Path.join(worktrees, "another-task"))
+
+    assert {:ok, %OsProcess{kind: :ci}} = Tools.start_command_process(run, :ci, "mix test")
+
+    assert_received {:created, %{"HostConfig" => %{"Binds" => binds, "Tmpfs" => tmpfs}}}
+    assert tmpfs == %{worktrees => "uid=1000,gid=1000,mode=0700"}
+    assert "#{clone_path}:#{clone_path}:ro" in binds
+  end
+
+  # Its .git writes into the clone's own git folder, so it keeps the mount every task had before RAIL-203.
+  test "a task still on a worktree of its project's clone keeps the whole mount, and a new task beside it does not",
+       %{clone_path: clone_path, project: project, role: role, run: run} do
+    old_worktree = Path.join([clone_path, ".worktrees", "launch-old"])
+    File.mkdir_p!(old_worktree)
+
+    old_issue =
+      %Issue{}
+      |> Issue.changeset(%{project_id: project.id, identifier: "#{project.key}-2", title: "Old Issue", state: :todo})
+      |> Repo.insert!()
+
+    old_task =
+      %Task{}
+      |> Task.changeset(
+        %{
+          issue_id: old_issue.id,
+          stage: :engineer,
+          worktree_name: "launch-old",
+          worktree_path: old_worktree,
+          scratch_path: Path.join(Path.dirname(clone_path), "old-scratch"),
+          worktree_slot: 4
+        },
+        project.id
+      )
+      |> Repo.insert!()
+
+    {:ok, old_run} =
+      Pipeline.create_run(%{task_id: old_task.id, role_id: role.id, status: :starting, started_at: DateTime.utc_now()})
+
+    assert {:ok, %OsProcess{status: :running}} = Tools.start_os_process(old_run, ["-p", "Build it."])
+    assert_received {:created, %{"WorkingDir" => ^old_worktree, "HostConfig" => old_host_config}}
+    # What config/config.exs gives it.
+    assert %{"Binds" => ["/srv/rail:/srv/rail"], "Tmpfs" => %{}} = old_host_config
+
+    assert {:ok, %OsProcess{status: :running}} = Tools.start_os_process(run, ["-p", "Build it."])
+    assert_received {:created, %{"HostConfig" => %{"Binds" => binds}}}
+    refute "/srv/rail:/srv/rail" in binds
+  end
+
+  test "a folder the sandbox would mount that is not there fails it before Docker is asked, naming it", %{
+    backend: backend,
+    clone_path: clone_path,
+    run: run,
+    worktree_path: worktree_path
+  } do
+    File.rm_rf!(clone_path)
+    test_pid = self()
+
+    Req.Test.stub(Docker, fn conn ->
+      send(test_pid, {:requested, conn.method, conn.request_path})
+      Req.Test.json(conn, %{"NCPU" => 16, "MemTotal" => 64 * @gib})
+    end)
+
+    assert {:error, {:spawn_failed, {:bad_cwd, ^clone_path}, %Run{status: :finished}}} =
+             Tools.start_os_process(run, ["-p", "x"])
+
+    refute_received {:requested, "POST", "/containers/create"}
+    refute File.exists?(clone_path)
+    # Nothing of the login was made for a sandbox that never started.
+    refute File.exists?(Backend.session_dir(backend, worktree_path))
   end
 
   # ExUnit runs twice as many cases as the BEAM has schedulers, so CI's are held

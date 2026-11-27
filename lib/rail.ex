@@ -10,8 +10,11 @@ defmodule Rail do
   @doc "The image a Docker sandbox is created from."
   def sandbox_image, do: sandbox(:image, "rail-sandbox:latest")
 
-  @doc "What a Docker sandbox has mounted, at the paths Rail sees them."
+  @doc "What a sandbox for a task still on a worktree of its project's clone has mounted, at the paths Rail sees them."
   def sandbox_binds, do: sandbox(:binds, [])
+
+  @doc "Where mise keeps the toolchains Rail installs, which a sandbox reads and never writes; nil when unset."
+  def mise_data_dir, do: System.get_env("MISE_DATA_DIR")
 
   @doc "The shared memory a Docker sandbox gets, in GB, so a headless Chrome in it has room."
   def sandbox_shm_size_gb, do: sandbox(:shm_size_gb, 1)

@@ -2,19 +2,24 @@ defmodule Rail.Tools.Utils.LaunchSandbox do
   @moduledoc false
 
   import Rail.Tools.Utils.Env
+  import Rail.Tools.Utils.LoginMounts
   import Rail.Tools.Utils.RedirectedCommand
 
+  alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Tools
   alias Rail.Tools.Clients.Docker
   alias Rail.Tools.FollowerSupervisor
+  alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
 
   @gib 1024 ** 3
 
   @doc """
   Starts a waiting process from its launch spec, marks it running and hands it to
-  a Follower. `os_process` must carry its run, preloaded down to its `role`.
+  a Follower. `os_process` must carry its run, preloaded down to its `role`, its
+  `backend`, and its task down to its `project`.
 
   `:local` spawns beside Rail. `:docker` runs it in a container of its own, which
   outlives Rail. Its CPUs are the row's share rather than a cap: `capacity` is what `Rail.Tools.get_sandbox_capacity/0`
@@ -76,15 +81,8 @@ defmodule Rail.Tools.Utils.LaunchSandbox do
     end
   end
 
-  # The sandbox sees /srv/rail at the same path Rail does, so the worktree is
-  # checked here: Docker would otherwise create a missing one, owned by root.
-  #
-  # CPU time is weighed rather than capped: a sandbox takes whatever the others
-  # leave idle, and when they all want more, each gets its reservation's share.
-  # The ceiling is the machine less its headroom, so Rail, Postgres and project
-  # services keep theirs. Memory is not limited at all: a sandbox takes what it
-  # needs, and if the machine runs out the kernel is told to stop a sandbox
-  # before it stops Rail or Postgres.
+  # The sandbox sees its folders at the paths Rail does, so each is checked here:
+  # Docker would otherwise create a missing one, owned by root.
   defp start(:docker, %OsProcess{} = os_process, spec, capacity) do
     {shell, args, env} =
       redirected_command(spec["executable"], spec["args"],
@@ -94,7 +92,23 @@ defmodule Rail.Tools.Utils.LaunchSandbox do
         stdin_path: spec["stdin_path"]
       )
 
-    body = %{
+    with true <- File.dir?(spec["cwd"]) || {:error, {:bad_cwd, spec["cwd"]}},
+         {:ok, %{binds: binds, tmpfs: tmpfs}} <- mounts(os_process, spec["cwd"]),
+         body = body(os_process, spec, capacity, {shell, args, env}, binds, tmpfs),
+         {:ok, %{"Id" => id}} <- Docker.create_container(os_process.id, body),
+         {:ok, _started} <- start_container(id) do
+      {:ok, %{container_id: id}, nil}
+    end
+  end
+
+  # CPU time is weighed rather than capped: a sandbox takes whatever the others
+  # leave idle, and when they all want more, each gets its reservation's share.
+  # The ceiling is the machine less its headroom, so Rail, Postgres and project
+  # services keep theirs. Memory is not limited at all: a sandbox takes what it
+  # needs, and if the machine runs out the kernel is told to stop a sandbox
+  # before it stops Rail or Postgres.
+  defp body(%OsProcess{} = os_process, spec, capacity, {shell, args, env}, binds, tmpfs) do
+    %{
       "Image" => Rail.sandbox_image(),
       "Cmd" => [shell | args],
       "Env" => env |> env() |> schedulers(os_process) |> Enum.map(fn {key, value} -> "#{key}=#{value}" end),
@@ -102,7 +116,8 @@ defmodule Rail.Tools.Utils.LaunchSandbox do
       "User" => "1000:1000",
       "HostConfig" => %{
         "NetworkMode" => "host",
-        "Binds" => Rail.sandbox_binds(),
+        "Binds" => binds,
+        "Tmpfs" => tmpfs,
         "CpuShares" => round(os_process.reserved_cpus * 1024),
         "NanoCpus" => capacity.cpus * 1_000_000_000,
         "OomScoreAdj" => 500,
@@ -110,13 +125,41 @@ defmodule Rail.Tools.Utils.LaunchSandbox do
         "ShmSize" => Rail.sandbox_shm_size_gb() * @gib
       }
     }
+  end
 
-    with true <- File.dir?(spec["cwd"]) || {:error, {:bad_cwd, spec["cwd"]}},
-         {:ok, %{"Id" => id}} <- Docker.create_container(os_process.id, body),
-         {:ok, _started} <- start_container(id) do
-      {:ok, %{container_id: id}, nil}
+  # A worktree's .git writes into its project clone's git folder, so such a task keeps the whole mount until it ends.
+  defp mounts(%OsProcess{task: %Task{project: %Project{clone_path: clone_path}} = task} = os_process, cwd) do
+    worktrees = Path.join(clone_path, ".worktrees")
+
+    if String.starts_with?(cwd, worktrees <> "/") do
+      {:ok, %{binds: Rail.sandbox_binds(), tmpfs: %{}}}
+    else
+      writable = [Path.dirname(cwd), task.scratch_path]
+      read_only = Enum.filter([clone_path, Rail.mise_data_dir()], &is_binary/1)
+
+      case Enum.find(writable ++ read_only, &(not File.dir?(&1))) do
+        missing when is_binary(missing) ->
+          {:error, {:bad_cwd, missing}}
+
+        nil ->
+          login = login(os_process, cwd)
+          # Old tasks' worktrees and triage checkouts live in the clone, and are no business of this task.
+          hidden = if File.dir?(worktrees), do: %{worktrees => "uid=1000,gid=1000,mode=0700"}, else: %{}
+
+          {:ok,
+           %{
+             binds: Enum.map(writable, &"#{&1}:#{&1}") ++ Enum.map(read_only, &"#{&1}:#{&1}:ro") ++ login.binds,
+             tmpfs: Map.merge(hidden, login.tmpfs)
+           }}
+      end
     end
   end
+
+  # Only an agent runs the CLI; its own conversations stay open so the next turn can resume them.
+  defp login(%OsProcess{kind: :agent, backend: %Backend{} = backend}, cwd),
+    do: login_mounts(backend, [Backend.session_dir(backend, cwd)])
+
+  defp login(%OsProcess{}, _cwd), do: %{binds: [], tmpfs: %{}}
 
   # The BEAM sizes itself to the ceiling, and ExUnit runs twice as many cases as
   # it has schedulers, so a CI suite on a busy machine would pile far more work on

@@ -33,6 +33,30 @@ defmodule Rail.Tools.Schemas.BackendTest do
     refute Backend.config_dir(%Backend{id: "bkd_one"}) == Backend.config_dir(%Backend{id: "bkd_two"})
   end
 
+  # Both names were made by the pinned CLI's own function (2.1.330), run once on these paths.
+  test "session_dir/2 names a working folder's conversations as Claude Code does" do
+    projects = Path.join(Backend.config_dir(%Backend{id: "bkd_one"}), "projects")
+    short = "/srv/rail/tasks/prj_01m385db5vkfep4t3mddhhrmjd/rail-219-a-sandbox-sees-only-its-own-task-s-files/repo"
+
+    long =
+      "/srv/rail/tasks/prj_01m385db5vkfep4t3mddhhrmjd/rail-219-when-a-task-is-started-from-an-issue-whose-title-" <>
+        "runs-on-and-on-its-branch-name-runs-on-too-and-the-folder-claude-keeps-its-conversations-in-is-cut-short-" <>
+        "with-a-hash/repo"
+
+    assert Backend.session_dir(%Backend{id: "bkd_one"}, short) ==
+             Path.join(
+               projects,
+               "-srv-rail-tasks-prj-01m385db5vkfep4t3mddhhrmjd-rail-219-a-sandbox-sees-only-its-own-task-s-files-repo"
+             )
+
+    assert Backend.session_dir(%Backend{id: "bkd_one"}, long) ==
+             Path.join(
+               projects,
+               "-srv-rail-tasks-prj-01m385db5vkfep4t3mddhhrmjd-rail-219-when-a-task-is-started-from-an-issue-whose-" <>
+                 "title-runs-on-and-on-its-branch-name-runs-on-too-and-the-folder-claude-keeps-its-conversations-in-is--9hbu9v"
+             )
+  end
+
   test "env_var/1 names the variable the CLI reads its config directory from" do
     assert Backend.env_var(:claude) == "CLAUDE_CONFIG_DIR"
   end
