@@ -1,11 +1,13 @@
 defmodule Rail.Pipeline.Actions.SaveFixPlanTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Roles
 
   @plan "Guard it.\n\n### What changes\n\n#### `nil-crash`\n\nGuard nil.\n\n#### Comment 1\n\nKept.\n\n" <>
           "### File-level changes\n\n#### `lib/a.ex`\n\nGuards nil. For `nil-crash` and comment 1.\n\n```elixir sketch\ndef go, do: :ok\n```\n\n### Verification\n\nRun it."
@@ -170,5 +172,71 @@ defmodule Rail.Pipeline.Actions.SaveFixPlanTest do
 
     assert {:ok, %FixPlan{design_changed: true}} =
              Pipeline.save_fix_plan(task, %{"plan" => amended, "design_changed" => true})
+  end
+
+  describe "a change asked for in the conversation" do
+    @asked "Fold the helper in, as Ada asked.\n\n### What changes\n\n#### Changes to the plan\n\nAda asked to fold " <>
+             "`check_ids` into `check`.\n\n### File-level changes\n\n#### `lib/a.ex`\n\nFolds it in. For the changes " <>
+             "to the plan.\n\n```elixir sketch\ndef check(ids, opts), do: :ok\n```"
+
+    setup %{project: project} do
+      {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Issue", description: "Asked in chat"})
+      {:ok, task} = Pipeline.create_task(issue, :finalize)
+      task = Repo.preload(task, :issue)
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+      {:ok, run} =
+        Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :finished, started_at: DateTime.utc_now()})
+
+      reviews = Path.join([task.scratch_path, "reviews", "#{issue.identifier}.json"])
+      File.mkdir_p!(Path.dirname(reviews))
+      saved_at = DateTime.shift(DateTime.utc_now(), minute: -1)
+      File.write!(reviews, Jason.encode!(%{passes: [%{round: 1, saved_at: saved_at, head: "abc"}]}))
+
+      %{task: task, run: run, saved_at: saved_at}
+    end
+
+    test "a person's message to the Review lead since the review makes a plan due", %{task: task, run: run} do
+      assert {:error, :nothing_to_fix} = Pipeline.save_fix_plan(task, %{"plan" => @asked})
+
+      # Rail's own line on a person's behalf asks for nothing.
+      Pipeline.append_run_events(run.id, nil, ["[human] Finish review: nothing was ruled Fix."])
+      assert {:error, :nothing_to_fix} = Pipeline.save_fix_plan(task, %{"plan" => @asked})
+
+      Pipeline.append_run_events(run.id, nil, ["[human:usr_ada] fold check_ids into check"])
+
+      assert {:ok, %FixPlan{version: 1, round: 1, findings: [], comments: []}} =
+               Pipeline.save_fix_plan(task, %{"plan" => @asked})
+    end
+
+    test "the plan says what was asked under Changes to the plan, or is refused", %{task: task, run: run} do
+      Pipeline.append_run_events(run.id, nil, ["[human:usr_ada] fold check_ids into check"])
+      unnamed = String.replace(@asked, "#### Changes to the plan\n\n", "")
+
+      assert {:error, %Ecto.Changeset{} = changeset} = Pipeline.save_fix_plan(task, %{"plan" => unnamed})
+      assert %{plan: ["covers no finding or comment, so the change asked for" <> _rest]} = errors_on(changeset)
+    end
+
+    test "a message from before the review, or before the last plan's approval, is that round's", %{
+      task: task,
+      run: run,
+      saved_at: saved_at
+    } do
+      Pipeline.append_run_events(run.id, nil, ["[human:usr_ada] fold check_ids into check"])
+
+      reviews = Path.join([task.scratch_path, "reviews", "#{task.issue.identifier}.json"])
+      later = DateTime.shift(DateTime.utc_now(), minute: 1)
+      File.write!(reviews, Jason.encode!(%{passes: [%{round: 1, saved_at: later, head: "abc"}]}))
+      assert {:error, :nothing_to_fix} = Pipeline.save_fix_plan(task, %{"plan" => @asked})
+
+      File.write!(reviews, Jason.encode!(%{passes: [%{round: 1, saved_at: saved_at, head: "abc"}]}))
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => @asked})
+      plans = Path.join([task.scratch_path, "fix_plans", "#{task.issue.identifier}.json"])
+      approved = plans |> File.read!() |> Jason.decode!() |> Map.put("approved_at", later)
+      File.write!(plans, Jason.encode!(approved))
+
+      assert {:error, :nothing_to_fix} = Pipeline.save_fix_plan(task, %{"plan" => @asked})
+    end
   end
 end

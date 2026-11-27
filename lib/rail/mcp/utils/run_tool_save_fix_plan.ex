@@ -28,7 +28,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveFixPlan do
 
       {:error, :nothing_to_fix} ->
         {:refused,
-         "Nothing saved: nothing is ruled Fix, no comment asks for a change and the ticket and design stay as they are, so there is no round to plan. End your turn: the human finishes the review."}
+         "Nothing saved: nothing is ruled Fix, no comment asks for a change, nobody asked for one in the conversation since the review was saved, and the ticket and design stay as they are, so there is no round to plan. End your turn: the human finishes the review."}
 
       {:error, {:step_off, :demo}} ->
         {:refused, "Nothing saved: the demo is off for this task, so leave out `record_demo`."}
