@@ -188,6 +188,26 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       assert prompt =~ "open its screenshot beside the reference picture of the screen it changes"
       assert prompt =~ "If the browser cannot start, Rail fails the plan"
       refute prompt =~ "design from the code's templates"
+      refute prompt =~ "support_read"
+      {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_plan_run(system_scope(), issue)
+  end
+
+  test "an issue made from a support conversation has Plan read it with support_read before writing", %{
+    project: project,
+    issue: issue
+  } do
+    conversation = support_conversation(project)
+    issue = issue |> Ecto.Changeset.change(support_conversation_id: conversation.id) |> Repo.update!()
+
+    expect(Tools, :start_os_process, fn %Run{} = run, ["-p", prompt | _rest] ->
+      assert prompt =~
+               "This issue was created from a customer's support conversation. Read it with `support_read` before " <>
+                 "you write anything"
+
+      refute prompt =~ "Two bugs."
       {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
     end)
 

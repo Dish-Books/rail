@@ -12,6 +12,7 @@ defmodule Rail.Issues.Schemas.Issue do
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
+  alias Rail.Support.Schemas.Conversation
   alias Rail.Users.Schemas.User
   alias Rail.Workflows.Schemas.Workflow
 
@@ -77,6 +78,8 @@ defmodule Rail.Issues.Schemas.Issue do
     belongs_to :owner_user, User
     # The workflow that opened it, or nil for one somebody filed.
     belongs_to :workflow, Workflow
+    # The support conversation it was created from, or nil. Agents read the conversation through it, never a copy.
+    belongs_to :support_conversation, Conversation
 
     # The live task. Cleaned-up tasks stay in the table as history.
     has_one :task, Task, where: [cleaned_up_at: nil]

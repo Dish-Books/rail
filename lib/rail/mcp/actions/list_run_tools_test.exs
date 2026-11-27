@@ -131,6 +131,7 @@ defmodule Rail.Mcp.Actions.ListRunToolsTest do
               %{"name" => "browser_close"},
               %{"name" => "save_design_option"},
               %{"name" => "save_plan"},
+              %{"name" => "support_read"},
               %{"name" => "ask_questions"},
               %{"name" => "knowledge_search"},
               %{"name" => "search_issues"},

@@ -24,6 +24,8 @@ defmodule RailTest.Helpers do
   defdelegate learning(project, attrs, overrides \\ []), to: RailTest.LearningsHelpers
   defdelegate learnings_task(project, identifier, stage \\ :engineer), to: RailTest.LearningsHelpers
 
+  defdelegate support_conversation(project, parts \\ []), to: RailTest.SupportHelpers
+
   @doc """
   Runs `fun` until its assertions hold, or `timeout` passes.
 

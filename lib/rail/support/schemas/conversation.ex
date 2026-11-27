@@ -131,6 +131,14 @@ defmodule Rail.Support.Schemas.Conversation do
   def title_or_preview(%__MODULE__{customer_name: name}), do: "Conversation with #{name || "a customer"}"
 
   @doc """
+  The whole conversation as Markdown, for a ticket made from it. Needs the messages preloaded, oldest first.
+  """
+  def calculate_transcript(%__MODULE__{messages: messages} = conversation) do
+    intro = "The Intercom conversation with #{conversation.customer_name || "the customer"} this ticket came from:"
+    Enum.join([intro | Enum.map(messages, &transcript_entry/1)], "\n\n")
+  end
+
+  @doc """
   Where a pass writes the conversation, the draft and its result, outside any repository.
   """
   def scratch_path(%__MODULE__{id: id, project_id: project_id}) do
@@ -140,6 +148,20 @@ defmodule Rail.Support.Schemas.Conversation do
 
   def worktree_path(%__MODULE__{id: id, project: %Project{clone_path: clone_path}}),
     do: Path.join(clone_path, ".worktrees/support-#{id}")
+
+  # Quoted line by line, so a message's own Markdown stays inside its quote.
+  defp transcript_entry(%Message{} = message) do
+    files = Enum.map(message.attachments, &"[#{&1.name}](#{&1.url})")
+    body = [message.text | files] |> Enum.reject(&(&1 == "")) |> Enum.join("\n\n")
+    quoted = body |> String.split("\n") |> Enum.map_join("\n", &String.trim_trailing("> " <> &1))
+    at = Calendar.strftime(message.posted_at, "%b %-d, %Y %H:%M UTC")
+    "**#{message.author_name}** (#{kind_label(message.kind)}) · #{at}\n#{quoted}"
+  end
+
+  defp kind_label(:customer), do: "customer"
+  defp kind_label(:teammate), do: "teammate"
+  defp kind_label(:bot), do: "bot"
+  defp kind_label(:note), do: "internal note"
 
   defp decision(%LearningProposal{status: :approved, decided_by: user}), do: "Approved by #{decider(user)}"
   defp decision(%LearningProposal{status: :rejected, decided_by: user}), do: "Rejected by #{decider(user)}"

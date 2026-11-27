@@ -54,6 +54,9 @@ defmodule Rail.Mcp.Utils.McpTools do
   `@issue_tools` are offered to every role too: `search_issues` finds the project's
   tickets by meaning, and `get_issue` opens one, so no agent drafts what is already tracked.
 
+  `@support_tools` are Plan's: `support_read` reads the support conversation the issue was created from, which the
+  issue references rather than copies.
+
   `@demo_tools` are about a recording. `demo_start` is the camera, and it is the
   agent's to switch on: a run filmed from its first call to its last is a film of
   an agent working out how the application behaves, which is not the demo. So the
@@ -750,6 +753,17 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   ]
 
+  @support_tools [
+    %{
+      "name" => "support_read",
+      "description" =>
+        "Read the support conversation this issue was created from, as it stands now: every message between the " <>
+          "customer and the support team, oldest first, with who wrote it, as what and when, internal notes included. " <>
+          "Says so when the issue did not come from support.",
+      "inputSchema" => %{"type" => "object", "properties" => %{}}
+    }
+  ]
+
   @doc """
   The tools Rail serves this run itself: the save tools each agent hands its output over with, the browser for
   the four that drive the app, `ask_questions` for the agents a person talks to, and the knowledge base and the
@@ -757,7 +771,9 @@ defmodule Rail.Mcp.Utils.McpTools do
   task its proposals with `save_learning_proposal`.
   """
   def mcp_tools(%Role{stage: :plan}),
-    do: @browser_tools ++ @design_tools ++ @plan_tools ++ @question_tools ++ @knowledge_tools ++ @issue_tools
+    do:
+      @browser_tools ++
+        @design_tools ++ @plan_tools ++ @support_tools ++ @question_tools ++ @knowledge_tools ++ @issue_tools
 
   def mcp_tools(%Role{stage: :engineer}),
     do: @browser_tools ++ @report_tools ++ @question_tools ++ @knowledge_tools ++ @issue_tools

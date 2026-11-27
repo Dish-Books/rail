@@ -261,7 +261,8 @@ defmodule Rail.Triage.Actions.SendTriageReply do
       title: item.issue_title,
       description: item.issue_description,
       priority: item.issue_priority,
-      estimate: item.issue_estimate
+      estimate: item.issue_estimate,
+      support_conversation_id: thread.support_conversation_id
     }
 
     case Issues.create_issue(scope, thread.project, attrs) do
