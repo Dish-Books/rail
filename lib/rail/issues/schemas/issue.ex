@@ -7,6 +7,7 @@ defmodule Rail.Issues.Schemas.Issue do
   alias Rail.Issues.Schemas.IssueLink
   alias Rail.Issues.Schemas.IssueStage
   alias Rail.Issues.Schemas.TestingImage
+  alias Rail.Issues.Schemas.TestingScenario
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -21,6 +22,11 @@ defmodule Rail.Issues.Schemas.Issue do
   @plan_steps [:product, :design, :architect]
   @testing_states [:waiting, :testing, :tested, :sent_to_triage]
   @queued_testing_states [:waiting, :testing]
+  @testing_environments [:production, :staging]
+  @testing_platforms [:web, :android, :ios]
+  # A pass is claimed within 60 minutes and a live claim is honored for 45, so the wait never needs to outlast two hours.
+  @writing_minutes 120
+  @claim_minutes 60
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "iss"}
   schema "issues" do
@@ -48,8 +54,19 @@ defmodule Rail.Issues.Schemas.Issue do
     embeds_many :stages, IssueStage, on_replace: :delete
     # Every ticket starts Waiting, is queued only while in Done, and keeps its testing when it leaves.
     field :testing_state, Ecto.Enum, values: @testing_states, default: :waiting
+    # Written before scenarios; shown read-only and sent with the failed scenarios, never written again.
     field :testing_notes, :string
     embeds_many :testing_images, TestingImage, on_replace: :delete
+    embeds_many :testing_scenarios, TestingScenario, on_replace: :delete
+    field :testing_environment, Ecto.Enum, values: @testing_environments
+    field :testing_platform, Ecto.Enum, values: @testing_platforms
+    field :testing_device, :string
+    # Why a ticket with no scenarios was marked tested.
+    field :no_scenarios_reason, :string
+    # Set by the merge while the agent's pass is due or running; it counts for two hours at most.
+    field :scenarios_requested_at, :utc_datetime
+    # When the running pass claimed the ticket; a claim older than the pass can run is a dead one.
+    field :scenarios_started_at, :utc_datetime
     # The state a cycle's listing reads the issue in; set only by `list_issues/1` with `:cycle_id`.
     field :cycle_state, Ecto.Enum, values: @states, virtual: true
     # Written only by `Workers.EmbedIssues`, and left out of every query, so lists and broadcasts carry no vector.
@@ -133,23 +150,92 @@ defmodule Rail.Issues.Schemas.Issue do
   """
   def pull_request_changeset(issue, attrs), do: cast(issue, attrs, [:pr_number, :pr_url, :pr_title])
 
-  @doc "Casts only the testing notes, and moves a Waiting ticket to In testing once they hold more than whitespace."
-  def testing_notes_changeset(%__MODULE__{} = issue, attrs) do
-    changeset = cast(issue, attrs, [:testing_notes], empty_values: [])
+  @doc "Puts the scenarios, and moves a Waiting ticket to In testing when a tester made the change."
+  def testing_scenarios_changeset(%__MODULE__{} = issue, scenarios, by) when by in [:tester, :agent] do
+    # Ecto counts an equal list as a change of embeds with no primary key, so one is left as it is.
+    changeset =
+      if scenarios == issue.testing_scenarios,
+        do: change(issue),
+        else: put_embed(change(issue), :testing_scenarios, scenarios)
 
-    if issue.testing_state == :waiting and String.trim(get_field(changeset, :testing_notes) || "") != "",
-      do: put_change(changeset, :testing_state, :testing),
-      else: changeset
+    if by == :tester, do: start_testing(changeset), else: changeset
   end
 
-  @doc "Puts the testing pictures, and moves a Waiting ticket to In testing once it has one."
-  def testing_images_changeset(%__MODULE__{} = issue, images) when is_list(images) do
-    changeset = put_embed(change(issue), :testing_images, images)
-
-    if issue.testing_state == :waiting and images != [],
-      do: put_change(changeset, :testing_state, :testing),
-      else: changeset
+  @doc "Casts where the ticket was tested, and moves a Waiting ticket to In testing."
+  def testing_place_changeset(%__MODULE__{} = issue, attrs) do
+    issue
+    |> cast(attrs, [:testing_environment, :testing_platform, :testing_device], empty_values: [])
+    |> validate_length(:testing_device, max: 200)
+    |> start_testing()
   end
+
+  @doc "Marks the ticket Tested. With no scenarios a reason is required and kept; with scenarios none is kept."
+  def tested_changeset(%__MODULE__{testing_scenarios: []} = issue, attrs) do
+    issue
+    |> cast(attrs, [:no_scenarios_reason])
+    |> update_change(:no_scenarios_reason, &String.trim/1)
+    |> validate_required([:no_scenarios_reason], message: "Write why there was nothing to test.")
+    |> validate_length(:no_scenarios_reason, max: 1_000)
+    |> put_change(:testing_state, :tested)
+  end
+
+  def tested_changeset(%__MODULE__{} = issue, _attrs), do: change(issue, testing_state: :tested, no_scenarios_reason: nil)
+
+  @doc "Marks the agent's pass as due. Announced, so a page already showing the ticket hears of it."
+  def scenarios_requested_changeset(%__MODULE__{} = issue, %DateTime{} = requested_at) do
+    issue
+    |> change(scenarios_requested_at: DateTime.truncate(requested_at, :second))
+    |> announce_change()
+  end
+
+  @doc "Ends the agent's pass with `scenarios` as the list, clearing both stamps."
+  def scenarios_written_changeset(%__MODULE__{} = issue, scenarios) do
+    issue
+    |> testing_scenarios_changeset(scenarios, :agent)
+    |> put_change(:scenarios_requested_at, nil)
+    |> put_change(:scenarios_started_at, nil)
+  end
+
+  @doc "Whether the agent's pass still holds the ticket: asked for, and less than two hours ago."
+  def writing_scenarios?(%__MODULE__{} = issue) do
+    case calculate_writing_deadline(issue) do
+      %DateTime{} = deadline -> DateTime.before?(DateTime.utc_now(), deadline)
+      nil -> false
+    end
+  end
+
+  @doc "When the wait on the agent ends, or nil when nothing was asked for."
+  def calculate_writing_deadline(%__MODULE__{scenarios_requested_at: %DateTime{} = at}),
+    do: DateTime.shift(at, minute: @writing_minutes)
+
+  def calculate_writing_deadline(%__MODULE__{}), do: nil
+
+  @doc "The oldest request a pass may still claim at `now`."
+  def calculate_claim_cutoff(%DateTime{} = now), do: DateTime.shift(now, minute: -@claim_minutes)
+
+  @doc "How many scenarios passed, failed or are still unmarked."
+  def calculate_testing_progress(%__MODULE__{testing_scenarios: scenarios}) do
+    %{
+      passed: Enum.count(scenarios, &(&1.result == :passed)),
+      failed: Enum.count(scenarios, &(&1.result == :failed)),
+      open: Enum.count(scenarios, &is_nil(&1.result))
+    }
+  end
+
+  @doc "Every scenario Passed, or none at all, in which case `tested_changeset/2` asks for a reason."
+  def can_mark_tested?(%__MODULE__{testing_scenarios: scenarios}), do: Enum.all?(scenarios, &(&1.result == :passed))
+
+  def can_send_to_triage?(%__MODULE__{testing_scenarios: scenarios}), do: Enum.any?(scenarios, &(&1.result == :failed))
+
+  def testing_environment_label(:production), do: "Production"
+  def testing_environment_label(:staging), do: "Staging"
+
+  def testing_platform_label(:web), do: "Web"
+  def testing_platform_label(:android), do: "Android"
+  def testing_platform_label(:ios), do: "iOS"
+
+  def testing_environments, do: @testing_environments
+  def testing_platforms, do: @testing_platforms
 
   @doc """
   A person's edit of an issue's text and properties. `Rail.Issues.edit_issue/3` broadcasts the change itself, and sets
@@ -318,6 +404,11 @@ defmodule Rail.Issues.Schemas.Issue do
     do: validate_required(changeset, List.delete(@required_fields, :identifier))
 
   defp validate_required_fields(changeset), do: validate_required(changeset, @required_fields)
+
+  defp start_testing(%Ecto.Changeset{data: %__MODULE__{testing_state: :waiting}, changes: changes} = changeset)
+       when changes != %{}, do: put_change(changeset, :testing_state, :testing)
+
+  defp start_testing(changeset), do: changeset
 
   # Every write tells the pages showing the issue, so no caller can forget to. The job is queued inside the write's own
   # transaction, so it runs only once the change is there to read. An insert announces itself where it is made.

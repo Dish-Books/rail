@@ -4,6 +4,7 @@ defmodule Rail.Issues.Schemas.IssueTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueStage
+  alias Rail.Issues.Schemas.TestingScenario
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -168,19 +169,113 @@ defmodule Rail.Issues.Schemas.IssueTest do
   end
 
   describe "testing" do
-    test "notes that are not blank move a Waiting ticket to In testing, and blank ones do not" do
-      waiting = %Issue{state: :done, testing_state: :waiting}
+    test "a tester's change to the scenarios or the place moves a Waiting ticket to In testing, and the agent's does not" do
+      waiting = %Issue{state: :done, testing_state: :waiting, testing_scenarios: []}
+      scenario = TestingScenario.agent("Open the page")
 
-      assert %Ecto.Changeset{changes: %{testing_notes: "Works", testing_state: :testing}} =
-               Issue.testing_notes_changeset(waiting, %{testing_notes: "Works"})
+      assert %Ecto.Changeset{changes: %{testing_state: :testing, testing_scenarios: [_one]}} =
+               Issue.testing_scenarios_changeset(waiting, [scenario], :tester)
 
-      blank_only = %{testing_notes: " \n"}
-      assert %Ecto.Changeset{changes: ^blank_only} = Issue.testing_notes_changeset(waiting, blank_only)
+      assert %Ecto.Changeset{changes: %{testing_scenarios: [_one]} = by_agent} =
+               Issue.testing_scenarios_changeset(waiting, [scenario], :agent)
 
-      assert %Ecto.Changeset{changes: %{testing_notes: "More"} = more} =
-               Issue.testing_notes_changeset(%Issue{state: :done, testing_state: :testing}, %{testing_notes: "More"})
+      refute Map.has_key?(by_agent, :testing_state)
 
-      refute Map.has_key?(more, :testing_state)
+      assert %Ecto.Changeset{changes: %{testing_environment: :staging, testing_state: :testing}} =
+               Issue.testing_place_changeset(waiting, %{"testing_environment" => "staging"})
+
+      no_changes = %{}
+      assert %Ecto.Changeset{changes: ^no_changes} = Issue.testing_place_changeset(waiting, %{})
+
+      assert %Ecto.Changeset{changes: %{testing_platform: :ios} = testing} =
+               Issue.testing_place_changeset(%{waiting | testing_state: :testing}, %{testing_platform: "ios"})
+
+      refute Map.has_key?(testing, :testing_state)
+    end
+
+    test "Where I tested takes Production or Staging, a platform and a device of at most 200 characters" do
+      issue = %Issue{state: :done, testing_state: :testing}
+
+      assert ["Production", "Staging"] = Enum.map(Issue.testing_environments(), &Issue.testing_environment_label/1)
+      assert ["Web", "Android", "iOS"] = Enum.map(Issue.testing_platforms(), &Issue.testing_platform_label/1)
+
+      refute Issue.testing_place_changeset(issue, %{testing_environment: "preview"}).valid?
+      refute Issue.testing_place_changeset(issue, %{testing_device: String.duplicate("a", 201)}).valid?
+      assert Issue.testing_place_changeset(issue, %{testing_device: String.duplicate("a", 200)}).valid?
+    end
+
+    test "a ticket stamped an hour ago is being written, one stamped two hours ago or never is not" do
+      now = DateTime.utc_now()
+      hour_ago = DateTime.shift(now, hour: -1)
+      two_hours_ago = DateTime.shift(now, hour: -2)
+
+      assert Issue.writing_scenarios?(%Issue{scenarios_requested_at: hour_ago})
+      refute Issue.writing_scenarios?(%Issue{scenarios_requested_at: two_hours_ago})
+      refute Issue.writing_scenarios?(%Issue{scenarios_requested_at: nil})
+
+      assert Issue.calculate_writing_deadline(%Issue{scenarios_requested_at: hour_ago}) ==
+               DateTime.shift(hour_ago, hour: 2)
+
+      assert Issue.calculate_writing_deadline(%Issue{}) == nil
+      assert Issue.calculate_claim_cutoff(now) == DateTime.shift(now, hour: -1)
+    end
+
+    test "the stamp is kept to the second, and the agent's result clears both stamps" do
+      at = ~U[2026-11-27 10:00:00.123456Z]
+
+      assert %Ecto.Changeset{changes: %{scenarios_requested_at: ~U[2026-11-27 10:00:00Z]}} =
+               Issue.scenarios_requested_changeset(%Issue{}, at)
+
+      stamped = %Issue{
+        testing_state: :waiting,
+        testing_scenarios: [],
+        scenarios_requested_at: ~U[2026-11-27 10:00:00Z],
+        scenarios_started_at: ~U[2026-11-27 10:01:00Z]
+      }
+
+      assert %Ecto.Changeset{
+               changes: %{scenarios_requested_at: nil, scenarios_started_at: nil, testing_scenarios: [_one]} = changes
+             } = Issue.scenarios_written_changeset(stamped, [TestingScenario.agent("Check it")])
+
+      refute Map.has_key?(changes, :testing_state)
+    end
+
+    test "Mark tested requires a trimmed reason only when there are no scenarios" do
+      empty = %Issue{state: :done, testing_state: :testing, testing_scenarios: []}
+
+      refute Issue.tested_changeset(empty, %{}).valid?
+
+      assert %{no_scenarios_reason: ["Write why there was nothing to test."]} =
+               errors_on(Issue.tested_changeset(empty, %{}))
+
+      refute Issue.tested_changeset(empty, %{"no_scenarios_reason" => "   "}).valid?
+      refute Issue.tested_changeset(empty, %{"no_scenarios_reason" => String.duplicate("a", 1_001)}).valid?
+
+      assert %Ecto.Changeset{valid?: true, changes: %{testing_state: :tested, no_scenarios_reason: "Only docs"}} =
+               Issue.tested_changeset(empty, %{"no_scenarios_reason" => "  Only docs \n"})
+
+      passed = %{TestingScenario.agent("Open it") | result: :passed}
+      with_scenarios = %{empty | testing_scenarios: [passed], no_scenarios_reason: "Stale"}
+
+      assert %Ecto.Changeset{valid?: true, changes: %{testing_state: :tested, no_scenarios_reason: nil}} =
+               Issue.tested_changeset(with_scenarios, %{"no_scenarios_reason" => "Ignored"})
+    end
+
+    test "Mark tested needs every scenario Passed and Send to triage one Failed, counted as passed, failed and open" do
+      [passed, failed, open] =
+        for result <- [:passed, :failed, nil], do: %{TestingScenario.agent("Check") | result: result}
+
+      assert Issue.can_mark_tested?(%Issue{testing_scenarios: []})
+      assert Issue.can_mark_tested?(%Issue{testing_scenarios: [passed]})
+      refute Issue.can_mark_tested?(%Issue{testing_scenarios: [passed, open]})
+      refute Issue.can_mark_tested?(%Issue{testing_scenarios: [passed, failed]})
+
+      refute Issue.can_send_to_triage?(%Issue{testing_scenarios: []})
+      refute Issue.can_send_to_triage?(%Issue{testing_scenarios: [passed, open]})
+      assert Issue.can_send_to_triage?(%Issue{testing_scenarios: [failed, open]})
+
+      assert %{passed: 1, failed: 1, open: 2} =
+               Issue.calculate_testing_progress(%Issue{testing_scenarios: [passed, failed, open, open]})
     end
 
     test "a ticket is in the queue only in Done and Waiting or In testing, each state with its label" do

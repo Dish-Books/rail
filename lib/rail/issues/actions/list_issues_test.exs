@@ -379,10 +379,10 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       |> Repo.update!()
 
     %Issue{id: testing_id} = done.("Q4", project_id, ~U[2026-11-09 11:00:00Z])
-    {:ok, _noted} = Issues.save_testing_notes(system_scope(), %Issue{id: testing_id, project_id: project_id}, "Trying")
+    {:ok, _added} = Issues.add_testing_scenario(system_scope(), %Issue{id: testing_id, project_id: project_id}, "Trying")
 
     tested = done.("Q5", project_id, ~U[2026-11-07 10:00:00Z])
-    {:ok, _tested} = Issues.mark_issue_tested(system_scope(), tested)
+    {:ok, _tested} = Issues.mark_issue_tested(system_scope(), tested, %{no_scenarios_reason: "Only docs"})
 
     "Q6"
     |> done.(project_id, ~U[2026-11-07 10:00:00Z])

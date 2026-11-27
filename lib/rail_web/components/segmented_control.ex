@@ -17,6 +17,7 @@ defmodule RailWeb.Components.SegmentedControl do
   attr :option_id, :string, default: nil, doc: "prefix for each option's id, when it is not the control's own"
   attr :option_qa, :string, default: nil
   attr :class, :any, default: nil
+  attr :disabled, :boolean, default: false
   attr :rest, :global
 
   # An icon stands in for its label in a container narrower than the toolbar's
@@ -40,8 +41,9 @@ defmodule RailWeb.Components.SegmentedControl do
         aria-pressed={to_string(@selected == value)}
         aria-label={icon && label}
         title={icon && label}
+        disabled={@disabled}
         class={[
-          "py-1 rounded-md text-xs font-semibold cursor-pointer",
+          "py-1 rounded-md text-xs font-semibold cursor-pointer disabled:opacity-60 disabled:cursor-default",
           icon && "px-2 @3xl:px-3",
           is_nil(icon) && "px-3",
           @selected == value &&

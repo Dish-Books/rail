@@ -5,14 +5,15 @@ defmodule Rail.Pipeline.Actions.MergeTask do
   with GitHub's message unless the pull request was merged there already, or was a draft, which is taken out of
   draft and merged once more. A kept refusal queues a check of the branch against a fresh fetch of the default
   branch, so Update shows when that is what stood in the way; a merge records who and the sha,
-  starts the parent's next children, queues the task's cleanup, its owner's message and the deciding of its rule
-  proposals as chosen, and enters Merged.
+  starts the parent's next children, queues the task's cleanup, its owner's message, the deciding of its rule
+  proposals as chosen and its ticket's test scenarios, and enters Merged.
   """
 
   import Ecto.Query
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
 
   alias Rail.GitHub.Client, as: GitHub
+  alias Rail.Issues
   alias Rail.Learnings.Workers.FinalizeTaskProposals
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
@@ -133,6 +134,10 @@ defmodule Rail.Pipeline.Actions.MergeTask do
         {:ok, _job} = %{task_id: task.id} |> CleanupMergedTask.new() |> Oban.insert()
         {:ok, _job} = %{task_id: task.id} |> NotifyOwner.new() |> Oban.insert()
         {:ok, _job} = %{task_id: task.id} |> FinalizeTaskProposals.new() |> Oban.insert()
+        # Committed with the merge, so the ticket reads "Writing scenarios…" from the moment it reaches Done.
+        {:ok, _requested} =
+          task |> Repo.preload(:issue) |> Map.fetch!(:issue) |> Issues.request_test_scenarios(task.merge_sha)
+
         task
       end)
 

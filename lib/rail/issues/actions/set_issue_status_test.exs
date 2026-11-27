@@ -128,7 +128,7 @@ defmodule Rail.Issues.Actions.SetIssueStatusTest do
     refute_enqueued(worker: SyncIssue)
   end
 
-  test "a move into Done waits for testing, and a Tested ticket reopened and done again stays Tested with its notes",
+  test "a move into Done waits for testing, and a Tested ticket reopened and done again stays Tested with its scenarios",
        %{child: child} do
     done = %{id: "done", name: "Done", state: :done}
     in_progress = %{id: "in_progress", name: "In Progress", state: :in_progress}
@@ -136,13 +136,17 @@ defmodule Rail.Issues.Actions.SetIssueStatusTest do
     assert {:ok, %Issue{state: :done, testing_state: :waiting} = waiting} =
              Issues.set_issue_status(system_scope(), child, done)
 
-    {:ok, _noted} = Issues.save_testing_notes(system_scope(), waiting, "Looked fine")
-    {:ok, tested} = Issues.mark_issue_tested(system_scope(), waiting)
+    {:ok, %Issue{testing_scenarios: [%{id: scenario_id}]}} =
+      Issues.add_testing_scenario(system_scope(), waiting, "Looked fine")
 
-    assert {:ok, %Issue{state: :in_progress, testing_state: :tested, testing_notes: "Looked fine"} = reopened} =
-             Issues.set_issue_status(system_scope(), tested, in_progress)
+    {:ok, _passed} = Issues.save_testing_scenario(system_scope(), waiting, scenario_id, %{result: "passed"})
+    {:ok, tested} = Issues.mark_issue_tested(system_scope(), waiting, %{})
 
-    assert {:ok, %Issue{state: :done, testing_state: :tested, testing_notes: "Looked fine"}} =
+    assert {:ok,
+            %Issue{state: :in_progress, testing_state: :tested, testing_scenarios: [%{title: "Looked fine"}]} =
+              reopened} = Issues.set_issue_status(system_scope(), tested, in_progress)
+
+    assert {:ok, %Issue{state: :done, testing_state: :tested, testing_scenarios: [%{title: "Looked fine"}]}} =
              Issues.set_issue_status(system_scope(), reopened, done)
   end
 

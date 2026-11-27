@@ -2,12 +2,14 @@ defmodule RailWeb.TestingLiveTest do
   use RailWeb.ConnCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  import Ecto.Query
   import Phoenix.LiveViewTest
 
   alias Rail.Issues
   alias Rail.Issues.Clients.R2
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.TestingImage
+  alias Rail.Issues.Schemas.TestingScenario
   alias Rail.Issues.Workers.LinkTrackerUrl
   alias Rail.Projects
   alias Rail.Repo
@@ -52,7 +54,20 @@ defmodule RailWeb.TestingLiveTest do
       done
     end
 
-    %{conn: log_in_user(conn, user), here: here, there: there, hidden: hidden, done: done, user: user}
+    # The agent's scenarios, written as its pass writes them, so the ticket stays Waiting.
+    written = fn issue, scenarios ->
+      issue |> Issue.testing_scenarios_changeset(scenarios, :agent) |> Repo.update!()
+    end
+
+    %{
+      conn: log_in_user(conn, user),
+      here: here,
+      there: there,
+      hidden: hidden,
+      done: done,
+      written: written,
+      user: user
+    }
   end
 
   test "a role without the Testing tab is sent to its own first tab", %{conn: conn} do
@@ -107,7 +122,7 @@ defmodule RailWeb.TestingLiveTest do
     refute has_element?(view, "#testing-row-#{issue.id}", " ago")
   end
 
-  test "a ticket reopened before it was tested comes back with its notes, and a Tested one stays out", %{
+  test "a ticket reopened before it was tested comes back with its scenarios, and a Tested one stays out", %{
     conn: conn,
     done: done,
     here: here
@@ -115,8 +130,8 @@ defmodule RailWeb.TestingLiveTest do
     in_progress = %{id: "in_progress", name: "In Progress", state: :in_progress}
     halfway = done.(here, "Reopened halfway")
     tested = done.(here, "Reopened after testing")
-    {:ok, halfway} = Issues.save_testing_notes(system_scope(), halfway, "Halfway")
-    {:ok, tested} = Issues.mark_issue_tested(system_scope(), tested)
+    {:ok, halfway} = Issues.add_testing_scenario(system_scope(), halfway, "Halfway")
+    {:ok, tested} = Issues.mark_issue_tested(system_scope(), tested, %{no_scenarios_reason: "Only docs"})
     {:ok, view, _html} = live(conn, ~p"/testing")
     assert has_element?(view, "#testing-row-#{halfway.id}")
     refute has_element?(view, "#testing-row-#{tested.id}")
@@ -128,7 +143,7 @@ defmodule RailWeb.TestingLiveTest do
     assert has_element?(view, "#testing-row-#{halfway.id} [data-testing-state='testing']")
 
     view |> element("#testing-row-#{halfway.id}") |> render_click()
-    assert has_element?(view, "#testing-notes-#{halfway.id}", "Halfway")
+    assert has_element?(view, "#testing-scenario-list", "Halfway")
 
     {:ok, reopened} = Issues.set_issue_status(system_scope(), tested, in_progress)
     {:ok, _done} = Issues.set_issue_status(system_scope(), reopened, @done)
@@ -160,7 +175,7 @@ defmodule RailWeb.TestingLiveTest do
     refute has_element?(narrowed, "#testing-row-#{older.id}")
   end
 
-  test "the open ticket shows what its issue page shows, with nothing to change but the notes", %{
+  test "the open ticket shows what its issue page shows, with nothing to change but its testing", %{
     conn: conn,
     done: done,
     here: here,
@@ -209,7 +224,7 @@ defmodule RailWeb.TestingLiveTest do
     refute has_element?(view, "#issue-parent-picker-#{issue.id}")
     refute has_element?(view, "#issue-relation-pickers")
     refute has_element?(view, "[phx-click='remove_relation']")
-    assert [_only] = view |> element("#testing-ticket") |> render() |> Floki.parse_fragment!() |> Floki.find("textarea")
+    assert [] = view |> element("#testing-ticket") |> render() |> Floki.parse_fragment!() |> Floki.find("textarea")
 
     assert :ok = perform_job(LinkTrackerUrl, %{issue_id: issue.id, url: "https://example.com/spec", title: "Spec"})
     assert has_element?(view, "a[id^='issue-link-'][href='https://example.com/spec']", "Spec")
@@ -230,67 +245,217 @@ defmodule RailWeb.TestingLiveTest do
     refute has_element?(view, "#testing-bar")
   end
 
-  test "typing notes saves them, moves the ticket to In testing and keeps them over a remount", %{
-    conn: conn,
-    done: done,
-    here: here
-  } do
-    issue = done.(here, "Notes")
+  test "marking a scenario saves at once, moves the ticket to In testing, and reads the same after a reload and in another tab",
+       %{conn: conn, done: done, here: here, written: written} do
+    issue = done.(here, "Marked")
     other = done.(here, "Untouched")
+    %TestingScenario{id: first_id} = first = TestingScenario.agent("Six icons fit on the row")
+    second = TestingScenario.agent("Seven wrap")
+    written.(issue, [first, second])
     {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+    {:ok, other_tab, _html} = live(conn, ~p"/testing/#{issue.id}")
 
-    assert has_element?(view, "#testing-notes-status", "Saves as you type")
-    assert has_element?(view, "#testing-send-to-triage[disabled]")
     assert has_element?(view, "#testing-bar-state[data-testing-state='waiting']")
+    assert has_element?(view, "#testing-scenario-#{first_id}-agent", "From the issue")
+    assert has_element?(view, "#testing-scenario-#{first_id}", "1")
+    assert has_element?(view, "#testing-progress", "0 passed")
+    assert has_element?(view, "#testing-mark-tested[disabled][title='Mark tested is for when every scenario passed']")
+    assert has_element?(view, "#testing-send-to-triage[disabled][title='Mark a scenario Failed to send this to triage']")
 
-    view
-    |> form("#testing-notes-form-#{issue.id}", %{issue_id: issue.id, notes: "Six icons fit on the row"})
-    |> render_change()
+    view |> element("#testing-scenario-#{first_id}-passed") |> render_click()
 
-    assert %Issue{testing_state: :testing, testing_notes: "Six icons fit on the row"} = Repo.get!(Issue, issue.id)
+    assert %Issue{testing_state: :testing, testing_scenarios: [%{result: :passed}, %{result: nil}]} =
+             Repo.get!(Issue, issue.id)
+
+    assert has_element?(view, "#testing-scenario-#{first_id}[data-result='passed']")
+    assert has_element?(view, "#testing-scenario-#{first_id}-passed[aria-pressed='true']")
+    assert has_element?(view, "#testing-progress", "1 passed")
+    assert has_element?(view, "#testing-progress", "1 left")
     assert has_element?(view, "#testing-bar-state[data-testing-state='testing']")
     assert has_element?(view, "#testing-row-#{issue.id} [data-testing-state='testing']")
-    refute has_element?(view, "#testing-send-to-triage[disabled]")
     assert has_element?(view, "#testing-queue-split", "1 waiting · 1 in testing")
+    assert has_element?(other_tab, "#testing-scenario-#{first_id}[data-result='passed']")
 
     {:ok, again, _html} = live(conn, ~p"/testing/#{issue.id}")
-    assert has_element?(again, "#testing-notes-#{issue.id}", "Six icons fit on the row")
+    assert has_element?(again, "#testing-scenario-#{first_id}[data-result='passed']")
     assert %Issue{testing_state: :waiting} = Repo.get!(Issue, other.id)
   end
 
-  test "a picture added to the notes shows in their box once stored, and comes out again on remove", %{
+  test "a Failed scenario shows a note box and Attach pictures, saved as they change, and a Passed one shows neither",
+       %{conn: conn, done: done, here: here, written: written} do
+    issue = done.(here, "Noted")
+    %TestingScenario{id: scenario_id} = scenario = TestingScenario.agent("The row fits")
+    written.(issue, [scenario])
+    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+
+    refute has_element?(view, "#testing-note-#{scenario_id}")
+    refute has_element?(view, "#testing-scenario-#{scenario_id}-attach")
+
+    view |> element("#testing-scenario-#{scenario_id}-failed") |> render_click()
+    assert has_element?(view, "#testing-note-#{scenario_id}")
+    assert has_element?(view, "#testing-scenario-#{scenario_id}-attach", "Attach pictures")
+    refute has_element?(view, "#testing-send-to-triage[disabled]")
+
+    view
+    |> form("#testing-form-#{issue.id}")
+    |> render_change(%{"_target" => ["notes", scenario_id], "notes" => %{scenario_id => "Cut off at 1280"}})
+
+    assert %Issue{testing_scenarios: [%{result: :failed, note: "Cut off at 1280"}]} = Repo.get!(Issue, issue.id)
+
+    view |> element("#testing-scenario-#{scenario_id}-passed") |> render_click()
+    refute has_element?(view, "#testing-note-#{scenario_id}")
+    assert %Issue{testing_scenarios: [%{result: :passed, note: "Cut off at 1280"}]} = Repo.get!(Issue, issue.id)
+
+    view |> element("#testing-scenario-#{scenario_id}-failed") |> render_click()
+    assert has_element?(view, "#testing-note-#{scenario_id}", "Cut off at 1280")
+  end
+
+  test "a tester's scenario goes at the end with no label, and any scenario can be removed", %{
+    conn: conn,
+    done: done,
+    here: here,
+    written: written
+  } do
+    issue = done.(here, "Listed")
+    %TestingScenario{id: agent_id} = agent = TestingScenario.agent("From the agent")
+    written.(issue, [agent])
+    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+
+    view |> form("#testing-add-scenario-#{issue.id}-0", %{title: "  Mine  "}) |> render_submit()
+
+    assert %Issue{testing_state: :testing, testing_scenarios: [%{id: ^agent_id}, %{id: own_id, title: "Mine"}]} =
+             Repo.get!(Issue, issue.id)
+
+    assert has_element?(view, "#testing-scenario-#{own_id}", "Mine")
+    refute has_element?(view, "#testing-scenario-#{own_id}-agent")
+    assert has_element?(view, "#testing-add-scenario-#{issue.id}-1 #testing-new-scenario")
+
+    view |> form("#testing-add-scenario-#{issue.id}-1", %{title: "   "}) |> render_submit()
+    assert %Issue{testing_scenarios: [_agent, _own]} = Repo.get!(Issue, issue.id)
+
+    view |> element("#testing-scenario-#{agent_id}-remove") |> render_click()
+    refute has_element?(view, "#testing-scenario-#{agent_id}")
+    assert %Issue{testing_scenarios: [%{title: "Mine"}]} = Repo.get!(Issue, issue.id)
+
+    view |> element("#testing-scenario-#{own_id}-remove") |> render_click()
+    assert has_element?(view, "#testing-scenarios-empty", "No scenarios yet. Add the ones you want to check.")
+  end
+
+  test "Where I tested offers Production and Staging, a platform and a device, and keeps them over a reload", %{
     conn: conn,
     done: done,
     here: here
   } do
-    issue = done.(here, "Pictured")
+    issue = done.(here, "Placed")
     {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
-    form = "#testing-notes-form-#{issue.id}"
+
+    assert has_element?(view, "#testing-environment-production", "Production")
+    assert has_element?(view, "#testing-environment-staging", "Staging")
+    refute has_element?(view, "#testing-environment", "Preview")
+
+    view |> element("#testing-environment-staging") |> render_click()
+    view |> element("#testing-platform-ios") |> render_click()
+
+    view
+    |> form("#testing-form-#{issue.id}")
+    |> render_change(%{"_target" => ["testing_device"], "testing_device" => "iPhone 15"})
+
+    assert %Issue{
+             testing_state: :testing,
+             testing_environment: :staging,
+             testing_platform: :ios,
+             testing_device: "iPhone 15"
+           } =
+             Repo.get!(Issue, issue.id)
+
+    {:ok, again, _html} = live(conn, ~p"/testing/#{issue.id}")
+    assert has_element?(again, "#testing-environment-staging[aria-pressed='true']")
+    assert has_element?(again, "#testing-platform-ios[aria-pressed='true']")
+    assert has_element?(again, "#testing-device[value='iPhone 15']")
+  end
+
+  test "a picture goes to the failed scenario it was started on, shows there once stored, and comes out on remove", %{
+    conn: conn,
+    done: done,
+    here: here,
+    written: written
+  } do
+    issue = done.(here, "Pictured")
+    %TestingScenario{id: first_id} = first = %{TestingScenario.agent("First") | result: :failed}
+    %TestingScenario{id: second_id} = second = %{TestingScenario.agent("Second") | result: :failed}
+    written.(issue, [first, second])
+    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+    form = "#testing-form-#{issue.id}"
 
     Req.Test.expect(R2, fn r2 ->
       assert ["image/png"] = Plug.Conn.get_req_header(r2, "content-type")
       Plug.Conn.send_resp(r2, 200, "")
     end)
 
+    view |> element("#testing-note-#{first_id}") |> render_focus()
+
     shot =
       file_input(view, form, :testing_images, [%{name: "row.png", content: :binary.copy("P", 1000), type: "image/png"}])
 
-    render_upload(shot, "row.png", 50)
-    assert has_element?(view, "#testing-images [id^='testing-upload-'][title='row.png']")
+    # The browser sends the form's change once the upload is allowed, before the rest of it.
+    render_upload(shot, "row.png", 1)
+    view |> element(form) |> render_change(%{"_target" => ["testing_images"]})
+    render_upload(shot, "row.png", 49)
+    assert has_element?(view, "#testing-scenario-#{first_id} [id^='testing-upload-'][title='row.png']")
+
+    # Focusing another note mid-upload moves neither the picture nor its chip.
+    view |> element("#testing-note-#{second_id}") |> render_focus()
+    refute has_element?(view, "#testing-scenario-#{second_id} [id^='testing-upload-']")
     render_upload(shot, "row.png", 50)
     render_async(view)
 
-    assert %Issue{testing_state: :testing, testing_images: [%TestingImage{name: "row.png", url: url}]} =
-             Repo.get!(Issue, issue.id)
+    assert %Issue{
+             testing_state: :testing,
+             testing_scenarios: [%{images: [%TestingImage{name: "row.png", url: url}]}, %{images: []}]
+           } = Repo.get!(Issue, issue.id)
 
-    assert has_element?(view, "#testing-image-0[title='row.png'] img[src='#{url}']")
-    assert has_element?(view, "#testing-bar-state[data-testing-state='testing']")
+    assert has_element?(view, "#testing-scenario-#{first_id}-image-0[title='row.png'] img[src='#{url}']")
     refute has_element?(view, "[id^='testing-upload-']")
 
-    view |> element("#testing-image-0 [data-qa='image-chip-remove']") |> render_click()
+    view |> element("#testing-scenario-#{first_id}-image-0 [data-qa='image-chip-remove']") |> render_click()
 
-    refute has_element?(view, "#testing-images")
-    assert %Issue{testing_images: []} = Repo.get!(Issue, issue.id)
+    refute has_element?(view, "#testing-scenario-#{first_id}-image-0")
+    assert %Issue{testing_scenarios: [%{images: []}, _second]} = Repo.get!(Issue, issue.id)
+  end
+
+  test "Attach pictures names its scenario, and a picture started on no scenario is not added", %{
+    conn: conn,
+    done: done,
+    here: here,
+    written: written
+  } do
+    issue = done.(here, "Attached")
+    %TestingScenario{id: scenario_id} = scenario = %{TestingScenario.agent("First") | result: :failed}
+    written.(issue, [scenario])
+    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+    form = "#testing-form-#{issue.id}"
+
+    lost =
+      file_input(view, form, :testing_images, [%{name: "lost.png", content: :binary.copy("P", 1000), type: "image/png"}])
+
+    render_upload(lost, "lost.png", 1)
+    view |> element(form) |> render_change(%{"_target" => ["testing_images"]})
+    render_upload(lost, "lost.png", 99)
+    assert has_element?(view, "#testing-image-error", "Couldn't add lost.png. Try adding it again.")
+
+    Req.Test.expect(R2, &Plug.Conn.send_resp(&1, 200, ""))
+    view |> element("#testing-scenario-#{scenario_id}-attach") |> render_click()
+
+    shot =
+      file_input(view, form, :testing_images, [%{name: "kept.png", content: :binary.copy("P", 1000), type: "image/png"}])
+
+    render_upload(shot, "kept.png", 1)
+    view |> element(form) |> render_change(%{"_target" => ["testing_images"]})
+    render_upload(shot, "kept.png", 99)
+    render_async(view)
+
+    assert %Issue{testing_scenarios: [%{images: [%TestingImage{name: "kept.png"}]}]} = Repo.get!(Issue, issue.id)
+    refute has_element?(view, "#testing-image-error")
   end
 
   test "a file the box cannot take says why and is not kept", %{
@@ -300,7 +465,7 @@ defmodule RailWeb.TestingLiveTest do
   } do
     issue = done.(here, "Refused")
     {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
-    form = "#testing-notes-form-#{issue.id}"
+    form = "#testing-form-#{issue.id}"
 
     view
     |> file_input(form, :testing_images, [%{name: "notes.txt", content: "text", type: "text/plain"}])
@@ -315,7 +480,7 @@ defmodule RailWeb.TestingLiveTest do
   test "a picture over 10 MB, or past the tenth, is not added", %{conn: conn, done: done, here: here} do
     issue = done.(here, "Too many")
     {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
-    form = "#testing-notes-form-#{issue.id}"
+    form = "#testing-form-#{issue.id}"
 
     view
     |> file_input(form, :testing_images, [%{name: "huge.png", content: :binary.copy("P", 10_000_001), type: "image/png"}])
@@ -330,116 +495,224 @@ defmodule RailWeb.TestingLiveTest do
     assert has_element?(view, "#testing-image-error", "Up to 10 pictures go at a time, so shot11.png was not added.")
   end
 
-  test "a picture R2 fails to store, or one for a ticket finished meanwhile, says so", %{
+  test "a picture R2 fails to store, or one for a ticket finished or being written meanwhile, says so", %{
     conn: conn,
     done: done,
-    here: here
+    here: here,
+    written: written
   } do
     issue = done.(here, "Failing")
+    %TestingScenario{id: scenario_id} = scenario = %{TestingScenario.agent("First") | result: :failed}
+    written.(issue, [scenario])
     {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
-    form = "#testing-notes-form-#{issue.id}"
+    form = "#testing-form-#{issue.id}"
+    view |> element("#testing-note-#{scenario_id}") |> render_focus()
+
+    upload = fn name ->
+      shot = file_input(view, form, :testing_images, [%{name: name, content: :binary.copy("P", 1000), type: "image/png"}])
+      render_upload(shot, name, 1)
+      view |> element(form) |> render_change(%{"_target" => ["testing_images"]})
+      render_upload(shot, name, 99)
+      render_async(view)
+    end
 
     Req.Test.expect(R2, &Plug.Conn.send_resp(&1, 500, "down"))
-
-    view
-    |> file_input(form, :testing_images, [%{name: "a.png", content: "PNG", type: "image/png"}])
-    |> render_upload("a.png")
-
-    render_async(view)
+    upload.("a.png")
     assert has_element?(view, "#testing-image-error", "Couldn't add a.png. Try adding it again.")
 
     Req.Test.expect(R2, fn r2 ->
-      {:ok, _tested} = Issues.mark_issue_tested(system_scope(), issue)
+      {:ok, _requested} = Issues.request_test_scenarios(issue, "3c9a1f0e2b")
       Plug.Conn.send_resp(r2, 200, "")
     end)
 
-    view
-    |> file_input(form, :testing_images, [%{name: "b.png", content: "PNG", type: "image/png"}])
-    |> render_upload("b.png")
+    upload.("b.png")
+    assert has_element?(view, "#testing-image-error", "b.png was not added: Rail is still writing scenarios.")
 
-    render_async(view)
-    assert has_element?(view, "#testing-image-error", "b.png was not added: testing on this ticket has finished.")
-  end
-
-  test "removing a picture from a ticket finished in another tab says so", %{conn: conn, done: done, here: here} do
-    issue = done.(here, "Finished elsewhere")
-
-    {:ok, _pictured} =
-      issue
-      |> Issue.testing_images_changeset([%TestingImage{url: "https://x/a.png", name: "a.png"}])
-      |> Repo.update()
-
+    Repo.update_all(from(i in Issue, where: i.id == ^issue.id), set: [scenarios_requested_at: nil])
     {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
-    {:ok, _tested} = Issues.mark_issue_tested(system_scope(), issue)
+    view |> element("#testing-note-#{scenario_id}") |> render_focus()
 
-    # The finished ticket's page drops the button, so this is a click sent before it did.
-    render_click(view, "remove_testing_image", %{"issue_id" => issue.id, "url" => "https://x/a.png"})
+    Req.Test.expect(R2, fn r2 ->
+      {:ok, _sent} = Issues.send_issue_to_triage(system_scope(), issue)
+      Plug.Conn.send_resp(r2, 200, "")
+    end)
 
-    assert has_element?(view, "#testing-notice", "was already marked tested")
-    assert %Issue{testing_images: [%TestingImage{name: "a.png"}]} = Repo.get!(Issue, issue.id)
+    shot =
+      file_input(view, form, :testing_images, [%{name: "c.png", content: :binary.copy("P", 1000), type: "image/png"}])
+
+    render_upload(shot, "c.png", 1)
+    view |> element(form) |> render_change(%{"_target" => ["testing_images"]})
+    render_upload(shot, "c.png", 99)
+    render_async(view)
+    assert has_element?(view, "#testing-image-error", "c.png was not added: testing on this ticket has finished.")
   end
 
-  test "a picture shows from its address, and a finished ticket's cannot be removed", %{
+  test "removing a picture from a ticket finished in another tab says so", %{
     conn: conn,
     done: done,
-    here: here
+    here: here,
+    written: written
+  } do
+    issue = done.(here, "Finished elsewhere")
+
+    %TestingScenario{id: scenario_id} =
+      scenario =
+      %{TestingScenario.agent("First") | result: :failed, images: [%TestingImage{url: "https://x/a.png", name: "a.png"}]}
+
+    written.(issue, [scenario])
+    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+    {:ok, _sent} = Issues.send_issue_to_triage(system_scope(), issue)
+
+    # The finished ticket's page drops the button, so this is a click sent before it did.
+    render_click(view, "remove_testing_image", %{
+      "issue_id" => issue.id,
+      "scenario_id" => scenario_id,
+      "url" => "https://x/a.png"
+    })
+
+    assert has_element?(view, "#testing-notice", "was already sent to triage")
+    assert %Issue{testing_scenarios: [%{images: [%TestingImage{name: "a.png"}]}]} = Repo.get!(Issue, issue.id)
+  end
+
+  test "a finished ticket shows its scenarios, notes and pictures read-only, with nothing to press", %{
+    conn: conn,
+    done: done,
+    here: here,
+    written: written
   } do
     issue = done.(here, "Pictured")
 
-    {:ok, _pictured} =
-      issue
-      |> Issue.testing_images_changeset([%TestingImage{url: "https://x/a/b/shot.png", name: "shot.png"}])
-      |> Repo.update()
+    %TestingScenario{id: failed_id} =
+      failed =
+      %{
+        TestingScenario.agent("First")
+        | result: :failed,
+          note: "Cut off",
+          images: [%TestingImage{url: "https://x/a/b/shot.png", name: "shot.png"}]
+      }
 
+    %TestingScenario{id: passed_id} = passed = %{TestingScenario.agent("Second") | result: :passed}
+    written.(issue, [failed, passed])
+
+    {:ok, _placed} = Issues.save_testing_place(system_scope(), issue, %{testing_device: "Pixel 8"})
     {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
-    assert has_element?(view, "#testing-image-0 img[src='https://x/a/b/shot.png']")
-    assert has_element?(view, "#testing-image-0 [data-qa='image-chip-remove']")
+    assert has_element?(view, "#testing-scenario-#{failed_id}-image-0 img[src='https://x/a/b/shot.png']")
+    assert has_element?(view, "#testing-scenario-#{failed_id}-image-0 [data-qa='image-chip-remove']")
 
-    {:ok, _tested} = Issues.mark_issue_tested(system_scope(), issue)
+    {:ok, _sent} = Issues.send_issue_to_triage(system_scope(), issue)
     {:ok, finished, _html} = live(conn, ~p"/testing/#{issue.id}")
 
-    assert has_element?(finished, "#testing-image-0")
-    refute has_element?(finished, "#testing-image-0 [data-qa='image-chip-remove']")
-    refute has_element?(finished, "#testing-attach-image")
-    assert render_click(finished, "remove_testing_image", %{"issue_id" => "iss_other", "url" => "x"})
+    assert has_element?(finished, "#testing-lock", "Testing finished")
+    assert has_element?(finished, "#testing-scenario-#{failed_id}-note", "Cut off")
+    assert has_element?(finished, "#testing-scenario-#{failed_id}-image-0")
+    refute has_element?(finished, "#testing-scenario-#{failed_id}-image-0 [data-qa='image-chip-remove']")
+    refute has_element?(finished, "#testing-note-#{failed_id}")
+    refute has_element?(finished, "#testing-scenario-#{failed_id}-remove")
+    assert has_element?(finished, "#testing-scenario-#{passed_id}-passed[disabled]")
+    assert has_element?(finished, "#testing-environment-staging[disabled]")
+    assert has_element?(finished, "#testing-device-text", "Pixel 8")
+    refute has_element?(finished, "#testing-device")
+    refute has_element?(finished, "#testing-add-scenario-#{issue.id}-0")
+    refute has_element?(finished, "#testing-scenarios-empty")
+    refute has_element?(finished, "#testing-progress")
+    refute has_element?(finished, "input[type='file']")
+  end
+
+  test "notes and pictures from before scenarios show read-only above the list", %{conn: conn, done: done, here: here} do
+    issue = done.(here, "Noted before")
+
+    Repo.update_all(from(i in Issue, where: i.id == ^issue.id),
+      set: [
+        testing_notes: "Checked on staging",
+        testing_images: [%TestingImage{url: "https://x/old.png", name: "old.png"}]
+      ]
+    )
+
+    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+
+    assert has_element?(view, "#testing-earlier-notes", "Notes from before scenarios")
+    assert has_element?(view, "#testing-earlier-notes", "Checked on staging")
+    assert has_element?(view, "#testing-earlier-image-0 img[src='https://x/old.png']")
+    refute has_element?(view, "#testing-earlier-image-0 [data-qa='image-chip-remove']")
+
+    assert has_element?(
+             view,
+             "#testing-earlier-notes",
+             "With no scenarios, Mark tested asks why there was nothing to test."
+           )
+
+    {:ok, plain, _html} = live(conn, ~p"/testing/#{done.(here, "Nothing before").id}")
+    refute has_element?(plain, "#testing-earlier-notes")
   end
 
   test "opening a ticket without typing leaves it Waiting", %{conn: conn, done: done, here: here} do
     issue = done.(here, "Only looked")
     {:ok, _view, _html} = live(conn, ~p"/testing/#{issue.id}")
-    assert %Issue{testing_state: :waiting, testing_notes: nil} = Repo.get!(Issue, issue.id)
+    assert %Issue{testing_state: :waiting, testing_scenarios: []} = Repo.get!(Issue, issue.id)
   end
 
-  test "notes another tab saves show on an open page, and a save flushed after a switch goes to its own ticket", %{
+  test "a mark another tab saves shows on an open page, and a note flushed after a switch goes to its own ticket", %{
+    conn: conn,
+    done: done,
+    here: here,
+    written: written
+  } do
+    issue = done.(here, "Shared")
+    other = done.(here, "Switched to")
+    %TestingScenario{id: shared_id} = shared = TestingScenario.agent("Shared")
+    %TestingScenario{id: other_id} = other_scenario = %{TestingScenario.agent("Elsewhere") | result: :failed}
+    written.(issue, [shared])
+    written.(other, [other_scenario])
+    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+
+    {:ok, _saved} = Issues.save_testing_scenario(system_scope(), issue, shared_id, %{result: "failed"})
+    assert has_element?(view, "#testing-scenario-#{shared_id}[data-result='failed']")
+
+    render_hook(view, "save_testing", %{
+      "_target" => ["notes", other_id],
+      "issue_id" => other.id,
+      "notes" => %{other_id => "Typed before switching"}
+    })
+
+    assert %Issue{testing_scenarios: [%{note: "Typed before switching"}]} = Repo.get!(Issue, other.id)
+    assert has_element?(view, "#testing-bar", issue.identifier)
+
+    render_hook(view, "save_testing", %{
+      "_target" => ["notes", shared_id],
+      "issue_id" => "iss_elsewhere",
+      "notes" => %{shared_id => "Lost"}
+    })
+
+    assert has_element?(view, "#testing-bar", issue.identifier)
+    assert %Issue{testing_scenarios: [%{note: nil}]} = Repo.get!(Issue, issue.id)
+  end
+
+  test "form recovery that names the upload with no pictures, or a disabled device, saves nothing", %{
     conn: conn,
     done: done,
     here: here
   } do
-    issue = done.(here, "Shared")
-    other = done.(here, "Switched to")
+    issue = done.(here, "Recovered")
+    {:ok, _requested} = Issues.request_test_scenarios(issue, "3c9a1f0e2b")
     {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
 
-    {:ok, _saved} = Issues.save_testing_notes(system_scope(), issue, "From the other tab")
-    assert has_element?(view, "#testing-notes-#{issue.id}", "From the other tab")
+    render_hook(view, "save_testing", %{"_target" => ["testing_images"], "issue_id" => issue.id})
+    render_hook(view, "save_testing", %{"_target" => ["testing_device"], "issue_id" => issue.id})
 
-    {:ok, _saved} = Issues.save_testing_notes(system_scope(), other, "Another ticket's notes")
-    assert has_element?(view, "#testing-notes-#{issue.id}", "From the other tab")
-
-    render_hook(view, "save_notes", %{"issue_id" => other.id, "notes" => "Typed before switching"})
-    assert %Issue{testing_notes: "Typed before switching"} = Repo.get!(Issue, other.id)
-    assert has_element?(view, "#testing-notes-#{issue.id}", "From the other tab")
-
-    render_hook(view, "save_notes", %{"issue_id" => "iss_elsewhere", "notes" => "Lost"})
-    assert has_element?(view, "#testing-bar", issue.identifier)
+    refute has_element?(view, "#testing-notice")
+    refute has_element?(view, "#testing-image-error")
+    assert %Issue{testing_device: nil, testing_state: :waiting} = Repo.get!(Issue, issue.id)
   end
 
   test "Mark tested opens the next ticket, and the last one leaves the queue empty", %{
     conn: conn,
     done: done,
-    here: here
+    here: here,
+    written: written
   } do
     first = done.(here, "First")
     second = done.(here, "Second")
+    written.(second, [%{TestingScenario.agent("Passed") | result: :passed}])
     {:ok, view, _html} = live(conn, ~p"/testing/#{second.id}")
 
     view |> element("#testing-mark-tested") |> render_click()
@@ -450,19 +723,199 @@ defmodule RailWeb.TestingLiveTest do
     refute has_element?(view, "#testing-notice")
 
     view |> element("#testing-mark-tested") |> render_click()
+    view |> form("#tested-reason-dialog", %{no_scenarios_reason: "Only docs"}) |> render_submit()
 
     assert_patch(view, ~p"/testing", 1_000)
     assert has_element?(view, "#testing-queue-empty")
     refute has_element?(view, "#testing-bar")
+    refute has_element?(view, "#tested-reason-dialog")
+  end
+
+  test "Mark tested on an empty list asks why, refuses a blank answer, and keeps the reason it is given", %{
+    conn: conn,
+    done: done,
+    here: here
+  } do
+    issue = done.(here, "Docs only")
+    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+
+    assert has_element?(view, "#testing-scenarios-empty", "No scenarios yet. Add the ones you want to check.")
+    assert has_element?(view, "#testing-scenarios-empty", "Mark tested asks why there was nothing to test.")
+    refute has_element?(view, "#testing-mark-tested[disabled]")
+
+    view |> element("#testing-mark-tested") |> render_click()
+    assert has_element?(view, "#tested-reason-title", "Mark #{issue.identifier} tested with no scenarios")
+
+    view |> element("#tested-reason-cancel") |> render_click()
+    refute has_element?(view, "#tested-reason-dialog")
+
+    view |> element("#testing-mark-tested") |> render_click()
+    render_keydown(view, "close_tested_reason", %{"key" => "Escape"})
+    refute has_element?(view, "#tested-reason-dialog")
+
+    view |> element("#testing-mark-tested") |> render_click()
+    view |> form("#tested-reason-dialog", %{no_scenarios_reason: "   "}) |> render_submit()
+
+    assert has_element?(view, "#tested-reason-error", "Write why there was nothing to test.")
+    assert %Issue{testing_state: :waiting, no_scenarios_reason: nil} = Repo.get!(Issue, issue.id)
+
+    view |> form("#tested-reason-dialog", %{no_scenarios_reason: " No tests, it was only docs "}) |> render_submit()
+
+    assert_patch(view, ~p"/testing", 1_000)
+    assert %Issue{testing_state: :tested, no_scenarios_reason: "No tests, it was only docs"} = Repo.get!(Issue, issue.id)
+
+    {:ok, tested, _html} = live(conn, ~p"/testing/#{issue.id}")
+    assert has_element?(tested, "#testing-no-scenarios-reason", "Marked tested with no scenarios")
+    assert has_element?(tested, "#testing-no-scenarios-reason", "No tests, it was only docs")
+    refute has_element?(tested, "#testing-scenarios-empty")
+  end
+
+  test "Mark tested on a ticket another tab marked shows the notice, not the dialog", %{
+    conn: conn,
+    done: done,
+    here: here
+  } do
+    issue = done.(here, "Marked elsewhere")
+    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+    {:ok, _tested} = Issues.mark_issue_tested(system_scope(), issue, %{no_scenarios_reason: "Docs"})
+
+    render_click(view, "mark_tested", %{"issue_id" => issue.id})
+
+    assert has_element?(view, "#testing-notice", "#{issue.identifier} was already marked tested.")
+    refute has_element?(view, "#tested-reason-dialog")
+  end
+
+  test "the reason dialog closes on a refusal and shows its notice, and opens when the last scenario went elsewhere", %{
+    conn: conn,
+    done: done,
+    here: here,
+    written: written
+  } do
+    issue = done.(here, "Changed meanwhile")
+    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+    view |> element("#testing-mark-tested") |> render_click()
+    {:ok, %Issue{testing_scenarios: [%{id: added_id}]}} = Issues.add_testing_scenario(system_scope(), issue, "Added")
+
+    view |> form("#tested-reason-dialog", %{no_scenarios_reason: "Docs"}) |> render_submit()
+
+    refute has_element?(view, "#tested-reason-dialog")
+    assert has_element?(view, "#testing-notice", "Mark tested is for when every scenario passed.")
+
+    {:ok, _passed} = Issues.save_testing_scenario(system_scope(), issue, added_id, %{result: "passed"})
+    other = done.(here, "Emptied meanwhile")
+    other = written.(other, [%{TestingScenario.agent("Passed") | result: :passed}])
+    {:ok, view, _html} = live(conn, ~p"/testing/#{other.id}")
+    # Emptied with no broadcast, so the page still shows the scenario it had.
+    other |> Issue.testing_scenarios_changeset([], :agent) |> Repo.update!()
+
+    view |> element("#testing-mark-tested") |> render_click()
+    assert has_element?(view, "#tested-reason-error", "Write why there was nothing to test.")
+    assert %Issue{testing_state: :waiting} = Repo.get!(Issue, other.id)
+  end
+
+  test "a ticket being written waits on the agent, takes its scenarios when the pass ends, and opens after two hours", %{
+    conn: conn,
+    done: done,
+    here: here
+  } do
+    issue = done.(here, "Just merged")
+
+    {:ok, _qa} =
+      Rail.Roles.create_role(system_scope(), here, %{
+        stage: :qa,
+        name: "QA",
+        model: "claude-opus-5-5",
+        system_prompt: "You test.",
+        cli: :claude
+      })
+
+    {:ok, _requested} = Issues.request_test_scenarios(issue, "3c9a1f0e2b")
+    {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
+    {:ok, other_tab, _html} = live(conn, ~p"/testing/#{issue.id}")
+
+    assert has_element?(view, "#testing-writing", "Writing scenarios…")
+    assert has_element?(view, "#testing-writing", "An agent is reading #{issue.identifier} and its merged pull request.")
+    assert has_element?(view, "#testing-mark-tested[disabled][title='Rail is writing scenarios for this ticket']")
+    assert has_element?(view, "#testing-send-to-triage[disabled][title='Rail is writing scenarios for this ticket']")
+    assert has_element?(view, "#testing-environment-staging[disabled]")
+    assert has_element?(view, "#testing-device[disabled]")
+    assert has_element?(view, "#testing-new-scenario[disabled]")
+    refute has_element?(view, "#testing-scenarios-empty")
+    refute has_element?(view, "input[type='file']")
+
+    render_click(view, "mark_scenario", %{"issue_id" => issue.id, "scenario_id" => "tsc_x", "result" => "passed"})
+
+    assert has_element?(
+             view,
+             "#testing-notice",
+             "Rail is still writing scenarios for #{issue.identifier}. Nothing was changed."
+           )
+
+    render_click(view, "mark_tested", %{"issue_id" => issue.id})
+    refute has_element?(view, "#tested-reason-dialog")
+
+    expect(Rail.Tools, :run_agent, fn _role, _argv, opts ->
+      claimed = Repo.get!(Issue, issue.id).scenarios_started_at
+      dir = Path.join([Rail.scratch_root(), issue.project_id, "testing", "#{issue.id}-#{DateTime.to_unix(claimed)}"])
+      File.write!(Path.join(dir, "result.json"), ~s({"scenarios": ["Open the export"]}))
+      {:ok, opts[:cd]}
+    end)
+
+    stub(Rail.Git, :checkout_detached_worktree, fn _project, path -> {:ok, path} end)
+    stub(Rail.Git, :remove_worktree, fn _clone, _path -> :ok end)
+    assert :ok = Issues.write_test_scenarios(issue, "3c9a1f0e2b")
+
+    for tab <- [view, other_tab] do
+      refute has_element?(tab, "#testing-writing")
+      assert has_element?(tab, "#testing-scenario-list", "Open the export")
+      assert has_element?(tab, "[id$='-agent']", "From the issue")
+    end
+
+    stalled = done.(here, "Pass died")
+    {:ok, _requested} = Issues.request_test_scenarios(stalled, "4d0b2e1f3c")
+    {:ok, view, _html} = live(conn, ~p"/testing/#{stalled.id}")
+    assert has_element?(view, "#testing-writing")
+
+    expired = DateTime.utc_now() |> DateTime.shift(minute: -121) |> DateTime.truncate(:second)
+    Repo.update_all(from(i in Issue, where: i.id == ^stalled.id), set: [scenarios_requested_at: expired])
+    send(view.pid, {:writing_ended, "iss_other"})
+    assert has_element?(view, "#testing-writing")
+
+    send(view.pid, {:writing_ended, stalled.id})
+    refute has_element?(view, "#testing-writing")
+    assert has_element?(view, "#testing-scenarios-empty", "No scenarios yet. Add the ones you want to check.")
+    refute has_element?(view, "#testing-mark-tested[disabled]")
+  end
+
+  test "moving between two tickets being written keeps one timer, for the ticket shown", %{
+    conn: conn,
+    done: done,
+    here: here
+  } do
+    first = done.(here, "First merged")
+    second = done.(here, "Second merged")
+    {:ok, _requested} = Issues.request_test_scenarios(first, "3c9a1f0e2b")
+    {:ok, _requested} = Issues.request_test_scenarios(second, "4d0b2e1f3c")
+    {:ok, view, _html} = live(conn, ~p"/testing/#{first.id}")
+
+    view |> element("#testing-row-#{second.id}") |> render_click()
+    assert has_element?(view, "#testing-bar", second.identifier)
+    assert has_element?(view, "#testing-writing")
+
+    # The first ticket's timer was cancelled, so only the shown ticket's message would ever arrive.
+    send(view.pid, {:writing_ended, first.id})
+    assert has_element?(view, "#testing-writing")
   end
 
   test "a second click meant for a ticket the page has moved on from does nothing", %{
     conn: conn,
     done: done,
-    here: here
+    here: here,
+    written: written
   } do
     first = done.(here, "First")
     second = done.(here, "Second")
+    written.(first, [%{TestingScenario.agent("Passed") | result: :passed}])
     {:ok, view, _html} = live(conn, ~p"/testing/#{first.id}")
 
     view |> element("#testing-mark-tested") |> render_click()
@@ -478,23 +931,31 @@ defmodule RailWeb.TestingLiveTest do
   test "Send to triage opens the next ticket with a notice linking the new one", %{
     conn: conn,
     done: done,
-    here: here
+    here: here,
+    written: written
   } do
     sent = done.(here, "Broken")
     next = done.(here, "Next")
+    %TestingScenario{id: scenario_id} = scenario = TestingScenario.agent("The row fits")
+    written.(sent, [scenario])
     {:ok, view, _html} = live(conn, ~p"/testing/#{sent.id}")
 
+    view |> element("#testing-scenario-#{scenario_id}-failed") |> render_click()
+
     view
-    |> form("#testing-notes-form-#{sent.id}", %{issue_id: sent.id, notes: "The row is cut off"})
-    |> render_change()
+    |> form("#testing-form-#{sent.id}")
+    |> render_change(%{"_target" => ["notes", scenario_id], "notes" => %{scenario_id => "The row is cut off"}})
 
     view |> element("#testing-send-to-triage") |> render_click()
 
     assert_patch(view, ~p"/testing/#{next.id}", 1_000)
     assert %Issue{state: :done, testing_state: :sent_to_triage} = Repo.get!(Issue, sent.id)
 
-    assert %{issues: [%Issue{identifier: created, description: "The row is cut off" <> _link}]} =
+    assert %{issues: [%Issue{identifier: created, description: description}]} =
              Issues.list_issues(project_id: here.id, state: :todo)
+
+    assert description =~ "- Failed: The row fits"
+    assert description =~ "1. The row fits\n\n   The row is cut off"
 
     assert has_element?(view, "#testing-notice", "#{sent.identifier} sent to triage as #{created}.")
     assert has_element?(view, "#testing-notice-created[href='/issues/#{created}']")
@@ -503,13 +964,19 @@ defmodule RailWeb.TestingLiveTest do
     assert has_element?(view, "#testing-notice")
 
     view |> element("#testing-mark-tested") |> render_click()
+    view |> form("#tested-reason-dialog", %{no_scenarios_reason: "Only docs"}) |> render_submit()
     assert_patch(view, ~p"/testing", 1_000)
     refute has_element?(view, "#testing-notice")
   end
 
-  test "Send to triage on the last ticket keeps its notice over the empty queue", %{conn: conn, done: done, here: here} do
+  test "Send to triage on the last ticket keeps its notice over the empty queue", %{
+    conn: conn,
+    done: done,
+    here: here,
+    written: written
+  } do
     sent = done.(here, "Last")
-    {:ok, _noted} = Issues.save_testing_notes(system_scope(), sent, "Broken")
+    written.(sent, [%{TestingScenario.agent("Broken") | result: :failed}])
     {:ok, view, _html} = live(conn, ~p"/testing")
 
     view |> element("#testing-send-to-triage") |> render_click()
@@ -520,11 +987,17 @@ defmodule RailWeb.TestingLiveTest do
     assert has_element?(view, "#testing-queue-empty")
   end
 
-  test "a finished action shows a loading screen that ignores a second click", %{conn: conn, done: done, here: here} do
+  test "a finished action shows a loading screen that ignores a second click", %{
+    conn: conn,
+    done: done,
+    here: here,
+    written: written
+  } do
     first = done.(here, "First")
     second = done.(here, "Second")
     third = done.(here, "Third")
-    {:ok, _noted} = Issues.save_testing_notes(system_scope(), first, "Broken")
+    written.(first, [%{TestingScenario.agent("Broken") | result: :failed}])
+    written.(second, [%{TestingScenario.agent("Fine") | result: :passed}])
     {:ok, view, _html} = live(conn, ~p"/testing/#{first.id}")
 
     view |> element("#testing-send-to-triage") |> render_click()
@@ -550,11 +1023,13 @@ defmodule RailWeb.TestingLiveTest do
   test "clicking a row during the loading screen opens that row and cancels the move", %{
     conn: conn,
     done: done,
-    here: here
+    here: here,
+    written: written
   } do
     first = done.(here, "First")
     _second = done.(here, "Second")
     third = done.(here, "Third")
+    written.(first, [%{TestingScenario.agent("Fine") | result: :passed}])
     {:ok, view, _html} = live(conn, ~p"/testing/#{first.id}")
 
     view |> element("#testing-mark-tested") |> render_click()
@@ -569,20 +1044,22 @@ defmodule RailWeb.TestingLiveTest do
     refute_patched(view)
   end
 
-  test "leaving the notes field shows the notes saved last", %{conn: conn, done: done, here: here} do
+  test "leaving a note shows the note saved last", %{conn: conn, done: done, here: here, written: written} do
     issue = done.(here, "Two testers")
+    %TestingScenario{id: scenario_id} = scenario = %{TestingScenario.agent("Shared") | result: :failed}
+    written.(issue, [scenario])
     {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
 
     view
-    |> form("#testing-notes-form-#{issue.id}", %{issue_id: issue.id, notes: "Mine"})
-    |> render_change()
+    |> form("#testing-form-#{issue.id}")
+    |> render_change(%{"_target" => ["notes", scenario_id], "notes" => %{scenario_id => "Mine"}})
 
-    assert has_element?(view, "#testing-notes-#{issue.id}[data-rev='0']")
-    {:ok, _theirs} = Issues.save_testing_notes(system_scope(), issue, "Theirs, saved last")
+    assert has_element?(view, "#testing-note-#{scenario_id}[data-rev='0']")
+    {:ok, _theirs} = Issues.save_testing_scenario(system_scope(), issue, scenario_id, %{note: "Theirs, saved last"})
 
-    view |> element("#testing-notes-#{issue.id}") |> render_blur()
+    view |> element("#testing-note-#{scenario_id}") |> render_blur()
 
-    assert has_element?(view, "#testing-notes-#{issue.id}[data-rev='1']", "Theirs, saved last")
+    assert has_element?(view, "#testing-note-#{scenario_id}[data-rev='1']", "Theirs, saved last")
   end
 
   test "a ticket shows its cycle with no cycle menu", %{conn: conn, done: done, here: here} do
@@ -611,12 +1088,14 @@ defmodule RailWeb.TestingLiveTest do
   test "an action on a ticket another tab already finished says so and changes nothing", %{
     conn: conn,
     done: done,
-    here: here
+    here: here,
+    written: written
   } do
     issue = done.(here, "Twice")
-    {:ok, _noted} = Issues.save_testing_notes(system_scope(), issue, "Fine")
+    %TestingScenario{id: scenario_id} = scenario = %{TestingScenario.agent("Fine") | result: :passed}
+    written.(issue, [scenario])
     {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
-    {:ok, _tested} = Issues.mark_issue_tested(system_scope(), issue)
+    {:ok, _tested} = Issues.mark_issue_tested(system_scope(), issue, %{})
 
     render_hook(view, "mark_tested", %{"issue_id" => issue.id})
 
@@ -624,25 +1103,30 @@ defmodule RailWeb.TestingLiveTest do
     assert has_element?(view, "#testing-notice", "Nothing was changed.")
     assert has_element?(view, "#testing-bar", issue.identifier)
     refute has_element?(view, "#testing-mark-tested")
-    assert has_element?(view, "#testing-notes-status", "Testing finished")
-    assert has_element?(view, "#testing-notes-#{issue.id}[readonly]")
-    assert %Issue{testing_state: :tested, testing_notes: "Fine"} = Repo.get!(Issue, issue.id)
+    assert has_element?(view, "#testing-lock", "Testing finished")
+    assert has_element?(view, "#testing-scenario-#{scenario_id}-failed[disabled]")
+    assert %Issue{testing_state: :tested} = Repo.get!(Issue, issue.id)
 
-    render_hook(view, "save_notes", %{"issue_id" => issue.id, "notes" => "Too late"})
+    render_hook(view, "mark_scenario", %{"issue_id" => issue.id, "scenario_id" => scenario_id, "result" => "failed"})
     assert has_element?(view, "#testing-notice", "was already marked tested.")
-    assert %Issue{testing_notes: "Fine"} = Repo.get!(Issue, issue.id)
+    assert %Issue{testing_scenarios: [%{result: :passed}]} = Repo.get!(Issue, issue.id)
   end
 
-  test "a send on a ticket already sent, or moved out of Done, says which", %{conn: conn, done: done, here: here} do
+  test "a send on a ticket already sent, or moved out of Done, says which", %{
+    conn: conn,
+    done: done,
+    here: here,
+    written: written
+  } do
     sent = done.(here, "Sent elsewhere")
     reopened = done.(here, "Reopened elsewhere")
-    {:ok, _noted} = Issues.save_testing_notes(system_scope(), sent, "Broken")
+    written.(sent, [%{TestingScenario.agent("Broken") | result: :failed}])
     {:ok, view, _html} = live(conn, ~p"/testing/#{sent.id}")
     {:ok, _created} = Issues.send_issue_to_triage(system_scope(), sent)
 
     render_hook(view, "send_to_triage", %{"issue_id" => sent.id})
     assert has_element?(view, "#testing-notice", "#{sent.identifier} was already sent to triage.")
-    assert has_element?(view, "#testing-notes-status", "Testing finished")
+    assert has_element?(view, "#testing-lock", "Testing finished")
     assert %{total: 1} = Issues.list_issues(project_id: sent.project_id, state: :todo)
 
     {:ok, view, _html} = live(conn, ~p"/testing/#{reopened.id}")
@@ -651,18 +1135,26 @@ defmodule RailWeb.TestingLiveTest do
       Issues.set_issue_status(system_scope(), reopened, %{id: "canceled", name: "Canceled", state: :canceled})
 
     refute has_element?(view, "#testing-bar-state")
-    assert has_element?(view, "#testing-notes-status", "Not in Done")
+    assert has_element?(view, "#testing-lock", "Not in Done")
     render_hook(view, "mark_tested", %{"issue_id" => reopened.id})
     assert has_element?(view, "#testing-notice", "#{reopened.identifier} is no longer in Done.")
   end
 
-  test "Send to triage with blank notes asks for them", %{conn: conn, done: done, here: here} do
-    issue = done.(here, "Blank")
+  test "Send to triage with no failed scenario, and Mark tested with one open, each say what they need", %{
+    conn: conn,
+    done: done,
+    here: here,
+    written: written
+  } do
+    issue = done.(here, "Open")
+    written.(issue, [TestingScenario.agent("Unmarked")])
     {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
 
     render_hook(view, "send_to_triage", %{"issue_id" => issue.id})
+    assert has_element?(view, "#testing-notice", "Mark a scenario Failed to send this to triage.")
 
-    assert has_element?(view, "#testing-notice", "Write testing notes to send this to triage.")
+    render_hook(view, "mark_tested", %{"issue_id" => issue.id})
+    assert has_element?(view, "#testing-notice", "Mark tested is for when every scenario passed.")
     assert %Issue{testing_state: :waiting} = Repo.get!(Issue, issue.id)
   end
 
@@ -672,7 +1164,8 @@ defmodule RailWeb.TestingLiveTest do
     here: here
   } do
     issue = done.(here, "Refused")
-    {:ok, _noted} = Issues.save_testing_notes(system_scope(), issue, "Broken")
+    {:ok, %Issue{testing_scenarios: [%{id: scenario_id}]}} = Issues.add_testing_scenario(system_scope(), issue, "Broken")
+    {:ok, _failed} = Issues.save_testing_scenario(system_scope(), issue, scenario_id, %{result: "failed"})
     expect(Issues, :create_issue, fn _scope, _project, _attrs -> {:error, :db_down} end)
 
     {:ok, view, _html} = live(conn, ~p"/testing/#{issue.id}")
@@ -705,7 +1198,7 @@ defmodule RailWeb.TestingLiveTest do
     assert has_element?(view, "#issue-comments", "Left after opening")
 
     send(view.pid, {:issue_comments_changed, "iss_other"})
-    send(view.pid, {:testing_notes_changed, "iss_other"})
+    send(view.pid, {:testing_changed, "iss_other"})
     send(view.pid, {:nav_something, "unrelated"})
     unrelated = done.(there, "Unrelated")
     assert has_element?(view, "#testing-row-#{unrelated.id}")

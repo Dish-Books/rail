@@ -28,11 +28,16 @@ defmodule Rail.Issues do
   defdelegate link_url(issue, url, title), to: Actions.LinkUrl
   defdelegate reset_issue_state(issue, state), to: Actions.ResetIssueState
   defdelegate set_issue_status(scope, issue, status), to: Actions.SetIssueStatus
-  defdelegate save_testing_notes(scope, issue, notes), to: Actions.SaveTestingNotes
-  defdelegate add_testing_image(scope, issue, filename, data), to: Actions.AddTestingImage
-  defdelegate remove_testing_image(scope, issue, url), to: Actions.RemoveTestingImage
-  defdelegate mark_issue_tested(scope, issue), to: Actions.MarkIssueTested
+  defdelegate add_testing_scenario(scope, issue, title), to: Actions.AddTestingScenario
+  defdelegate save_testing_scenario(scope, issue, scenario_id, attrs), to: Actions.SaveTestingScenario
+  defdelegate remove_testing_scenario(scope, issue, scenario_id), to: Actions.RemoveTestingScenario
+  defdelegate save_testing_place(scope, issue, attrs), to: Actions.SaveTestingPlace
+  defdelegate add_testing_image(scope, issue, scenario_id, filename, data), to: Actions.AddTestingImage
+  defdelegate remove_testing_image(scope, issue, scenario_id, url), to: Actions.RemoveTestingImage
+  defdelegate mark_issue_tested(scope, issue, attrs), to: Actions.MarkIssueTested
   defdelegate send_issue_to_triage(scope, issue), to: Actions.SendIssueToTriage
+  defdelegate request_test_scenarios(issue, merge_sha), to: Actions.RequestTestScenarios
+  defdelegate write_test_scenarios(issue, merge_sha), to: Actions.WriteTestScenarios
   defdelegate edit_issue(scope, issue, attrs), to: Actions.EditIssue
   defdelegate upload_file(scope, issue, filename, data), to: Actions.UploadFile
   defdelegate block_issue(scope, blocker, blocked), to: Actions.BlockIssue

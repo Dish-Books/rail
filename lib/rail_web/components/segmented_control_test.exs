@@ -67,4 +67,22 @@ defmodule RailWeb.Components.SegmentedControlTest do
     assert Floki.find(html, "#picker-scroll span") == []
     assert html |> Floki.find("#picker-scroll") |> Floki.text() |> String.trim() == "Scroll"
   end
+
+  test "a disabled control is drawn with every option unpressable, and an enabled one with none" do
+    render = fn disabled ->
+      (&SegmentedControl.segmented_control/1)
+      |> render_component(
+        id: "picker",
+        options: [one: "One", two: "Two"],
+        selected: :one,
+        event: "pick",
+        value_name: "choice",
+        disabled: disabled
+      )
+      |> Floki.parse_fragment!()
+    end
+
+    assert [_one, _two] = Floki.find(render.(true), "button[disabled]")
+    assert Floki.find(render.(false), "button[disabled]") == []
+  end
 end
