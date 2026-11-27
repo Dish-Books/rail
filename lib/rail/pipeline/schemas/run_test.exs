@@ -458,4 +458,48 @@ defmodule Rail.Pipeline.Schemas.RunTest do
 
     refute Run.needs_attention?(orphaned)
   end
+
+  test "changeset/2 starts a wait when a run comes to rest, latches done, or fails while not done" do
+    for {run, attrs} <- [
+          {%Run{}, %{status: :finished}},
+          {%Run{status: :running}, %{status: :finished}},
+          {%Run{status: :waiting_for_usage}, %{status: :blocked_on_input}},
+          {%Run{status: :finished}, %{stage_outcome: :done}},
+          {%Run{status: :finished}, %{error: "Exited with code 1"}}
+        ] do
+      assert %DateTime{} = run |> Run.changeset(attrs) |> get_change(:wait_started_at)
+    end
+  end
+
+  test "changeset/2 leaves the wait time alone for a write that starts no wait" do
+    stamped = ~U[2026-11-20 10:00:00.000000Z]
+
+    for {run, attrs} <- [
+          {%Run{}, %{status: :running}},
+          {%Run{status: :waiting_for_resources}, %{status: :starting}},
+          {%Run{status: :finished}, %{status: :running, error: nil}},
+          {%Run{status: :finished, stage_outcome: :done}, %{error: "Exited with code 1"}},
+          {%Run{status: :finished, stage_outcome: :done}, %{stage_outcome: :in_progress}},
+          {%Run{status: :finished, error: "Exited with code 1"}, %{review_on_ci_pass: true}}
+        ] do
+      assert %Run{wait_started_at: ^stamped} =
+               %{run | wait_started_at: stamped} |> Run.changeset(attrs) |> apply_changes()
+    end
+  end
+
+  test "changeset/2 gives a dead process Boot settles, then finishes, one wait time" do
+    now = DateTime.utc_now()
+
+    settled =
+      %Run{status: :running, started_at: DateTime.shift(now, hour: -1)}
+      |> Run.changeset(%{status: :finished, completed_at: now, exit_code: 1, error: "Exited with code 1"})
+      |> apply_changes()
+
+    assert %DateTime{} = stamped = settled.wait_started_at
+
+    assert %Run{wait_started_at: ^stamped} =
+             settled
+             |> Run.changeset(%{status: :finished, completed_at: DateTime.utc_now(), error: "Exited with code 1"})
+             |> apply_changes()
+  end
 end
