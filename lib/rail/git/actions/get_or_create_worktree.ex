@@ -14,7 +14,7 @@ defmodule Rail.Git.Actions.GetOrCreateWorktree do
   with the clone's `origin` and no hooks, since Rail runs none of a project's. A task with a pull request continues its branch as `origin` has it; any other
   starts a new one from `origin/<default branch>`, fetched first.
 
-  Either way its git config is then written whole by Rail (`Rail.Git.write_checkout_config/2`), over whatever a
+  Either way a clone's git config is then written whole by Rail (`Rail.Git.write_checkout_config/2`), over whatever a
   sandbox wrote there before its config was mounted read-only.
   """
   def get_or_create_worktree(%Project{} = project, %Task{} = task) do
@@ -23,11 +23,18 @@ defmodule Rail.Git.Actions.GetOrCreateWorktree do
 
     # Two starts at once build in one place, so the second waits and then finds the first's clone.
     with {:ok, worktree_path} <- with_clone_lock(worktree_path, fn -> make(project, task, worktree_path, branch) end),
-         :ok <- Git.write_checkout_config(project, %{task | worktree_path: worktree_path}) do
+         :ok <- own_config(project, task, worktree_path) do
       {:ok, worktree_path}
     else
       {:error, reason} -> {:error, failed(worktree_path, reason)}
     end
+  end
+
+  # Only a task's own clone: a worktree of the project's clone shares the clone's config, which is not the task's.
+  defp own_config(%Project{} = project, %Task{} = task, worktree_path) do
+    if File.dir?(Path.join(worktree_path, ".git")),
+      do: Git.write_checkout_config(project, %{task | worktree_path: worktree_path}),
+      else: :ok
   end
 
   defp make(%Project{} = project, %Task{} = task, worktree_path, branch) do

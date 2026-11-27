@@ -209,10 +209,10 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
       task: task
     } do
       {:ok, _project} = Projects.update_project(scope, project, %{ci_command: "mise run ci"})
-      stub(Git, :credential_env, fn _project -> {:error, {:github_api_error, 401, %{}}} end)
+      stub(Tools, :start_command_process, fn _run, :ci, _command, _opts -> {:error, {:bad_cwd, "/gone"}} end)
       reject(&Git.push_branch/3)
 
-      assert {:error, "Could not start CI: {:github_api_error, 401, %{}}"} = Pipeline.hand_over_work(scope, run)
+      assert {:error, ~s(Could not start CI: {:bad_cwd, "/gone"})} = Pipeline.hand_over_work(scope, run)
       assert %Run{status: :finished, review_on_ci_pass: false} = Repo.reload!(run)
       assert %Task{stage: :engineer} = Repo.reload!(task)
     end
