@@ -24,9 +24,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
       |> assign(:access?, Rail.cloudflare_access() != nil)
       |> assign(:github_error, Phoenix.Flash.get(socket.assigns.flash, :github_error))
       |> apply_user(user)
-      |> assign(:slack_connected, Scope.slack_linked?(current_scope))
-      |> assign(:slack_name, user.slack_name)
-      |> assign(:slack_notifications_error, nil)
+      |> assign(:slack_notifications_errors, %{tasks: nil, support: nil})
       |> assign(:intercom_workspaces, Support.list_intercom_workspaces())
       |> assign(:signing_error, nil)
       |> assign(:repository_access, repository_access(socket.assigns.projects))
@@ -346,73 +344,34 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
                 </.button>
               </div>
 
-              <div
+              <.notifications_row
                 id="slack-notifications"
-                class="flex items-center gap-4 border-t border-slate-200 dark:border-slate-700 px-4 py-3"
-              >
-                <div class="size-11 shrink-0 flex items-center justify-center">
-                  <.icon
-                    name={if @slack_connected, do: "pi-bell-ringing", else: "pi-bell-slash"}
-                    class={[
-                      "size-[18px]",
-                      @slack_connected && "text-slate-400",
-                      not @slack_connected && "text-slate-500"
-                    ]}
-                  />
-                </div>
+                kind="tasks"
+                title="Notify me about my tasks"
+                icon="pi-bell-ringing"
+                on={@slack_notifications}
+                connected={@slack_connected}
+                message={slack_notifications_message(:tasks, @slack_connected, @slack_notifications)}
+                error={@slack_notifications_errors.tasks}
+              />
 
-                <div class="min-w-0 flex-1">
-                  <h4 class={[
-                    "text-sm font-semibold",
-                    @slack_connected && "text-slate-900 dark:text-slate-100",
-                    not @slack_connected && "text-slate-500 dark:text-slate-400"
-                  ]}>
-                    Notify me about my tasks
-                  </h4>
-                  <p
-                    :if={@slack_notifications_error}
-                    id="slack-notifications-error"
-                    role="alert"
-                    class="mt-0.5 flex items-start gap-1.5 text-sm text-red-600 dark:text-red-400"
-                  >
-                    <.icon name="pi-warning-circle" class="size-4 mt-0.5 shrink-0" />
-                    <span>{@slack_notifications_error}</span>
-                  </p>
-                  <p
-                    :if={!@slack_notifications_error}
-                    id="slack-notifications-message"
-                    class="mt-0.5 text-sm text-slate-500 dark:text-slate-400"
-                  >
-                    {slack_notifications_message(@slack_connected, @slack_notifications)}
-                  </p>
-                </div>
-
-                <span
-                  id="slack-notifications-state"
-                  class={[
-                    "text-xs w-7 text-right",
-                    @slack_notifications && "font-semibold text-slate-700 dark:text-slate-200",
-                    not @slack_notifications && "text-slate-500 dark:text-slate-400"
-                  ]}
-                >
-                  {if @slack_notifications, do: "On", else: "Off"}
-                </span>
-
-                <%!-- A button shows only what the server rendered, where a checkbox the browser flipped can stay on. --%>
-                <button
-                  type="button"
-                  role="switch"
-                  id="slack-notifications-switch"
-                  aria-checked={to_string(@slack_notifications)}
-                  disabled={not @slack_connected}
-                  phx-click="set_slack_notifications"
-                  phx-value-on={to_string(not @slack_notifications)}
-                  aria-label="Notify me about my tasks in Slack"
-                  class="group shrink-0 rounded-full cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
-                >
-                  <span class="relative block h-5 w-9 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors group-aria-checked:bg-indigo-600 after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:transition-transform group-aria-checked:after:translate-x-4"></span>
-                </button>
-              </div>
+              <.notifications_row
+                :if={@show_support_notifications}
+                id="slack-support-notifications"
+                kind="support"
+                title="Notify me about new support messages"
+                icon="pi-headset"
+                on={@slack_support_notifications}
+                connected={@slack_connected}
+                message={
+                  slack_notifications_message(
+                    :support,
+                    @slack_connected,
+                    @slack_support_notifications
+                  )
+                }
+                error={@slack_notifications_errors.support}
+              />
             </div>
 
             <div
@@ -745,15 +704,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
   def handle_event("disconnect_slack", _params, socket) do
     case Users.unlink_slack(socket.assigns.current_scope) do
       {:ok, updated_user} ->
-        socket =
-          socket
-          |> assign(:current_scope, Scope.for_user(updated_user))
-          |> assign(:current_user, updated_user)
-          |> assign(:slack_connected, false)
-          |> assign(:slack_name, nil)
-          |> assign(:slack_notifications, updated_user.slack_notifications)
-          |> assign(:slack_notifications_error, nil)
-
+        socket = socket |> apply_user(updated_user) |> assign(:slack_notifications_errors, %{tasks: nil, support: nil})
         {:noreply, socket}
 
       {:error, _reason} ->
@@ -768,22 +719,20 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
     end
   end
 
-  def handle_event("set_slack_notifications", %{"on" => on}, socket) do
+  def handle_event("set_slack_notifications", %{"kind" => kind, "on" => on}, socket) when kind in ["tasks", "support"] do
+    kind = String.to_existing_atom(kind)
+
     socket =
-      case Users.set_slack_notifications(socket.assigns.current_scope, on == "true") do
+      case Users.set_slack_notifications(socket.assigns.current_scope, kind, on == "true") do
         {:ok, user} ->
-          socket |> apply_user(user) |> assign(:slack_notifications_error, nil)
+          socket |> apply_user(user) |> put_slack_error(kind, nil)
 
         # Slack was disconnected in another tab, so the page catches up with it.
         {:error, %Ecto.Changeset{data: %User{} = user}} ->
-          socket
-          |> apply_user(user)
-          |> assign(:slack_connected, Scope.slack_linked?(Scope.for_user(user)))
-          |> assign(:slack_name, user.slack_name)
-          |> assign(:slack_notifications_error, nil)
+          socket |> apply_user(user) |> put_slack_error(kind, nil)
 
         {:error, reason} ->
-          assign(socket, :slack_notifications_error, slack_notifications_error_message(reason))
+          put_slack_error(socket, kind, slack_notifications_error_message(reason))
       end
 
     {:noreply, socket}
@@ -825,7 +774,8 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
   def handle_info({:users_changed, id}, %{assigns: %{current_user: %User{id: id}}} = socket) do
     {:ok, user} = Users.get_user(id: id)
     socket = apply_user(socket, user)
-    socket = if user.slack_notifications, do: assign(socket, :slack_notifications_error, nil), else: socket
+    socket = if user.slack_notifications, do: put_slack_error(socket, :tasks, nil), else: socket
+    socket = if user.slack_support_notifications, do: put_slack_error(socket, :support, nil), else: socket
     {:noreply, socket}
   end
 
@@ -905,24 +855,123 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
     """
   end
 
+  attr :id, :string, required: true
+  attr :kind, :string, required: true
+  attr :title, :string, required: true
+  attr :icon, :string, required: true
+  attr :on, :boolean, required: true
+  attr :connected, :boolean, required: true
+  attr :message, :string, required: true
+  attr :error, :string, default: nil
+
+  defp notifications_row(assigns) do
+    ~H"""
+    <div
+      id={@id}
+      class="flex items-center gap-4 border-t border-slate-200 dark:border-slate-700 px-4 py-3"
+    >
+      <div class="size-11 shrink-0 flex items-center justify-center">
+        <.icon
+          name={if @connected, do: @icon, else: "pi-bell-slash"}
+          class={[
+            "size-[18px]",
+            @connected && "text-slate-400",
+            not @connected && "text-slate-500"
+          ]}
+        />
+      </div>
+
+      <div class="min-w-0 flex-1">
+        <h4 class={[
+          "text-sm font-semibold",
+          @connected && "text-slate-900 dark:text-slate-100",
+          not @connected && "text-slate-500 dark:text-slate-400"
+        ]}>
+          {@title}
+        </h4>
+        <p
+          :if={@error}
+          id={"#{@id}-error"}
+          role="alert"
+          class="mt-0.5 flex items-start gap-1.5 text-sm text-red-600 dark:text-red-400"
+        >
+          <.icon name="pi-warning-circle" class="size-4 mt-0.5 shrink-0" />
+          <span>{@error}</span>
+        </p>
+        <p
+          :if={!@error}
+          id={"#{@id}-message"}
+          class="mt-0.5 text-sm text-slate-500 dark:text-slate-400"
+        >
+          {@message}
+        </p>
+      </div>
+
+      <span
+        id={"#{@id}-state"}
+        class={[
+          "text-xs w-7 text-right",
+          @on && "font-semibold text-slate-700 dark:text-slate-200",
+          not @on && "text-slate-500 dark:text-slate-400"
+        ]}
+      >
+        {if @on, do: "On", else: "Off"}
+      </span>
+
+      <%!-- A button shows only what the server rendered, where a checkbox the browser flipped can stay on. --%>
+      <button
+        type="button"
+        role="switch"
+        id={"#{@id}-switch"}
+        aria-checked={to_string(@on)}
+        disabled={not @connected}
+        phx-click="set_slack_notifications"
+        phx-value-kind={@kind}
+        phx-value-on={to_string(not @on)}
+        aria-label={"#{@title} in Slack"}
+        class="group shrink-0 rounded-full cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
+      >
+        <span class="relative block h-5 w-9 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors group-aria-checked:bg-indigo-600 after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:transition-transform group-aria-checked:after:translate-x-4"></span>
+      </button>
+    </div>
+    """
+  end
+
   defp apply_user(socket, %User{} = user) do
+    scope = Scope.for_user(user)
+
     socket
-    |> assign(:current_scope, Scope.for_user(user))
+    |> assign(:current_scope, scope)
     |> assign(:current_user, user)
     |> assign(:github_connected, is_binary(user.github_id))
     |> assign(:signing_key?, User.signing?(user))
     |> assign(:signing_fingerprint, User.signing_fingerprint(user))
+    |> assign(:slack_connected, Scope.slack_linked?(scope))
+    |> assign(:slack_name, user.slack_name)
     |> assign(:slack_notifications, user.slack_notifications)
-    |> assign(:intercom_connected, Scope.intercom_linked?(Scope.for_user(user)))
+    |> assign(:slack_support_notifications, user.slack_support_notifications)
+    |> assign(:show_support_notifications, Users.can?(scope, :support, :view))
+    |> assign(:intercom_connected, Scope.intercom_linked?(scope))
     |> assign(:intercom_name, user.intercom_name)
   end
 
-  defp slack_notifications_message(false, _on?), do: "Connect Slack to get notifications."
+  defp put_slack_error(socket, kind, error),
+    do: assign(socket, :slack_notifications_errors, %{socket.assigns.slack_notifications_errors | kind => error})
 
-  defp slack_notifications_message(true, true),
+  defp slack_notifications_message(_kind, false, _on?), do: "Connect Slack to get notifications."
+
+  defp slack_notifications_message(:tasks, true, true),
     do: "Rail messages you when a task you own waits on you, and when someone else merges it."
 
-  defp slack_notifications_message(true, false), do: "Off. Rail sends you nothing in Slack."
+  defp slack_notifications_message(:tasks, true, false), do: "Off. Rail sends you nothing in Slack."
+
+  defp slack_notifications_message(:support, true, true),
+    do: "Rail messages you when a customer writes in Support, in the projects you can see."
+
+  defp slack_notifications_message(:support, true, false), do: "Off. Customer messages in Support stay in Rail."
+
+  defp slack_notifications_error_message(:not_authorized),
+    do: "Your role cannot open Support, so Rail sends you no support messages."
 
   defp slack_notifications_error_message({:slack_error, "messages_tab_disabled"}),
     do:

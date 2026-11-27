@@ -89,6 +89,18 @@ defmodule Rail.Users.Actions.RemoveUserTest do
     assert_receive {:mcp_authorizations_changed, ^leaver_id}
   end
 
+  test "turns both kinds of their Slack notification off", %{scope: scope, leaver: leaver, leaver_id: leaver_id} do
+    {:ok, linked} = Users.update_user(scope, leaver, %{slack_user_id: "U1", slack_team_id: "T1"})
+
+    {:ok, _on} =
+      linked
+      |> User.slack_notifications_changeset(%{slack_notifications: true, slack_support_notifications: true})
+      |> Repo.update()
+
+    assert {:ok, %User{id: ^leaver_id, slack_notifications: false, slack_support_notifications: false}} =
+             Users.remove_user(scope, leaver_id)
+  end
+
   test "leaves them off the lists of people", %{scope: scope, leaver: leaver} do
     {:ok, _user} = Users.remove_user(scope, leaver.id)
 

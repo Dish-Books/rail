@@ -708,7 +708,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
 
       first |> element("#slack-notifications-switch") |> render_click()
       # What a tab that has not caught up yet sends.
-      render_click(second, "set_slack_notifications", %{"on" => "true"})
+      render_click(second, "set_slack_notifications", %{"kind" => "tasks", "on" => "true"})
 
       assert has_element?(second, "#slack-notifications-state", "On")
       assert %User{slack_notifications: true} = Repo.reload!(user)
@@ -801,7 +801,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
         })
 
       Req.Test.expect(Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000000.000100"}))
-      {:ok, _on} = Users.set_slack_notifications(Scope.for_user(linked), true)
+      {:ok, _on} = Users.set_slack_notifications(Scope.for_user(linked), :tasks, true)
 
       {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
       view |> element("#disconnect-slack-button") |> render_click()
@@ -811,7 +811,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
       assert %User{slack_notifications: false} = Repo.reload!(user)
     end
 
-    test "turned on after Slack was disconnected in another tab, the page catches up", %{
+    test "Slack disconnected in another tab reads Off and disabled there, and a stale click there saves nothing", %{
       authed_conn: conn,
       user: user,
       team_id: team_id
@@ -823,14 +823,170 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
           slack_access_token: "xoxp-1"
         })
 
+      Req.Test.expect(Slack, 2, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000000.000100"}))
+      {:ok, _on} = Users.set_slack_notifications(Scope.for_user(linked), :tasks, true)
+      {:ok, _on} = Users.set_slack_notifications(Scope.for_user(linked), :support, true)
+
+      {:ok, first, _html} = live(conn, ~p"/settings/connected-accounts")
+      {:ok, second, _html} = live(conn, ~p"/settings/connected-accounts")
+      first |> element("#disconnect-slack-button") |> render_click()
+
+      assert has_element?(second, "#connect-slack-button")
+      assert has_element?(second, "#slack-notifications-state", "Off")
+      assert has_element?(second, "#slack-notifications-switch[disabled]")
+      assert has_element?(second, "#slack-support-notifications-state", "Off")
+      assert has_element?(second, "#slack-support-notifications-switch[disabled]")
+
+      # What a tab that has not caught up yet sends.
+      render_click(second, "set_slack_notifications", %{"kind" => "support", "on" => "true"})
+
+      assert has_element?(second, "#slack-support-notifications-message", "Connect Slack to get notifications.")
+      assert %User{slack_notifications: false, slack_support_notifications: false} = Repo.reload!(user)
+    end
+
+    test "the support switch shows for a support person and a dev, and not for a tester", %{
+      conn: conn,
+      user: user
+    } do
+      for role <- [:support, :dev] do
+        {:ok, user} = Users.update_user(system_scope(), user, %{role: role})
+        {:ok, view, _html} = live(log_in_user(conn, user), ~p"/settings/connected-accounts")
+
+        assert has_element?(view, "#slack-support-notifications h4", "Notify me about new support messages")
+        assert has_element?(view, "#slack-support-notifications-switch[disabled]")
+        assert has_element?(view, "#slack-support-notifications-message", "Connect Slack to get notifications.")
+      end
+
+      {:ok, tester} = Users.update_user(system_scope(), user, %{role: :tester})
+      {:ok, view, _html} = live(log_in_user(conn, tester), ~p"/settings/connected-accounts")
+
+      assert has_element?(view, "#slack-notifications-switch")
+      refute has_element?(view, "#slack-support-notifications")
+    end
+
+    test "support messages turn on with their own first message, stay on after a reload, and leave tasks alone", %{
+      authed_conn: conn,
+      user: user,
+      team_id: team_id
+    } do
+      {:ok, _linked} =
+        Users.update_user(system_scope(), user, %{
+          slack_user_id: "U1",
+          slack_team_id: team_id,
+          slack_access_token: "xoxp-1"
+        })
+
+      test_pid = self()
+
+      Req.Test.expect(Slack, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        send(test_pid, {:posted, Jason.decode!(body)})
+        Req.Test.json(conn, %{"ok" => true, "ts" => "1790000000.000100"})
+      end)
+
       {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
-      {:ok, _unlinked} = Users.unlink_slack(Scope.for_user(linked))
+      {:ok, second, _html} = live(conn, ~p"/settings/connected-accounts")
 
-      view |> element("#slack-notifications-switch") |> render_click()
+      assert has_element?(
+               view,
+               "#slack-support-notifications-message",
+               "Off. Customer messages in Support stay in Rail."
+             )
 
-      assert has_element?(view, "#connect-slack-button")
-      assert has_element?(view, "#slack-notifications-switch[disabled]")
-      assert %User{slack_notifications: false} = Repo.reload!(user)
+      view |> element("#slack-support-notifications-switch") |> render_click()
+
+      assert_received {:posted,
+                       %{
+                         "channel" => "U1",
+                         "text" =>
+                           "Rail will message you here when a customer writes in Support, in the projects you can see."
+                       }}
+
+      assert has_element?(view, "#slack-support-notifications-state", "On")
+      assert has_element?(view, "#slack-notifications-state", "Off")
+      assert has_element?(second, "#slack-support-notifications-switch[aria-checked='true']")
+      assert %User{slack_support_notifications: true, slack_notifications: false} = Repo.reload!(user)
+
+      {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+      assert has_element?(view, "#slack-support-notifications-switch[aria-checked='true']")
+
+      assert has_element?(
+               view,
+               "#slack-support-notifications-message",
+               "Rail messages you when a customer writes in Support, in the projects you can see."
+             )
+
+      # No Slack expectation is left, so a request here would fail the test.
+      view |> element("#slack-support-notifications-switch") |> render_click()
+
+      assert has_element?(view, "#slack-support-notifications-state", "Off")
+      assert has_element?(second, "#slack-support-notifications-switch[aria-checked='false']")
+      assert %User{slack_support_notifications: false} = Repo.reload!(user)
+    end
+
+    test "a refused support first message shows under the support row only, and a retry that gets through clears it",
+         %{authed_conn: conn, user: user, team_id: team_id} do
+      {:ok, _linked} =
+        Users.update_user(system_scope(), user, %{
+          slack_user_id: "U1",
+          slack_team_id: team_id,
+          slack_access_token: "xoxp-1"
+        })
+
+      {:ok, first, _html} = live(conn, ~p"/settings/connected-accounts")
+      {:ok, second, _html} = live(conn, ~p"/settings/connected-accounts")
+
+      Req.Test.expect(Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "messages_tab_disabled"}))
+      first |> element("#slack-support-notifications-switch") |> render_click()
+
+      assert has_element?(
+               first,
+               "#slack-support-notifications-error[role='alert']",
+               "The Rail app's Messages tab is off, so Slack refused the message."
+             )
+
+      refute has_element?(first, "#slack-notifications-error")
+      assert has_element?(first, "#slack-notifications-message", "Off. Rail sends you nothing in Slack.")
+      assert has_element?(first, "#slack-support-notifications-switch[aria-checked='false']")
+      assert %User{slack_support_notifications: false} = Repo.reload!(user)
+
+      # Turning tasks on elsewhere leaves the support refusal up, since support messages are still off.
+      Req.Test.expect(Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000000.000100"}))
+      second |> element("#slack-notifications-switch") |> render_click()
+      assert has_element?(first, "#slack-notifications-state", "On")
+      assert has_element?(first, "#slack-support-notifications-error")
+
+      Req.Test.expect(Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000000.000100"}))
+      second |> element("#slack-support-notifications-switch") |> render_click()
+
+      refute has_element?(first, "#slack-support-notifications-error")
+      assert has_element?(first, "#slack-support-notifications-state", "On")
+    end
+
+    test "a role that lost Support while the page was open is told why it cannot turn support messages on", %{
+      authed_conn: conn,
+      user: user,
+      team_id: team_id
+    } do
+      {:ok, _linked} =
+        Users.update_user(system_scope(), user, %{
+          slack_user_id: "U1",
+          slack_team_id: team_id,
+          slack_access_token: "xoxp-1"
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+      # What a tab that has not caught up with the role change yet sends.
+      user |> Ecto.Changeset.change(role: :tester) |> Repo.update!()
+      render_click(view, "set_slack_notifications", %{"kind" => "support", "on" => "true"})
+
+      assert has_element?(
+               view,
+               "#slack-support-notifications-error",
+               "Your role cannot open Support, so Rail sends you no support messages."
+             )
+
+      assert %User{slack_support_notifications: false} = Repo.reload!(user)
     end
   end
 

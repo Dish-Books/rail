@@ -132,15 +132,36 @@ defmodule Rail.Users.Schemas.UserTest do
       assert %User{slack_notifications: true} = Repo.reload!(user)
     end
 
+    test "turn support messages on only with a Slack account, independently of task messages", %{user: user} do
+      assert %{slack_support_notifications: ["connect Slack first"]} =
+               errors_on(User.slack_notifications_changeset(user, %{slack_support_notifications: true}))
+
+      {:ok, linked} = Users.update_user(system_scope(), user, %{slack_user_id: "U1", slack_team_id: "T1"})
+
+      assert {:ok, %User{slack_support_notifications: true, slack_notifications: false}} =
+               linked |> User.slack_notifications_changeset(%{slack_support_notifications: true}) |> Repo.update()
+    end
+
+    test "an admin's edit cannot turn support messages on", %{user: user} do
+      {:ok, linked} = Users.update_user(system_scope(), user, %{slack_user_id: "U1", slack_team_id: "T1"})
+
+      assert {:ok, %User{slack_support_notifications: false}} =
+               Users.update_user(system_scope(), linked, %{name: "Renamed", slack_support_notifications: true})
+    end
+
     test "unlinking Slack through a stale user still turns them off", %{user: user} do
       {:ok, linked} =
         Users.update_user(system_scope(), user, %{slack_user_id: "U1", slack_team_id: "T1", slack_access_token: "xoxp-1"})
 
       {:ok, _on} = linked |> User.slack_notifications_changeset(%{slack_notifications: true}) |> Repo.update()
 
+      {:ok, _on} = linked |> User.slack_notifications_changeset(%{slack_support_notifications: true}) |> Repo.update()
+
       # The page's scope was loaded before notifications were turned on, so its user still reads off.
       assert {:ok, %User{}} = Users.unlink_slack(Scope.for_user(linked))
-      assert %User{slack_notifications: false, slack_user_id: nil} = Repo.reload!(user)
+
+      assert %User{slack_notifications: false, slack_support_notifications: false, slack_user_id: nil} =
+               Repo.reload!(user)
     end
   end
 

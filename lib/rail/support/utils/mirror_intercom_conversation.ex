@@ -8,10 +8,11 @@ defmodule Rail.Support.Utils.MirrorIntercomConversation do
   alias Rail.Support.Schemas.Conversation
   alias Rail.Support.Schemas.IntercomWorkspace
   alias Rail.Support.Schemas.Message
+  alias Rail.Support.Workers.NotifySupportMessage
 
   @doc """
-  Mirrors a conversation as Intercom handed it over, every part upserted by its id, and asks for a draft when
-  `draft: true` and a customer wrote since the last one. Returns `{:ok, conversation}`.
+  Mirrors a conversation as Intercom handed it over, every part upserted by its id. With `draft: true` it tells
+  teammates of the latest customer message, and asks for a draft when a customer wrote since the last one.
   """
   def mirror_intercom_conversation(
         %IntercomWorkspace{} = workspace,
@@ -23,7 +24,8 @@ defmodule Rail.Support.Utils.MirrorIntercomConversation do
     source = Map.put(payload["source"] || %{}, "created_at", payload["created_at"])
     rows = rows(source, payload)
     fetched_at = DateTime.from_unix!(updated_at * 1_000_000, :microsecond)
-    last_customer_at = rows |> Enum.filter(&(&1.kind == :customer)) |> latest()
+    latest_customer = rows |> Enum.filter(&(&1.kind == :customer)) |> Enum.max_by(& &1.posted_at, DateTime, fn -> nil end)
+    last_customer_at = latest_customer && latest_customer.posted_at
     fields = fields(source, rows, fetched_at)
 
     # Only the import may start a conversation Done; anything a webhook brings in starts Waiting.
@@ -82,6 +84,14 @@ defmodule Rail.Support.Utils.MirrorIntercomConversation do
         |> Ecto.Changeset.change(if(reopened, do: [status: :waiting, done_at: nil, done_by_id: nil], else: []))
         |> Repo.update!()
       end)
+
+    # Only a customer's webhook syncs with `draft: true`; the job is unique, so a resent webhook notifies nobody twice.
+    if Keyword.get(opts, :draft, false) and conversation.status == :waiting and is_map(latest_customer) do
+      {:ok, _job} =
+        %{"conversation_id" => conversation.id, "external_id" => latest_customer.external_id}
+        |> NotifySupportMessage.new()
+        |> Oban.insert()
+    end
 
     if Keyword.get(opts, :draft, false) and conversation.status == :waiting and
          newer?(last_customer_at, conversation.drafted_at) do

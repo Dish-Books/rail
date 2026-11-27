@@ -23,6 +23,28 @@ defmodule Rail.Users.Actions.UnlinkSlackTest do
              Users.unlink_slack(Scope.for_user(user))
   end
 
+  test "turns both kinds of Slack notification off and tells open pages" do
+    unique = System.unique_integer([:positive])
+
+    {:ok, %User{id: user_id} = user} =
+      Users.register_oauth_user(%{github_id: "us_#{unique}", login: "us_#{unique}", email: "us_#{unique}@example.com"})
+
+    {:ok, linked} = Users.update_user(system_scope(), user, %{slack_user_id: "U1", slack_access_token: "xoxp-1"})
+
+    {:ok, _on} =
+      linked
+      |> User.slack_notifications_changeset(%{slack_notifications: true, slack_support_notifications: true})
+      |> Repo.update()
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "users")
+
+    assert {:ok, %User{slack_notifications: false, slack_support_notifications: false}} =
+             Users.unlink_slack(Scope.for_user(linked))
+
+    assert_received {:users_changed, ^user_id}
+    assert %User{slack_notifications: false, slack_support_notifications: false} = Repo.reload!(user)
+  end
+
   test "needs a signed-in user" do
     assert {:error, :not_authenticated} = Users.unlink_slack(Scope.for_system())
   end

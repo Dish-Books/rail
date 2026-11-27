@@ -8,6 +8,7 @@ defmodule Rail.Support.Actions.SyncIntercomConversationTest do
   alias Rail.Support.Schemas.Conversation
   alias Rail.Support.Schemas.Message
   alias Rail.Support.Schemas.Message.Attachment
+  alias Rail.Support.Workers.NotifySupportMessage
   alias Rail.Support.Workers.RunSupportAgent
   alias Rail.Users
 
@@ -122,6 +123,7 @@ defmodule Rail.Support.Actions.SyncIntercomConversationTest do
 
     assert_receive {:support_changed, ^conversation_id}
     assert {:ok, _again} = Support.sync_intercom_conversation(workspace, external_id)
+    refute_enqueued(worker: NotifySupportMessage)
 
     assert [
              %Message{
@@ -334,6 +336,72 @@ defmodule Rail.Support.Actions.SyncIntercomConversationTest do
     assert [%Oban.Job{args: %{"conversation_id" => ^conversation_id}}] = all_enqueued(worker: RunSupportAgent)
   end
 
+  test "a customer's webhook queues one notice for their latest message, however often it is read", %{
+    workspace: workspace,
+    payload: payload,
+    external_id: external_id
+  } do
+    Req.Test.stub(Intercom, &Req.Test.json(&1, payload))
+
+    assert {:ok, %Conversation{id: conversation_id}} =
+             Support.sync_intercom_conversation(workspace, external_id, draft: true)
+
+    assert {:ok, _again} = Support.sync_intercom_conversation(workspace, external_id, draft: true)
+
+    assert [%Oban.Job{args: %{"conversation_id" => ^conversation_id, "external_id" => "p4"} = args}] =
+             all_enqueued(worker: NotifySupportMessage)
+
+    refute Map.has_key?(args, "user_id")
+  end
+
+  test "a customer's next message queues a notice of its own", %{
+    workspace: workspace,
+    payload: payload,
+    external_id: external_id
+  } do
+    Req.Test.expect(Intercom, &Req.Test.json(&1, payload))
+    assert {:ok, _first} = Support.sync_intercom_conversation(workspace, external_id, draft: true)
+
+    customer = %{
+      "id" => "p9",
+      "part_type" => "comment",
+      "created_at" => 1_790_001_000,
+      "author" => %{"type" => "user", "name" => "Marta Kowalczyk"},
+      "body" => "Any news?"
+    }
+
+    later =
+      put_in(
+        %{payload | "updated_at" => 1_790_001_000},
+        ["conversation_parts", "conversation_parts"],
+        [customer | payload["conversation_parts"]["conversation_parts"]]
+      )
+
+    Req.Test.expect(Intercom, &Req.Test.json(&1, later))
+    assert {:ok, _second} = Support.sync_intercom_conversation(workspace, external_id, draft: true)
+
+    assert ["p4", "p9"] =
+             [worker: NotifySupportMessage] |> all_enqueued() |> Enum.map(& &1.args["external_id"]) |> Enum.sort()
+  end
+
+  test "a teammate's or the import's sync, or a Done conversation, queues no notice", %{
+    workspace: workspace,
+    payload: payload,
+    external_id: external_id,
+    user: user
+  } do
+    Req.Test.stub(Intercom, &Req.Test.json(&1, payload))
+
+    assert {:ok, conversation} = Support.sync_intercom_conversation(workspace, external_id, draft: false)
+    assert {:ok, _imported} = Support.sync_intercom_conversation(workspace, external_id, imported: true)
+    {:ok, _done} = Support.mark_support_done(Rail.Scope.for_user(user), conversation)
+
+    assert {:ok, %Conversation{status: :done}} =
+             Support.sync_intercom_conversation(workspace, external_id, draft: true)
+
+    refute_enqueued(worker: NotifySupportMessage)
+  end
+
   test "nothing newer from the customer than the last draft, or a Done conversation, asks for none", %{
     workspace: workspace,
     payload: payload,
@@ -380,6 +448,7 @@ defmodule Rail.Support.Actions.SyncIntercomConversationTest do
              Support.sync_intercom_conversation(workspace, external_id, draft: true)
 
     refute_enqueued(worker: RunSupportAgent)
+    refute_enqueued(worker: NotifySupportMessage)
   end
 
   test "a conversation a teammate started names the customer who answered, with no email", %{
