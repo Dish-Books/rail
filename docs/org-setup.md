@@ -84,7 +84,7 @@ Check, in a scratch clone of the project with `RAIL_WORKTREE_SLOT=999 RAIL_PORT_
 
 ## 5. The clone Rail works from
 
-Give Rail a clone of its own; never point it at a checkout someone works in. Rail detaches that checkout's HEAD and force-moves its default branch to `origin`'s on every fetch. It clones each new task from it, and clones a checkout of the default branch from it for each support, triage and curator pass and for the toolchain install.
+Give Rail a clone of its own; never point it at a checkout someone works in. Rail detaches that checkout's HEAD and force-moves its default branch to `origin`'s on every fetch. It clones each new task from it, and clones a checkout of the default branch from it for each support, triage, issue chat and curator pass and for the toolchain install.
 
 `origin` decides how Rail authenticates:
 

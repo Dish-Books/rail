@@ -48,7 +48,8 @@ config :rail, Oban,
     learnings: 2,
     learnings_embed: 5,
     support: 5,
-    support_agent: 3
+    support_agent: 3,
+    issue_chat: 3
   ],
   # A job a restart cut off stays executing, and a unique one blocks every later job, until rescued.
   lifeline: [rescue_after: {30, :minutes}],

@@ -3,6 +3,7 @@ defmodule Rail.Issues.Schemas.Issue do
   use Rail.Schema
 
   alias Rail.Initiatives.Schemas.Initiative
+  alias Rail.Issues.Schemas.ChatMessage
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Cycle
   alias Rail.Issues.Schemas.IssueLink
@@ -22,6 +23,7 @@ defmodule Rail.Issues.Schemas.Issue do
   @plan_steps [:product, :design, :architect]
   @testing_states [:waiting, :testing, :tested, :sent_to_triage]
   @queued_testing_states [:waiting, :testing]
+  @estimates [1, 2, 3, 5, 8, 13]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "iss"}
   schema "issues" do
@@ -58,6 +60,11 @@ defmodule Rail.Issues.Schemas.Issue do
     field :embedding, Pgvector.Ecto.Vector, load_in_query: false
     # The md5 of the title and description the embedding was made from, so an edit since shows as stale.
     field :embedding_digest, :string
+    # Set while someone has asked the agent and it has not answered; the pass claims it with `chat_started_at`.
+    field :chat_requested_at, :utc_datetime_usec
+    field :chat_started_at, :utc_datetime_usec
+    field :chat_token_hash, :binary, redact: true
+    field :chat_error, :string
 
     # Its cycle, which Rail sets itself.
     belongs_to :cycle, Cycle
@@ -77,6 +84,7 @@ defmodule Rail.Issues.Schemas.Issue do
     has_one :merged_task, Task, where: [stage: :merged]
     has_many :comments, Comment
     has_many :links, IssueLink, preload_order: [asc: :inserted_at, asc: :id]
+    has_many :chat_messages, ChatMessage, preload_order: [asc: :inserted_at, asc: :id]
 
     timestamps()
   end
@@ -168,6 +176,12 @@ defmodule Rail.Issues.Schemas.Issue do
   end
 
   def priorities, do: @priorities
+
+  @doc "The points the issue page offers for an estimate."
+  def estimates, do: @estimates
+
+  @doc "Whether someone has asked the issue's chat agent something it has not answered yet."
+  def chatting?(%__MODULE__{chat_requested_at: requested_at}), do: is_struct(requested_at, DateTime)
   def states, do: @states
   def finished_states, do: @finished_states
 

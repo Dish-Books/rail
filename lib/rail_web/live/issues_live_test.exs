@@ -1907,6 +1907,24 @@ defmodule RailWeb.IssuesLiveTest do
       assert %Issue{state: ^state, owner_user_id: ^owner_user_id} = Repo.get!(Issue, ready_id)
     end
 
+    test "Start on an issue the agent chat is still answering starts it", %{conn: conn, ready: %Issue{id: ready_id}} do
+      Repo.update_all(from(i in Issue, where: i.id == ^ready_id), set: [chat_requested_at: DateTime.utc_now()])
+      expect(Rail.Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+      expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      allow(Rail.Git, self(), view.pid)
+      allow(Tools, self(), view.pid)
+      render_async(view)
+
+      view |> element("#issue-start-#{ready_id}") |> render_click()
+      render_async(view)
+
+      refute has_element?(view, "#flash-error")
+      assert %Task{id: task_id, stage: :plan} = Repo.get_by(Task, issue_id: ready_id)
+      assert has_element?(view, "#task-link-#{ready_id}[href='/tasks/#{task_id}']")
+    end
+
     test "a Start for an issue gone since the page read it says nothing and starts nothing", %{
       conn: conn,
       ready: ready

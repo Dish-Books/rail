@@ -22,7 +22,7 @@ defmodule RailWeb.Components.IssueView do
   alias RailWeb.Components.IssueUpload
   alias RailWeb.Components.StatusPicker
 
-  @estimates [nil, 1, 2, 3, 5, 8, 13]
+  @estimates [nil | Issue.estimates()]
 
   attr :issue, :any, required: true
   attr :current_scope, :any, required: true
