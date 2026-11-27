@@ -59,6 +59,36 @@ defmodule Rail.Support.Schemas.MessageTest do
            } = Message.build_attrs(part, "comment")
   end
 
+  test "a screenshot both inline and listed as an attachment is kept once, as the listed file" do
+    part = %{
+      "id" => 503,
+      "created_at" => 1,
+      "author" => %{"type" => "user", "name" => "Marta"},
+      "body" =>
+        ~s(<p>Look</p><img src="https://downloads.intercomcdn.com/i/o/ws/28/ab/image.png?expires=1&signature=a&req=x"><img src="https://downloads.intercomcdn.com/i/o/ws/29/cd/other.png?req=y">),
+      "attachments" => [
+        %{
+          "url" => "https://acme.intercom-attachments-3.com/i/o/ws/28/ab/image.png?expires=2&signature=b&req=z",
+          "name" => "image.png",
+          "content_type" => "image/png",
+          "filesize" => 28_889
+        }
+      ]
+    }
+
+    assert %{
+             attachments: [
+               %Attachment{name: "other.png", content_type: "image/*"},
+               %Attachment{
+                 name: "image.png",
+                 url: "https://acme.intercom-attachments-3.com/i/o/ws/28/ab/image.png?expires=2&signature=b&req=z",
+                 content_type: "image/png",
+                 size: 28_889
+               }
+             ]
+           } = Message.build_attrs(part, "comment")
+  end
+
   test "an author with no name is named by email, then by kind" do
     assert %{author_name: "v@example.com", kind: :customer} =
              Message.build_attrs(
