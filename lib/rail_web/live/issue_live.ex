@@ -114,7 +114,6 @@ defmodule RailWeb.IssueLive do
             cycles={@cycles}
             initiatives={@initiatives}
             read_only={!@github_connected}
-            start_disabled={Issue.chatting?(@issue)}
           />
         </div>
         <.agent_chat
@@ -123,9 +122,9 @@ defmodule RailWeb.IssueLive do
           key={@issue.id}
           lines={@issue.chat_messages}
           running={Issue.chatting?(@issue)}
-          error={@issue.chat_error}
+          error={if(@issue.task, do: nil, else: @issue.chat_error)}
           form={@chat_form}
-          empty="Ask whether this issue still applies, or to sharpen it before you start. The agent reads the ticket, its comments, the code and the project's other tickets."
+          empty={chat_empty(@issue, @github_connected)}
           placeholder="Ask the agent about this issue"
           gone_author="A teammate"
           class="w-[400px] max-2xl:w-[320px] shrink-0 border-l border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
@@ -298,6 +297,16 @@ defmodule RailWeb.IssueLive do
   end
 
   def handle_async(:blockers, _stale_or_failed, socket), do: {:noreply, socket}
+
+  # The chat invites a question only while its box is open.
+  defp chat_empty(%Issue{task: %Task{}}, _github_connected),
+    do: "Nobody asked the agent about this issue before its task started."
+
+  defp chat_empty(%Issue{}, false), do: "Nobody has asked the agent about this issue yet."
+
+  defp chat_empty(%Issue{}, true),
+    do:
+      "Ask whether this issue still applies, or to sharpen it before you start. The agent reads the ticket, its comments, the code and the project's other tickets."
 
   defp load_issue(socket, id) do
     preload = [

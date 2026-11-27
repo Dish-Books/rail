@@ -12,7 +12,11 @@ defmodule RailWeb.Components.AgentChat do
   attr :empty, :string, required: true
   attr :placeholder, :string, required: true
   attr :gone_author, :string, required: true, doc: "the name shown for a line whose author was deleted"
-  attr :error, :string, default: nil, doc: "why the last pass did not finish, shown above the chat box"
+
+  attr :error, :string,
+    default: nil,
+    doc: "why the last pass did not finish, shown above the chat box, with a nudge to send again while the box is open"
+
   attr :class, :any, default: nil
   slot :header, doc: "replaces the Agent title, such as triage's Chat / Thread switch"
   slot :composer, doc: "drawn in the chat form's place while it is given, such as Support's rule to decide"
@@ -52,7 +56,7 @@ defmodule RailWeb.Components.AgentChat do
               class="ml-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex items-center gap-2 px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400"
             >
               <.icon name="pi-wrench" class="size-3.5 shrink-0" />
-              <span class="font-medium text-slate-700 dark:text-slate-300 break-words">{line.changes}</span>
+              <span class="min-w-0 font-medium text-slate-700 dark:text-slate-300 break-words">{line.changes}</span>
             </p>
             <div class="flex gap-2">
               <span class="flex items-center justify-center h-6 w-6 rounded-lg shrink-0 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200">
@@ -84,7 +88,8 @@ defmodule RailWeb.Components.AgentChat do
       >
         <.icon name="pi-warning-circle" class="size-4 mt-px shrink-0" />
         <span class="min-w-0 break-words">
-          <b>The agent did not finish.</b> {@error} Send a message to run it again.
+          <b>The agent did not finish.</b> {@error}
+          <span :if={@composer == []}>Send a message to run it again.</span>
         </span>
       </div>
       <div

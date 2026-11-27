@@ -139,7 +139,14 @@ defmodule Rail.Issues.Actions.RunIssueChat do
         work_dir: worktree
       )
 
-    Tools.run_agent(role, args, env: %{"RAIL_MCP_TOKEN" => token}, cd: worktree, timeout: @timeout)
+    # It reads the ticket and the chat and writes its result in the scratch folder, and only reads the code.
+    Tools.run_agent(role, args,
+      env: %{"RAIL_MCP_TOKEN" => token},
+      cd: worktree,
+      mounts: [scratch_path(issue)],
+      read_only_mounts: [worktree],
+      timeout: @timeout
+    )
   end
 
   defp read_result(issue) do
@@ -192,8 +199,11 @@ defmodule Rail.Issues.Actions.RunIssueChat do
       value == :unchanged or same?(value, Map.get(read, field)) ->
         {attrs, notes}
 
+      # Quoted as the agent wrote it, cut short so a long value cannot fill the note.
       not settable?(field, value) ->
-        {attrs, ["Left the #{name}: #{inspect(value, limit: 5, printable_limit: 60)} is not a value Rail takes" | notes]}
+        json = Jason.encode!(value)
+        shown = if String.length(json) > 60, do: String.slice(json, 0, 60) <> "…", else: json
+        {attrs, ["Left the #{name}: #{shown} is not a value Rail takes" | notes]}
 
       Map.get(current, field) != Map.get(read, field) ->
         {attrs, ["Kept the #{name}, edited while the agent worked" | notes]}
@@ -219,9 +229,16 @@ defmodule Rail.Issues.Actions.RunIssueChat do
 
     error =
       case outcome do
-        {:ok, %ChatMessage{}} -> nil
-        {:error, _reason} when retrying -> nil
-        {:error, reason} -> error_message(reason)
+        {:ok, %ChatMessage{}} ->
+          nil
+
+        {:error, _reason} when retrying ->
+          nil
+
+        # The notice puts "Send a message to run it again." after the reason, so the reason ends its own sentence.
+        {:error, reason} ->
+          message = reason |> error_message() |> String.trim()
+          if String.ends_with?(message, [".", "!", "?"]), do: message, else: message <> "."
       end
 
     Repo.update_all(from(i in Issue, where: i.id == ^id),
@@ -246,6 +263,14 @@ defmodule Rail.Issues.Actions.RunIssueChat do
   defp error_message(:backend_signed_out),
     do: "The Triage role's backend is signed out. Sign it in under Settings → Backends."
 
+  # The pass asks GitHub only for the token that fetches the default branch.
+  defp error_message({:github_api_error, status, %{"message" => said}}) when is_binary(said),
+    do: "Rail could not get a GitHub token to fetch the code. GitHub answered #{status}: #{said}"
+
+  defp error_message({:github_api_error, status, _body}),
+    do: "Rail could not get a GitHub token to fetch the code. GitHub answered #{status}"
+
+  defp error_message(exception) when is_exception(exception), do: "The agent failed: #{Exception.message(exception)}"
   defp error_message(reason) when is_binary(reason), do: reason
   defp error_message(reason), do: "The agent failed: #{inspect(reason)}"
 

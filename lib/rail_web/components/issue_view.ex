@@ -36,8 +36,6 @@ defmodule RailWeb.Components.IssueView do
   attr :show_task, :boolean, default: true
   # While GitHub is asked for a pull request the issue's work was opened as, which it would start at Review on.
   attr :checking_pull_request, :boolean, default: false
-  # While the issue's agent chat is answering, so the ticket a task starts from is the one the agent leaves.
-  attr :start_disabled, :boolean, default: false
   # A child of a split is owned through its parent, so its owner is read here, not changed.
   attr :owner_editable, :boolean, default: true
   # The workflow that opened the issue, named under its title and linked to Settings › Workflows.
@@ -312,9 +310,7 @@ defmodule RailWeb.Components.IssueView do
                   phx-hook="StartFocus"
                   data-chip="issue-task-link"
                   phx-click="start_task"
-                  disabled={@start_disabled}
-                  title={@start_disabled && "Wait for the agent to finish"}
-                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 cursor-pointer"
                 >
                   <.icon name="pi-play" class="h-3.5 w-3.5" />
                   <span>{Task.stage_label(hd(Issue.calculate_stages(@issue)))}</span>
@@ -327,21 +323,12 @@ defmodule RailWeb.Components.IssueView do
                   phx-hook="StartFocus"
                   data-chip="issue-task-link"
                   phx-click="adopt_pull_request"
-                  disabled={@start_disabled}
-                  title={@start_disabled && "Wait for the agent to finish"}
-                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 cursor-pointer"
                 >
                   <.icon name="pi-git-pull-request" class="h-3.5 w-3.5" />
                   <span>{Task.stage_label(:review)}</span>
                 </button>
               </div>
-              <p
-                :if={@start_disabled and not @checking_pull_request and !@read_only}
-                id="issue-start-waiting"
-                class="text-xs text-slate-500 dark:text-slate-400"
-              >
-                Starts once the agent finishes.
-              </p>
               <a
                 :if={@issue.pr_number}
                 href={@issue.pr_url}

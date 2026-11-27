@@ -1987,7 +1987,7 @@ defmodule RailWeb.IssueLiveTest do
       refute has_element?(view, "#issue-chat-error")
     end
 
-    test "a line shows Running and holds the box and Start, then the answer and the new ticket show without a reload",
+    test "a line shows Running and holds the box but not Start, then the answer and the new ticket show without a reload",
          %{conn: conn, issue: %Issue{id: issue_id} = issue, result_path: result_path} do
       {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
       render_async(view)
@@ -2003,8 +2003,8 @@ defmodule RailWeb.IssueLiveTest do
       assert has_element?(view, "#issue-chat-running", "Running")
       assert has_element?(view, "#issue-chat-text[disabled]")
       assert has_element?(view, "#issue-chat-send[disabled]")
-      assert has_element?(view, "#issue-start-plan[disabled]")
-      assert has_element?(view, "#issue-start-waiting", "Starts once the agent finishes.")
+      assert has_element?(view, "#issue-start-plan")
+      refute has_element?(view, "#issue-start-plan[disabled]")
       refute view |> element("#issue-chat-text") |> render() =~ "Rewrite it"
 
       expect(Tools, :run_agent, fn _role, _argv, _opts ->
@@ -2031,8 +2031,6 @@ defmodule RailWeb.IssueLiveTest do
 
       refute has_element?(view, "#issue-chat-running")
       refute has_element?(view, "#issue-chat-text[disabled]")
-      refute has_element?(view, "#issue-start-plan[disabled]")
-      refute has_element?(view, "#issue-start-waiting")
     end
 
     test "a second teammate with the issue open sees each line, who wrote it, and the answer, without a reload", %{
@@ -2053,7 +2051,9 @@ defmodule RailWeb.IssueLiveTest do
 
       {:ok, other} = Users.update_user(system_scope(), other, %{project_ids: [chat_project.id]})
       {:ok, watching, _html} = live(log_in_user(build_conn(), other), ~p"/issues/#{issue_id}")
+      render_async(watching)
       {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+      render_async(view)
 
       view |> form("#issue-chat-form", chat_message: %{text: "Is this still needed?"}) |> render_submit()
 
@@ -2085,6 +2085,7 @@ defmodule RailWeb.IssueLiveTest do
       issue: %Issue{id: issue_id} = issue
     } do
       {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+      render_async(view)
       view |> form("#issue-chat-form", chat_message: %{text: "Make it 2 points."}) |> render_submit()
 
       expect(Tools, :run_agent, fn _role, _argv, _opts -> {:error, :timeout} end)
@@ -2112,16 +2113,29 @@ defmodule RailWeb.IssueLiveTest do
       assert %Issue{chat_requested_at: nil} = Repo.get!(Issue, issue_id)
     end
 
-    test "Start sent while the agent answers is refused and starts nothing", %{conn: conn, issue: issue, user: user} do
+    test "Start while the agent answers starts the task and closes the chat", %{
+      conn: conn,
+      issue: %Issue{id: issue_id} = issue,
+      user: user
+    } do
       {:ok, _line} = Issues.send_issue_chat(Scope.for_user(user), issue, %{"text" => "Still needed?"})
-      reject(&Pipeline.start_task/2)
-      {:ok, view, _html} = live(conn, ~p"/issues/#{issue.id}")
+
+      # As the adopt test in this file does: the task is made for real, without git.
+      expect(Pipeline, :start_task, fn _scope, %Issue{id: ^issue_id} = started ->
+        Pipeline.create_task(started, :plan)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
       allow(Pipeline, self(), view.pid)
+      render_async(view)
+      refute has_element?(view, "#issue-start-plan[disabled]")
 
       render_hook(view, "start_task", %{})
 
-      assert has_element?(view, "#flash-error", "The agent is still answering on this issue.")
-      refute Repo.get_by(Task, issue_id: issue.id)
+      refute has_element?(view, "#flash-error")
+      assert %Task{id: task_id} = Repo.get_by(Task, issue_id: issue_id)
+      assert has_element?(view, "#issue-chat-task-link[href='/tasks/#{task_id}']")
+      assert has_element?(view, "#issue-chat-running")
     end
 
     test "once the issue has a task the chat stays readable, takes no line and links to the task", %{
@@ -2132,6 +2146,7 @@ defmodule RailWeb.IssueLiveTest do
     } do
       Repo.insert!(%ChatMessage{issue_id: issue_id, author: :agent, text: "It still applies."})
       {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+      render_async(view)
       assert has_element?(view, "#issue-chat-form")
 
       # The page has not heard of the task yet, so its Send reaches the action, which refuses it.
@@ -2178,6 +2193,52 @@ defmodule RailWeb.IssueLiveTest do
       assert has_element?(view, "#flash-error", "Connect GitHub in Connected accounts to work on this issue.")
       assert %Issue{chat_requested_at: nil} = Repo.get!(Issue, issue_id)
       assert [%{author: :agent}] = Repo.all(from(m in ChatMessage, where: m.issue_id == ^issue_id))
+    end
+
+    test "a started issue nobody asked about, or whose last pass failed, asks for nothing", %{
+      conn: conn,
+      chat_project: chat_project,
+      issue: %Issue{id: issue_id}
+    } do
+      Repo.update_all(from(i in Issue, where: i.id == ^issue_id),
+        set: [chat_error: "Dispatch is switched off, so the agent did not run."]
+      )
+
+      %Task{id: UXID.generate!(prefix: "tsk")}
+      |> Task.changeset(
+        %{
+          issue_id: issue_id,
+          stage: :plan,
+          worktree_name: "chat-started-#{issue_id}",
+          worktree_path: "/tmp/chat-started-#{issue_id}/worktree",
+          scratch_path: "/tmp/chat-started-#{issue_id}/scratch"
+        },
+        chat_project.id
+      )
+      |> Repo.insert!()
+
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+
+      assert has_element?(view, "#issue-chat-empty", "Nobody asked the agent about this issue before its task started.")
+      refute has_element?(view, "#issue-chat-error")
+      assert has_element?(view, "#issue-chat-closed")
+    end
+
+    test "someone without GitHub sees why the last pass failed, with no nudge to send", %{
+      conn: conn,
+      user: user,
+      issue: %Issue{id: issue_id}
+    } do
+      Repo.update_all(from(i in Issue, where: i.id == ^issue_id),
+        set: [chat_error: "Dispatch is switched off, so the agent did not run."]
+      )
+
+      {:ok, _user} = Users.unlink_github(Scope.for_user(user))
+      {:ok, view, _html} = live(conn, ~p"/issues/#{issue_id}")
+
+      assert has_element?(view, "#issue-chat-empty", "Nobody has asked the agent about this issue yet.")
+      assert has_element?(view, "#issue-chat-error", "Dispatch is switched off, so the agent did not run.")
+      refute has_element?(view, "#issue-chat-error", "Send a message to run it again.")
     end
   end
 end

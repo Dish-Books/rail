@@ -50,12 +50,17 @@ defmodule Rail.Issues.Actions.RunIssueChatTest do
 
   test "a pass rewrites the fields it changed, notes each one, answers and tells open pages", %{
     issue: %{id: issue_id} = issue,
+    dir: dir,
     result_path: result_path
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
     Phoenix.PubSub.subscribe(Rail.PubSub, "issue_chats")
 
-    expect(Tools, :run_agent, fn _role, _argv, _opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
+      # The sandbox may write only the scratch folder, and reads the checkout it starts in.
+      assert %{cd: worktree, mounts: [^dir], read_only_mounts: [worktree]} = Map.new(opts)
+      assert worktree =~ ".worktrees/issue-chat-#{issue_id}"
+
       File.write!(
         result_path,
         Jason.encode!(%{
@@ -210,6 +215,24 @@ defmodule Rail.Issues.Actions.RunIssueChatTest do
                }
              ]
            } = Issue |> Repo.get!(issue_id) |> Repo.preload(:chat_messages)
+  end
+
+  test "a value too long to quote is cut short in its note", %{issue: %{id: issue_id} = issue, result_path: result_path} do
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
+      File.write!(
+        result_path,
+        Jason.encode!(%{"message" => "Done.", "ticket" => %{"priority" => String.duplicate("x", 500)}})
+      )
+
+      {:ok, ""}
+    end)
+
+    assert :ok = Issues.run_issue_chat(issue)
+
+    expected = ~s(Left the priority: ") <> String.duplicate("x", 59) <> "… is not a value Rail takes"
+
+    assert %Issue{priority: :medium, chat_messages: [_asked, %ChatMessage{changes: ^expected}]} =
+             Issue |> Repo.get!(issue_id) |> Repo.preload(:chat_messages)
   end
 
   test "an estimate cleared to null and a description cleared to null are written", %{
@@ -416,14 +439,19 @@ defmodule Rail.Issues.Actions.RunIssueChatTest do
 
     for {name, reason, error} <- [
           {"an exit with the CLI's reason", {:exit, 1, ~s({"type":"result","result":"Out of credits"})},
-           "The agent exited with code 1: Out of credits"},
+           "The agent exited with code 1: Out of credits."},
           {"an exit with no reason", {:exit, 2, ""}, "The agent exited with code 2."},
           {"a timeout", :timeout, "It was still running after 30 minutes, so it was stopped."},
           {"dispatch switched off", :dispatch_disabled, "Dispatch is switched off, so the agent did not run."},
           {"a signed-out backend", :backend_signed_out,
            "The Triage role's backend is signed out. Sign it in under Settings → Backends."},
           {"no account offering the model", "No account offers the model.", "No account offers the model."},
-          {"anything else", {:surprise, 1}, "The agent failed: {:surprise, 1}"}
+          {"GitHub refusing the token", {:github_api_error, 401, %{"message" => "Bad credentials"}},
+           "Rail could not get a GitHub token to fetch the code. GitHub answered 401: Bad credentials."},
+          {"GitHub failing with no message", {:github_api_error, 502, "Bad gateway"},
+           "Rail could not get a GitHub token to fetch the code. GitHub answered 502."},
+          {"an exception", %Req.TransportError{reason: :econnrefused}, "The agent failed: connection refused."},
+          {"anything else", {:surprise, 1}, "The agent failed: {:surprise, 1}."}
         ] do
       @reason reason
       @error error
@@ -468,7 +496,7 @@ defmodule Rail.Issues.Actions.RunIssueChatTest do
 
       assert_raise RuntimeError, "boom", fn -> Issues.run_issue_chat(issue) end
 
-      assert %Issue{chat_requested_at: nil, chat_started_at: nil, chat_error: "The agent's pass crashed: boom"} =
+      assert %Issue{chat_requested_at: nil, chat_started_at: nil, chat_error: "The agent's pass crashed: boom."} =
                Repo.get!(Issue, issue_id)
 
       # The expect above allows one call, so a second pass would fail the test here.
