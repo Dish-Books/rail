@@ -238,7 +238,7 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
   defp link(%Task{}, _no_rule), do: %{rule_id: nil, suppressed_by_id: nil}
 
   defp head(%Task{} = task) do
-    if Task.worktree_present?(task), do: Git.branch_fingerprint(task.worktree_path)[:head_sha]
+    if Task.worktree_present?(task), do: Git.branch_fingerprint(task)[:head_sha]
   end
 
   # Tool calls arrive with string keys and tests write atoms; one shape is read either way.

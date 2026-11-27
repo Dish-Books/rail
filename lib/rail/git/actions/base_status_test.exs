@@ -1,52 +1,63 @@
 defmodule Rail.Git.Actions.BaseStatusTest do
-  use ExUnit.Case, async: true
-
-  import RailTest.Helpers
+  use Rail.DataCase, async: true
 
   alias Rail.Git
+  alias Rail.Pipeline.Schemas.Task
 
   setup do
-    repo = create_temp_git_repo()
-    File.write!(Path.join(repo, "shared.ex"), "one\n")
-    git!(repo, ["add", "."])
-    git!(repo, ["commit", "-m", "the base"])
-    git!(repo, ["update-ref", "refs/remotes/origin/main", "HEAD"])
-    %{repo: repo}
+    %{remote: remote} = context = create_task_checkout()
+    File.write!(Path.join(remote, "shared.ex"), "one\n")
+    git!(remote, ["add", "."])
+    git!(remote, ["commit", "-m", "the base"])
+    :ok = Git.fetch_default_branch(context.project, context.task)
+    git!(context.checkout, ["merge", "--quiet", "origin/main"])
+    context
   end
 
-  test "a branch with the default branch in its history is not behind, ahead of it or not", %{repo: repo} do
-    assert %{behind: false, conflicts: []} = Git.base_status(repo, "main")
+  test "a branch with the default branch in its history is not behind, ahead of it or not", %{
+    task: task,
+    checkout: checkout
+  } do
+    assert %{behind: false, conflicts: []} = Git.base_status(task, "main")
 
-    git!(repo, ["commit", "--allow-empty", "-m", "the work"])
-    assert %{behind: false, conflicts: []} = Git.base_status(repo, "main")
+    git!(checkout, ["commit", "--allow-empty", "-m", "the work"])
+    assert %{behind: false, conflicts: []} = Git.base_status(task, "main")
   end
 
-  test "a branch behind it that merges cleanly is behind with nothing in conflict", %{repo: repo} do
-    git!(repo, ["checkout", "-q", "-b", "landing"])
-    File.write!(Path.join(repo, "other.ex"), "landed\n")
-    git!(repo, ["add", "."])
-    git!(repo, ["commit", "-qm", "landed on main"])
-    git!(repo, ["update-ref", "refs/remotes/origin/main", "HEAD"])
-    git!(repo, ["checkout", "-q", "-"])
+  test "a branch behind it that merges cleanly is behind with nothing in conflict", %{
+    task: task,
+    project: project,
+    remote: remote
+  } do
+    File.write!(Path.join(remote, "other.ex"), "landed\n")
+    git!(remote, ["add", "."])
+    git!(remote, ["commit", "-qm", "landed on main"])
+    :ok = Git.fetch_default_branch(project, task)
 
-    assert %{behind: true, conflicts: []} = Git.base_status(repo, "main")
+    assert %{behind: true, conflicts: []} = Git.base_status(task, "main")
   end
 
-  test "a branch behind it that changed the same lines conflicts in that file", %{repo: repo} do
-    git!(repo, ["checkout", "-q", "-b", "landing"])
-    File.write!(Path.join(repo, "shared.ex"), "theirs\n")
-    git!(repo, ["commit", "-qam", "landed on main"])
-    git!(repo, ["update-ref", "refs/remotes/origin/main", "HEAD"])
-    git!(repo, ["checkout", "-q", "-"])
-    File.write!(Path.join(repo, "shared.ex"), "ours\n")
-    git!(repo, ["commit", "-qam", "the work"])
+  test "a branch behind it that changed the same lines conflicts in that file", %{
+    task: task,
+    project: project,
+    remote: remote,
+    checkout: checkout
+  } do
+    File.write!(Path.join(remote, "shared.ex"), "theirs\n")
+    git!(remote, ["commit", "-qam", "landed on main"])
+    :ok = Git.fetch_default_branch(project, task)
+    File.write!(Path.join(checkout, "shared.ex"), "ours\n")
+    git!(checkout, ["commit", "-qam", "the work"])
 
-    assert %{behind: true, conflicts: ["shared.ex"]} = Git.base_status(repo, "main")
-    # Worked out without a checkout, so the worktree is as the agent left it.
-    assert File.read!(Path.join(repo, "shared.ex")) == "ours\n"
+    assert %{behind: true, conflicts: ["shared.ex"]} = Git.base_status(task, "main")
+    # Worked out in the task's repository, so the checkout is as the agent left it.
+    assert File.read!(Path.join(checkout, "shared.ex")) == "ours\n"
   end
 
-  test "a default branch git cannot read counts as up to date", %{repo: repo} do
-    assert %{behind: false, conflicts: []} = Git.base_status(repo, "trunk")
+  test "a default branch git cannot read, or a task with no repository, counts as up to date", %{task: task} do
+    assert %{behind: false, conflicts: []} = Git.base_status(task, "trunk")
+
+    File.rm_rf!(Task.repo_path(task))
+    assert %{behind: false, conflicts: []} = Git.base_status(task, "main")
   end
 end

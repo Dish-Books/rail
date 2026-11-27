@@ -116,7 +116,17 @@ lane_credo() {
     ../scripts/ci-coverage-100.sh cover/excoveralls.json credo/'
 }
 
-LANES="dev tests tooling credo"
+# No mix: rail-runner's Go module. docs/sandbox-socket.md.
+lane_runner() {
+  sub_gate "runner" bash -c '
+    set -e
+    cd runner
+    test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+    go vet ./...
+    go test -race ./...'
+}
+
+LANES="dev tests tooling credo runner"
 
 # The gate set, as `receipt id:display label`. The summary, the completeness check
 # and the receipt's gate list all derive from it.
@@ -129,7 +139,8 @@ sobelow:sobelow
 assets:assets
 tests:tests
 biome:biome
-credo_subproject:credo/ subproject'
+credo_subproject:credo/ subproject
+runner:runner'
 
 # ── serial prelude ──────────────────────────────────────────────────────────
 wait_for_postgres

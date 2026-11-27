@@ -6,7 +6,8 @@ set -euo pipefail
 # Bump when the payload shape or the gate set changes; old receipts stop verifying.
 # 2: a sha256 digest in place of the HMAC keyed with CI_RECEIPT_KEY.
 # 3: the assets gate, which builds the JS bundle.
-RECEIPT_SPEC_VERSION=3
+# 4: the runner gate, rail-runner's Go module.
+RECEIPT_SPEC_VERSION=4
 RECEIPT_REF_PREFIX="refs/ci-receipts"
 
 # Keyed on the tree, not the commit, so amend/rebase/reword of an unchanged tree

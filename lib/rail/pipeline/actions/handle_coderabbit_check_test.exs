@@ -14,7 +14,7 @@ defmodule Rail.Pipeline.Actions.HandleCoderabbitCheckTest do
   setup %{project: project} do
     scratch = Path.join(System.tmp_dir!(), "coderabbit_check_#{System.unique_integer([:positive])}")
     worktree = Path.join(scratch, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     on_exit(fn -> File.rm_rf(scratch) end)
     head = String.duplicate("d", 40)
     stub(Git, :branch_fingerprint, fn _path -> %{head_sha: head, dirty_digest: "clean"} end)

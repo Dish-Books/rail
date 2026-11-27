@@ -356,7 +356,7 @@ defmodule RailWeb.Settings.ProjectsLive do
                 />
                 <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
                   Runs once in each new task's checkout, from its root, before any agent starts there except Plan's, which starts beside it.
-                  RAIL_WORKTREE_SLOT and RAIL_PORT_BASE say which ports are its own, and RAIL_CLONE_PATH where the project's clone is, which it can read but not write.
+                  RAIL_WORKTREE_SLOT and RAIL_PORT_BASE say which ports are its own. The checkout stays on the task's sandbox's disk between turns, so it runs once per task.
                 </p>
                 <span
                   :if={@changeset.errors[:worktree_setup_script]}
@@ -386,6 +386,33 @@ defmodule RailWeb.Settings.ProjectsLive do
                   Runs beside Rail, outside any sandbox, in a checkout of the default branch each time it moves.
                   Sandboxes never install a missing tool themselves, so one fails there until this has run.
                 </p>
+              </div>
+
+              <div>
+                <label
+                  for="project-sandbox-image-input"
+                  class="block text-sm font-medium text-slate-900 dark:text-slate-100"
+                >
+                  Sandbox Image
+                </label>
+                <input
+                  type="text"
+                  name="project[sandbox_image]"
+                  id="project-sandbox-image-input"
+                  value={Ecto.Changeset.get_field(@changeset, :sandbox_image)}
+                  placeholder={Rail.sandbox_image()}
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm font-mono focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                />
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  The image this project's sandboxes run, which its own CI builds with its toolchain and build cache and pushes. Rail adds its runner when a sandbox starts. Empty for Rail's own.
+                </p>
+                <span
+                  :if={@changeset.errors[:sandbox_image]}
+                  class="text-xs text-red-600"
+                  id="project-sandbox-image-error"
+                >
+                  {elem(@changeset.errors[:sandbox_image], 0)}
+                </span>
               </div>
 
               <section

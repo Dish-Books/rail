@@ -3,6 +3,7 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
 
   import Ecto.Query
   import Rail.Tools.Utils.LaunchSandbox
+  import Rail.Tools.Utils.StopSandbox
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -10,6 +11,7 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Tools.Schemas.Sandbox
 
   require Logger
 
@@ -19,6 +21,10 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
   older one, even when it would fit. An agent turn on an account that is signed
   out is passed over and keeps its place: it would only start to fail, so it
   waits for someone to sign the account in, and holds nobody behind it up meanwhile.
+
+  Under Docker a command also needs its task's sandbox running. Where `Rail.max_sandboxes/0` caps the host, one whose
+  task has none takes a free slot, an idle sandbox's if none is free, and otherwise waits. An agent turn whose sandbox carries
+  another account's login while something runs there is passed over the same way, until it is idle.
 
   One pass at a time on this machine, so two never hand out the same CPU. It must
   run outside any transaction, so it sees only committed rows. `:own` names a row
@@ -66,13 +72,60 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
       os_process.reserved_cpus > capacity.cpus ->
         {:cont, {free, Map.put(results, os_process.id, refuse(os_process, capacity, own))}}
 
-      OsProcess.short_of(os_process, free) == 0 ->
-        result = launch(os_process, capacity, own)
-        {:cont, {taken(free, os_process, result), Map.put(results, os_process.id, result)}}
+      OsProcess.short_of(os_process, free) > 0 ->
+        {:halt, {free, results}}
 
       true ->
-        {:halt, {free, results}}
+        case slot(Rail.sandbox_runtime(), os_process) do
+          :ok ->
+            result = launch(os_process, capacity, own)
+            {:cont, {taken(free, os_process, result), Map.put(results, os_process.id, result)}}
+
+          :held ->
+            {:cont, {free, results}}
+
+          :full ->
+            {:halt, {free, results}}
+        end
     end
+  end
+
+  defp slot(:local, %OsProcess{}), do: :ok
+
+  defp slot(:docker, %OsProcess{task_id: task_id} = os_process) do
+    live = Repo.all(from s in Sandbox, where: s.status in [:starting, :running])
+
+    case Enum.find(live, &(&1.task_id == task_id)) do
+      %Sandbox{} = sandbox ->
+        if os_process.kind == :agent and os_process.backend_id != sandbox.backend_id and busy?(sandbox),
+          do: :held,
+          else: :ok
+
+      nil ->
+        free_slot(live)
+    end
+  end
+
+  # A host at its limit gives up the container of an idle sandbox, the one started longest ago, for this one.
+  defp free_slot(live) do
+    max = Rail.max_sandboxes()
+
+    if is_nil(max) or length(live) < max do
+      :ok
+    else
+      case live |> Enum.reject(&busy?/1) |> Enum.min_by(&(&1.ready_at || &1.started_at), DateTime, fn -> nil end) do
+        %Sandbox{} = idle ->
+          stop_sandbox(idle)
+          :ok
+
+        nil ->
+          :full
+      end
+    end
+  end
+
+  defp busy?(%Sandbox{id: id}) do
+    Repo.exists?(from p in OsProcess, where: p.sandbox_id == ^id and p.status in [:starting, :running])
   end
 
   defp held?(%OsProcess{kind: :agent, backend: %Backend{status: :signed_out}}), do: true

@@ -38,7 +38,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
     plan = with %FixPlan{approved_at: %DateTime{}} <- Pipeline.read_fix_plan(task), do: nil
 
     cond do
-      Task.worktree_present?(task) and Git.branch_unpushed?(task.worktree_path) ->
+      Task.worktree_present?(task) and Git.branch_unpushed?(task) ->
         fail(run, "The review agent committed. Only the engineer changes the branch, so nothing was sent on.")
 
       not saved?(passes, task) ->
@@ -87,7 +87,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
 
   defp saved?(passes, %Task{} = task) do
     read = List.last(passes).head
-    now = if Task.worktree_present?(task), do: Git.branch_fingerprint(task.worktree_path)[:head_sha]
+    now = if Task.worktree_present?(task), do: Git.branch_fingerprint(task)[:head_sha]
     is_nil(read) or is_nil(now) or read == now
   end
 

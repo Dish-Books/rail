@@ -40,7 +40,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreen do
         {:refused,
          "Refused, nothing saved. `width` is the width to lay the page out at, a whole number from 320 to 1920."}
 
-      not Task.worktree_present?(task) or Git.worktree_dirty?(task.worktree_path) ->
+      not Task.worktree_present?(task) or Git.worktree_dirty?(task) ->
         {:refused,
          "Refused, nothing saved. The worktree has uncommitted changes, so the picture would belong to no " <>
            "commit. Take it once they are committed."}

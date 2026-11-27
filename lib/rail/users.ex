@@ -8,6 +8,7 @@ defmodule Rail.Users do
   defdelegate register_oauth_user(attrs), to: Actions.RegisterOAuthUser
   defdelegate sign_in_oauth_user(auth), to: Actions.SignInOAuthUser
   defdelegate sign_in_access_user(assertion), to: Actions.SignInAccessUser
+  defdelegate verify_sandbox_access(assertion), to: Actions.VerifySandboxAccess
   defdelegate get_user_by_session_token(token), to: Actions.GetUserBySessionToken
   defdelegate generate_user_session_token(user), to: Actions.GenerateUserSessionToken
   defdelegate delete_user_session_token(token), to: Actions.DeleteUserSessionToken

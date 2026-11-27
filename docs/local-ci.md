@@ -12,6 +12,7 @@ mise run ci
 | test (`_build/test`) | ecto.create/migrate, tests with coverage held at 100% |
 | tooling (no mix) | biome: the assets' tests (`pnpm test`), then `biome ci` |
 | `credo/` | the subproject's own gates, coverage held at 100% |
+| runner (no mix) | `rail-runner`'s Go module: `gofmt`, `go vet`, `go test -race` |
 
 The lanes run in parallel after a serial prelude that waits for Postgres at `DB_HOST`/`DB_PORT`, runs `deps.get` and installs the assets' packages. A failing gate doesn't stop the others, so one pass shows everything that is broken.
 

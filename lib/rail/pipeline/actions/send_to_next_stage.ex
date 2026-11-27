@@ -54,7 +54,7 @@ defmodule Rail.Pipeline.Actions.SendToNextStage do
   defp sendable(%Task{} = task) do
     cond do
       Task.running?(task) -> {:error, :stage_running}
-      Git.branch_unpushed?(task.worktree_path) -> {:error, :unpushed_changes}
+      Git.branch_unpushed?(task) -> {:error, :unpushed_changes}
       ci_required?(task) and is_nil(passing_ci(task)) -> {:error, :ci_not_passed}
       true -> :ok
     end

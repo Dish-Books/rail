@@ -23,7 +23,7 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
     # Whether the turn committed or left work is asked of Rail.Git, so the worktree is a plain directory and each
     # test says what the stubs answer.
     worktree_path = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree_path)
+    Enum.each([worktree_path, worktree_path <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
@@ -44,7 +44,7 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
   end
 
   test "a turn that committed hands its commits over", %{run: %Run{id: run_id} = run, worktree_path: worktree_path} do
-    expect(Git, :branch_unpushed?, fn ^worktree_path -> true end)
+    expect(Git, :branch_unpushed?, fn %{worktree_path: ^worktree_path} -> true end)
     expect(Pipeline, :hand_over_work, fn _scope, %Run{id: ^run_id} = run -> {:ok, %{run | status: :running}} end)
 
     assert %Run{id: ^run_id, status: :running} = engineer_run_finished(run, [])
@@ -85,7 +85,7 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
     {:ok, _first} = Pipeline.create_round(task)
     {:ok, _second} = Pipeline.create_round(task)
     stub(Git, :branch_unpushed?, fn _path -> false end)
-    expect(Git, :worktree_dirty?, fn ^worktree_path -> true end)
+    expect(Git, :worktree_dirty?, fn %{worktree_path: ^worktree_path} -> true end)
     reject(&Pipeline.hand_over_work/2)
     reject(&Pipeline.send_to_next_stage/1)
 

@@ -18,8 +18,8 @@ defmodule Rail.Pipeline.Actions.StartOrResumeRunTest do
        %{task: %{id: task_id} = task, role: %{id: role_id} = role, worktree: worktree} do
     first_sha = String.duplicate("a", 40)
     second_sha = String.duplicate("b", 40)
-    expect(Git, :branch_fingerprint, fn ^worktree -> %{head_sha: first_sha, dirty_digest: "clean"} end)
-    expect(Git, :branch_fingerprint, fn ^worktree -> %{head_sha: second_sha, dirty_digest: "dirty"} end)
+    expect(Git, :branch_fingerprint, fn %{worktree_path: ^worktree} -> %{head_sha: first_sha, dirty_digest: "clean"} end)
+    expect(Git, :branch_fingerprint, fn %{worktree_path: ^worktree} -> %{head_sha: second_sha, dirty_digest: "dirty"} end)
 
     assert {:ok,
             %Run{
@@ -41,7 +41,7 @@ defmodule Rail.Pipeline.Actions.StartOrResumeRunTest do
   # CI stops sending its failures back after three in a row. A Retry is a person stepping in, so a run started again
   # has its next failure sent back rather than stopping it on the spot.
   test "a run started again counts its CI failures from none", %{task: task, role: role, worktree: worktree} do
-    stub(Git, :branch_fingerprint, fn ^worktree -> nil end)
+    stub(Git, :branch_fingerprint, fn %{worktree_path: ^worktree} -> nil end)
     {:ok, run} = Pipeline.start_or_resume_run(task, role, worktree)
 
     {:ok, _stopped} =
@@ -53,7 +53,7 @@ defmodule Rail.Pipeline.Actions.StartOrResumeRunTest do
   end
 
   test "leaves the fingerprint nil when git cannot answer", %{task: task, role: role, worktree: worktree} do
-    expect(Git, :branch_fingerprint, fn ^worktree -> nil end)
+    expect(Git, :branch_fingerprint, fn %{worktree_path: ^worktree} -> nil end)
 
     assert {:ok, %Run{stage_fingerprint_head_sha: nil, stage_fingerprint_dirty_digest: nil}} =
              Pipeline.start_or_resume_run(task, role, worktree)
@@ -65,7 +65,10 @@ defmodule Rail.Pipeline.Actions.StartOrResumeRunTest do
     worktree: worktree
   } do
     other_role = %{id: UXID.generate!(prefix: "rol")}
-    stub(Git, :branch_fingerprint, fn ^worktree -> %{head_sha: String.duplicate("a", 40), dirty_digest: "clean"} end)
+
+    stub(Git, :branch_fingerprint, fn %{worktree_path: ^worktree} ->
+      %{head_sha: String.duplicate("a", 40), dirty_digest: "clean"}
+    end)
 
     {:ok, first} = Pipeline.start_or_resume_run(task, role, worktree)
     {:ok, other} = Pipeline.start_or_resume_run(task, other_role, worktree)

@@ -311,7 +311,7 @@ defmodule RailWeb.TaskLiveTest do
 
     # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: worktree})
 
     stub(Git, :load_branch_history, fn _task, _rounds ->
@@ -344,7 +344,7 @@ defmodule RailWeb.TaskLiveTest do
 
     # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
 
     stub(Git, :load_branch_history, fn _task, _rounds ->
@@ -393,7 +393,7 @@ defmodule RailWeb.TaskLiveTest do
 
     # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
 
     stub(Git, :load_branch_history, fn _task, _rounds ->
@@ -498,7 +498,7 @@ defmodule RailWeb.TaskLiveTest do
 
     # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
 
     stub(Git, :load_branch_history, fn _task, _rounds ->
@@ -534,7 +534,7 @@ defmodule RailWeb.TaskLiveTest do
 
     # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
 
     stub(Git, :load_branch_history, fn _task, _rounds ->
@@ -1342,8 +1342,7 @@ defmodule RailWeb.TaskLiveTest do
       running: %Run{id: run_id}
     } do
       expect(Git, :delete_remote_branch, fn _project, ^branch -> :ok end)
-      expect(Git, :remove_worktree, fn ^clone_path, ^worktree_path -> :ok end)
-      expect(Git, :delete_branch, fn ^clone_path, ^branch -> :ok end)
+      expect(Git, :remove_task_checkout, fn %{clone_path: ^clone_path}, %{worktree_path: ^worktree_path} -> :ok end)
       assert File.dir?(task.scratch_path)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
@@ -1623,7 +1622,7 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Dependency updates", stages: stages})
       {:ok, %Task{id: task_id} = task} = Pipeline.create_task(issue, {:custom, "License check"})
       worktree = Path.join(task.scratch_path, "worktree")
-      File.mkdir_p!(worktree)
+      Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
       {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
       on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
@@ -2280,7 +2279,7 @@ defmodule RailWeb.TaskLiveTest do
 
       # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
       worktree = Path.join(task.scratch_path, "worktree")
-      File.mkdir_p!(worktree)
+      Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
       {:ok, _moved} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
 
       stub(Git, :load_branch_history, fn _task, _rounds ->
@@ -2426,7 +2425,7 @@ defmodule RailWeb.TaskLiveTest do
 
       # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
       worktree = Path.join(task.scratch_path, "worktree")
-      File.mkdir_p!(worktree)
+      Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
       {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
 
       stub(Git, :load_branch_history, fn _task, _rounds ->
@@ -3068,7 +3067,7 @@ defmodule RailWeb.TaskLiveTest do
     setup %{task: task, run: run} do
       # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
       worktree = Path.join(task.scratch_path, "worktree")
-      File.mkdir_p!(worktree)
+      Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
       {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
 
       stub(Git, :load_branch_history, fn _task, _rounds ->
@@ -3718,7 +3717,7 @@ defmodule RailWeb.TaskLiveTest do
     setup %{task: task, run: run} do
       # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
       worktree = Path.join(task.scratch_path, "worktree")
-      File.mkdir_p!(worktree)
+      Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
       {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
 
       stub(Git, :load_branch_history, fn _task, _rounds ->
@@ -4109,11 +4108,14 @@ defmodule RailWeb.TaskLiveTest do
          end}
       end)
 
-      stub(Git, :branch_fingerprint, fn worktree_path ->
+      stub(Git, :branch_fingerprint, fn %{worktree_path: worktree_path} ->
         :erlang.phash2(for patch <- ["branch.diff", "uncommitted.diff"], do: File.read!(Path.join(worktree_path, patch)))
       end)
 
-      stub(Git, :worktree_dirty?, fn worktree_path -> File.read!(Path.join(worktree_path, "uncommitted.diff")) != "" end)
+      stub(Git, :worktree_dirty?, fn %{worktree_path: worktree_path} ->
+        File.read!(Path.join(worktree_path, "uncommitted.diff")) != ""
+      end)
+
       stub(Git, :branch_unpushed?, fn _worktree_path -> false end)
 
       {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: repo})
@@ -5377,7 +5379,7 @@ defmodule RailWeb.TaskLiveTest do
 
       # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
       worktree = Path.join(task.scratch_path, "worktree")
-      File.mkdir_p!(worktree)
+      Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
       {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
 
       stub(Git, :load_branch_history, fn _task, _rounds ->
@@ -5889,10 +5891,17 @@ defmodule RailWeb.TaskLiveTest do
 
       # Git is only ever asked through Rail.Git, so the worktree is a directory, and the branch one git cannot
       # read against main: on one commit, with no history to label and no change. A test that needs a change
-      # writes it as the patch in branch.diff, which the diff is read from.
+      # writes it as the patch in branch.diff, which the diff is read from. A finding's code is read from the task's
+      # repository, so the worktree is a checkout that syncs into one, its files uncommitted.
       worktree = Path.join(task.scratch_path, "worktree")
       File.mkdir_p!(worktree)
+      git!(System.tmp_dir!(), ["init", "--quiet", "--bare", worktree <> ".git"])
+      git!(worktree, ["init", "--quiet", "-b", task.worktree_name])
+      identity = ["-c", "user.name=Rail Test", "-c", "user.email=test@rail.local", "-c", "commit.gpgsign=false"]
+      git!(worktree, identity ++ ["commit", "--quiet", "--allow-empty", "-m", "base"])
       File.write!(Path.join(worktree, "branch.diff"), "")
+      # The seeded project's clone is not a repository, so there is no origin to write into the checkout's config.
+      stub(Git, :write_checkout_config, fn _project, _task -> :ok end)
       {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: worktree})
 
       stub(Git, :branch_fingerprint, fn _worktree_path ->
@@ -7420,7 +7429,7 @@ defmodule RailWeb.TaskLiveTest do
 
       for child <- [first, third] do
         worktree = Path.join(child.scratch_path, "worktree")
-        File.mkdir_p!(worktree)
+        Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
         {:ok, _reviewing} = Pipeline.update_task(child, %{stage: :review, worktree_path: worktree})
 
         {:ok, _lead} =
@@ -7910,7 +7919,7 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, task} = Pipeline.create_task(issue, {:custom, "Missing strings"})
       # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
       worktree = Path.join(task.scratch_path, "worktree")
-      File.mkdir_p!(worktree)
+      Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
       {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
       on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
@@ -8237,7 +8246,7 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, lead_role} = Roles.get_role(project_id: project.id, stage: :review_lead)
       # Git is only ever asked through Rail.Git, so the worktree is a directory, on one commit with no history.
       worktree = Path.join(task.scratch_path, "worktree")
-      File.mkdir_p!(worktree)
+      Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
       {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: worktree})
 
       stub(Git, :branch_fingerprint, fn _worktree_path ->

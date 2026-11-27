@@ -32,10 +32,10 @@ defmodule Rail.Pipeline.Actions.SaveDemoTest do
   # The demo is of what is on the branch now, and the panel says which commit that was.
   test "a write-up says the commit it was saved on", %{task: task} do
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
     head_sha = String.duplicate("a", 40)
-    expect(Git, :branch_fingerprint, fn ^worktree -> %{head_sha: head_sha, dirty_digest: "clean"} end)
+    expect(Git, :branch_fingerprint, fn %{worktree_path: ^worktree} -> %{head_sha: head_sha, dirty_digest: "clean"} end)
 
     assert {:ok, %Demo{commit: ^head_sha}} =
              Pipeline.save_demo(task, %{"title" => "Rounds of comments", "summary" => "Comments go as one round."})

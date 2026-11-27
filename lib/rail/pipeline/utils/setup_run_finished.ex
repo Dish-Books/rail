@@ -26,7 +26,7 @@ defmodule Rail.Pipeline.Utils.SetupRunFinished do
     # Marked set up first, so a save from here on writes it too and the later of the two wins.
     %Task{project: %Project{} = project} = Repo.preload(task, :project)
 
-    case Git.copy_env_file(project, task.worktree_path) do
+    case Git.copy_env_file(project, task) do
       :ok ->
         # A message queued on a conversation already under way is drained once this
         # returns; anything else was held up on its way into the stage.
@@ -83,7 +83,7 @@ defmodule Rail.Pipeline.Utils.SetupRunFinished do
     {:ok, task} = task |> Task.changeset(%{worktree_setup_at: DateTime.utc_now()}) |> Repo.update()
     %Task{project: %Project{} = project} = Repo.preload(task, :project)
 
-    case Git.copy_env_file(project, task.worktree_path) do
+    case Git.copy_env_file(project, task) do
       :ok ->
         beside_said(run, "[rail] The worktree is set up, so the app can run and `browser_connect` opens a browser.")
 

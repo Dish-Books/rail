@@ -60,7 +60,7 @@ defmodule RailWeb.Live.TaskActionsTest do
     # Git is only ever asked through Rail.Git, so the worktree is a plain directory and the stubs answer
     # for a branch of one commit, committed and pushed, that adds round.ex.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     head = String.duplicate("b", 40)
 
     commit = %{

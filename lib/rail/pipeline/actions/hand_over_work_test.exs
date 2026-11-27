@@ -25,11 +25,11 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
     # an `unpushed` file while the branch has a commit the remote does not, and a push removes it. It starts with the
     # engineer's one commit not yet pushed, on the commit whose sha is all a's, up to date with main.
     repo = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(repo)
+    Enum.each([repo, repo <> ".git"], &File.mkdir_p!/1)
     File.write!(Path.join(repo, "unpushed"), "")
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: repo})
 
-    stub(Git, :branch_unpushed?, fn path -> File.exists?(Path.join(path, "unpushed")) end)
+    stub(Git, :branch_unpushed?, fn %{worktree_path: path} -> File.exists?(Path.join(path, "unpushed")) end)
 
     stub(Git, :push_branch, fn _scope, %Task{worktree_path: path}, _commit ->
       File.rm!(Path.join(path, "unpushed"))

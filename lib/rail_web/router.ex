@@ -53,6 +53,11 @@ defmodule RailWeb.Router do
     post "/intercom", IntercomWebhookController, :handle
   end
 
+  # Each sandbox's runner, which reaches Rail over this alone. docs/sandbox-socket.md.
+  scope "/sandbox", RailWeb do
+    get "/socket", SandboxSocketController, :connect
+  end
+
   # Before `/mcp`, whose forward would otherwise take it.
   scope "/mcp/internal", RailWeb do
     pipe_through :mcp_internal

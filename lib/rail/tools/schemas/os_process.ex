@@ -12,6 +12,7 @@ defmodule Rail.Tools.Schemas.OsProcess do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools.Schemas.Backend
+  alias Rail.Tools.Schemas.Sandbox
   alias Rail.Types.EncryptedBinary
   alias Rail.Users.Schemas.User
 
@@ -68,6 +69,8 @@ defmodule Rail.Tools.Schemas.OsProcess do
     belongs_to :stopped_by, User
     # The account an agent turn runs on, stamped when it is placed, so its conversation stays there.
     belongs_to :backend, Backend
+    # The task's sandbox it runs in, over the socket; nil beside Rail and for a container of its own from before.
+    belongs_to :sandbox, Sandbox
 
     belongs_to :task, Task
     belongs_to :run, Run
@@ -98,7 +101,8 @@ defmodule Rail.Tools.Schemas.OsProcess do
     :ended_reason,
     :memory_top,
     :stopped_by_id,
-    :backend_id
+    :backend_id,
+    :sandbox_id
   ]
 
   @required_fields [

@@ -44,11 +44,13 @@ defmodule Rail.Pipeline.Actions.GetCiStatusTest do
 
     # Git is only ever asked through Rail.Git, so the worktree is a plain directory, on the commit whose sha is all a's.
     worktree_path = Path.join(System.tmp_dir!(), "ci_status_worktree_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(worktree_path)
+    Enum.each([worktree_path, worktree_path <> ".git"], &File.mkdir_p!/1)
     on_exit(fn -> File.rm_rf(worktree_path) end)
     head_sha = String.duplicate("a", 40)
 
-    stub(Git, :branch_fingerprint, fn ^worktree_path -> %{head_sha: head_sha, dirty_digest: String.duplicate("0", 64)} end)
+    stub(Git, :branch_fingerprint, fn %{worktree_path: ^worktree_path} ->
+      %{head_sha: head_sha, dirty_digest: String.duplicate("0", 64)}
+    end)
 
     task =
       %Task{}

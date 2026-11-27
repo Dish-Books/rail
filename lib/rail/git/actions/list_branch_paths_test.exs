@@ -4,25 +4,22 @@ defmodule Rail.Git.Actions.ListBranchPathsTest do
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Task
 
-  setup %{project: project} do
-    remote = create_temp_git_repo(prefix: "rail_branch_paths_remote")
-    File.write!(Path.join(remote, "kept.ex"), "kept\n")
-    File.write!(Path.join(remote, "edited.ex"), "before\n")
-    git!(remote, ["add", "."])
-    git!(remote, ["commit", "-m", "base"])
+  setup do
+    %{checkout: checkout} = context = create_task_checkout()
+    File.write!(Path.join(checkout, "kept.ex"), "kept\n")
+    File.write!(Path.join(checkout, "edited.ex"), "before\n")
+    git!(checkout, ["add", "."])
+    git!(checkout, ["commit", "-m", "base"])
+    git!(checkout, ["push", "--quiet", "origin", "HEAD:main"])
+    :ok = Git.fetch_default_branch(context.project, context.task)
 
-    repo = create_temp_git_repo(prefix: "rail_branch_paths")
-    git!(repo, ["remote", "add", "origin", remote])
-    git!(repo, ["fetch", "origin", "main"])
-    git!(repo, ["reset", "--hard", "origin/main"])
-    git!(repo, ["checkout", "-b", "feature"])
-    File.write!(Path.join(repo, "shipped.ex"), "committed\n")
-    git!(repo, ["add", "."])
-    git!(repo, ["commit", "-m", "committed change"])
-    File.write!(Path.join(repo, "edited.ex"), "after\n")
-    File.write!(Path.join(repo, "wip.ex"), "untracked\n")
+    File.write!(Path.join(checkout, "shipped.ex"), "committed\n")
+    git!(checkout, ["add", "."])
+    git!(checkout, ["commit", "-m", "committed change"])
+    File.write!(Path.join(checkout, "edited.ex"), "after\n")
+    File.write!(Path.join(checkout, "wip.ex"), "untracked\n")
 
-    %{task: %Task{project_id: project.id, worktree_path: repo}}
+    context
   end
 
   test "gives back the paths the branch changed since it forked, committed, edited or untracked", %{task: task} do
@@ -32,14 +29,11 @@ defmodule Rail.Git.Actions.ListBranchPathsTest do
     assert Git.list_branch_paths(task, ["kept.ex"]) == MapSet.new()
   end
 
-  test "says nil where there is no worktree to ask or git cannot read it, and asks nothing of no paths", %{task: task} do
+  test "says nil where there is no repository to ask, and asks nothing of no paths", %{task: task} do
     assert Git.list_branch_paths(%{task | worktree_path: nil}, ["shipped.ex"]) == nil
-    assert Git.list_branch_paths(%{task | worktree_path: Path.join(task.worktree_path, "gone")}, ["shipped.ex"]) == nil
-    plain = Path.join(System.tmp_dir!(), "rail_branch_paths_plain_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(plain)
-    on_exit(fn -> File.rm_rf(plain) end)
-
-    assert Git.list_branch_paths(%{task | worktree_path: plain}, ["shipped.ex"]) == nil
     assert Git.list_branch_paths(task, []) == MapSet.new()
+
+    File.rm_rf!(Task.repo_path(task))
+    assert Git.list_branch_paths(task, ["shipped.ex"]) == nil
   end
 end

@@ -33,7 +33,9 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
 
     {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
     task = learnings_task(project, "EXT-1", :review)
-    {:ok, task} = Pipeline.update_task(task, %{pr_number: 7, worktree_path: System.tmp_dir!()})
+    worktree = Path.join(task.scratch_path, "worktree")
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
+    {:ok, task} = Pipeline.update_task(task, %{pr_number: 7, worktree_path: worktree})
     on_exit(fn -> File.rm_rf(Path.join([Rail.scratch_root(), project.id, "learnings", "tasks", task.id])) end)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     stub(Rail.Git, :branch_fingerprint, fn _worktree -> %{head_sha: "basesha"} end)

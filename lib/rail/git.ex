@@ -3,10 +3,10 @@ defmodule Rail.Git do
   Public context for Git: the checkout a run works in, the identity its agent
   commits as, and the diff a human reads it back as.
 
-  A task works in a clone of its own, made from the project's clone rather than
-  added to it as a worktree, so making one is on the path of every stage. The
-  agent commits there itself, as the ticket's owner and signed with their key,
-  which Rail writes, with the rest of the checkout's config, into a file the sandbox can only read.
+  Each task has a bare repository of Rail's own beside its checkout, which no sandbox
+  can write: the sandbox's checkout syncs its branch and uncommitted work into it, and
+  every git read Rail makes about the task runs there. The agent commits in the
+  checkout itself, as the ticket's owner and signed with their key, which Rail keeps.
   Pushing stays Rail's, since the credential is the project's. The clone's `.env`
   is the project's, and reaches every task's checkout once it is set up.
   Reading the result is the other half of the same thing, so parsing a diff and
@@ -22,24 +22,29 @@ defmodule Rail.Git do
   defdelegate remove_worktree(repo_path, worktree_path, opts \\ []), to: Actions.RemoveWorktree
   defdelegate remove_task_checkout(project, task), to: Actions.RemoveTaskCheckout
   defdelegate delete_branch(repo_path, branch, opts \\ []), to: Actions.DeleteBranch
-  defdelegate branch_fingerprint(worktree_path), to: Actions.BranchFingerprint
-  defdelegate content_fingerprint(worktree_path), to: Actions.ContentFingerprint
+  defdelegate branch_fingerprint(task), to: Actions.BranchFingerprint
+  defdelegate content_fingerprint(task), to: Actions.ContentFingerprint
 
-  defdelegate worktree_dirty?(worktree_path), to: Actions.WorktreeDirty
-  defdelegate list_changed_paths(worktree_path), to: Actions.ListChangedPaths
+  defdelegate worktree_dirty?(task), to: Actions.WorktreeDirty
+  defdelegate list_changed_paths(task), to: Actions.ListChangedPaths
   defdelegate load_branch_history(task, rounds \\ []), to: Actions.LoadBranchHistory
-  defdelegate branch_unpushed?(worktree_path), to: Actions.BranchUnpushed
-  defdelegate commits_since(worktree_path, sha), to: Actions.CommitsSince
+  defdelegate branch_unpushed?(task), to: Actions.BranchUnpushed
+  defdelegate commits_since(task, sha), to: Actions.CommitsSince
   defdelegate list_round_paths(task, round_change), to: Actions.ListRoundPaths
-  defdelegate base_status(worktree_path, base_branch), to: Actions.BaseStatus
+  defdelegate base_status(task, base_branch), to: Actions.BaseStatus
   defdelegate branch_changed?(task), to: Actions.BranchChanged
   defdelegate push_branch(scope, task, commit), to: Actions.PushBranch
   defdelegate check_push(task), to: Actions.CheckPush
   defdelegate write_checkout_config(project, task), to: Actions.WriteCheckoutConfig
+  defdelegate checkout_params(project, task), to: Actions.CheckoutParams
+  defdelegate sync_checkout(task, opts \\ []), to: Actions.SyncCheckout
+  defdelegate sign_commit(task, payload), to: Actions.SignCommit
+  defdelegate check_push_refs(task, ref_updates), to: Actions.CheckPushRefs
+  defdelegate git_service(task, service), to: Actions.GitService
   defdelegate credential_env(project), to: Actions.CredentialEnv
   defdelegate ci_env(project, task), to: Actions.CiEnv
-  defdelegate fetch_default_branch(project, repo_path), to: Actions.FetchDefaultBranch
-  defdelegate copy_default_branch(project, repo_path), to: Actions.CopyDefaultBranch
+  defdelegate fetch_default_branch(project, target), to: Actions.FetchDefaultBranch
+  defdelegate copy_default_branch(project, target), to: Actions.CopyDefaultBranch
   defdelegate fetch_branch(project, repo_path, branch), to: Actions.FetchBranch
   defdelegate delete_remote_branch(project, branch), to: Actions.DeleteRemoteBranch
   defdelegate read_default_branch_file(project, path), to: Actions.ReadDefaultBranchFile
@@ -48,7 +53,7 @@ defmodule Rail.Git do
   defdelegate list_branch_paths(task, paths), to: Actions.ListBranchPaths
   defdelegate read_env_file(project), to: Actions.ReadEnvFile
   defdelegate save_env_file(project, content), to: Actions.SaveEnvFile
-  defdelegate copy_env_file(project, worktree_path), to: Actions.CopyEnvFile
+  defdelegate copy_env_file(project, task), to: Actions.CopyEnvFile
 
   # `filter` is `:branch`, `:uncommitted`, or `{:commit, sha}` for one commit against its first parent.
   defdelegate load_diff(scope, task, filter \\ :branch, previous_files \\ []), to: Actions.LoadDiff

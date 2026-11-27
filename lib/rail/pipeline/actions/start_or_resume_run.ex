@@ -21,7 +21,7 @@ defmodule Rail.Pipeline.Actions.StartOrResumeRun do
   the handle the spawn path works from, and it has to be enough on its own.
   """
   def start_or_resume_run(task, role, worktree_path, opts \\ []) do
-    {head_sha, dirty_digest} = fingerprint(worktree_path)
+    {head_sha, dirty_digest} = fingerprint(task, worktree_path)
 
     attrs = %{
       status: :running,
@@ -56,12 +56,12 @@ defmodule Rail.Pipeline.Actions.StartOrResumeRun do
     {:ok, Repo.preload(run, [:task, :role])}
   end
 
-  defp fingerprint(worktree_path) when is_binary(worktree_path) and worktree_path != "" do
-    case Git.branch_fingerprint(worktree_path) do
+  defp fingerprint(task, worktree_path) when is_binary(worktree_path) and worktree_path != "" do
+    case Git.branch_fingerprint(Map.put(task, :worktree_path, worktree_path)) do
       %{head_sha: sha, dirty_digest: digest} -> {sha, digest}
       _other -> {nil, nil}
     end
   end
 
-  defp fingerprint(_worktree_path), do: {nil, nil}
+  defp fingerprint(_task, _worktree_path), do: {nil, nil}
 end

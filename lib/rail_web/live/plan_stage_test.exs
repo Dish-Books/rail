@@ -358,7 +358,7 @@ defmodule RailWeb.Live.PlanStageTest do
        %{conn: conn, task: task, run: run} do
     # Picking tells the stopped run, which resumes in a worktree that is only a directory and spawns nothing.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
     stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)

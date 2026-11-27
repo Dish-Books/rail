@@ -19,7 +19,7 @@ defmodule Rail.Pipeline.Utils.PrepareTurnTest do
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     # Git is only ever asked through Rail.Git, so the worktree is a plain directory.
     worktree_path = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree_path)
+    Enum.each([worktree_path, worktree_path <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
@@ -36,7 +36,7 @@ defmodule Rail.Pipeline.Utils.PrepareTurnTest do
   # whether the branch is behind the default branch is never asked.
   test "fetches the default branch into the worktree and sets who it commits as, saying nothing of a branch behind it",
        %{run: run, task: %Task{id: task_id, worktree_path: worktree_path}} do
-    expect(Git, :fetch_default_branch, fn %Project{default_branch: "main"}, ^worktree_path -> :ok end)
+    expect(Git, :fetch_default_branch, fn %Project{default_branch: "main"}, %{worktree_path: ^worktree_path} -> :ok end)
     expect(Git, :write_checkout_config, fn %Project{}, %Task{id: ^task_id} -> :ok end)
     reject(&Git.base_status/2)
 

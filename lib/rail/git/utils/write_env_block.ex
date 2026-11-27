@@ -1,76 +1,78 @@
 defmodule Rail.Git.Utils.WriteEnvBlock do
   @moduledoc false
 
-  alias Rail.Projects.Schemas.Project
+  import Rail.Git.Utils.MergeEnvBlock
 
-  @open "# >>> Rail: the project's .env, rewritten on every save >>>"
-  @close "# <<< Rail: the project's .env <<<"
+  alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects.Schemas.Project
+  alias Rail.Tools
 
   @doc """
-  Writes the clone's `.env` into the top of `worktree_path`'s, between Rail's markers, keeping each of the
-  worktree's own lines that sets no variable the clone's does. Returns `:ok` or `{:error, "<path>: <reason>"}`.
+  Writes the clone's `.env` into the top of `task`'s checkout's, between Rail's markers, keeping each of the
+  checkout's own lines that sets no variable the clone's does, and has git ignore it. The checkout is on Rail's disk
+  under the `:local` runtime and in the task's sandbox otherwise. Returns `:ok`, `{:error, :not_running}` when the
+  sandbox is not there to write in, or `{:error, "<path>: <reason>"}`.
   """
   # Takes no lock: callers hold the clone's.
-  def write_env_block(%Project{clone_path: clone}, worktree_path) when is_binary(worktree_path) do
+  def write_env_block(%Project{clone_path: clone}, %Task{} = task) do
     source = Path.join(clone, ".env")
 
     case File.read(source) do
-      {:ok, project_env} ->
-        ours = project_env |> String.split(~r/\r?\n/) |> Enum.reject(&(String.trim(&1) == ""))
-        # Comments and blank lines name no variable, so they never knock out a worktree's own.
-        names = ours |> Enum.map(&variable/1) |> Enum.reject(&is_nil/1) |> MapSet.new()
-        target = Path.join(worktree_path, ".env")
-
-        kept =
-          case File.read(target) do
-            {:ok, text} ->
-              lines =
-                text
-                |> String.trim_trailing()
-                |> String.split("\n")
-                |> drop_block()
-                |> Enum.reject(&MapSet.member?(names, variable(&1)))
-
-              {:ok, lines}
-
-            {:error, :enoent} ->
-              {:ok, []}
-
-            {:error, reason} ->
-              said({:error, reason}, target)
-          end
-
-        with {:ok, kept} <- kept,
-             :ok <- exclude_env(clone, worktree_path) do
-          target |> File.write(Enum.join([@open | ours] ++ [@close | kept], "\n") <> "\n") |> said(target)
-        end
-
-      {:error, :enoent} ->
-        :ok
-
-      {:error, reason} ->
-        said({:error, reason}, source)
+      {:ok, project_env} -> write(Rail.sandbox_runtime(), project_env, clone, task)
+      {:error, :enoent} -> :ok
+      {:error, reason} -> said({:error, reason}, source)
     end
   end
 
-  # A setup script rerun keeps the block below its own, so it is looked for anywhere in the file.
-  defp drop_block(lines) do
-    {kept, _in_block} =
-      Enum.flat_map_reduce(lines, false, fn
-        @open, _in_block -> {[], true}
-        @close, _in_block -> {[], false}
-        _line, true -> {[], true}
-        line, false -> {[line], false}
-      end)
+  defp write(:local, project_env, clone, %Task{worktree_path: worktree_path}) do
+    target = Path.join(worktree_path, ".env")
 
-    Enum.drop_while(kept, &(&1 == ""))
+    current =
+      case File.read(target) do
+        {:ok, text} -> {:ok, text}
+        {:error, :enoent} -> {:ok, nil}
+        {:error, reason} -> said({:error, reason}, target)
+      end
+
+    with {:ok, current} <- current,
+         :ok <- exclude_env(clone, worktree_path) do
+      target |> File.write(merge_env_block(project_env, current)) |> said(target)
+    end
   end
 
-  defp variable(line) do
-    case Regex.run(~r/^\s*(?:export\s+)?([A-Za-z_]\w*)\s*=/, line) do
-      [_line, name] -> name
-      nil -> nil
+  defp write(:docker, project_env, _clone, %Task{worktree_path: worktree_path} = task) do
+    target = Path.join(worktree_path, ".env")
+    exclude = Path.join(worktree_path, ".git/info/exclude")
+
+    with {:ok, current} <- read(task, target),
+         {:ok, excluded} <- read(task, exclude),
+         files = [file(target, merge_env_block(project_env, current)) | exclude_file(exclude, excluded)],
+         {:ok, _written} <- Tools.call_sandbox(task, "write", %{"files" => files}) do
+      :ok
+    else
+      {:error, :not_running} -> {:error, :not_running}
+      {:error, reason} -> {:error, "#{target}: #{inspect(reason)}"}
     end
+  end
+
+  defp read(%Task{} = task, path) do
+    case Tools.call_sandbox(task, "read", %{"path" => path}) do
+      {:ok, %{"data" => data}} -> {:ok, Base.decode64!(data)}
+      {:ok, %{"missing" => true}} -> {:ok, nil}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp file(path, text), do: %{"path" => path, "data" => Base.encode64(text), "mode" => 0o644}
+
+  defp exclude_file(path, text) do
+    lines =
+      case String.trim_trailing(text || "") do
+        "" -> "/.env\n"
+        kept -> kept <> "\n/.env\n"
+      end
+
+    if excludes_env?(text), do: [], else: [file(path, lines)]
   end
 
   # A worktree reads its clone's exclude file; a clone of its own reads only its own.
@@ -82,7 +84,7 @@ defmodule Rail.Git.Utils.WriteEnvBlock do
     with :ok <- info |> File.mkdir_p() |> said(info) do
       case File.read(exclude) do
         {:ok, text} ->
-          if "/.env" in String.split(text, ~r/\r?\n/),
+          if excludes_env?(text),
             do: :ok,
             else: exclude |> File.write(String.trim_trailing(text) <> "\n/.env\n") |> said(exclude)
 
@@ -94,6 +96,8 @@ defmodule Rail.Git.Utils.WriteEnvBlock do
       end
     end
   end
+
+  defp excludes_env?(text), do: is_binary(text) and "/.env" in String.split(text, ~r/\r?\n/)
 
   defp said(:ok, _path), do: :ok
   defp said({:error, reason}, path), do: {:error, "#{path}: #{:file.format_error(reason)}"}

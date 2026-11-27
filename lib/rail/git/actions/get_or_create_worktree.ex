@@ -1,6 +1,7 @@
 defmodule Rail.Git.Actions.GetOrCreateWorktree do
   @moduledoc false
 
+  import Rail.Git.Utils.TaskBranch
   import Rail.Git.Utils.WithCloneLock
   import Rail.Git.Utils.WriteEnvBlock
 
@@ -10,49 +11,49 @@ defmodule Rail.Git.Actions.GetOrCreateWorktree do
   alias Rail.Tools
 
   @doc """
-  Gets the task's existing checkout or makes it: a clone of the project's clone, hardlinked where the disk allows,
-  with the clone's `origin` and no hooks, since Rail runs none of a project's. A task with a pull request continues its branch as `origin` has it; any other
-  starts a new one from `origin/<default branch>`, fetched first.
+  Gets the task's repository or makes it, then under the `:local` runtime its checkout.
 
-  Either way a clone's git config is then written whole by Rail (`Rail.Git.write_checkout_config/2`), over whatever a
-  sandbox wrote there before its config was mounted read-only.
+  The repository is bare and Rail's: its config is Rail's own, its objects are borrowed from the project's clone, and
+  it holds the branch, the remote branches Rail fetched, and what the checkout last synced into it. A task with a pull
+  request continues its branch as `origin` has it; any other starts a new one from `origin/<default branch>`, fetched
+  first. A task whose checkout predates its repository takes the branch as `origin` has it when it is there, and its
+  first sync brings in the rest.
+
+  Under `:local` the checkout is a clone of the repository at `worktree_path`, pushing to the project's `origin`,
+  with its git config written by Rail (`Rail.Git.write_checkout_config/2`). Under `:docker` the sandbox clones its
+  own (`Rail.Git.checkout_params/2`).
   """
-  def get_or_create_worktree(%Project{} = project, %Task{} = task) do
-    branch = task.worktree_name || task.id
-    worktree_path = task.worktree_path || Path.join(project.clone_path, ".worktrees/#{branch}")
+  def get_or_create_worktree(%Project{} = project, %Task{worktree_path: path} = task) when is_binary(path) do
+    repo = Task.repo_path(task)
 
-    # Two starts at once build in one place, so the second waits and then finds the first's clone.
-    with {:ok, worktree_path} <- with_clone_lock(worktree_path, fn -> make(project, task, worktree_path, branch) end),
-         :ok <- own_config(project, task, worktree_path) do
-      {:ok, worktree_path}
-    else
-      {:error, reason} -> {:error, failed(worktree_path, reason)}
+    # Two starts at once build in one place, so the second waits and then finds the first's repository and checkout.
+    made =
+      with_clone_lock(repo, fn ->
+        with :ok <- make_repo(project, task, repo), do: checkout(Rail.sandbox_runtime(), project, task, repo)
+      end)
+
+    case made do
+      :ok -> {:ok, path}
+      {:error, reason} when is_binary(reason) -> {:error, "Failed to create the task's clone at #{path}: #{reason}"}
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  # Only a task's own clone: a worktree of the project's clone shares the clone's config, which is not the task's.
-  defp own_config(%Project{} = project, %Task{} = task, worktree_path) do
-    if File.dir?(Path.join(worktree_path, ".git")),
-      do: Git.write_checkout_config(project, %{task | worktree_path: worktree_path}),
-      else: :ok
-  end
-
-  defp make(%Project{} = project, %Task{} = task, worktree_path, branch) do
-    if File.dir?(worktree_path) do
-      {:ok, worktree_path}
+  defp make_repo(%Project{} = project, %Task{} = task, repo) do
+    if File.dir?(repo) do
+      :ok
     else
       # Made beside its path and moved in last, so a failure or a restart midway leaves nothing to reuse.
-      building = worktree_path <> ".new"
+      building = repo <> ".new"
       File.rm_rf!(building)
-      File.mkdir_p!(Path.dirname(worktree_path))
+      File.mkdir_p!(Path.dirname(repo))
 
-      # Fetched first, since a clone takes its default branch from the project clone's local one, which the fetch moves.
       with :ok <- Git.fetch_default_branch(project, project.clone_path),
-           :ok <- clone(project, building),
-           :ok <- Git.copy_default_branch(project, building),
-           :ok <- check_out(project, task, building, branch),
-           :ok <- with_clone_lock(project.clone_path, fn -> move_in(project, building, worktree_path) end) do
-        {:ok, worktree_path}
+           :ok <- init(project, building),
+           :ok <- branch(project, task, building),
+           :ok <- ok(git(building, ["symbolic-ref", "HEAD", "refs/heads/#{task_branch(task)}"])),
+           :ok <- rename(building, repo) do
+        :ok
       else
         {:error, reason} ->
           File.rm_rf!(building)
@@ -61,54 +62,138 @@ defmodule Rail.Git.Actions.GetOrCreateWorktree do
     end
   end
 
-  # A plain path rather than --local, which fails outright where git cannot hardlink.
-  defp clone(%Project{clone_path: clone_path, default_branch: default}, building) do
-    args = ["clone", "--quiet", "--no-checkout", "--single-branch", "--branch", default, clone_path, building]
+  # No template, so no sample hooks, and the clone's objects borrowed rather than copied.
+  defp init(%Project{clone_path: clone, default_branch: default}, building) do
+    ref = "refs/remotes/origin/#{default}"
 
-    with {origin, 0} <- git(clone_path, ["remote", "get-url", "origin"]),
-         {_cloned, 0} <- with_clone_lock(clone_path, fn -> git(clone_path, args) end),
-         {_set, 0} <- git(building, ["remote", "set-url", "origin", String.trim(origin)]),
-         # A push updates origin/<branch> only through a fetch refspec that names it, which --single-branch narrows.
-         {_widened, 0} <- git(building, ["config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"]) do
-      :ok
-    else
-      {output, _code} -> {:error, String.trim(output)}
+    with {:ok, format} <- git(clone, ["rev-parse", "--show-object-format"]),
+         {:ok, origin} <- git(clone, ["remote", "get-url", "origin"]),
+         {:ok, objects} <- git(clone, ["rev-parse", "--path-format=absolute", "--git-path", "objects"]),
+         {:ok, _made} <-
+           git(Path.dirname(building), ["init", "--quiet", "--bare", "--template=", "--object-format=#{format}", building]) do
+      File.mkdir_p!(Path.join(building, "objects/info"))
+      File.write!(Path.join(building, "objects/info/alternates"), objects <> "\n")
+
+      # A bare repository keeps no reflog unless told to, and check_push/1 reads the branch's.
+      settings = [
+        {"core.logallrefupdates", "true"},
+        {"remote.origin.url", origin},
+        {"remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"}
+      ]
+
+      with :ok <- Enum.reduce_while(settings, :ok, &config(building, &1, &2)),
+           do: ok(git(building, ["fetch", "--quiet", "--no-tags", "--no-write-fetch-head", clone, "+#{ref}:#{ref}"]))
     end
   end
 
-  defp check_out(%Project{} = project, %Task{pr_number: number}, building, branch) when is_integer(number) do
-    with :ok <- Git.fetch_branch(project, building, branch), do: checkout(building, [branch])
+  defp config(building, {key, value}, :ok) do
+    case git(building, ["config", key, value]) do
+      {:ok, _set} -> {:cont, :ok}
+      {:error, output} -> {:halt, {:error, output}}
+    end
+  end
+
+  # A checkout made before its repository has its branch only there, which no git of Rail's reads, so the branch
+  # starts where origin has it, if anywhere, and the checkout's first sync moves it to where it is.
+  defp branch(%Project{} = project, %Task{worktree_path: path} = task, building) do
+    branch = task_branch(task)
+
+    cond do
+      File.exists?(Path.join(path, ".git")) ->
+        with {:error, _not_on_origin} <- Git.fetch_branch(project, building, branch),
+             do: new_branch(project, building, branch)
+
+      is_integer(task.pr_number) ->
+        Git.fetch_branch(project, building, branch)
+
+      true ->
+        new_branch(project, building, branch)
+    end
   end
 
   # No upstream, so the branch reads as never pushed rather than as tracking the base.
-  defp check_out(%Project{} = project, %Task{}, building, branch) do
-    checkout(building, ["--no-track", "-b", branch, "origin/#{project.default_branch}"])
+  defp new_branch(%Project{default_branch: default}, building, branch),
+    do: ok(git(building, ["branch", "--no-track", branch, "origin/#{default}"]))
+
+  defp checkout(:docker, _project, _task, _repo), do: :ok
+
+  defp checkout(:local, %Project{} = project, %Task{} = task, repo) do
+    cond do
+      File.dir?(Path.join(task.worktree_path, ".git")) -> Git.write_checkout_config(project, task)
+      # A worktree of the project's clone shares the clone's config, which is not the task's to write; anything else
+      # already at the path is someone's, and never made over.
+      File.exists?(task.worktree_path) -> :ok
+      true -> with :ok <- make_checkout(project, task, repo), do: Git.write_checkout_config(project, task)
+    end
   end
 
-  defp checkout(building, args) do
-    case git(building, ["checkout", "--quiet" | args]) do
-      {_output, 0} -> :ok
+  # A plain path rather than --local, which fails outright where git cannot hardlink.
+  defp make_checkout(%Project{clone_path: clone} = project, %Task{worktree_path: path} = task, repo) do
+    branch = task_branch(task)
+    building = path <> ".new"
+    File.rm_rf!(building)
+
+    made =
+      with {:ok, origin} <- git(clone, ["remote", "get-url", "origin"]),
+           {:ok, _cloned} <- git(repo, ["clone", "--quiet", "--branch", branch, repo, building]),
+           {:ok, _set} <- git(building, ["remote", "set-url", "origin", origin]),
+           # A clone takes the repository's branches as origin's; origin's are the ones the repository fetched.
+           {:ok, _fetched} <-
+             git(building, [
+               "fetch",
+               "--quiet",
+               "--prune",
+               "--no-tags",
+               repo,
+               "+refs/remotes/origin/*:refs/remotes/origin/*"
+             ]),
+           {:ok, _untracked} <- git(building, ["branch", "--unset-upstream"]),
+           :ok <- restore_wip(repo, building) do
+        # With no script to wait on it gets the .env as it is made; otherwise the setup run copies it.
+        # Under the clone's lock, as save_env_file/2 writes every task's .env under it.
+        with_clone_lock(clone, fn ->
+          env =
+            if project.worktree_setup_script in [nil, ""],
+              do: write_env_block(project, %{task | worktree_path: building}),
+              else: :ok
+
+          with :ok <- env, do: rename(building, path)
+        end)
+      end
+
+    with {:error, reason} <- made do
+      File.rm_rf!(building)
+      {:error, reason}
+    end
+  end
+
+  # A checkout made again over work its last one synced starts with that work in it, uncommitted as it was.
+  # Only a snapshot taken on the branch's head is that work; one from an earlier head would undo commits.
+  defp restore_wip(repo, building) do
+    with {:ok, head} <- git(building, ["rev-parse", "HEAD"]),
+         {:ok, shas} <- git(repo, ["rev-parse", "refs/rail/wip", "refs/rail/wip^"]),
+         [wip, ^head] <- String.split(shas),
+         {:ok, _read} <- git(building, ["read-tree", "-u", "--reset", wip]) do
+      ok(git(building, ["reset", "--quiet"]))
+    else
+      _no_snapshot_on_the_head -> :ok
+    end
+  end
+
+  defp rename(from, to) do
+    case File.rename(from, to) do
+      :ok -> :ok
+      {:error, reason} -> {:error, "#{to}: #{:file.format_error(reason)}"}
+    end
+  end
+
+  defp ok({:ok, _output}), do: :ok
+  defp ok({:error, output}), do: {:error, output}
+
+  defp git(path, args) do
+    case Tools.run("git", args, cd: path, stderr_to_stdout: true) do
+      {output, 0} -> {:ok, String.trim(output)}
       {output, _code} -> {:error, String.trim(output)}
     end
   end
-
-  # With no script to wait on it gets the .env as it is made; otherwise the setup run copies it.
-  # Under the clone's lock, as save_env_file/2 writes every task's .env under it.
-  defp move_in(%Project{} = project, building, worktree_path) do
-    env = if project.worktree_setup_script in [nil, ""], do: write_env_block(project, building), else: :ok
-
-    with :ok <- env do
-      case File.rename(building, worktree_path) do
-        :ok -> :ok
-        {:error, reason} -> {:error, "#{worktree_path}: #{:file.format_error(reason)}"}
-      end
-    end
-  end
-
-  defp failed(worktree_path, reason) when is_binary(reason),
-    do: "Failed to create the task's clone at #{worktree_path}: #{reason}"
-
-  defp failed(_worktree_path, reason), do: reason
-
-  defp git(path, args), do: Tools.run("git", args, cd: path, stderr_to_stdout: true)
 end

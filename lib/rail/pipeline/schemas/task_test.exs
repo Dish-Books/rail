@@ -152,16 +152,20 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     refute Task.plan_sent?(%Task{stage: :plan})
   end
 
-  test "worktree_present?/1 answers for the directory, not the path", %{task: task} do
+  test "worktree_present?/1 answers for the task's repository, not the path or the checkout", %{task: task} do
     refute Task.worktree_present?(task)
+    refute Task.worktree_present?(%{task | worktree_path: nil})
 
     # Not under the seeded project's clone path, which once on disk is where every later test's real git runs.
     task = %{task | worktree_path: Path.join(System.tmp_dir!(), "rail_wtp_#{System.unique_integer([:positive])}")}
     refute Task.worktree_present?(task)
 
     File.mkdir_p!(task.worktree_path)
-    on_exit(fn -> File.rm_rf(task.worktree_path) end)
+    on_exit(fn -> Enum.each([task.worktree_path, Task.repo_path(task)], &File.rm_rf/1) end)
+    refute Task.worktree_present?(task)
 
+    assert Task.repo_path(task) == task.worktree_path <> ".git"
+    File.mkdir_p!(Task.repo_path(task))
     assert Task.worktree_present?(task)
   end
 

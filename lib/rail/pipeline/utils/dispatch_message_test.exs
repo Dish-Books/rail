@@ -27,10 +27,10 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     # Git is only ever asked through Rail.Git, so the worktree is a plain directory, on the commit whose sha is all a's
     # with nothing changed against main, and the repo has no prompts of its own.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
 
-    stub(Git, :branch_fingerprint, fn ^worktree ->
+    stub(Git, :branch_fingerprint, fn %{worktree_path: ^worktree} ->
       %{head_sha: String.duplicate("a", 40), dirty_digest: String.duplicate("0", 64)}
     end)
 

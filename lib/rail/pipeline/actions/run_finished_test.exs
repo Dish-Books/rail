@@ -38,7 +38,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     # for a branch on one commit, pushed, clean and level with main, with no prompts merged to main. A test about
     # what a turn committed or left says so with its own.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     head = String.duplicate("a", 40)
     stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
     stub(Git, :branch_fingerprint, fn _path -> %{head_sha: head, dirty_digest: "clean"} end)
@@ -478,7 +478,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   } do
     {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
     {%Run{id: run_id}, os_process} = exited.(:engineer, %{})
-    expect(Git, :branch_unpushed?, fn ^worktree -> true end)
+    expect(Git, :branch_unpushed?, fn %{worktree_path: ^worktree} -> true end)
 
     expect(Pipeline, :hand_over_work, fn _scope, %Run{id: ^run_id} = run -> {:ok, run} end)
 
@@ -490,7 +490,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
     {run, os_process} = exited.(:engineer, %{})
 
-    stub(Git, :worktree_dirty?, fn ^worktree -> true end)
+    stub(Git, :worktree_dirty?, fn %{worktree_path: ^worktree} -> true end)
 
     assert {:ok, %Run{stage_outcome: :in_progress, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
 

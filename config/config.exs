@@ -96,11 +96,14 @@ config :rail, :browser, root: nil, cpus: 2, shm_size_gb: 2, max_per_task: 6
 
 # Where agents, setup and CI run, and what is kept back for Rail, Postgres and project services.
 # The machine's CPUs and memory are read at runtime; only `:docker` (prod) holds a sandbox to its share of CPU.
-# A sandbox mounts only its own task's folders; `binds` is for a task still on a worktree of its project's clone.
+# A Docker sandbox is a task's own volume and, while it has work, a container whose runner dials `url`, stopped after
+# `idle_minutes` with nothing running. `max_sandboxes` caps how many run at once; unset, only reserved CPUs do.
+# docs/sandbox-socket.md.
 config :rail, :sandbox,
   runtime: :local,
   image: "rail-sandbox:latest",
-  binds: ["/srv/rail:/srv/rail"],
+  url: "ws://localhost:4000/sandbox/socket",
+  idle_minutes: 2,
   headroom_cpus: 2,
   shm_size_gb: 1
 

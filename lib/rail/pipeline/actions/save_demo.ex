@@ -25,7 +25,7 @@ defmodule Rail.Pipeline.Actions.SaveDemo do
     %Task{issue: %Issue{identifier: identifier}} = task = Repo.preload(task, :issue)
 
     with {:ok, %Demo{} = demo} <- %Demo{} |> Demo.changeset(attrs) |> apply_action(:insert) do
-      head = if Task.worktree_present?(task), do: Git.branch_fingerprint(task.worktree_path)[:head_sha]
+      head = if Task.worktree_present?(task), do: Git.branch_fingerprint(task)[:head_sha]
       body = %{title: demo.title, summary: demo.summary, not_shown: demo.not_shown, commit: head}
 
       write_scratch_file(Path.join([task.scratch_path, "demo", "#{identifier}.json"]), Jason.encode!(body, pretty: true))

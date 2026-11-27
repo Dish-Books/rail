@@ -88,7 +88,7 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
                                             pr_number: 12,
                                             worktree_path: path
                                           } ->
-      File.mkdir_p!(path)
+      Enum.each([path, path <> ".git"], &File.mkdir_p!/1)
       {:ok, path}
     end)
 

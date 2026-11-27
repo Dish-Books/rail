@@ -1758,7 +1758,7 @@ defmodule RailWeb.Live.RunConversationTest do
       # Git is only ever asked through Rail.Git, so the worktree is a plain directory, on a branch that has
       # changed nothing against main yet: no commits, an empty diff, nothing uncommitted.
       worktree = Path.join(task.scratch_path, "worktree")
-      File.mkdir_p!(worktree)
+      Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
 
       stub(Git, :load_branch_history, fn _task, _rounds ->
         %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}

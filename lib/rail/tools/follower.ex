@@ -16,6 +16,10 @@ defmodule Rail.Tools.Follower do
   An agent's turn is over once its result is in: a CLI still running a short
   grace later is stuck on something the agent left behind, and its sandbox is
   ended so the run settles.
+
+  A process in a task's sandbox is not tailed: its runner sends its output over the socket
+  (`Rail.Tools.RunnerSocket`), and is told what is safe once it is in the run's log. A Follower
+  that starts on one asks for all of it again, and replays what was logged as it does a file.
   """
   use GenServer, restart: :transient
 
@@ -40,6 +44,7 @@ defmodule Rail.Tools.Follower do
   alias Rail.Tools.ClaudeEvents
   alias Rail.Tools.Clients.Docker
   alias Rail.Tools.FollowerRegistry
+  alias Rail.Tools.RunnerSocket
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
 
@@ -55,6 +60,8 @@ defmodule Rail.Tools.Follower do
   # Wrappers that say nothing about what a process belongs to.
   @plumbing ["sh", "bash", "dash", "zsh", "env", "timeout", "docker-init", "tini"]
   @default_result_grace 10_000
+  # What a sandboxed agent wrote to stderr is kept to its end, which is where its reason for exiting is.
+  @err_tail_bytes 65_536
 
   defstruct [
     :os_process_id,
@@ -77,7 +84,14 @@ defmodule Rail.Tools.Follower do
     :sampled_at,
     :result_grace_ms,
     :result_at,
+    :sandbox_id,
+    :conn,
+    :exec,
     memory_top: [],
+    replay_until: 0,
+    acked: 0,
+    err: "",
+    err_offset: 0,
     file_offset: 0,
     logged_offset: 0,
     saved_offset: 0,
@@ -143,6 +157,7 @@ defmodule Rail.Tools.Follower do
       os_pid: os_process.os_pid,
       runtime: os_process.runtime,
       container_id: os_process.container_id,
+      sandbox_id: os_process.sandbox_id,
       port: Keyword.get(opts, :port),
       event_state: event_state,
       deadline_at: os_process.deadline_at,
@@ -183,6 +198,10 @@ defmodule Rail.Tools.Follower do
     handle_info(:tail_tick, resume(state))
   end
 
+  def handle_info(:tail_tick, %__MODULE__{sandbox_id: sandbox_id} = state) when is_binary(sandbox_id) do
+    state |> follow_runner() |> note_result() |> check_alive() |> tick()
+  end
+
   def handle_info(:tail_tick, state) do
     {lines, new_offset, new_partial} =
       pump_stream(state.stream_path, state.file_offset, state.partial_line)
@@ -198,8 +217,71 @@ defmodule Rail.Tools.Follower do
         pending_events: pending_events
     }
 
-    {alive?, updated_state} = updated_state |> note_result() |> check_alive()
+    updated_state |> note_result() |> check_alive() |> tick()
+  end
 
+  @impl true
+  def handle_info(:batch_tick, state) do
+    state = state |> flush_pending_events() |> ack_logged()
+    Process.send_after(self(), :batch_tick, state.batch_interval_ms)
+    {:noreply, state}
+  end
+
+  def handle_info({_port, {:exit_status, status}}, state) do
+    {:noreply, %{state | exit_code: status}}
+  end
+
+  def handle_info({:runner_up, conn}, %__MODULE__{conn: conn} = state), do: {:noreply, state}
+  def handle_info({:runner_up, _conn}, %__MODULE__{resumed?: false} = state), do: {:noreply, state}
+  def handle_info({:runner_up, conn}, state), do: {:noreply, follow_runner(%{state | conn: nil}, conn)}
+
+  def handle_info({:runner_down, _id}, state), do: {:noreply, %{state | conn: nil}}
+
+  def handle_info({:DOWN, _ref, :process, conn, _reason}, %__MODULE__{conn: conn} = state),
+    do: {:noreply, %{state | conn: nil}}
+
+  # Everything after `started` is the runner's to tell, so the token the launch carried is let go.
+  def handle_info({:runner_started, _id, pid}, state) do
+    Repo.update_all(from(o in OsProcess, where: o.id == ^state.os_process_id), set: [launch: nil, os_pid: pid])
+    {:noreply, %{state | exec: nil}}
+  end
+
+  def handle_info({:runner_data, _id, 1, offset, bytes}, state) do
+    state |> take_output(offset, bytes) |> ack_logged() |> noreply()
+  end
+
+  def handle_info({:runner_data, id, 2, offset, bytes}, %__MODULE__{err_offset: err_offset} = state) do
+    skip = min(max(err_offset - offset, 0), byte_size(bytes))
+    err = state.err <> binary_part(bytes, skip, byte_size(bytes) - skip)
+    err = binary_part(err, max(byte_size(err) - @err_tail_bytes, 0), min(byte_size(err), @err_tail_bytes))
+    err_offset = max(err_offset, offset + byte_size(bytes))
+    if state.conn, do: RunnerSocket.ack(state.conn, id, 2, err_offset)
+    {:noreply, %{state | err: err, err_offset: err_offset}}
+  end
+
+  def handle_info({:runner_exit, _id, %{code: code, oom: oom?}}, state) do
+    {_os_process, final_state} = do_child_exit(%{state | exit_code: code, oom_killed?: oom?})
+    if final_state.conn, do: RunnerSocket.done(final_state.conn, final_state.os_process_id)
+    {:stop, :normal, final_state}
+  end
+
+  # The runner holds no such process and there was nothing left to start it from, or the task could not be checked
+  # out for it: either way it never ran, or ran and is gone.
+  def handle_info({:runner_lost, _id}, state) do
+    {_os_process, final_state} = do_child_exit(%{state | exit_code: -1, err: "The sandbox no longer had this command."})
+    {:stop, :normal, final_state}
+  end
+
+  def handle_info({:runner_failed, _id, error}, state) do
+    {_os_process, final_state} = do_child_exit(%{state | exit_code: -1, err: error})
+    {:stop, :normal, final_state}
+  end
+
+  def handle_info(_msg, state) do
+    {:noreply, state}
+  end
+
+  defp tick({alive?, updated_state}) do
     cond do
       alive? and past_deadline?(updated_state) ->
         updated_state |> sandbox() |> end_sandbox([])
@@ -221,22 +303,67 @@ defmodule Rail.Tools.Follower do
     end
   end
 
-  @impl true
-  def handle_info(:batch_tick, state) do
-    state = flush_pending_events(state)
-    Process.send_after(self(), :batch_tick, state.batch_interval_ms)
-    {:noreply, state}
+  # Asks the runner for this process from where this Follower is, once a runner is connected: all of it after a
+  # start, since lines already logged are replayed into the event state rather than logged again.
+  defp follow_runner(%__MODULE__{conn: conn} = state) when is_pid(conn), do: state
+
+  defp follow_runner(%__MODULE__{} = state) do
+    case RunnerSocket.whereis(state.sandbox_id) do
+      conn when is_pid(conn) -> follow_runner(state, conn)
+      nil -> state
+    end
   end
 
-  @impl true
-  def handle_info({_port, {:exit_status, status}}, state) do
-    {:noreply, %{state | exit_code: status}}
+  defp follow_runner(%__MODULE__{} = state, conn) do
+    Process.monitor(conn)
+    RunnerSocket.follow(conn, state.os_process_id, self(), state.file_offset, state.err_offset, state.exec)
+    %{state | conn: conn}
   end
 
-  @impl true
-  def handle_info(_msg, state) do
-    {:noreply, state}
+  # Output can arrive again after a reconnect, so only what lies past what was taken counts.
+  defp take_output(%__MODULE__{file_offset: taken} = state, offset, bytes) do
+    skip = max(taken - offset, 0)
+
+    if skip >= byte_size(bytes) do
+      state
+    else
+      fresh = binary_part(bytes, skip, byte_size(bytes) - skip)
+      parts = :binary.split(state.partial_line <> fresh, "\n", [:global])
+      {lines, [partial]} = Enum.split(parts, length(parts) - 1)
+
+      {event_state, pending, _end} =
+        Enum.reduce(lines, {state.event_state, state.pending_events, state.logged_offset}, fn line, {ev, pending, at} ->
+          at = at + byte_size(line) + 1
+          decoded = decode_utf8_lenient(line)
+          {parse_line(ev, decoded), if(at > state.replay_until, do: [decoded | pending], else: pending), at}
+        end)
+
+      file_offset = taken + byte_size(fresh)
+
+      %{
+        state
+        | file_offset: file_offset,
+          logged_offset: file_offset - byte_size(partial),
+          partial_line: partial,
+          event_state: event_state,
+          pending_events: pending
+      }
+    end
   end
+
+  # What was logged before this Follower began is safe already; what came after, once its batch is committed.
+  defp ack_logged(%__MODULE__{conn: conn} = state) when is_pid(conn) do
+    safe = min(state.saved_offset, state.logged_offset)
+
+    if safe > state.acked do
+      RunnerSocket.ack(conn, state.os_process_id, 1, safe)
+      %{state | acked: safe}
+    else
+      state
+    end
+  end
+
+  defp ack_logged(%__MODULE__{} = state), do: state
 
   defp past_deadline?(%__MODULE__{deadline_at: %DateTime{} = deadline_at}) do
     DateTime.compare(DateTime.utc_now(), deadline_at) != :lt
@@ -266,7 +393,8 @@ defmodule Rail.Tools.Follower do
   # Pending lines are held newest first, so they are put back in order for the log.
   # The lines and how far they reach are written together: a Follower that dies
   # between the two would otherwise log the same lines again when it comes back.
-  defp flush_pending_events(%__MODULE__{pending_events: [], logged_offset: offset, saved_offset: offset} = state) do
+  defp flush_pending_events(%__MODULE__{pending_events: [], logged_offset: logged, saved_offset: saved} = state)
+       when logged <= saved do
     state
   end
 
@@ -289,6 +417,20 @@ defmodule Rail.Tools.Follower do
   # point are replayed into the event state, so what the exit reports (usage, the
   # conversation, a result) covers the whole process, not just what this Follower
   # saw.
+  defp resume(%__MODULE__{sandbox_id: sandbox_id} = state) when is_binary(sandbox_id) do
+    {offset, launch} =
+      Repo.one(from o in OsProcess, where: o.id == ^state.os_process_id, select: {o.stream_offset, o.launch}) ||
+        {0, nil}
+
+    %{
+      state
+      | resumed?: true,
+        replay_until: offset || 0,
+        saved_offset: offset || 0,
+        exec: launch && Jason.decode!(launch)
+    }
+  end
+
   defp resume(%__MODULE__{} = state) do
     offset =
       case Repo.one(from o in OsProcess, where: o.id == ^state.os_process_id, select: o.stream_offset) do
@@ -359,6 +501,10 @@ defmodule Rail.Tools.Follower do
       else: check_alive(%{state | checked_at: nil})
   end
 
+  # A process in a connected sandbox is alive until its runner says it exited.
+  defp check_alive(%__MODULE__{conn: conn} = state) when is_pid(conn),
+    do: {true, sample_memory(%{state | checked_at: System.monotonic_time(:millisecond)})}
+
   defp check_alive(%__MODULE__{} = state) do
     state = %{state | checked_at: System.monotonic_time(:millisecond)}
 
@@ -406,7 +552,13 @@ defmodule Rail.Tools.Follower do
   end
 
   defp sandbox(%__MODULE__{} = state) do
-    %OsProcess{runtime: state.runtime, container_id: state.container_id, os_pid: state.os_pid}
+    %OsProcess{
+      id: state.os_process_id,
+      runtime: state.runtime,
+      container_id: state.container_id,
+      os_pid: state.os_pid,
+      sandbox_id: state.sandbox_id
+    }
   end
 
   defp do_child_exit(state) do
@@ -420,7 +572,16 @@ defmodule Rail.Tools.Follower do
 
     flush_pending_events(%{state | pending_events: pending_events, logged_offset: final_offset})
 
-    raw_stderr = state.err_path |> drain_err_file() |> Enum.join("\n")
+    raw_stderr =
+      if state.sandbox_id,
+        do:
+          state.err
+          |> decode_utf8_lenient()
+          |> String.split("\n")
+          |> Enum.map(&String.trim/1)
+          |> Enum.reject(&(&1 == ""))
+          |> Enum.join("\n"),
+        else: state.err_path |> drain_err_file() |> Enum.join("\n")
 
     case Repo.get(OsProcess, state.os_process_id) do
       %OsProcess{} = os_process ->
@@ -618,4 +779,6 @@ defmodule Rail.Tools.Follower do
       run: updated_run
     }
   end
+
+  defp noreply(state), do: {:noreply, state}
 end

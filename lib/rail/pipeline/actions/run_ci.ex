@@ -39,7 +39,7 @@ defmodule Rail.Pipeline.Actions.RunCi do
     cond do
       command in [nil, ""] -> {:error, :no_ci_command}
       Run.running?(run) -> {:error, :stage_running}
-      Git.worktree_dirty?(task.worktree_path) -> {:error, :uncommitted_changes}
+      Git.worktree_dirty?(task) -> {:error, :uncommitted_changes}
       true -> :ok
     end
   end

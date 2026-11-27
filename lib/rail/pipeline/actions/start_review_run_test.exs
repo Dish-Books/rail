@@ -26,7 +26,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     # HEAD and the diff are asked of Rail.Git, so the worktree is a plain directory and the stubs answer for a
     # branch on one commit with nothing changed.
     worktree_path = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree_path)
+    Enum.each([worktree_path, worktree_path <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     stub(Git, :branch_fingerprint, fn _path -> %{head_sha: String.duplicate("a", 40), dirty_digest: "clean"} end)

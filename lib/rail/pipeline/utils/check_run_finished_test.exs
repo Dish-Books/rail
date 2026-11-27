@@ -16,7 +16,7 @@ defmodule Rail.Pipeline.Utils.CheckRunFinishedTest do
     # Starting the review agent asks Rail.Git for the worktree, its HEAD and the diff, so the worktree is a plain
     # directory and the stubs answer for a branch with nothing changed.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     round = Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter.", approved_at: DateTime.utc_now()})

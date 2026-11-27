@@ -560,7 +560,7 @@ defmodule RailWeb.OverviewLiveTest do
       on_exit(fn -> File.rm_rf(task.scratch_path) end)
       # Nothing here asks git, so the worktree only has to be there.
       worktree = Path.join(task.scratch_path, "worktree")
-      File.mkdir_p!(worktree)
+      Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
       {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
 
       {:ok, run} =

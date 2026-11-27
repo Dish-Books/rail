@@ -281,6 +281,33 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
              Repo.get!(Project, project_id)
   end
 
+  test "sets the image a project's sandboxes run, and refuses one that is no image reference", %{
+    admin_conn: conn,
+    admin_user: admin
+  } do
+    assert {:ok, %Project{id: project_id}} =
+             Projects.create_project(Scope.for_user(admin), %{
+               name: "Image App",
+               github_repo: "example/image-#{System.unique_integer([:positive])}",
+               github_installation_id: 336,
+               key: "IMGPRJ",
+               default_branch: "main",
+               clone_path: "/tmp/image"
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+    view |> element("#edit-project-#{project_id}") |> render_click()
+
+    assert view
+           |> form("#project-form", %{"project" => %{"sandbox_image" => "Not An Image!"}})
+           |> render_submit() =~ "must be an image reference"
+
+    image = "us-docker.pkg.dev/dishbooks/rail/app:main"
+    view |> form("#project-form", %{"project" => %{"sandbox_image" => image}}) |> render_submit()
+
+    assert %Project{sandbox_image: ^image} = Repo.get!(Project, project_id)
+  end
+
   test "sets the command a project's CI runs, and how long it may take", %{admin_conn: conn, admin_user: admin} do
     assert {:ok, %Project{id: project_id}} =
              Projects.create_project(Scope.for_user(admin), %{
@@ -1108,7 +1135,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
             for number <- 1..worktree_count//1 do
               branch = "env-live-#{name}-#{number}-#{unique}"
               path = Path.join(clone, ".worktrees/#{branch}")
-              File.mkdir_p!(path)
+              File.mkdir_p!(Path.join(path, ".git"))
 
               issue =
                 Repo.insert!(

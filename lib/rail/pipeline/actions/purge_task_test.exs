@@ -146,8 +146,7 @@ defmodule Rail.Pipeline.Actions.PurgeTaskTest do
         scratch_path: scratch_dir
       })
 
-    expect(Git, :remove_worktree, fn ^clone_path, ^worktree_path -> :ok end)
-    expect(Git, :delete_branch, fn ^clone_path, "purge-branch" -> :ok end)
+    expect(Git, :remove_task_checkout, fn %{clone_path: ^clone_path}, %{worktree_path: ^worktree_path} -> :ok end)
 
     assert :ok = Pipeline.purge_task(task)
 

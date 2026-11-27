@@ -46,6 +46,14 @@ repos:
         priority: 1
         pass_filenames: false
 
+      - id: lane-runner
+        name: "runner: gofmt, vet, go test"
+        entry: scripts/ci-lanes.sh lane runner
+        language: system
+        stages: [pre-push]
+        priority: 1
+        pass_filenames: false
+
       - id: receipt
         name: "write and push the receipt"
         entry: scripts/ci-lanes.sh receipt

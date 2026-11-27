@@ -1,22 +1,23 @@
 defmodule Rail.Git.Actions.WriteCheckoutConfig do
   @moduledoc """
-  Writes a task checkout's git config whole, from what Rail knows, over whatever is there. The sandbox mounts that
-  file read-only, along with `.git/info` and `.git/hooks`, so the config Rail's own git reads in the checkout is only
-  ever this: no filter, merge driver, hook or program a sandbox once named survives it, and no new one can be named.
+  Writes a task checkout's git config whole, from what Rail knows, over whatever is there, under the `:local`
+  runtime: the only one whose checkouts are on Rail's disk, where Rail syncs them from. A sandbox's checkout gets its
+  config with its `checkout` call instead (`Rail.Git.checkout_params/2`).
 
   It holds the repository's format, `origin` as the project's clone has it, the branch's upstream once Rail has pushed
-  it, and who commits: the person the ticket belongs to, signed with their key, since the agent commits there itself
-  and can no longer `git config`. Written again before each turn, so a ticket that changed hands commits as its new
-  owner. The key goes with the task's scratch folder.
+  it, and who commits: the person the ticket belongs to, signed with their key, since the agent commits there itself.
+  Written again before each turn, so a ticket that changed hands commits as its new owner. The key goes in the task's
+  repository folder.
 
   Author and committer are one identity, because GitHub verifies an SSH signature against the account owning the
   committer email. A ticket with nobody on it commits as the Rail bot, unsigned.
 
   A task still on a worktree of its project's clone shares the clone's config, so it gets only its identity, in a
-  config of the worktree's own, as before. Its sandbox mounts all of /srv/rail, so none of this protects it.
+  config of the worktree's own, as before.
   """
 
   import Rail.Git.Utils.CommitAuthor
+  import Rail.Git.Utils.SigningKeyFile
 
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -31,9 +32,11 @@ defmodule Rail.Git.Actions.WriteCheckoutConfig do
   def write_checkout_config(%Project{} = project, %Task{worktree_path: worktree_path} = task) do
     git_dir = Path.join(worktree_path, ".git")
 
-    if File.dir?(git_dir),
-      do: write(project, task, git_dir),
-      else: set(worktree_path, nil, worktree_identity(task))
+    cond do
+      Rail.sandbox_runtime() != :local -> :ok
+      File.dir?(git_dir) -> write(project, task, git_dir)
+      true -> set(worktree_path, nil, worktree_identity(task))
+    end
   end
 
   # Built beside the config and moved over it, so a failure midway leaves the last one whole, and of two at once the
@@ -127,23 +130,13 @@ defmodule Rail.Git.Actions.WriteCheckoutConfig do
     end
   end
 
-  # The key sits in the task's scratch folder, which the sandbox sees and the commit never holds. With no
-  # key the commits go unsigned rather than not at all, whatever the machine's own config says. A key file
-  # is signed with by ssh-keygen, since a machine may sign through an agent's program, such as 1Password's,
-  # that knows only its own keys and turns a file's away.
-  defp signing(%Task{scratch_path: scratch_path}, %{signing_key: key, signing_public_key: public})
+  # With no key the commits go unsigned rather than not at all, whatever the machine's own config says.
+  defp signing(%Task{} = task, %{signing_key: key, signing_public_key: public})
        when is_binary(key) and is_binary(public) do
-    path = Path.join([scratch_path, ".signing", "key"])
-    File.mkdir_p!(Path.dirname(path))
-    File.rm(path)
-    File.write!(path, key, [:exclusive])
-    File.chmod!(path, 0o600)
-    File.write!(path <> ".pub", public)
-
     [
       {"gpg.format", "ssh"},
       {"gpg.ssh.program", "ssh-keygen"},
-      {"user.signingkey", path},
+      {"user.signingkey", signing_key_file(task, key, public)},
       {"commit.gpgsign", "true"}
     ]
   end

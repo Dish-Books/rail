@@ -26,9 +26,9 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinished do
   def engineer_run_finished(%Run{task: %Task{} = task} = run, _opts) do
     cond do
       not Task.worktree_present?(task) -> {:open, run}
-      Git.branch_unpushed?(task.worktree_path) -> hand_over(run)
+      Git.branch_unpushed?(task) -> hand_over(run)
       # A queued message is the engineer about to work again, so the round is not over yet.
-      is_binary(run.pending_chat) or Git.worktree_dirty?(task.worktree_path) -> {:open, run}
+      is_binary(run.pending_chat) or Git.worktree_dirty?(task) -> {:open, run}
       match?(%Round{number: number} when number > 1, Pipeline.read_plan(task)) -> send_as_it_stands(run)
       true -> {:open, run}
     end

@@ -933,6 +933,9 @@ defmodule Rail.Tools.BootTest do
           {"GET", "/containers/json", %{"filters" => ~s({"label":["dev.railai.sandbox"]})}} ->
             Req.Test.json(conn, [])
 
+          {"GET", "/containers/json", %{"filters" => ~s({"label":["dev.railai.task-sandbox"]})}} ->
+            Req.Test.json(conn, [])
+
           {"DELETE", "/containers/" <> id, _params} ->
             send(test_pid, {:removed, id, conn.query_string})
             Plug.Conn.send_resp(conn, 204, "")
@@ -945,6 +948,117 @@ defmodule Rail.Tools.BootTest do
       assert [] = Boot.reconcile(boot: true)
       assert_received {:removed, "c-cut-off", "force=true"}
       refute_received {:removed, "c-new", _query}
+    end
+
+    test "brings tasks' sandboxes in line with their containers, and stops the ones left idle", %{
+      project: project,
+      role: role
+    } do
+      test_pid = self()
+      stub(Rail.Git, :sync_checkout, fn _task -> :ok end)
+      long_ago = DateTime.shift(DateTime.utc_now(), hour: -1)
+
+      [busy, gone, idle, fresh] =
+        for name <- ["busy", "gone", "idle", "fresh"] do
+          issue =
+            %Issue{}
+            |> Issue.changeset(%{project_id: project.id, identifier: "BOO-#{name}", title: name, state: :todo})
+            |> Repo.insert!()
+
+          task =
+            %Task{}
+            |> Task.changeset(
+              %{
+                issue_id: issue.id,
+                stage: :engineer,
+                worktree_name: name,
+                worktree_path: "/w/#{name}",
+                scratch_path: "/s/#{name}"
+              },
+              project.id
+            )
+            |> Repo.insert!()
+
+          started = if name == "fresh", do: DateTime.utc_now(), else: long_ago
+
+          Repo.insert!(%Rail.Tools.Schemas.Sandbox{
+            task_id: task.id,
+            engine: :docker,
+            image: "rail-sandbox:latest",
+            volume: "rail-#{name}",
+            status: :running,
+            container_id: "c-#{name}",
+            started_at: started
+          })
+        end
+
+      {:ok, run} = Pipeline.create_run(%{task_id: busy.task_id, role_id: role.id, status: :running, started_at: long_ago})
+
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
+        task_id: busy.task_id,
+        sandbox_id: busy.id,
+        stream_path: "/dev/null",
+        status: :finished,
+        started_at: long_ago,
+        ended_at: long_ago
+      })
+
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
+        task_id: busy.task_id,
+        sandbox_id: busy.id,
+        stream_path: "/dev/null",
+        status: :running,
+        started_at: long_ago
+      })
+
+      Req.Test.stub(Docker, fn conn ->
+        conn = Plug.Conn.fetch_query_params(conn)
+
+        case {conn.method, conn.request_path, conn.query_params} do
+          {"GET", "/info", _params} ->
+            Req.Test.json(conn, %{"NCPU" => 4, "MemTotal" => 8 * 1024 ** 3})
+
+          {"GET", "/containers/json", %{"filters" => ~s({"label":["dev.railai.task-sandbox"]})}} ->
+            label = %{"dev.railai.task-sandbox" => "x"}
+
+            Req.Test.json(conn, [
+              %{"Id" => "c-busy", "State" => "running", "Labels" => label},
+              %{"Id" => "c-gone", "State" => "exited", "Labels" => label},
+              %{"Id" => "c-idle", "State" => "running", "Labels" => label},
+              %{"Id" => "c-fresh", "State" => "running", "Labels" => label},
+              %{"Id" => "c-stray", "State" => "running", "Labels" => label},
+              %{"Id" => "c-other", "State" => "running", "Labels" => %{}}
+            ])
+
+          {"GET", "/containers/json", _params} ->
+            Req.Test.json(conn, [])
+
+          {"POST", "/containers/" <> stop, _params} ->
+            send(test_pid, {:stopped, stop})
+            Plug.Conn.send_resp(conn, 204, "")
+
+          {"DELETE", "/containers/" <> id, _params} ->
+            send(test_pid, {:removed, id})
+            Plug.Conn.send_resp(conn, 204, "")
+        end
+      end)
+
+      Boot.reconcile()
+
+      assert_received {:removed, "c-stray"}
+      refute_received {:removed, "c-other"}
+      assert_received {:removed, "c-gone"}
+      assert_received {:stopped, "c-idle/stop"}
+      assert_received {:removed, "c-idle"}
+      refute_received {:removed, "c-busy"}
+      refute_received {:removed, "c-fresh"}
+
+      assert %{status: :running} = Repo.reload!(busy)
+      assert %{status: :stopped, container_id: nil} = Repo.reload!(gone)
+      assert %{status: :stopped, container_id: nil} = Repo.reload!(idle)
+      assert %{status: :running} = Repo.reload!(fresh)
     end
   end
 end

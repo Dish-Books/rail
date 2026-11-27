@@ -21,8 +21,8 @@ defmodule Rail.Pipeline.Actions.CheckBase do
     if Task.worktree_present?(task) do
       %Project{default_branch: base} = project = Repo.get!(Project, task.project_id)
       # A task's own clone reads the default its project's clone last fetched; one that fails reads the last copy.
-      _copied = Git.copy_default_branch(project, task.worktree_path)
-      %{behind: behind, conflicts: conflicts} = Git.base_status(task.worktree_path, base)
+      _copied = Git.copy_default_branch(project, task)
+      %{behind: behind, conflicts: conflicts} = Git.base_status(task, base)
       changed? = {task.base_behind, task.base_conflicts} != {behind, conflicts}
       caught_up = if task.base_behind and not behind, do: %{merge_error: nil, merge_error_at: nil}, else: %{}
 

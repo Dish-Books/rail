@@ -1,18 +1,21 @@
 defmodule Rail.Git.Actions.WorktreeDirty do
   @moduledoc false
 
+  import Rail.Git.Utils.WorkTree
+
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Tools
 
   @doc """
-  True when the worktree has changes nobody has committed.
+  True when `task`'s checkout has changes nobody has committed.
   """
-  def worktree_dirty?(worktree_path) when is_binary(worktree_path) do
-    case Tools.run("git", ["status", "--porcelain", "--untracked-files=all"],
-           cd: worktree_path,
-           stderr_to_stdout: true
-         ) do
-      {output, 0} -> String.trim(output) != ""
-      _unreadable -> false
+  def worktree_dirty?(%Task{} = task) do
+    case work_tree(task) do
+      %{repo: repo, head: head, work: work} ->
+        match?({_output, 1}, Tools.run("git", ["diff", "--quiet", head, work], cd: repo, stderr_to_stdout: true))
+
+      nil ->
+        false
     end
   end
 end

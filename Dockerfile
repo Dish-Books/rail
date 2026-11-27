@@ -3,6 +3,22 @@
 ARG ELIXIR_IMAGE="hexpm/elixir:1.20.5-erlang-29.1.2-debian-trixie-20261104-slim"
 ARG RUNNER_IMAGE="debian:trixie-20261104-slim"
 ARG NODE_IMAGE="node:26.13.1-trixie-slim"
+# Keep in step with mise.toml.
+ARG GO_IMAGE="golang:1.27.3-trixie"
+
+# ------------------------------------------------------------------------------
+# Runner Build Stage
+# ------------------------------------------------------------------------------
+# rail-runner for each Linux architecture: Rail puts the host's into every sandbox it starts, whatever its image.
+FROM ${GO_IMAGE} AS runner-build
+
+WORKDIR /runner
+COPY runner/go.mod runner/go.sum ./
+RUN go mod download
+COPY runner ./
+RUN for arch in amd64 arm64; do \
+      CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags "-s -w" -o /out/linux-$arch/rail-runner . ; \
+    done
 
 # Node for the sandbox. Trixie's is 20, and the browser driver agents run needs the global
 # WebSocket that arrived in 22.
@@ -55,8 +71,9 @@ RUN mix release rail
 # Sandbox Stage
 # ------------------------------------------------------------------------------
 # What every agent, worktree setup and CI command runs in, as `rail-sandbox:latest`
-# (scripts/deploy.sh). Rail's own image is built on it, so an agent finds the same
-# tools in its sandbox as it did beside Rail, without Rail's release or environment.
+# (scripts/deploy.sh), unless its project names an image of its own. Rail's own image is
+# built on it, so an agent finds the same tools in its sandbox as it did beside Rail,
+# without Rail's release or environment. Rail adds rail-runner to it as a sandbox starts.
 FROM ${RUNNER_IMAGE} AS sandbox
 
 # chromium for QA and demos; the build tools let mise compile a project's Erlang; python because
@@ -137,6 +154,7 @@ RUN chown rail:rail /app
 USER rail
 
 COPY --from=build --chown=rail:rail /app/_build/prod/rel/rail ./
+COPY --from=runner-build /out /app/runner
 
 ENV PHX_SERVER=true
 ENV PORT=4000

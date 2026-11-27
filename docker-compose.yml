@@ -1,9 +1,11 @@
 # The rail VM's stack (dishbooks .devops/terraform/shared/rail.tf); scripts/deploy.sh brings it up.
 # Host networking, so agents reach worktree apps and the shared services on localhost.
 # Rail mounts /srv/rail at the same path it uses: worktree and scratch paths live in the DB.
-# Each sandbox mounts only its own task's folders of it, at those paths, and the browser only its profile.
-# Rail holds the docker socket to run each agent, worktree setup and CI command in a sandbox of
-# its own (rail-sandbox:latest, built by scripts/deploy.sh), which keeps running across a deploy.
+# Rail holds the docker socket to run each task's agents, setup and CI in a sandbox of the task's
+# own: a Docker volume holding its checkout, and while it has work a container whose rail-runner
+# dials Rail's /sandbox/socket (docs/sandbox-socket.md). It keeps running across a deploy. Of
+# /srv/rail it mounts only its task's scratch folder and its account's login, until RAIL-228, and
+# the toolchains through the rail-mise volume, read-only. The browser mounts only its profile.
 # The same way, it starts one rail-browser container: the headless Chrome every QA and demo pass
 # drives, a tab per task, which a deploy leaves open.
 # Agents still get no docker socket; a project's other services are started on the host, outside this stack.
@@ -85,6 +87,7 @@ services:
       <<: *rail-env
       RAIL_SANDBOX_RUNTIME: docker
       RAIL_SANDBOX_IMAGE: rail-sandbox:latest
+      RAIL_TOOLCHAIN_VOLUME: rail-mise
       RAIL_BROWSER_ROOT: /srv/rail/browser
     # The docker group's id on the host (scripts/deploy.sh), so rail can use the socket.
     group_add: ["${DOCKER_GID}"]
@@ -92,6 +95,8 @@ services:
     init: true
     volumes:
       - /srv/rail:/srv/rail
+      # Over the bind above: Rail installs toolchains here, and sandboxes read them from the same volume.
+      - rail-mise:/srv/rail/mise
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       migrate:
@@ -132,3 +137,8 @@ services:
       - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /srv/rail/otel-collector:/var/lib/otelcol
+
+volumes:
+  # Made and filled from /srv/rail/mise by scripts/deploy.sh, so its name is its own and not the project's.
+  rail-mise:
+    external: true

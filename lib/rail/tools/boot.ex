@@ -21,6 +21,7 @@ defmodule Rail.Tools.Boot do
   import Rail.Tools.Utils.NewEventState
   import Rail.Tools.Utils.ParseLine
   import Rail.Tools.Utils.ReadExitFile
+  import Rail.Tools.Utils.ReconcileSandboxes
   import Rail.Tools.Utils.RemoveSandbox
   import Rail.Tools.Utils.SandboxState
 
@@ -54,7 +55,8 @@ defmodule Rail.Tools.Boot do
 
   @doc """
   Adopts every in-flight os process, once the runs tables exist, then starts
-  whatever now fits in the line and removes containers whose rows have settled.
+  whatever now fits in the line, removes containers whose rows have settled, and
+  brings tasks' sandboxes in line with their containers, stopping idle ones.
   With `boot: true`, a toolchain install the last BEAM left unsettled is queued again, and an agent pass's container
   that went down with it is removed.
   """
@@ -68,6 +70,7 @@ defmodule Rail.Tools.Boot do
     _browsers = Tools.reconcile_browser_sessions(opts)
     _admitted = admit_sandboxes()
     remove_settled_containers()
+    reconcile_sandboxes()
 
     adopted
 
@@ -222,7 +225,7 @@ defmodule Rail.Tools.Boot do
         conversation_id: run.conversation_id
       )
 
-    {lines, unlogged_lines, err_lines} = read_entire_stream_and_err(os_process.stream_path, os_process.stream_offset)
+    {lines, unlogged_lines, err_lines} = read_entire_stream_and_err(os_process, run)
 
     # Nobody wrote these to the run's log while the process was alive, so the
     # conversation would otherwise end wherever its last Follower stopped.
@@ -350,6 +353,15 @@ defmodule Rail.Tools.Boot do
       -1
     end
   end
+
+  # A process in a task's sandbox wrote nothing on Rail's disk: what is known of it is what its Follower logged, and
+  # whatever it wrote after that went with its container.
+  defp read_entire_stream_and_err(%OsProcess{sandbox_id: sandbox_id, id: id}, %Run{} = run) when is_binary(sandbox_id) do
+    {Enum.map(Pipeline.list_run_events(run, os_process_id: id), & &1.line), [], []}
+  end
+
+  defp read_entire_stream_and_err(%OsProcess{stream_path: stream_path, stream_offset: offset}, %Run{}),
+    do: read_entire_stream_and_err(stream_path, offset)
 
   # Every line, for the event state, and the lines past what was already logged.
   defp read_entire_stream_and_err(stream_path, logged_offset) do

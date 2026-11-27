@@ -13,7 +13,7 @@ defmodule Rail.Pipeline.Workers.CheckBasesTest do
         task = learnings_task(project, identifier, stage)
         # Git is stubbed, so each worktree is only looked for: a plain directory stands in for it.
         worktree_path = Path.join(System.tmp_dir!(), "rail_cbs_wt_#{System.unique_integer([:positive])}")
-        File.mkdir_p!(worktree_path)
+        Enum.each([worktree_path, worktree_path <> ".git"], &File.mkdir_p!/1)
         on_exit(fn -> File.rm_rf(worktree_path) end)
         {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
         on_exit(fn -> File.rm_rf(task.scratch_path) end)

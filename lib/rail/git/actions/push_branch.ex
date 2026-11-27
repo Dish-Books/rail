@@ -6,12 +6,9 @@ defmodule Rail.Git.Actions.PushBranch do
   than passed in: a token is not something a caller should be holding, and the
   installation is what keeps a branch pushable after whoever was assigned leaves.
 
-  The push goes from the project's clone, not the task's checkout. A sandbox can write
-  the checkout's `.git`, and git run there reads its config and hooks: a remote or URL
-  rewrite that hands the token to another host, a hook or helper that runs in Rail's
-  container. So the clone fetches the commit from the checkout, which runs only
-  `git upload-pack` there, the one git command made to be safe in a repository nobody
-  vouches for, and pushes it with its own config. No hook runs, the project's or anyone's.
+  The push goes from the project's clone, which fetches the commit from the task's
+  repository after the checkout has synced into it, and pushes it with its own config.
+  No hook runs, the project's or anyone's, and no git of Rail's runs where a sandbox writes.
 
   The receipt is `refs/ci-receipts/<tree>`, as the checkout holds it after CI wrote it
   there, and goes up only with the CI run that passed on that commit: Rail never vouches
@@ -23,6 +20,7 @@ defmodule Rail.Git.Actions.PushBranch do
   is refused rather than overwritten. `check_push/1` says which way it would be.
   """
 
+  import Rail.Git.Utils.LocalCheckout
   import Rail.Git.Utils.WithCloneLock
 
   alias Rail.Git
@@ -51,25 +49,29 @@ defmodule Rail.Git.Actions.PushBranch do
 
   def push_branch(%Scope{}, %Task{}, nil), do: {:error, "git could not say which commit the branch is on."}
 
-  defp push(%Task{worktree_path: worktree_path, worktree_name: branch} = task, sha, ci_passed?) do
+  defp push(%Task{worktree_name: branch} = task, sha, ci_passed?) do
     %Project{clone_path: clone_path} = project = Repo.get!(Project, task.project_id)
+    repo = Task.repo_path(task)
 
     # Only an object name reaches git's argv, never something it could read as an option.
     with true <- sha =~ ~r/\A[0-9a-f]{40}([0-9a-f]{24})?\z/ || {:error, "#{inspect(sha)} is not a commit SHA."},
+         # Synced however recently it last was, since CI writes its receipt just before this reads it; a commit the
+         # sync did not bring is one the fetch below says is missing.
+         _synced = Git.sync_checkout(task, fresh: true),
          {:ok, env} <- Git.credential_env(project),
-         {:ok, receipt} <- with_clone_lock(clone_path, fn -> take(clone_path, worktree_path, sha, ci_passed?) end),
+         {:ok, receipt} <- with_clone_lock(clone_path, fn -> take(clone_path, repo, sha, ci_passed?) end),
          :ok <- git_push(clone_path, ["#{sha}:refs/heads/#{branch}" | receipt], env) do
-      track(worktree_path, branch, sha)
+      track(task, repo, branch, sha)
     end
   end
 
   # The commit, and its receipt when there is one to take, copied into the clone.
-  defp take(clone_path, worktree_path, sha, ci_passed?) do
-    with :ok <- fetch(clone_path, worktree_path, sha),
-         {:ok, receipt} <- receipt(clone_path, worktree_path, sha, ci_passed?) do
+  defp take(clone_path, repo, sha, ci_passed?) do
+    with :ok <- fetch(clone_path, repo, sha),
+         {:ok, receipt} <- receipt(clone_path, repo, sha, ci_passed?) do
       case receipt do
         {ref, receipt_sha} ->
-          with :ok <- fetch(clone_path, worktree_path, receipt_sha), do: {:ok, ["+#{receipt_sha}:#{ref}"]}
+          with :ok <- fetch(clone_path, repo, receipt_sha), do: {:ok, ["+#{receipt_sha}:#{ref}"]}
 
         nil ->
           {:ok, []}
@@ -77,13 +79,13 @@ defmodule Rail.Git.Actions.PushBranch do
     end
   end
 
-  defp receipt(_clone_path, _worktree_path, _sha, false), do: {:ok, nil}
+  defp receipt(_clone_path, _repo, _sha, false), do: {:ok, nil}
 
   # The tree is read in the clone, from the commit it now holds, not taken from anything the checkout says.
-  defp receipt(clone_path, worktree_path, sha, true) do
+  defp receipt(clone_path, repo, sha, true) do
     with {:ok, tree} <- git(clone_path, ["rev-parse", "--verify", "#{sha}^{tree}"]),
          ref = "#{@receipts}/#{tree}",
-         {:ok, listed} <- git(clone_path, ["ls-remote", "--refs", worktree_path, ref]) do
+         {:ok, listed} <- git(clone_path, ["ls-remote", "--refs", repo, ref]) do
       # ls-remote matches the tail of a ref's name, so only the exact one counts.
       exact =
         listed
@@ -99,9 +101,8 @@ defmodule Rail.Git.Actions.PushBranch do
     end
   end
 
-  defp fetch(clone_path, worktree_path, sha) do
-    with {:ok, _fetched} <-
-           git(clone_path, ["fetch", "--quiet", "--no-tags", "--no-write-fetch-head", worktree_path, sha]),
+  defp fetch(clone_path, repo, sha) do
+    with {:ok, _fetched} <- git(clone_path, ["fetch", "--quiet", "--no-tags", "--no-write-fetch-head", repo, sha]),
          do: :ok
   end
 
@@ -121,13 +122,23 @@ defmodule Rail.Git.Actions.PushBranch do
     end
   end
 
-  # What `git push --set-upstream` from the checkout would have left there: origin's branch at the commit, and
-  # the branch tracking it, so the checkout counts it pushed.
-  defp track(worktree_path, branch, sha) do
-    with {:ok, _ref} <- git(worktree_path, ["update-ref", "refs/remotes/origin/#{branch}", sha]),
-         {:ok, _remote} <- git(worktree_path, ["config", "branch.#{branch}.remote", "origin"]),
-         {:ok, _merge} <- git(worktree_path, ["config", "branch.#{branch}.merge", "refs/heads/#{branch}"]),
-         do: :ok
+  # Origin's branch at the commit, where the repository's reads see it pushed; and in a checkout on Rail's disk
+  # what `git push --set-upstream` from it would have left, so the agent's git counts it pushed too.
+  defp track(%Task{} = task, repo, branch, sha) do
+    ref = "refs/remotes/origin/#{branch}"
+
+    with {:ok, _ref} <- git(repo, ["update-ref", ref, sha]) do
+      case local_checkout(task) do
+        checkout when is_binary(checkout) ->
+          with {:ok, _ref} <- git(checkout, ["update-ref", ref, sha]),
+               {:ok, _remote} <- git(checkout, ["config", "branch.#{branch}.remote", "origin"]),
+               {:ok, _merge} <- git(checkout, ["config", "branch.#{branch}.merge", "refs/heads/#{branch}"]),
+               do: :ok
+
+        nil ->
+          :ok
+      end
+    end
   end
 
   defp git(path, args) do

@@ -9,6 +9,7 @@ defmodule Rail.Git.Actions.LoadDiffHunks do
 
   import Rail.Git.Utils.FileLines
   import Rail.Git.Utils.HighlightLines
+  import Rail.Git.Utils.WorkTree
 
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Task
@@ -30,7 +31,7 @@ defmodule Rail.Git.Actions.LoadDiffHunks do
   def load_diff_hunks(%Scope{} = scope, %Task{} = task, ranges) when is_list(ranges) do
     case Git.load_diff(scope, task, :branch) do
       {:ok, files} ->
-        {excerpts, _read} = Enum.map_reduce(ranges, %{}, &excerpt(&1, files, task.worktree_path, &2))
+        {excerpts, _read} = Enum.map_reduce(ranges, %{}, &excerpt(&1, files, work_tree(task), &2))
         excerpts
 
       {:error, :no_worktree} ->
@@ -39,14 +40,14 @@ defmodule Rail.Git.Actions.LoadDiffHunks do
   end
 
   # Each file is read and highlighted at most once, however many ranges name it.
-  defp excerpt({path, line, end_line}, files, worktree_path, read) when is_binary(path) do
+  defp excerpt({path, line, end_line}, files, work_tree, read) when is_binary(path) do
     file = find_file(files, path)
 
     cond do
       file != nil and not is_integer(line) -> {first_change(file), read}
       file != nil and file.binary? -> {binary(file, true), read}
       not is_integer(line) -> {nil, read}
-      true -> lines(file, path, line, end_line, worktree_path, read)
+      true -> lines(file, path, line, end_line, work_tree, read)
     end
   end
 
@@ -96,9 +97,9 @@ defmodule Rail.Git.Actions.LoadDiffHunks do
   defp missing(file, why),
     do: Map.merge(stat(file, true), %{rows: [], changed?: false, hidden_lines: 0, other_changes: 0, missing: why})
 
-  defp lines(file, path, line, end_line, worktree_path, read) do
+  defp lines(file, path, line, end_line, work_tree, read) do
     path = if file, do: file.path, else: String.trim_leading(path, "./")
-    {source, read} = source(read, worktree_path, path)
+    {source, read} = source(read, work_tree, path)
     last = if is_integer(end_line) and end_line > line, do: end_line, else: line
 
     case {file, source} do
@@ -120,20 +121,20 @@ defmodule Rail.Git.Actions.LoadDiffHunks do
     end
   end
 
-  defp source(read, worktree_path, path) do
+  defp source(read, work_tree, path) do
     case Map.fetch(read, path) do
       {:ok, source} ->
         {source, read}
 
       :error ->
-        source = read_source(worktree_path, path)
+        source = read_source(work_tree, path)
         {source, Map.put(read, path, source)}
     end
   end
 
   # A file that is not text is named rather than drawn, as the diff names one.
-  defp read_source(worktree_path, path) do
-    case file_lines(worktree_path, path) do
+  defp read_source(work_tree, path) do
+    case work_tree && file_lines(work_tree.repo, path, work_tree.work) do
       lines when is_list(lines) ->
         cond do
           Enum.any?(lines, &String.contains?(&1, <<0>>)) -> :binary

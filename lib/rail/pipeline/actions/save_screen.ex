@@ -17,7 +17,7 @@ defmodule Rail.Pipeline.Actions.SaveScreen do
   reading `label`, taken in `browser`. Returns `{:ok, shot}` with the commit and round it was taken on.
   """
   def save_screen(%Task{} = task, %{key: key, label: label, file: file} = attrs) do
-    head = if Task.worktree_present?(task), do: Git.branch_fingerprint(task.worktree_path)[:head_sha]
+    head = if Task.worktree_present?(task), do: Git.branch_fingerprint(task)[:head_sha]
 
     round =
       case Pipeline.read_plan(task) do

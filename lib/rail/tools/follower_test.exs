@@ -21,6 +21,7 @@ defmodule Rail.Tools.FollowerTest do
   alias Rail.Tools.Clients.Docker
   alias Rail.Tools.Follower
   alias Rail.Tools.FollowerSupervisor
+  alias Rail.Tools.RunnerRegistry
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.BrowserSession
   alias Rail.Tools.Schemas.OsProcess
@@ -1520,6 +1521,224 @@ defmodule Rail.Tools.FollowerTest do
       Sandbox.allow(Repo, self(), follower_pid)
 
       assert_receive {:os_process_finished, %OsProcess{exit_code: 137, ended_reason: :killed}, _outcome}, 5_000
+    end
+  end
+
+  describe "a process in a task's sandbox" do
+    setup {Req.Test, :set_req_test_to_shared}
+
+    setup %{os_process: os_process, task: task} do
+      sandbox =
+        Repo.insert!(%Rail.Tools.Schemas.Sandbox{
+          task_id: task.id,
+          engine: :docker,
+          image: "rail-sandbox:latest",
+          volume: "rail-follow",
+          status: :running,
+          container_id: "c0ffee"
+        })
+
+      exec = %{"argv" => ["claude"], "env" => %{}, "cwd" => "/w", "files" => [], "stdin" => nil, "stderr" => "separate"}
+
+      os_process =
+        os_process
+        |> OsProcess.changeset(%{
+          runtime: :docker,
+          container_id: "c0ffee",
+          sandbox_id: sandbox.id,
+          reserved_cpus: 2,
+          launch: Jason.encode!(exec)
+        })
+        |> Repo.update!()
+
+      Req.Test.stub(Docker, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"GET", "/containers/c0ffee/top"} -> Req.Test.json(conn, %{"Processes" => [["1", "0", "2048", "claude"]]})
+          {"GET", "/containers/c0ffee/json"} -> Req.Test.json(conn, %{"State" => %{"Running" => true}})
+        end
+      end)
+
+      # This test is the runner's connection: what the Follower sends it arrives here.
+      {:ok, _owner} = Registry.register(RunnerRegistry, sandbox.id, nil)
+
+      %{exec: exec, os_process: os_process, sandbox: sandbox}
+    end
+
+    test "follows the runner, logs what it sends, says what is safe once committed, and settles on its exit", %{
+      exec: exec,
+      os_process: %OsProcess{id: id} = os_process,
+      run: run
+    } do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+      {:ok, follower} =
+        FollowerSupervisor.start_follower(%{os_process | run: run},
+          tail_interval_ms: 20,
+          batch_interval_ms: 30,
+          memory_sample_interval_ms: 0
+        )
+
+      Sandbox.allow(Repo, self(), follower)
+
+      assert_receive {:follow, ^follower, ^id, 0, 0, ^exec}
+      send(follower, {:runner_started, id, 99})
+      eventually(fn -> assert %OsProcess{launch: nil, os_pid: 99} = Repo.reload!(os_process) end)
+
+      first = ~s({"type":"system","subtype":"init","session_id":"sess-sock"})
+      send(follower, {:runner_data, id, 1, 0, first <> "\nhalf"})
+      # Sent again after a reconnect: only what lies past what was taken counts.
+      send(follower, {:runner_data, id, 1, 0, first <> "\n"})
+      send(follower, {:runner_data, id, 1, byte_size(first) + 5, " line\n"})
+      send(follower, {:runner_data, id, 1, 0, "old"})
+      send(follower, {:runner_data, id, 2, 0, "boom\n"})
+      send(follower, {:runner_data, id, 2, 2, "om\nagain\n"})
+
+      total = byte_size(first) + 1 + byte_size("half line\n")
+      assert_receive {:ack_proc, ^id, 2, 5}
+      assert_receive {:ack_proc, ^id, 2, 11}
+      assert_receive {:ack_proc, ^id, 1, ^total}, 1_000
+
+      assert [^first, "half line"] = Enum.map(Pipeline.list_run_events(run), & &1.line)
+
+      send(follower, {:runner_exit, id, %{code: 1, oom: false, out: total, err: 11}})
+      assert_receive {:done, ^id}
+      assert_receive {:os_process_finished, %OsProcess{exit_code: 1, ended_reason: :finished}, %{error: "boom\nagain"}}
+      assert {:ok, %Run{conversation_id: "sess-sock"}} = Pipeline.get_run(run.id)
+    end
+
+    test "a Follower that starts on a process partly logged hears all of it again, and logs only the rest", %{
+      os_process: %OsProcess{id: id} = os_process,
+      run: run
+    } do
+      Pipeline.append_run_events(run.id, id, ["one"])
+      Repo.update!(OsProcess.changeset(os_process, %{stream_offset: 4}))
+      Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+      {:ok, follower} =
+        FollowerSupervisor.start_follower(%{os_process | run: run}, tail_interval_ms: 20, batch_interval_ms: 30)
+
+      Sandbox.allow(Repo, self(), follower)
+
+      assert_receive {:follow, ^follower, ^id, 0, 0, _exec}
+      send(follower, {:runner_data, id, 1, 0, "one\ntwo\n"})
+      assert_receive {:ack_proc, ^id, 1, 4}
+      assert_receive {:ack_proc, ^id, 1, 8}, 1_000
+      assert ["one", "two"] = Enum.map(Pipeline.list_run_events(run), & &1.line)
+
+      send(follower, {:runner_exit, id, %{code: -1, oom: true, out: 8, err: 0}})
+
+      assert_receive {:os_process_finished, %OsProcess{exit_code: 137, ended_reason: :out_of_memory}, _outcome}, 2_000
+    end
+
+    test "a runner that comes back is followed again, and one that goes is waited for", %{
+      os_process: %OsProcess{id: id} = os_process,
+      run: run,
+      sandbox: sandbox
+    } do
+      {:ok, follower} = FollowerSupervisor.start_follower(%{os_process | run: run}, tail_interval_ms: 20)
+      Sandbox.allow(Repo, self(), follower)
+      assert_receive {:follow, ^follower, ^id, 0, 0, _exec}
+
+      # The same connection saying it is back again changes nothing.
+      send(follower, {:runner_up, self()})
+      refute_receive {:follow, _follower, _id, _out, _err, _exec}, 100
+
+      send(follower, {:runner_down, id})
+      Registry.unregister(RunnerRegistry, sandbox.id)
+      test_pid = self()
+
+      conn =
+        spawn(fn ->
+          receive do
+            message -> send(test_pid, {:new_conn, message})
+          end
+        end)
+
+      send(follower, {:runner_up, conn})
+      assert_receive {:new_conn, {:follow, ^follower, ^id, 0, 0, _exec}}
+
+      # A connection that dies is let go, and the container's word is taken until another comes.
+      eventually(fn -> assert :sys.get_state(follower).conn == nil end)
+      assert Process.alive?(follower)
+      FollowerSupervisor.stop_follower(follower)
+    end
+
+    test "a process the runner does not have, or a task it could not check out, settles as failed", %{
+      os_process: %OsProcess{id: id} = os_process,
+      run: run
+    } do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+      {:ok, follower} = FollowerSupervisor.start_follower(%{os_process | run: run}, tail_interval_ms: 20)
+      Sandbox.allow(Repo, self(), follower)
+      assert_receive {:follow, ^follower, ^id, 0, 0, _exec}
+
+      send(follower, {:runner_lost, id})
+
+      assert_receive {:os_process_finished, %OsProcess{exit_code: -1},
+                      %{error: "The sandbox no longer had this command."}}
+
+      Repo.update!(OsProcess.changeset(Repo.reload!(os_process), %{status: :running}))
+      {:ok, follower} = FollowerSupervisor.start_follower(%{os_process | run: run}, tail_interval_ms: 20)
+      Sandbox.allow(Repo, self(), follower)
+      assert_receive {:follow, ^follower, ^id, 0, 0, _exec}
+
+      send(follower, {:runner_failed, id, "Could not check the task out in its sandbox: gone"})
+      assert_receive {:os_process_finished, %OsProcess{exit_code: -1}, %{error: "Could not check the task out" <> _rest}}
+    end
+
+    test "with no runner connected, a container that is gone settles the process", %{
+      os_process: os_process,
+      run: run,
+      sandbox: sandbox
+    } do
+      Registry.unregister(RunnerRegistry, sandbox.id)
+
+      Req.Test.stub(Docker, fn conn ->
+        conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "No such container"})
+      end)
+
+      Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+      {:ok, follower} = FollowerSupervisor.start_follower(%{os_process | run: run}, tail_interval_ms: 20)
+      Sandbox.allow(Repo, self(), follower)
+
+      assert_receive {:os_process_finished, %OsProcess{exit_code: -1, ended_reason: :finished}, _outcome}, 2_000
+    end
+
+    test "a runner saying it is back before the Follower has read its row waits for the Follower's first look", %{
+      os_process: os_process,
+      run: run
+    } do
+      {:ok, follower} = FollowerSupervisor.start_follower(%{os_process | run: run}, tail_interval_ms: 60_000)
+      send(follower, {:runner_up, self()})
+      refute_receive {:follow, _follower, _id, _out, _err, _exec}, 100
+      FollowerSupervisor.stop_follower(follower)
+    end
+
+    test "a stop with no Follower and no runner connected still settles the process", %{
+      os_process: os_process,
+      sandbox: sandbox
+    } do
+      Registry.unregister(RunnerRegistry, sandbox.id)
+
+      assert {:ok, %OsProcess{status: :finished, ended_reason: :stopped}} =
+               Tools.stop_os_process(system_scope(), os_process, grace_period: 10)
+
+      refute_received {:signal, _id, _signal}
+    end
+
+    test "a stop signals the process in its sandbox, and kills it after the grace", %{
+      os_process: %OsProcess{id: id} = os_process,
+      run: run
+    } do
+      {:ok, follower} = FollowerSupervisor.start_follower(%{os_process | run: run}, tail_interval_ms: 20)
+      Sandbox.allow(Repo, self(), follower)
+      assert_receive {:follow, ^follower, ^id, 0, 0, _exec}
+
+      assert {:ok, %OsProcess{status: :finished, ended_reason: :stopped}} =
+               Tools.stop_os_process(system_scope(), os_process, grace_period: 10)
+
+      assert_receive {:signal, ^id, "TERM"}
+      assert_receive {:signal, ^id, "KILL"}
     end
   end
 end

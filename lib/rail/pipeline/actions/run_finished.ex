@@ -161,7 +161,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
 
   # Rail sends on only what the agents that commit to the branch committed, so work left uncommitted is said.
   defp say_uncommitted(%Run{task: %Task{} = task} = run) do
-    if Task.worktree_present?(task) and Git.worktree_dirty?(task.worktree_path) do
+    if Task.worktree_present?(task) and Git.worktree_dirty?(task) do
       Pipeline.append_run_events(run.id, nil, [
         "[rail] This turn left uncommitted changes in the worktree. Rail sends on only what is committed, so they wait for the next turn to commit them."
       ])

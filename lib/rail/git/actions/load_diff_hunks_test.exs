@@ -2,27 +2,22 @@ defmodule Rail.Git.Actions.LoadDiffHunksTest do
   use Rail.DataCase, async: true
 
   alias Rail.Git
-  alias Rail.Issues
-  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Users
 
-  setup %{project: project} do
-    scope = system_scope()
-
-    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Diff Hunk"})
-    {:ok, task} = Pipeline.create_task(issue, :review)
+  setup do
+    %{checkout: repo} = context = create_task_checkout()
 
     # Two edits far enough apart to land in hunks of their own, beside a file the branch leaves alone.
-    repo = create_temp_git_repo()
     lines = Enum.map_join(1..80, "", &"line #{&1}\n")
     File.mkdir_p!(Path.join(repo, "lib"))
     File.write!(Path.join(repo, "lib/example.ex"), lines)
     File.write!(Path.join(repo, "lib/other.ex"), Enum.map_join(1..20, "", &"other #{&1}\n"))
     git!(repo, ["add", "."])
     git!(repo, ["commit", "-m", "the file before"])
-    # The diff forks from `origin/main`; this stands in for the fetch.
-    git!(repo, ["update-ref", "refs/remotes/origin/main", "HEAD"])
-    git!(repo, ["checkout", "-b", "feature"])
+    # The diff forks from `origin/main`, so the file goes there first.
+    git!(repo, ["push", "--quiet", "origin", "HEAD:main"])
+    :ok = Git.fetch_default_branch(context.project, context.task)
 
     changed =
       Enum.map_join(1..80, "", fn
@@ -35,13 +30,10 @@ defmodule Rail.Git.Actions.LoadDiffHunksTest do
     git!(repo, ["add", "."])
     git!(repo, ["commit", "-m", "the change under review"])
 
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: repo})
-    on_exit(fn -> File.rm_rf(task.scratch_path) end)
-
     {:ok, reader} =
       Users.register_oauth_user(%{github_id: "gh_diff_hunk", login: "hunk", email: "hunk@example.com"})
 
-    %{scope: user_scope(user: reader), task: task}
+    Map.put(context, :scope, user_scope(user: reader))
   end
 
   test "a long range comes back whole, every line of it named, counting the other change it leaves out", %{
@@ -172,19 +164,21 @@ defmodule Rail.Git.Actions.LoadDiffHunksTest do
 
   test "a cleaned-up worktree has nothing to read", %{scope: scope, task: task} do
     File.rm_rf!(task.worktree_path)
+    File.rm_rf!(Task.repo_path(task))
 
     assert [nil, nil] = Git.load_diff_hunks(scope, task, [{"lib/example.ex", 5, nil}, {"lib/other.ex", 1, nil}])
   end
 
   # A picture has no lines to show, and the pane is handed the fact of it rather than nothing at all.
-  test "a file with no lines still says it is there", %{scope: scope, task: task} do
+  test "a file with no lines still says it is there", %{scope: scope, project: project, task: task} do
     File.write!(Path.join(task.worktree_path, "logo.png"), <<0x89, 0x50, 0x4E, 0x47, 0, 1, 2, 3>>)
     File.write!(Path.join(task.worktree_path, "kept.bin"), <<1, 0, 2>>)
     git!(task.worktree_path, ["add", "logo.png"])
     git!(task.worktree_path, ["commit", "-m", "a picture"])
     git!(task.worktree_path, ["add", "kept.bin"])
     git!(task.worktree_path, ["commit", "-m", "a file main also has"])
-    git!(task.worktree_path, ["update-ref", "refs/remotes/origin/main", "HEAD"])
+    git!(task.worktree_path, ["push", "--quiet", "origin", "HEAD:main"])
+    :ok = Git.fetch_default_branch(project, task)
 
     assert [
              %{path: "logo.png", rows: [%{kind: :binary}], in_diff?: false},
@@ -200,12 +194,14 @@ defmodule Rail.Git.Actions.LoadDiffHunksTest do
   # Bytes that are not UTF-8 cannot be sent to a browser, so a line holding them is drawn with them replaced.
   test "a line that is not UTF-8 outside the change is drawn with its bad bytes replaced", %{
     scope: scope,
+    project: project,
     task: %{worktree_path: worktree} = task
   } do
     File.write!(Path.join(worktree, "lib/latin.ex"), [<<"caf", 0xE9, "\n">> | Enum.map(2..20, &"latin #{&1}\n")])
     git!(worktree, ["add", "."])
     git!(worktree, ["commit", "-m", "a latin file"])
-    git!(worktree, ["update-ref", "refs/remotes/origin/main", "HEAD"])
+    git!(worktree, ["push", "--quiet", "origin", "HEAD:main"])
+    :ok = Git.fetch_default_branch(project, task)
 
     File.write!(Path.join(worktree, "lib/latin.ex"), [
       <<"caf", 0xE9, "\n">> | Enum.map(2..20, &if(&1 == 20, do: "last\n", else: "latin #{&1}\n"))
@@ -218,22 +214,24 @@ defmodule Rail.Git.Actions.LoadDiffHunksTest do
   end
 
   # A file the branch changed without changing a line of it - here made executable - shows its lines as they are.
-  test "a file with no content change shows its lines unchanged", %{scope: scope, task: task} do
-    repo = create_temp_git_repo()
-    script = Path.join(repo, "script.sh")
+  test "a file with no content change shows its lines unchanged", %{
+    scope: scope,
+    project: project,
+    task: task,
+    checkout: checkout
+  } do
+    script = Path.join(checkout, "script.sh")
     File.write!(script, "echo hello\n")
-    git!(repo, ["add", "."])
-    git!(repo, ["commit", "-m", "the script"])
-    git!(repo, ["update-ref", "refs/remotes/origin/main", "HEAD"])
-    git!(repo, ["checkout", "-b", "feature"])
+    git!(checkout, ["add", "."])
+    git!(checkout, ["commit", "-m", "the script"])
+    git!(checkout, ["push", "--quiet", "origin", "HEAD:main"])
+    :ok = Git.fetch_default_branch(project, task)
     File.chmod!(script, 0o755)
-    git!(repo, ["add", "."])
-    git!(repo, ["commit", "-m", "made it runnable"])
+    git!(checkout, ["add", "."])
+    git!(checkout, ["commit", "-m", "made it runnable"])
 
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: repo})
-
-    assert [%{in_diff?: true, changed?: false, rows: [%{text: "echo hello", named?: true}]}, nil] =
-             Git.load_diff_hunks(scope, task, [{"script.sh", 1, nil}, {"script.sh", nil, nil}])
+    assert [_example, %{in_diff?: true, changed?: false, rows: [%{text: "echo hello", named?: true}]}, nil] =
+             Git.load_diff_hunks(scope, task, [{"lib/example.ex", 1, nil}, {"script.sh", 1, nil}, {"script.sh", nil, nil}])
   end
 
   test "a whole file deleted on the branch says so, with no rows", %{scope: scope, task: task} do
@@ -243,12 +241,22 @@ defmodule Rail.Git.Actions.LoadDiffHunksTest do
              Git.load_diff_hunks(scope, task, [{"lib/other.ex", 1, 2}])
   end
 
-  # FileLines reads no link, so the lines a range names in one are not drawn.
-  test "a link the branch changes says its lines are not read", %{scope: scope, task: task} do
+  # A link is read as git holds it, by where it points, never by what it reaches.
+  test "a link the branch adds reads as the path it points at", %{scope: scope, task: task} do
     File.ln_s!("lib/example.ex", Path.join(task.worktree_path, "linked.ex"))
 
-    assert [%{path: "linked.ex", in_diff?: true, rows: [], missing: :unreadable}] =
+    assert [%{path: "linked.ex", in_diff?: true, rows: [%{text: "lib/example.ex", named?: true}]}] =
              Git.load_diff_hunks(scope, task, [{"linked.ex", 1, nil}])
+  end
+
+  test "a file the diff names that cannot be read at the branch's head says so", %{scope: scope, task: task} do
+    stub(Rail.Tools, :run, fn
+      "git", ["cat-file", "blob", _spec], _opts -> {"fatal: unreadable", 128}
+      executable, args, opts -> call_original(Rail.Tools, :run, [executable, args, opts])
+    end)
+
+    assert [%{path: "lib/example.ex", in_diff?: true, rows: [], missing: :unreadable}] =
+             Git.load_diff_hunks(scope, task, [{"lib/example.ex", 5, nil}])
   end
 
   test "what a range replaced shows above it, and only what was deleted between its lines is named", %{

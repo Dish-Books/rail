@@ -43,11 +43,11 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
   # with nothing changed against main, and the repo has no prompts of its own.
   setup %{task: task} do
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
 
-    stub(Git, :branch_fingerprint, fn ^worktree ->
+    stub(Git, :branch_fingerprint, fn %{worktree_path: ^worktree} ->
       %{head_sha: String.duplicate("a", 40), dirty_digest: String.duplicate("0", 64)}
     end)
 

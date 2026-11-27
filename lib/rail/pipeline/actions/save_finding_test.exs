@@ -14,7 +14,7 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
     # HEAD is asked of Rail.Git, so the worktree is a plain directory and the stub says which commit it is on.
     # A test that moves the branch stubs it again with the new commit.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
     head = String.duplicate("a", 40)
     stub(Git, :branch_fingerprint, fn _path -> %{head_sha: head, dirty_digest: "clean"} end)
@@ -49,7 +49,7 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
     head: head,
     attrs: attrs
   } do
-    expect(Git, :branch_fingerprint, fn ^worktree -> %{head_sha: head, dirty_digest: "clean"} end)
+    expect(Git, :branch_fingerprint, fn %{worktree_path: ^worktree} -> %{head_sha: head, dirty_digest: "clean"} end)
 
     assert {:ok,
             %Finding{
