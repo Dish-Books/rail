@@ -2,9 +2,9 @@ defmodule Rail.Pipeline.Utils.StartCi do
   @moduledoc """
   Runs the project's CI command against the commit the engineer's worktree is on.
 
-  It gets the same credentials Rail pushes with, since a CI that records its
-  result somewhere, as a pushed ref, has to be able to reach the remote, and the
-  ticket owner's git identity, since recording it may mean a commit.
+  It gets the ticket owner's git identity, since recording its result may mean a
+  commit, as a receipt is, and no credential: Rail pushes what CI leaves, once it
+  has seen it pass.
   """
 
   import Rail.Pipeline.Utils.BroadcastPipelineChanged

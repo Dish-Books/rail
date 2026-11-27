@@ -102,6 +102,64 @@ defmodule Rail.Tools.Actions.RunTest do
       assert output =~ "transport 'ext' not allowed"
       assert File.ls!(ran) == []
     end
+
+    # The sandbox may write a checkout's .git, all but its config, and a commondir there points git at another one's.
+    test "reads config from the folder's own .git, whatever its commondir names", %{repo: repo, ran: ran} do
+      elsewhere = repo <> "_elsewhere"
+      on_exit(fn -> File.rm_rf(elsewhere) end)
+      File.cp_r!(Path.join(repo, ".git"), elsewhere)
+      File.write!(Path.join(repo, ".gitattributes"), "* filter=theirs\n")
+
+      {_out, 0} =
+        Tools.run("git", [
+          "config",
+          "--file",
+          Path.join(elsewhere, "config"),
+          "filter.theirs.clean",
+          "touch #{ran}/filter; cat"
+        ])
+
+      File.write!(Path.join(repo, ".git/commondir"), elsewhere)
+      File.write!(Path.join(repo, "notes.txt"), "two\n")
+
+      assert {" M notes.txt\n?? .gitattributes\n", 0} = Tools.run("git", ["status", "--porcelain"], cd: repo)
+      assert File.ls!(ran) == []
+
+      System.cmd("git", ["status", "--porcelain"], cd: repo, stderr_to_stdout: true, env: [])
+      assert File.ls!(ran) == ["filter"]
+    end
+
+    # A submodule's git folder is the sandbox's to write, config and all, and .gitmodules can turn recursion back on.
+    test "goes into no submodule, whatever .gitmodules says", %{repo: repo, ran: ran} do
+      inner = repo <> "_inner"
+      on_exit(fn -> File.rm_rf(inner) end)
+      File.cp_r!(repo, inner)
+
+      {_out, 0} = Tools.run("git", ["submodule", "add", "--quiet", inner, "inner"], cd: repo, stderr_to_stdout: true)
+      {_out, 0} = Tools.run("git", ["config", "--file", ".gitmodules", "submodule.inner.ignore", "none"], cd: repo)
+      {_out, 0} = Tools.run("git", ["commit", "--quiet", "-am", "inner"], cd: repo)
+
+      module = Path.join(repo, ".git/modules/inner")
+      File.write!(Path.join(module, "info/attributes"), "* filter=theirs\n")
+
+      {_out, 0} =
+        Tools.run("git", [
+          "config",
+          "--file",
+          Path.join(module, "config"),
+          "filter.theirs.clean",
+          "touch #{ran}/filter; cat"
+        ])
+
+      File.write!(Path.join(repo, "inner/notes.txt"), "two\n")
+
+      assert {"", 0} = Tools.run("git", ["status", "--porcelain"], cd: repo)
+      assert {"", 0} = Tools.run("git", ["diff", "HEAD"], cd: repo)
+      assert File.ls!(ran) == []
+
+      System.cmd("git", ["status", "--porcelain"], cd: repo, stderr_to_stdout: true, env: [])
+      assert File.ls!(ran) == ["filter"]
+    end
   end
 
   test "honours working_directory, cd, into and stderr_to_stdout" do

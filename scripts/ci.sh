@@ -24,6 +24,12 @@ for arg in "$@"; do
   esac
 done
 
+# Under Rail, CI has nothing to push with: Rail pushes the receipt this leaves,
+# with the branch, once it has seen the run pass. docs/org-setup.md.
+if [[ -n "${RAIL_PUSHES_RECEIPT:-}" ]]; then
+  PUSH=0
+fi
+
 # A receipt attests to HEAD's tree, so anything uncommitted would sign a tree we
 # never tested. --fast writes no receipt, so it doesn't care.
 if [[ $FAST -eq 0 && -n "$(git status --porcelain)" ]]; then

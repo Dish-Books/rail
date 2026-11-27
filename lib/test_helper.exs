@@ -61,7 +61,8 @@ Mimic.copy(Rail.Issues.Tracker)
 Req.default_options(adapter: fn req -> raise "Unmocked call to #{req.url}" end)
 
 # CI runners are slow enough that the default 100ms flakes; render_async reads it too.
-ExUnit.start(capture_log: true, assert_receive_timeout: 1_000)
+# A test tagged :docker runs a real container; `mix test --include docker` runs it where Docker is.
+ExUnit.start(capture_log: true, assert_receive_timeout: 1_000, exclude: [:docker])
 
 # One project, with a role for every stage, that every test can hang its
 # rows off; see `Rail.DataCase`. Tests only read the roles, so none races another inserting one.

@@ -6,7 +6,7 @@ defmodule Rail.Git do
   A task works in a clone of its own, made from the project's clone rather than
   added to it as a worktree, so making one is on the path of every stage. The
   agent commits there itself, as the ticket's owner and signed with their key,
-  which Rail writes into the checkout's own config for as long as it lasts.
+  which Rail writes, with the rest of the checkout's config, into a file the sandbox can only read.
   Pushing stays Rail's, since the credential is the project's. The clone's `.env`
   is the project's, and reaches every task's checkout once it is set up.
   Reading the result is the other half of the same thing, so parsing a diff and
@@ -35,7 +35,7 @@ defmodule Rail.Git do
   defdelegate branch_changed?(task), to: Actions.BranchChanged
   defdelegate push_branch(scope, task, commit), to: Actions.PushBranch
   defdelegate check_push(task), to: Actions.CheckPush
-  defdelegate set_commit_identity(task), to: Actions.SetCommitIdentity
+  defdelegate write_checkout_config(project, task), to: Actions.WriteCheckoutConfig
   defdelegate credential_env(project), to: Actions.CredentialEnv
   defdelegate ci_env(project, task), to: Actions.CiEnv
   defdelegate fetch_default_branch(project, repo_path), to: Actions.FetchDefaultBranch

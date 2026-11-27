@@ -37,7 +37,7 @@ defmodule Rail.Pipeline.Utils.PrepareTurnTest do
   test "fetches the default branch into the worktree and sets who it commits as, saying nothing of a branch behind it",
        %{run: run, task: %Task{id: task_id, worktree_path: worktree_path}} do
     expect(Git, :fetch_default_branch, fn %Project{default_branch: "main"}, ^worktree_path -> :ok end)
-    expect(Git, :set_commit_identity, fn %Task{id: ^task_id} -> :ok end)
+    expect(Git, :write_checkout_config, fn %Project{}, %Task{id: ^task_id} -> :ok end)
     reject(&Git.base_status/2)
 
     assert "" = prepare_turn(run)
@@ -47,7 +47,7 @@ defmodule Rail.Pipeline.Utils.PrepareTurnTest do
   # The agent can still work on the copy it fetched last, so a failure is said rather than stopping the turn.
   test "says in the conversation what it could not do, on one line each, and lets the turn go on", %{run: run} do
     expect(Git, :fetch_default_branch, fn _project, _path -> {:error, "fatal: unable to access\n  origin"} end)
-    expect(Git, :set_commit_identity, fn _task -> {:error, "error: could not lock config file"} end)
+    expect(Git, :write_checkout_config, fn _project, _task -> {:error, "error: could not lock config file"} end)
 
     assert "" = prepare_turn(run)
 
@@ -58,14 +58,14 @@ defmodule Rail.Pipeline.Utils.PrepareTurnTest do
              },
              %{
                line:
-                 "[rail] Could not set who this turn commits as, so its commits may not be signed: error: could not lock config file"
+                 "[rail] Could not write the checkout's git config, so this turn's commits may not be signed: error: could not lock config file"
              }
            ] = Pipeline.list_run_events(run)
   end
 
   test "says why GitHub would not let it fetch", %{run: run} do
     expect(Git, :fetch_default_branch, fn _project, _path -> {:error, {:github_api_error, 404, %{}}} end)
-    expect(Git, :set_commit_identity, fn _task -> :ok end)
+    expect(Git, :write_checkout_config, fn _project, _task -> :ok end)
 
     assert "" = prepare_turn(run)
     assert [%{line: "[rail] Could not fetch origin/main " <> said}] = Pipeline.list_run_events(run)
@@ -78,7 +78,7 @@ defmodule Rail.Pipeline.Utils.PrepareTurnTest do
     task: %Task{id: task_id, worktree_name: branch}
   } do
     stub(Git, :fetch_default_branch, fn _project, _path -> :ok end)
-    stub(Git, :set_commit_identity, fn _task -> :ok end)
+    stub(Git, :write_checkout_config, fn _project, _task -> :ok end)
     expect(Git, :check_push, fn %Task{id: ^task_id} -> {:error, :pushed_outside_rail} end)
 
     assert prepare_turn(run) ==
@@ -94,7 +94,7 @@ defmodule Rail.Pipeline.Utils.PrepareTurnTest do
 
   test "leaves a worktree that is gone alone", %{run: %Run{task: task} = run} do
     reject(&Git.fetch_default_branch/2)
-    reject(&Git.set_commit_identity/1)
+    reject(&Git.write_checkout_config/2)
     reject(&Git.check_push/1)
 
     assert "" = prepare_turn(%{run | task: %{task | worktree_path: "/nonexistent/ptn"}})

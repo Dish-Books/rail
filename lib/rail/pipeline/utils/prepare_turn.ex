@@ -1,8 +1,8 @@
 defmodule Rail.Pipeline.Utils.PrepareTurn do
   @moduledoc """
   Readies a task's worktree for an engineer's turn: the default branch fetched from `origin`, for a round that
-  merges it in, the task's own branch checked against what was pushed to it, and the ticket owner's identity and signing key written in, so the agent's own commits
-  are theirs. Nothing failing stops the turn: it is said in the conversation instead.
+  merges it in, the task's own branch checked against what was pushed to it, and its git config written whole by Rail, with the ticket owner's identity and signing key, so the
+  agent's own commits are theirs. Nothing failing stops the turn: it is said in the conversation instead.
   """
 
   alias Rail.Git
@@ -13,7 +13,7 @@ defmodule Rail.Pipeline.Utils.PrepareTurn do
   alias Rail.Repo
 
   @doc """
-  Fetches the default branch and sets the commit identity for `run`'s next turn. Returns what the turn's
+  Fetches the default branch and writes the checkout config for `run`'s next turn. Returns what the turn's
   prompt opens with: a line for each thing the branch must merge in before Rail can push it, or `""`.
   """
   def prepare_turn(%Run{task: %Task{} = task} = run) do
@@ -27,8 +27,8 @@ defmodule Rail.Pipeline.Utils.PrepareTurn do
         )
       end
 
-      with {:error, reason} <- Git.set_commit_identity(task) do
-        say(run, "Could not set who this turn commits as, so its commits may not be signed: #{reason}")
+      with {:error, reason} <- Git.write_checkout_config(project, task) do
+        say(run, "Could not write the checkout's git config, so this turn's commits may not be signed: #{reason}")
       end
 
       pushed(task)
