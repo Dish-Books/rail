@@ -78,6 +78,19 @@ defmodule Rail.Tools.Schemas.Backend do
     Path.join(root, id)
   end
 
+  @doc "Where Claude Code keeps the conversations it had in `cwd`, named as the CLI names that folder."
+  def session_dir(%__MODULE__{} = backend, cwd) when is_binary(cwd) do
+    name = String.replace(cwd, ~r/[^a-zA-Z0-9]/, "-")
+
+    # The CLI cuts a long name at 200 and adds the path's string hash, in base 36.
+    name =
+      if byte_size(name) <= 200,
+        do: name,
+        else: "#{binary_part(name, 0, 200)}-#{calculate_path_hash(cwd)}"
+
+    Path.join([config_dir(backend), "projects", name])
+  end
+
   @doc "What a CLI is called wherever Rail names it."
   def cli_name(:claude), do: "Claude Code"
 
@@ -159,6 +172,18 @@ defmodule Rail.Tools.Schemas.Backend do
     |> cast(attrs, @usage_fields)
     |> validate_required([:name, :status])
     |> cast_embed(:usage, with: &usage_group_changeset/2)
+  end
+
+  # Java's String#hashCode over UTF-16 units, wrapped to 32 bits, as the CLI's is.
+  defp calculate_path_hash(cwd) do
+    hash =
+      for <<unit::16 <- :unicode.characters_to_binary(cwd, :utf8, :utf16)>>, reduce: 0 do
+        acc ->
+          <<wrapped::signed-32>> = <<acc * 31 + unit::32>>
+          wrapped
+      end
+
+    hash |> abs() |> Integer.to_string(36) |> String.downcase()
   end
 
   defp windows(%{"windows" => windows}) when is_list(windows), do: windows

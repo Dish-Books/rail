@@ -133,13 +133,15 @@ defmodule Rail.Tools.Utils.EnsureBrowserHost do
     end
   end
 
-  # Host networking, so Rail and every agent sandbox reach it on localhost, and
-  # the same /srv/rail binds, so its profile is where Rail reads the address from.
+  # Host networking, so Rail and every agent sandbox reach it on localhost, and only
+  # its own folder, at the path Rail sees it, so its profile is where Rail reads the address from.
   # The locks are cleared on every start, because Docker restarting a crashed
   # Chrome is also a start. Its CPUs are a share rather than a cap, the way a
   # sandbox's are: Chrome renders and JPEG-encodes every screencast frame in
   # software, and held to its reservation the stream falls seconds behind.
   defp container do
+    root = Rail.browser_root()
+
     %{
       "Image" => Rail.sandbox_image(),
       "Cmd" => [
@@ -152,7 +154,7 @@ defmodule Rail.Tools.Utils.EnsureBrowserHost do
       "Labels" => %{"dev.railai.browser" => "true"},
       "HostConfig" => %{
         "NetworkMode" => "host",
-        "Binds" => Rail.sandbox_binds(),
+        "Binds" => ["#{root}:#{root}"],
         "CpuShares" => Rail.browser_cpus() * 1024,
         "OomScoreAdj" => 500,
         "ShmSize" => Rail.browser_shm_size_gb() * @gib,

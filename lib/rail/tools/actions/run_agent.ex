@@ -3,6 +3,7 @@ defmodule Rail.Tools.Actions.RunAgent do
 
   import Rail.Tools.Utils.BackendEnv
   import Rail.Tools.Utils.Env
+  import Rail.Tools.Utils.LoginMounts
   import Rail.Tools.Utils.PickBackend
   import Rail.Tools.Utils.RejectToken
 
@@ -14,23 +15,6 @@ defmodule Rail.Tools.Actions.RunAgent do
   # How the CLI's last stream-json line reports a token Claude would not take.
   @authentication_failed ~r/"error":\s*"authentication_failed"/
   @poll_ms 1_000
-  # Earlier sessions, which a pass must not read, and what later runs load, which a pass must not leave behind.
-  @hidden_dirs [
-    "projects",
-    "sessions",
-    "session-env",
-    "shell-snapshots",
-    "todos",
-    "file-history",
-    "backups",
-    "agents",
-    "commands",
-    "skills",
-    "plugins",
-    "output-styles",
-    "rules"
-  ]
-  @locked_files %{"settings.json" => "{}", "settings.local.json" => "{}", "CLAUDE.md" => ""}
 
   @doc """
   Runs `role`'s CLI with `argv` and waits for it, for work that has no run to
@@ -85,9 +69,7 @@ defmodule Rail.Tools.Actions.RunAgent do
     cd = Keyword.fetch!(opts, :cd)
     timeout = Keyword.get(opts, :timeout, :infinity)
     read_only = Keyword.get(opts, :read_only_mounts, [])
-    config_dir = Backend.config_dir(backend)
-    writable = Enum.uniq([cd, config_dir | Keyword.get(opts, :mounts, [])]) -- read_only
-    locked = Enum.map(Map.keys(@locked_files), &Path.join(config_dir, &1))
+    writable = Enum.uniq([cd | Keyword.get(opts, :mounts, [])]) -- read_only
 
     # A container whose caller is gone stops on its own at the same limit.
     cmd =
@@ -95,26 +77,11 @@ defmodule Rail.Tools.Actions.RunAgent do
         do: ["timeout", "-k", "5", "#{div(timeout, 1000)}", backend.executable_path | argv],
         else: [backend.executable_path | argv]
 
-    body = %{
-      "Image" => Rail.sandbox_image(),
-      "Cmd" => cmd,
-      "Env" => env |> env() |> Enum.map(fn {key, value} -> "#{key}=#{value}" end),
-      "WorkingDir" => cd,
-      "User" => "1000:1000",
-      "HostConfig" => %{
-        "NetworkMode" => "host",
-        "Binds" => Enum.map(writable, &"#{&1}:#{&1}") ++ Enum.map(read_only ++ locked, &"#{&1}:#{&1}:ro"),
-        "Tmpfs" => Map.new(@hidden_dirs, &{Path.join(config_dir, &1), "uid=1000,gid=1000,mode=0700"}),
-        "OomScoreAdj" => 500,
-        "Init" => true,
-        "LogConfig" => %{"Type" => "json-file"}
-      }
-    }
-
     # Docker would create a missing folder, owned by root.
     with nil <- Enum.find(writable ++ read_only, &(not File.dir?(&1))),
-         _prepared = prepare_login(config_dir),
-         {:ok, %{"Id" => id}} <- Docker.create_agent_container(body) do
+         %{binds: login_binds, tmpfs: tmpfs} = login_mounts(backend, []),
+         binds = Enum.map(writable, &"#{&1}:#{&1}") ++ Enum.map(read_only, &"#{&1}:#{&1}:ro") ++ login_binds,
+         {:ok, %{"Id" => id}} <- Docker.create_agent_container(body(cmd, env, cd, binds, tmpfs)) do
       try do
         wait(id, timeout)
       after
@@ -126,16 +93,22 @@ defmodule Rail.Tools.Actions.RunAgent do
     end
   end
 
-  # Docker mounts over these, and would make a missing one as root, which later runs on the account could not write.
-  defp prepare_login(config_dir) do
-    Enum.each(@hidden_dirs, &File.mkdir_p!(Path.join(config_dir, &1)))
-
-    Enum.each(@locked_files, fn {name, empty} ->
-      case File.write(Path.join(config_dir, name), empty, [:exclusive]) do
-        :ok -> :ok
-        {:error, :eexist} -> :ok
-      end
-    end)
+  defp body(cmd, env, cd, binds, tmpfs) do
+    %{
+      "Image" => Rail.sandbox_image(),
+      "Cmd" => cmd,
+      "Env" => env |> env() |> Enum.map(fn {key, value} -> "#{key}=#{value}" end),
+      "WorkingDir" => cd,
+      "User" => "1000:1000",
+      "HostConfig" => %{
+        "NetworkMode" => "host",
+        "Binds" => binds,
+        "Tmpfs" => tmpfs,
+        "OomScoreAdj" => 500,
+        "Init" => true,
+        "LogConfig" => %{"Type" => "json-file"}
+      }
+    }
   end
 
   # As Tools.run does: a crash in the wait comes back as an error, so the container is still removed.

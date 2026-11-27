@@ -44,7 +44,7 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
             from p in OsProcess,
               where: p.status == :waiting_for_resources,
               order_by: [asc: p.queued_at, asc: p.id],
-              preload: [:backend, run: :role]
+              preload: [:backend, task: :project, run: :role]
           )
 
         {_free, results} = Enum.reduce_while(waiting, {free, %{}}, &admit_next(&1, &2, capacity, own))
