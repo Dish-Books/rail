@@ -4,7 +4,7 @@
 # Rail holds the docker socket to run each task's agents, setup and CI in a sandbox of the task's
 # own: a Docker volume holding its checkout, and while it has work a container whose rail-runner
 # dials Rail's /sandbox/socket (docs/sandbox-socket.md). It keeps running across a deploy. Of
-# /srv/rail it mounts only its task's scratch folder and its account's login, until RAIL-228, and
+# /srv/rail it mounts only its task's scratch folder, until the rest of RAIL-228, and
 # the toolchains through the rail-mise volume, read-only. The browser mounts only its profile.
 # The same way, it starts one rail-browser container: the headless Chrome every QA and demo pass
 # drives, a tab per task, which a deploy leaves open.

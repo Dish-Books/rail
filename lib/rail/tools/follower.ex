@@ -48,6 +48,8 @@ defmodule Rail.Tools.Follower do
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
 
+  require Logger
+
   @default_tail_interval 120
   @default_batch_interval 250
   # How often a container is asked whether it is still running, so nine Followers
@@ -62,6 +64,7 @@ defmodule Rail.Tools.Follower do
   @default_result_grace 10_000
   # What a sandboxed agent wrote to stderr is kept to its end, which is where its reason for exiting is.
   @err_tail_bytes 65_536
+  @transcript_timeout_ms 60_000
 
   defstruct [
     :os_process_id,
@@ -606,6 +609,7 @@ defmodule Rail.Tools.Follower do
         _admitted = admit_sandboxes()
 
         updated_run = update_run(state.run_id, event_state)
+        keep_transcript(updated_os_process, updated_run)
         outcome = build_outcome(exit_code, error, event_state, updated_os_process, updated_run)
 
         # Everything that happens next is derived from the row, so a process whose
@@ -626,6 +630,27 @@ defmodule Rail.Tools.Follower do
         {nil, %{state | file_offset: final_offset, pending_events: [], event_state: event_state}}
     end
   end
+
+  # A sandbox's Claude keeps its conversation in the container, so Rail takes a copy after each turn, where the next
+  # turn on the account restores it from: a container that stops takes its own with it.
+  defp keep_transcript(%OsProcess{kind: :agent, sandbox_id: sandbox_id} = os_process, %Run{conversation_id: id})
+       when is_binary(sandbox_id) and is_binary(id) do
+    name = "#{id}.jsonl"
+
+    with %OsProcess{backend: %Backend{} = backend, task: task} <- Repo.preload(os_process, [:backend, :task]),
+         params = %{"path" => Path.join(Backend.sandbox_session_dir(task.worktree_path), name)},
+         {:ok, %{"data" => data}} <- RunnerSocket.call(sandbox_id, "read", params, @transcript_timeout_ms) do
+      dir = Backend.session_dir(backend, task.worktree_path)
+      File.mkdir_p!(dir)
+      tmp = Path.join(dir, ".#{name}.#{System.unique_integer([:positive])}")
+      File.write!(tmp, Base.decode64!(data))
+      File.rename!(tmp, Path.join(dir, name))
+    else
+      other -> Logger.warning("Kept no transcript of #{os_process.id} (#{name}): #{inspect(other)}")
+    end
+  end
+
+  defp keep_transcript(%OsProcess{}, _run), do: :ok
 
   # The token refused is the one of the account this turn was placed on.
   defp reject_turn_token(%OsProcess{} = os_process) do

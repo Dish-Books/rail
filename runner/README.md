@@ -33,7 +33,7 @@ On start the daemon links the other two names to itself in `$RAIL_RUNNER_STATE/b
 bin/                git-remote-rail, rail-sign -> the binary
 runner.sock         0666: any user may connect
 procs/              0700, root's: commands can't read or touch the spool
-  <id>/spec.json    the exec (argv, env, cwd, stderr, oom_before; no file contents or stdin)
+  <id>/spec.json    the exec (argv, env, cwd, stderr, oom_before, claude_token; no file contents or stdin)
   <id>/stdin        decoded stdin, when there was one
   <id>/stdout       the command's stdout (and stderr with "merge")
   <id>/stderr

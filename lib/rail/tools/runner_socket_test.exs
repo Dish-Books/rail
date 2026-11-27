@@ -491,7 +491,88 @@ defmodule Rail.Tools.RunnerSocketTest do
     assert {:ok, ^state} = runner_message(state, %{"t" => "eof", "ch" => 4, "stream" => 0})
     assert {:ok, ^state} = RunnerSocket.handle_in({<<9::32, 0::8, 0::64, "x">>, opcode: :binary}, state)
     assert {:ok, ^state} = RunnerSocket.handle_info(:unexpected, state)
+    assert {:ok, ^state} = runner_message(state, %{"t" => "news"})
     assert {:ok, ^state} = RunnerSocket.handle_control({"ping", opcode: :ping}, state)
+  end
+
+  test "an HTTP request is held until its eof, answered by a process of its own, and sent back within the window", %{
+    state: state
+  } do
+    open = %{"t" => "open", "ch" => 2, "kind" => "mcp", "method" => "POST", "path" => "/mcp", "headers" => %{}}
+    {:ok, state} = runner_message(state, open)
+
+    assert {:push, [{:text, ack}], state} =
+             RunnerSocket.handle_in({<<2::32, 0::8, 0::64, "{}">>, opcode: :binary}, state)
+
+    assert %{"t" => "ack", "ch" => 2, "offset" => 2} = Jason.decode!(ack)
+    assert {:ok, state} = runner_message(state, %{"t" => "eof", "ch" => 2, "stream" => 0})
+    assert [{pid, 2}] = Map.to_list(state.http_pids)
+
+    # No run token: Rail's MCP server is never reached.
+    assert_receive {:http_head, 2, 401, headers} = head
+    assert {:push, [{:text, head_frame}], state} = RunnerSocket.handle_info(head, state)
+
+    assert %{"t" => "head", "ch" => 2, "status" => 401, "headers" => %{"content-type" => ["application/json"]}} =
+             Jason.decode!(head_frame)
+
+    assert headers == [{"content-type", ["application/json"]}]
+    assert_receive {:http_body, 2, body} = data
+    assert {:push, [{:binary, <<2::32, 0::8, 0::64, ^body::binary>>}], state} = RunnerSocket.handle_info(data, state)
+    assert_receive {:http_end, 2} = done
+    assert {:push, [{:text, close}], state} = RunnerSocket.handle_info(done, state)
+    assert %{"t" => "close", "ch" => 2} = close = Jason.decode!(close)
+    refute Map.has_key?(close, "code")
+    refute Map.has_key?(state.chans, 2)
+
+    assert_receive {:DOWN, _ref, :process, ^pid, :normal} = down
+    none = %{}
+    assert {:ok, %RunnerSocket{http_pids: ^none} = state} = RunnerSocket.handle_info(down, state)
+
+    # An answer for a channel that is gone goes nowhere.
+    for message <- [{:http_head, 2, 200, []}, {:http_body, 2, "x"}, {:http_end, 2}] do
+      assert {:ok, ^state} = RunnerSocket.handle_info(message, state)
+    end
+  end
+
+  test "an HTTP request over its limit, closed by the runner, or whose process died is let go", %{state: state} do
+    open = %{"t" => "open", "ch" => 2, "kind" => "claude", "method" => "POST", "path" => "/v1/messages"}
+    {:ok, state} = runner_message(state, open)
+    full = put_in(state.chans[2].size, 64 * 1_048_576)
+
+    assert {:push, [{:text, close}], full} = RunnerSocket.handle_in({<<2::32, 0::8, 0::64, "x">>, opcode: :binary}, full)
+    assert %{"t" => "close", "ch" => 2, "error" => "The request is over 64 MiB."} = Jason.decode!(close)
+    refute Map.has_key?(full.chans, 2)
+
+    # A request whose process is still at work when the runner closes it is stopped.
+    busy = spawn(fn -> Process.sleep(:infinity) end)
+    ref = Process.monitor(busy)
+    state = %{state | http_pids: %{busy => 2}, chans: Map.update!(state.chans, 2, &%{&1 | body: nil})}
+    assert {:ok, state} = runner_message(state, %{"t" => "close", "ch" => 2})
+    assert_receive {:DOWN, ^ref, :process, ^busy, :killed}
+    refute Map.has_key?(state.chans, 2)
+
+    # A Claude request names its turn, and one that names none is refused by the proxy.
+    {:ok, state} = runner_message(state, open)
+    {:ok, state} = runner_message(state, %{"t" => "eof", "ch" => 2, "stream" => 0})
+    assert_receive {:http_head, 2, 401, _headers}
+    assert_receive {:http_end, 2}
+    assert_receive {:DOWN, _ref, :process, _pid, :normal}
+    state = %{state | http_pids: %{}, chans: Map.delete(state.chans, 2)}
+
+    # One that dies before answering closes its channel with an error.
+    {:ok, state} = runner_message(state, open)
+    {:ok, state} = runner_message(state, %{"t" => "eof", "ch" => 2, "stream" => 0})
+    [{pid, 2}] = Map.to_list(state.http_pids)
+    Process.exit(pid, :kill)
+    assert {:push, [{:text, close}], state} = RunnerSocket.handle_info({:DOWN, make_ref(), :process, pid, :killed}, state)
+    assert %{"t" => "close", "ch" => 2, "error" => "Rail failed answering the request"} = Jason.decode!(close)
+    refute Map.has_key?(state.chans, 2)
+
+    # A connection that ends stops what it still answers.
+    busy = spawn(fn -> Process.sleep(:infinity) end)
+    ref = Process.monitor(busy)
+    assert :ok = RunnerSocket.terminate(:closed, %{state | http_pids: %{busy => 4}})
+    assert_receive {:DOWN, ^ref, :process, ^busy, :killed}
   end
 
   test "a connection that ends tells each Follower, and closes the git it bridged", %{

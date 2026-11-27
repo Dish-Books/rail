@@ -67,13 +67,14 @@ defmodule Rail.Tools.Actions.BuildArgs do
   # The token stays out of argv, where `ps` would show it: Claude expands
   # `${RAIL_MCP_TOKEN}` from its own environment when it reads the config.
   # `--strict-mcp-config` keeps the user's own MCP servers out of the run.
-  # Agents share Rail's host, so they dial its port: the public URL sits behind Cloudflare Access.
+  # Where Rail's MCP server is, the CLI reads from `RAIL_MCP_URL`: a sandbox's runner serves it on its own loopback
+  # port, carrying each call over its socket, and whatever starts an agent anywhere else sets Rail's own address.
   defp claude_mcp_flags do
     config = %{
       "mcpServers" => %{
         "rail" => %{
           "type" => "http",
-          "url" => "http://localhost:#{RailWeb.Endpoint.config(:http)[:port]}/mcp/internal",
+          "url" => "${RAIL_MCP_URL}",
           "headers" => %{"Authorization" => "Bearer ${RAIL_MCP_TOKEN}"}
         }
       }

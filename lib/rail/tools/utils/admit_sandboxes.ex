@@ -81,9 +81,6 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
             result = launch(os_process, capacity, own)
             {:cont, {taken(free, os_process, result), Map.put(results, os_process.id, result)}}
 
-          :held ->
-            {:cont, {free, results}}
-
           :full ->
             {:halt, {free, results}}
         end
@@ -92,14 +89,12 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
 
   defp slot(:local, %OsProcess{}), do: :ok
 
-  defp slot(:docker, %OsProcess{task_id: task_id} = os_process) do
+  defp slot(:docker, %OsProcess{task_id: task_id}) do
     live = Repo.all(from s in Sandbox, where: s.status in [:starting, :running])
 
     case Enum.find(live, &(&1.task_id == task_id)) do
-      %Sandbox{} = sandbox ->
-        if os_process.kind == :agent and os_process.backend_id != sandbox.backend_id and busy?(sandbox),
-          do: :held,
-          else: :ok
+      %Sandbox{} ->
+        :ok
 
       nil ->
         free_slot(live)

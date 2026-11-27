@@ -10,6 +10,8 @@ defmodule Rail.Tools.Claude do
   alias Rail.Tools.Schemas.Backend
 
   @timeout 20_000
+  # Long enough for a request that leaves now to reach Claude before its token expires.
+  @refresh_margin_ms 120_000
   # `claude -p` waits on a stdin that is not a terminal in case something is
   # piped in, and System.cmd leaves stdin an open pipe; /dev/null says nothing is.
   @without_stdin ~s(exec "$0" "$@" </dev/null)
@@ -30,6 +32,44 @@ defmodule Rail.Tools.Claude do
     else
       not_configured_result(executable)
     end
+  end
+
+  @doc """
+  The OAuth access token of `backend`'s login, which Rail's Claude proxy adds to a sandbox's requests. One about to
+  expire is refreshed first, by asking the CLI something beside Rail: no sandbox ever holds the login, so only Rail
+  refreshes it. Returns `{:ok, token}` or `{:error, reason}`.
+  """
+  def access_token(%Backend{} = backend) do
+    case read_oauth(backend) do
+      {:ok, %{"accessToken" => token} = oauth} when is_binary(token) ->
+        if fresh?(oauth), do: {:ok, token}, else: refresh_access_token(backend, token)
+
+      {:ok, _no_token} ->
+        {:error, :signed_out}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Refreshes `backend`'s login because Claude refused `stale`, and returns the token it holds after. One refresh runs
+  per account at a time, and a caller who finds the token already changed takes it as it is.
+  """
+  def refresh_access_token(%Backend{} = backend, stale) do
+    :global.trans({:rail_claude_refresh, backend.id}, fn ->
+      case read_oauth(backend) do
+        {:ok, %{"accessToken" => token}} when is_binary(token) and token != stale ->
+          {:ok, token}
+
+        {:ok, _stale} ->
+          if executable_file?(backend.executable_path || ""), do: refresh_quota_cache(backend, backend.executable_path)
+          after_refresh(backend)
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end)
   end
 
   # A path is only worth running if it is a regular file with an execute bit.
@@ -94,6 +134,33 @@ defmodule Rail.Tools.Claude do
       _error -> :ok
     end
   end
+
+  defp after_refresh(backend) do
+    case read_oauth(backend) do
+      {:ok, %{"accessToken" => token}} when is_binary(token) -> {:ok, token}
+      {:ok, _no_token} -> {:error, :signed_out}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Where the CLI keeps a login on Linux; on macOS it is in the keychain, and Rail there runs agents beside itself.
+  defp read_oauth(backend) do
+    path = Path.join(Backend.config_dir(backend), ".credentials.json")
+
+    with {:ok, text} <- File.read(path),
+         {:ok, %{} = credentials} <- Jason.decode(text) do
+      {:ok, credentials["claudeAiOauth"] || %{}}
+    else
+      {:error, :enoent} -> {:error, :signed_out}
+      {:error, reason} -> {:error, reason}
+      {:ok, _not_a_map} -> {:error, :signed_out}
+    end
+  end
+
+  defp fresh?(%{"expiresAt" => expires_at}) when is_integer(expires_at),
+    do: expires_at - System.system_time(:millisecond) > @refresh_margin_ms
+
+  defp fresh?(_oauth), do: true
 
   defp read_config(backend, email, subscription) do
     config_path = config_path(backend)

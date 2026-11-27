@@ -47,6 +47,8 @@ type procSpec struct {
 	Cwd       string            `json:"cwd,omitempty"`
 	Stderr    string            `json:"stderr,omitempty"`
 	OOMBefore *int64            `json:"oom_before,omitempty"`
+	// The credential this process gives the Claude proxy, so a restarted daemon still knows it.
+	ClaudeToken string `json:"claude_token,omitempty"`
 }
 
 type exitRecord struct {
@@ -66,6 +68,8 @@ type proc struct {
 	exit   exitRecord
 	exitCh chan struct{} // closed once exited
 	gone   chan struct{} // closed by done
+
+	claudeToken string
 }
 
 func newProc(dir, id string, rawID json.RawMessage) *proc {
@@ -182,6 +186,20 @@ func (d *daemon) start(s *session, p *proc, m inMsg) error {
 		return err
 	}
 	spec := procSpec{ID: m.ID, Argv: m.Argv, Env: m.Env, Cwd: m.Cwd, Stderr: m.Stderr}
+	extra := m.Env
+	if m.Claude {
+		token, err := claudeToken()
+		if err != nil {
+			return err
+		}
+		spec.ClaudeToken = token
+		extra = make(map[string]string, len(m.Env)+2)
+		for k, v := range m.Env {
+			extra[k] = v
+		}
+		extra["ANTHROPIC_BASE_URL"] = d.localURL()
+		extra["CLAUDE_CODE_OAUTH_TOKEN"] = token
+	}
 	oomBefore, oomKnown := readOOMKills()
 	if oomKnown {
 		spec.OOMBefore = &oomBefore
@@ -227,7 +245,7 @@ func (d *daemon) start(s *session, p *proc, m inMsg) error {
 	}
 	defer stdin.Close()
 
-	env := d.cmdEnv(m.Env)
+	env := d.cmdEnv(extra)
 	path, _ := envGet(env, "PATH")
 	argv0, err := lookPath(m.Argv[0], path)
 	if err != nil {
@@ -249,6 +267,8 @@ func (d *daemon) start(s *session, p *proc, m inMsg) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	d.registerToken(spec.ClaudeToken, p.rawID)
+	p.claudeToken = spec.ClaudeToken
 	pid := cmd.Process.Pid
 	_ = writeFileAtomic(filepath.Join(p.dir, pidFile), []byte(strconv.Itoa(pid)), 0o600)
 	p.mu.Lock()
@@ -295,6 +315,7 @@ func (d *daemon) done(s *session, m inMsg) {
 		return
 	}
 	stopProcChannels(s, p, 0)
+	d.forgetToken(p.claudeToken)
 	close(p.gone)
 	// Rail has settled it; anything still running of it goes.
 	if pid := p.runningPID(); pid > 0 {
@@ -352,6 +373,8 @@ func (d *daemon) adoptProcs(ctx context.Context) error {
 			continue
 		}
 		p := newProc(dir, id, spec.ID)
+		p.claudeToken = spec.ClaudeToken
+		d.registerToken(spec.ClaudeToken, spec.ID)
 		var rec exitRecord
 		if b, err := os.ReadFile(filepath.Join(dir, exitFile)); err == nil && json.Unmarshal(b, &rec) == nil {
 			p.exited, p.exit = true, rec

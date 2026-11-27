@@ -55,6 +55,8 @@ type inMsg struct {
 	Files  []fileSpec        `json:"files"`
 	Stdin  string            `json:"stdin"`
 	Stderr string            `json:"stderr"`
+	// The command may reach Rail's Claude proxy, as a process of its own.
+	Claude bool `json:"claude"`
 
 	// resume
 	Out uint64 `json:"out"`
@@ -81,6 +83,10 @@ type inMsg struct {
 	// open
 	Kind    string `json:"kind"`
 	Service string `json:"service"`
+
+	// head: Rail's answer to an http channel's request
+	Status  int                 `json:"status"`
+	Headers map[string][]string `json:"headers"`
 }
 
 // fileSpec is one entry of exec's, checkout's and write's "files".
@@ -153,6 +159,12 @@ type openMsg struct {
 	Ch      uint32 `json:"ch"`
 	Kind    string `json:"kind"`
 	Service string `json:"service,omitempty"`
+
+	// claude and mcp: the request, and for claude the process whose token it carried
+	Proc    json.RawMessage     `json:"proc,omitempty"`
+	Method  string              `json:"method,omitempty"`
+	Path    string              `json:"path,omitempty"`
+	Headers map[string][]string `json:"headers,omitempty"`
 }
 
 type signMsg struct {

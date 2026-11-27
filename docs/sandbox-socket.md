@@ -12,9 +12,9 @@ A sandbox is a task's **disk** and, while the task has work, its **compute**.
 
 **Capacity.** Each command still reserves its role's CPUs while it runs, and the line admits oldest first, as now. Those reservations are what bound how many containers run at once, and an idle one stops after `idle_minutes`. A host that needs a hard cap as well sets `RAIL_MAX_SANDBOXES`: a command whose task has no running container then waits for a slot, and idle containers give theirs up first. The container's CPU shares are the sum of what its running commands reserve.
 
-**An account's login** is still a mount, of that one account's folder, until RAIL-228 proxies Claude. A container carries the login of the account its run's role is placed on when it starts, and a later turn prefers that account. A turn that has to go to another waits until nothing is running, then the container is made again on that account. The disk stays, so this costs seconds.
+**No account's login** is in a sandbox (RAIL-228). Claude Code runs with `ANTHROPIC_BASE_URL` at the runner, which carries each request over the socket to Rail's Claude proxy (below), and Rail adds the credential of the account the turn was placed on. So turns on different accounts share one container, and only Rail refreshes a login.
 
-**What is no longer mounted:** the checkout (now the volume), the project's clone, and the mise folder (a read-only `rail-mise` Docker volume instead, for projects with no image of their own). The task's scratch folder and the account's login stay mounted until RAIL-228 moves shared state and secrets. Sandboxes keep host networking until RAIL-229. Triage, support and curator passes (`Rail.Tools.run_agent/3`) keep their read-only mounts.
+**What is no longer mounted:** the checkout (now the volume), the project's clone, the account's login, and the mise folder (a read-only `rail-mise` Docker volume instead, for projects with no image of their own). The task's scratch folder stays mounted until the rest of RAIL-228 moves shared state. Triage, support and curator passes (`Rail.Tools.run_agent/3`) keep their read-only mounts and their account's login until they move into sandboxes of their own.
 
 ## The runner
 
@@ -22,6 +22,7 @@ A sandbox is a task's **disk** and, while the task has work, its **compute**.
 
 - Rust would also give one static binary, but builds slower and asks more of whoever maintains it, and nothing here needs what it adds. An Elixir release carries ERTS per platform and puts a second BEAM in every sandbox.
 - One dependency, `github.com/coder/websocket`; the rest is the standard library.
+- It serves HTTP on a loopback port of the sandbox's own (`RAIL_RUNNER_HTTP`, a free port by default): `/v1/*` for Claude Code and `/mcp` for Rail's MCP server, each request carried over a channel (below).
 - One binary, several names by `argv[0]`: `rail-runner` the daemon, `git-remote-rail` the remote helper, `rail-sign` the `gpg.ssh.program`. The daemon links the other two into `$RAIL_RUNNER_STATE/bin` and puts that first on every command's `PATH`.
 - In a container it runs as root and runs every command, and its own git, as `RAIL_RUNNER_UID:RAIL_RUNNER_GID` (1000:1000), so a command cannot touch its spool. Started as an ordinary user, as on the Mac, it runs everything as that user and assumes no root, Linux path or container filesystem: its state folder and every path come from its environment.
 - As a container's entrypoint it is PID 1: it reaps orphans, forwards signals, and starts the daemon again if it dies, so the container needs no init of Docker's.
@@ -38,6 +39,9 @@ A sandbox is a task's **disk** and, while the task has work, its **compute**.
 | `RAIL_ACCESS_CLIENT_ID`, `RAIL_ACCESS_CLIENT_SECRET` | a Cloudflare Access service token, only where the runner itself goes through Cloudflare; on the Mac `rail-host` adds them and only root can read them |
 | `RAIL_RUNNER_STATE` | its own folder: by default `/var/lib/rail-runner` as root in a container, `~/.rail-runner` as an ordinary user |
 | `RAIL_RUNNER_UID`, `RAIL_RUNNER_GID` | who commands run as, default 1000 |
+| `RAIL_RUNNER_HTTP` | the address its HTTP listener takes, default `127.0.0.1:0` |
+
+Every command gets `RAIL_MCP_URL`, the listener's `/mcp`. A command whose `exec` says `claude` also gets `ANTHROPIC_BASE_URL`, the listener, and `CLAUDE_CODE_OAUTH_TOKEN`, a random token the runner made for that process alone. The token names the process to the runner, which keeps it in the process's spool so a restarted daemon still knows it, and is worth nothing anywhere else. It goes when Rail sends `done`.
 
 ## The wire protocol
 
@@ -59,7 +63,9 @@ A channel is a byte stream in each direction. Rail numbers the channels it opens
 |---|---|---|
 | `proc` | Rail, with `exec` or `resume` | a command's stdout (1) and stderr (2) |
 | `git` | runner, for `git-remote-rail` | `git-upload-pack` or `git-receive-pack` against Rail's repo for the task, stream 0 both ways |
-| `mcp`, `claude`, `devtools` | runner | reserved for RAIL-228 and RAIL-229; Rail answers `close` with `"error": "unsupported"` |
+| `claude` | runner, for a request to its HTTP listener's `/v1/*` | one HTTP request and its answer (below) |
+| `mcp` | runner, for a request to its HTTP listener's `/mcp` | the same |
+| `devtools` | runner | reserved for RAIL-228; Rail answers `close` with `"error": "unsupported"` |
 
 ### Control messages
 
@@ -70,7 +76,7 @@ Runner to Rail:
 | `hello` | `runner`, `os`, `arch`, `procs: [{id, state: "running" \| "exited", out, err}]` | first, on every connection; `out`/`err` are the spool's sizes |
 | `started` | `id`, `pid` | |
 | `exit` | `id`, `code`, `signal`, `oom`, `out`, `err` | `code` is -1 when killed by `signal` (`"KILL"`); `oom` when the sandbox's cgroup killed something for memory meanwhile; `out`/`err` the final sizes |
-| `open` | `ch`, `kind`, and for `git` `service: "git-upload-pack" \| "git-receive-pack"` | |
+| `open` | `ch`, `kind`; for `git` `service: "git-upload-pack" \| "git-receive-pack"`; for `claude` and `mcp` `method`, `path`, `headers: {name: [values]}`, and for `claude` `proc`, the process whose token the request carried | |
 | `sign` | `id`, `payload` (base64) | a commit or tag to sign |
 | `reply` | `id`, `ok`, `result` or `error` | the answer to a `call` |
 
@@ -79,7 +85,8 @@ Rail to runner:
 | `t` | Fields | |
 |---|---|---|
 | `welcome` | `window`, `ping_ms` | after `hello` |
-| `exec` | `id`, `ch`, `argv`, `env`, `cwd`, `files: [{path, data, mode}]`, `stdin`, `stderr: "merge" \| "separate"` | `data` and `stdin` base64; `files` are written, as the command's user, before it starts; known ids are ignored |
+| `exec` | `id`, `ch`, `argv`, `env`, `cwd`, `files: [{path, data, mode}]`, `stdin`, `stderr: "merge" \| "separate"`, `claude` | `data` and `stdin` base64; `files` are written, as the command's user, before it starts; `claude: true` gives the command a token for the Claude proxy; known ids are ignored |
+| `head` | `ch`, `status`, `headers: {name: [values]}` | the answer to an HTTP channel's request, before its body |
 | `resume` | `id`, `ch`, `out`, `err` | send process `id` on `ch` again from these offsets |
 | `done` | `id` | settled: its spool may go |
 | `signal` | `id`, `signal: "TERM" \| "KILL"` | to the process's group |
@@ -102,6 +109,15 @@ Either way:
 | `sync` | `path`, `branch` | Pushes `HEAD` to `refs/heads/<branch>`, `refs/ci-receipts/*`, and a snapshot of uncommitted work (tracked and untracked, ignored left out, built with a temporary index) to `refs/rail/wip`, all forced. Returns `{head, wip}`. |
 | `write` | `files` | Writes files, as the command's user, making their folders. |
 | `read` | `path` | Returns `{data}` (base64), or `{missing: true}` when there is no such file. |
+
+### HTTP channels
+
+The runner forwards a request's `method`, `path` and an allowlist of headers (no cookies, nothing hop-by-hop) in `open`, its body on stream 0, then `eof`. Rail answers with `head`, the body on stream 0, then `close` with no `error`. A `close` with an `error` before `head` is answered to the caller as a 502 carrying that error; one after it cuts the body short. The runner writes and flushes each frame as it comes, so a server-sent stream reaches Claude Code as Claude sends it.
+
+- **`claude`**: Rail forwards only `POST /v1/messages` and `/v1/messages/count_tokens`, only for an agent process running in this sandbox whose token the runner vouched for, to `api.anthropic.com` with the OAuth token of the account the turn was placed on (`Rail.Tools.SandboxProxy`, `Rail.Tools.Claude.access_token/1`). A token about to expire is refreshed first by running the CLI beside Rail; a 401 is answered by refreshing once and asking again. Anything else gets a 403 or 401 in Claude's error shape. Claude Code runs with `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`: with it, the pinned version (2.1.330) sends nothing but messages, and all of them to its base URL; without it, it also calls feature flags, its bootstrap, event logging and a server list on `api.anthropic.com` directly. Its own retries on 5xx and 529 go through the proxy like any request.
+- **`mcp`**: Rail's MCP server answers it (`Rail.Mcp.handle_rpc/2`, as `/mcp/internal` does for an agent beside Rail), for a run token whose process runs in this sandbox.
+
+**Claude's config and transcripts.** An agent's `CLAUDE_CONFIG_DIR` is `/tmp/rail-claude`, in the container. Its `exec` writes `.claude.json` there, trusting the checkout, and, for a turn that resumes a conversation, the conversation's transcript at the path the CLI reads for the checkout (`Backend.sandbox_session_dir/1`). After each turn the Follower reads the transcript back with `read` and keeps it in the account's session folder (`Backend.session_dir/2`, RAIL-219), where the next turn on that account takes it from. A new container on the same disk resumes with it.
 
 ### Flow control
 
@@ -144,6 +160,6 @@ The runner starts each command with its stdout and stderr going straight to file
 
 ## Left to other tickets
 
-- RAIL-228: the scratch folder and the account's login come off their mounts; the `mcp`, `claude` and `devtools` channels.
+- RAIL-228, still: the scratch folder off its mount; the `devtools` channel.
 - RAIL-229: sandboxes on a network of their own, so "no other port" holds; hosts as rows; the Mac's `rail-host` and k8s engines.
 - Triage, support and curator passes moving into sandboxes like a task's.

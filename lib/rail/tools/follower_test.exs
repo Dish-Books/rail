@@ -1606,6 +1606,38 @@ defmodule Rail.Tools.FollowerTest do
       assert {:ok, %Run{conversation_id: "sess-sock"}} = Pipeline.get_run(run.id)
     end
 
+    test "an agent's conversation is copied from its sandbox to its account after the turn", %{
+      exec: exec,
+      os_process: %OsProcess{id: id} = os_process,
+      run: run,
+      task: task
+    } do
+      {:ok, backend} =
+        Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true", label: "Kept"})
+
+      os_process = os_process |> OsProcess.changeset(%{kind: :agent, backend_id: backend.id}) |> Repo.update!()
+      on_exit(fn -> File.rm_rf(Backend.config_dir(backend)) end)
+      Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+      {:ok, follower} =
+        FollowerSupervisor.start_follower(%{os_process | run: run}, tail_interval_ms: 20, memory_sample_interval_ms: 0)
+
+      Sandbox.allow(Repo, self(), follower)
+      assert_receive {:follow, ^follower, ^id, 0, 0, ^exec}
+      init = ~s({"type":"system","subtype":"init","session_id":"sess-kept"}\n)
+      send(follower, {:runner_data, id, 1, 0, init})
+      assert_receive {:ack_proc, ^id, 1, _offset}
+      send(follower, {:runner_exit, id, %{code: 0, oom: false, out: byte_size(init), err: 0}})
+
+      path = Path.join(Backend.sandbox_session_dir(task.worktree_path), "sess-kept.jsonl")
+      assert_receive {:call, from, ref, "read", %{"path" => ^path}}
+      send(from, {ref, {:ok, %{"data" => Base.encode64("transcript\n")}}})
+      assert_receive {:os_process_finished, %OsProcess{}, _outcome}
+
+      assert File.read!(Path.join(Backend.session_dir(backend, task.worktree_path), "sess-kept.jsonl")) ==
+               "transcript\n"
+    end
+
     test "a Follower that starts on a process partly logged hears all of it again, and logs only the rest", %{
       os_process: %OsProcess{id: id} = os_process,
       run: run

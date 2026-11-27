@@ -3,6 +3,7 @@ defmodule Rail.Tools.Actions.RunAgent do
 
   import Rail.Tools.Utils.BackendEnv
   import Rail.Tools.Utils.Env
+  import Rail.Tools.Utils.LocalMcpUrl
   import Rail.Tools.Utils.LoginMounts
   import Rail.Tools.Utils.PickBackend
   import Rail.Tools.Utils.RejectToken
@@ -44,7 +45,7 @@ defmodule Rail.Tools.Actions.RunAgent do
   end
 
   defp run(%Backend{} = backend, argv, opts) do
-    env = Map.merge(backend_env(backend), Keyword.get(opts, :env, %{}))
+    env = backend |> backend_env() |> Map.put("RAIL_MCP_URL", local_mcp_url()) |> Map.merge(Keyword.get(opts, :env, %{}))
 
     case execute(Rail.sandbox_runtime(), backend, argv, env, opts) do
       {output, 0} ->

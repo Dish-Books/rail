@@ -202,4 +202,77 @@ defmodule Rail.Tools.ClaudeTest do
     assert %{status: :ready, usage: [], fetched_at: fetched_at} = Claude.probe(backend)
     assert DateTime.compare(fetched_at, before) in [:eq, :gt]
   end
+
+  describe "access_token/1" do
+    setup do
+      backend = %Backend{
+        id: "bkd_token_#{System.unique_integer([:positive])}",
+        name: :claude,
+        executable_path: System.find_executable("sh")
+      }
+
+      File.mkdir_p!(Backend.config_dir(backend))
+      on_exit(fn -> File.rm_rf(Backend.config_dir(backend)) end)
+      %{backend: backend}
+    end
+
+    test "is the login's token while it has time left", %{backend: backend} do
+      claude_login(backend, "fresh", System.system_time(:millisecond) + 3_600_000)
+      reject(Tools, :run, 3)
+      assert {:ok, "fresh"} = Claude.access_token(backend)
+
+      claude_login(backend, "forever", nil)
+      assert {:ok, "forever"} = Claude.access_token(backend)
+    end
+
+    test "is refreshed by asking the CLI something when about to expire", %{backend: backend} do
+      claude_login(backend, "stale", System.system_time(:millisecond) + 1_000)
+
+      expect(Tools, :run, fn "/bin/sh", ["-c", _without_stdin, _executable, "-p", "/usage" | _rest], opts ->
+        assert opts[:env]["CLAUDE_CONFIG_DIR"] == Backend.config_dir(backend)
+        claude_login(backend, "renewed", System.system_time(:millisecond) + 3_600_000)
+        {"", 0}
+      end)
+
+      assert {:ok, "renewed"} = Claude.access_token(backend)
+    end
+
+    test "a refusal is answered by the token another caller refreshed meanwhile, or by refreshing", %{backend: backend} do
+      claude_login(backend, "newer", nil)
+      assert {:ok, "newer"} = Claude.refresh_access_token(backend, "refused")
+
+      expect(Tools, :run, fn _sh, _args, _opts -> raise "the CLI crashed" end)
+      assert {:ok, "newer"} = Claude.refresh_access_token(backend, "newer")
+
+      # A refresh that signs the account out leaves no login to read.
+      expect(Tools, :run, fn _sh, _args, _opts ->
+        File.rm!(Path.join(Backend.config_dir(backend), ".credentials.json"))
+      end)
+
+      assert {:error, :signed_out} = Claude.refresh_access_token(backend, "newer")
+
+      File.write!(Path.join(Backend.config_dir(backend), ".credentials.json"), ~s({"claudeAiOauth":{}}))
+      expect(Tools, :run, fn _sh, _args, _opts -> {"", 0} end)
+      assert {:error, :signed_out} = Claude.refresh_access_token(backend, "newer")
+    end
+
+    test "is no token without a login, or with one that cannot be read", %{backend: backend} do
+      assert {:error, :signed_out} = Claude.access_token(backend)
+
+      path = Path.join(Backend.config_dir(backend), ".credentials.json")
+      File.write!(path, ~s({"other":{}}))
+      assert {:error, :signed_out} = Claude.access_token(backend)
+
+      File.write!(path, "[]")
+      assert {:error, :signed_out} = Claude.access_token(backend)
+
+      File.write!(path, "not json")
+      assert {:error, %Jason.DecodeError{}} = Claude.access_token(backend)
+
+      assert {:error, %Jason.DecodeError{}} = Claude.refresh_access_token(backend, "unreadable")
+
+      File.rm!(path)
+      assert {:error, :signed_out} = Claude.refresh_access_token(backend, "gone")
+    end
+  end
 end
