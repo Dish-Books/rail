@@ -910,5 +910,41 @@ defmodule Rail.Tools.BootTest do
       assert_received {:removed, "c-unknown", "force=true"}
       refute_received {:removed, "c-live", _query}
     end
+
+    # A pass Oban started as Rail came back is not the one the restart cut off.
+    test "as Rail boots, removes the agent pass containers older than this BEAM, and keeps the rest" do
+      test_pid = self()
+      {up_ms, _since_last_call} = :erlang.statistics(:wall_clock)
+      before_boot = System.os_time(:second) - div(up_ms, 1000) - 60
+
+      Req.Test.stub(Docker, fn conn ->
+        conn = Plug.Conn.fetch_query_params(conn)
+
+        case {conn.method, conn.request_path, conn.query_params} do
+          {"GET", "/info", _params} ->
+            Req.Test.json(conn, %{"NCPU" => 4, "MemTotal" => 8 * 1024 ** 3})
+
+          {"GET", "/containers/json", %{"filters" => ~s({"label":["dev.railai.agent"]})}} ->
+            Req.Test.json(conn, [
+              %{"Id" => "c-cut-off", "Created" => before_boot, "Labels" => %{"dev.railai.agent" => "true"}},
+              %{"Id" => "c-new", "Created" => System.os_time(:second), "Labels" => %{"dev.railai.agent" => "true"}}
+            ])
+
+          {"GET", "/containers/json", %{"filters" => ~s({"label":["dev.railai.sandbox"]})}} ->
+            Req.Test.json(conn, [])
+
+          {"DELETE", "/containers/" <> id, _params} ->
+            send(test_pid, {:removed, id, conn.query_string})
+            Plug.Conn.send_resp(conn, 204, "")
+        end
+      end)
+
+      assert [] = Boot.reconcile()
+      refute_received {:removed, _id, _query}
+
+      assert [] = Boot.reconcile(boot: true)
+      assert_received {:removed, "c-cut-off", "force=true"}
+      refute_received {:removed, "c-new", _query}
+    end
   end
 end

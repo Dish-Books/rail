@@ -222,7 +222,14 @@ defmodule Rail.Triage.Actions.TriageThread do
         work_dir: worktree
       )
 
-    Tools.run_agent(role, args, env: %{"RAIL_MCP_TOKEN" => token}, cd: worktree, timeout: @timeout)
+    # It reads the thread and writes its result in the scratch folder, and only reads the code.
+    Tools.run_agent(role, args,
+      env: %{"RAIL_MCP_TOKEN" => token},
+      cd: worktree,
+      mounts: [Thread.scratch_path(thread)],
+      read_only_mounts: [worktree],
+      timeout: @timeout
+    )
   end
 
   defp finish(thread, {:ok, %Thread{}}),

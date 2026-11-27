@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Schemas.RunTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline.Schemas.CoderabbitReview
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
@@ -294,10 +295,34 @@ defmodule Rail.Pipeline.Schemas.RunTest do
       status: :finished,
       stage_outcome: :done,
       role: %Role{stage: :review_lead},
-      task: %Task{stage: :review, merged_at: nil, issue: %Issue{}}
+      task: %Task{stage: :review, merged_at: nil, issue: %Issue{}, coderabbit_reviews: []}
     }
 
     assert Run.needs_attention?(done)
+  end
+
+  # CodeRabbit's answer goes to the lead, so until it comes the task is at work, as with an agent running.
+  test "a done Review lead run waits on nobody while CodeRabbit has yet to answer, though a failed one still does" do
+    done = %Run{
+      status: :finished,
+      stage_outcome: :done,
+      role: %Role{stage: :review_lead},
+      task: %Task{stage: :review, merged_at: nil, issue: %Issue{}}
+    }
+
+    for status <- [:requested, :reviewing] do
+      refute Run.needs_attention?(%{done | task: %{done.task | coderabbit_reviews: [%CoderabbitReview{status: status}]}})
+    end
+
+    answered = %{
+      done.task
+      | coderabbit_reviews: [%CoderabbitReview{status: :done}, %CoderabbitReview{status: :timed_out}]
+    }
+
+    assert Run.needs_attention?(%{done | task: answered})
+
+    reviewing = %{done.task | coderabbit_reviews: [%CoderabbitReview{status: :reviewing}]}
+    assert Run.needs_attention?(%{done | stage_outcome: nil, error: "It went wrong", task: reviewing})
   end
 
   # Marking ready hands the task to the review queue, so its owner is no longer the one it waits on.

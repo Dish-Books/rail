@@ -55,23 +55,4 @@ defmodule RailWeb.LayoutsTest do
     assert "h-dvh" in String.split(class)
     refute "h-screen" in String.split(class)
   end
-
-  # The panel is fixed beside the page, so the page keeps a margin its width only while the panel is there.
-  test "the main area and banners make room for the to-dos panel only while it is open", %{conn: conn} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_layouts_todos",
-        login: "layouts_todos_user",
-        email: "layouts_todos_user@example.com"
-      })
-
-    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
-
-    assert [class] = view |> render() |> Floki.parse_fragment!() |> Floki.attribute("#main-content", "class")
-    assert "[body:has(#todos-sheet)_&]:mr-[440px]" in String.split(class)
-    refute has_element?(view, "#todos-sheet")
-
-    view |> element("#todos-button") |> render_click()
-    assert has_element?(view, "#todos-sheet.w-\\[440px\\]")
-  end
 end

@@ -12,6 +12,17 @@ defmodule Rail.Git.Actions.RemoveWorktreeTest do
 
     assert :ok = Git.remove_worktree(repo, wt_path)
     refute File.dir?(wt_path)
+    refute git!(repo, ["worktree", "list"]) =~ wt_path
+  end
+
+  test "deletes a checkout that is a clone of its own, and leaves the clone it came from" do
+    repo = create_temp_git_repo()
+    clone_path = Path.join(repo, ".worktrees/support-1")
+    git!(repo, ["clone", "--quiet", repo, clone_path])
+
+    assert :ok = Git.remove_worktree(repo, clone_path)
+    refute File.exists?(clone_path)
+    assert git!(repo, ["log", "--format=%s"]) =~ "initial commit"
   end
 
   test "returns :ok even if worktree directory is already gone" do

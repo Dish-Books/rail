@@ -7,6 +7,7 @@ defmodule RailWeb.OverviewLive do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.CoderabbitReview
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
@@ -168,7 +169,7 @@ defmodule RailWeb.OverviewLive do
     user_id = socket.assigns.current_scope.user.id
     # A nil owner means no filter, so the own view must always name the user.
     owner_user_id = if everyone, do: nil, else: user_id
-    preload = [:role, :questions, task: [:project, :issue, :rounds, parent_task: :issue]]
+    preload = [:role, :questions, task: [:project, :issue, :rounds, :coderabbit_reviews, parent_task: :issue]]
 
     # A reload that overlaps an issue's deletion can read a task or run whose issue is already gone.
     runs =
@@ -257,7 +258,7 @@ defmodule RailWeb.OverviewLive do
 
   # A split is one piece of work, so its children are read through their parent, which they are cleaned up with.
   defp load_tasks(project_id, owner_user_id) do
-    preload = [:project, :issue, :rounds, runs: [:role, :questions]]
+    preload = [:project, :issue, :rounds, :coderabbit_reviews, runs: [:role, :questions]]
 
     tasks =
       [project_id: project_id, owner_user_id: owner_user_id, preload: preload]
@@ -457,17 +458,35 @@ defmodule RailWeb.OverviewLive do
         _ended -> Run.waiting_since(run)
       end
 
-    %{
-      task: task,
-      state: state,
-      label: stage_label(task, run),
-      style: run_state_style(run, task),
-      # Amber is the viewer's share of what the Waiting on you stat counts, less a failed or stopped run,
-      # which reads as broken instead.
-      is_waiting: state in [:done, :blocked] and Run.needs_attention?(run) and task.issue.owner_user_id == user_id,
-      changed_at: changed_at,
-      age: format_age(DateTime.diff(now, changed_at))
-    }
+    # A done lead's round is CodeRabbit's while it reviews, since the answer comes back to the lead, so it is at work.
+    coderabbit =
+      if task.stage == :review and state == :done, do: Enum.find(task.coderabbit_reviews, &CoderabbitReview.pending?/1)
+
+    case coderabbit do
+      %CoderabbitReview{inserted_at: asked_at} ->
+        %{
+          task: task,
+          state: :running,
+          label: "CodeRabbit reviewing",
+          style: %{icon: "pi-rabbit", text_class: "text-blue-600 dark:text-blue-500"},
+          is_waiting: false,
+          changed_at: asked_at,
+          age: format_age(DateTime.diff(now, asked_at))
+        }
+
+      nil ->
+        %{
+          task: task,
+          state: state,
+          label: stage_label(task, run),
+          style: run_state_style(run, task),
+          # Amber is the viewer's share of what the Waiting on you stat counts, less a failed or stopped run,
+          # which reads as broken instead.
+          is_waiting: state in [:done, :blocked] and Run.needs_attention?(run) and task.issue.owner_user_id == user_id,
+          changed_at: changed_at,
+          age: format_age(DateTime.diff(now, changed_at))
+        }
+    end
   end
 
   # A split parent waits on the viewer when any of its children does, and stands as long as its oldest child.

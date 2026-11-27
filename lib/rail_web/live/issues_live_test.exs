@@ -198,7 +198,7 @@ defmodule RailWeb.IssuesLiveTest do
     # Starting work happens on the issue's page, not from the list.
     refute has_element?(view, "#issue-card-#{issue.id} button", "Plan")
 
-    # Clicking the row opens the issue's page, and dragging it onto the to-dos panel adds a link there.
+    # Clicking the row opens the issue's page, and dragging it elsewhere carries the issue's link.
     issue_path = ~p"/issues/#{issue.identifier}"
     assert has_element?(view, ~s(#issue-card-#{issue.id}[draggable=true][data-drag-href="#{issue_path}"]))
     assert has_element?(view, ~s(#issue-card-#{issue.id}[data-drag-text="#{issue.identifier} Demo title"]))
@@ -2510,6 +2510,12 @@ defmodule RailWeb.IssuesLiveTest do
       socket = %Socket{assigns: %{__changed__: %{}, view: :list}}
 
       assert {:noreply, ^socket} = IssuesLive.handle_info({:pipeline_changed, "tsk_elsewhere"}, socket)
+    end
+
+    test "the list does not reload on a comment, which it does not show" do
+      socket = %Socket{assigns: %{__changed__: %{}, view: :list}}
+
+      assert {:noreply, ^socket} = IssuesLive.handle_info({:issue_comments_changed, "iss_elsewhere"}, socket)
     end
   end
 

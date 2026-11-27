@@ -16,7 +16,7 @@ defmodule Rail.Pipeline.Actions.CountAttention do
       [
         project_id: opts[:project_id],
         owner_user_id: opts[:owner_user_id],
-        preload: [:role, :questions, task: [:issue, :rounds]]
+        preload: [:role, :questions, task: [:issue, :rounds, :coderabbit_reviews]]
       ]
       |> Pipeline.list_runs()
       |> Enum.group_by(& &1.task_id)

@@ -7,7 +7,6 @@ defmodule RailWeb.Components.Nav do
   alias Rail.Scope
   alias Rail.Users
   alias RailWeb.Components.CaptureIssueModal
-  alias RailWeb.Components.TodosPanel
   alias RailWeb.UserAuth
 
   attr :current_section, :atom, required: true
@@ -362,10 +361,8 @@ defmodule RailWeb.Components.Nav do
         </div>
       </div>
 
-      <!-- Right Group: To-dos, New Issue & Theme Toggle -->
+      <!-- Right Group: New Issue & Theme Toggle -->
       <div class="flex items-center space-x-2">
-        <.live_component module={TodosPanel} id={TodosPanel.id()} current_scope={@current_scope} />
-
         <!-- New Issue Button -->
         <button
           :if={@show_new_issue}

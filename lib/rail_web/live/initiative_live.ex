@@ -16,7 +16,7 @@ defmodule RailWeb.InitiativeLive do
     :children,
     :merged_task,
     parent: [:project, :owner_user, :workflow, :children, :task, :merged_task],
-    task: [:rounds, runs: [:role, :questions], parent_task: [children: :issue]]
+    task: [:rounds, :coderabbit_reviews, runs: [:role, :questions], parent_task: [children: :issue]]
   ]
 
   on_mount {RailWeb.UserAuth, {:require_tab, :issues}}

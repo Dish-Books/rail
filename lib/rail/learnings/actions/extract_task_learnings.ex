@@ -38,7 +38,7 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearnings do
     try do
       :ok = Learnings.write_task_files(task, dir)
 
-      with {:ok, result} <- run_curator_role(project, dir, brief(task, dir)) do
+      with {:ok, result} <- run_curator_role(project, dir, brief(task, dir), []) do
         record(task, result)
       end
     after

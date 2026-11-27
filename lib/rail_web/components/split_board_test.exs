@@ -39,6 +39,7 @@ defmodule RailWeb.Components.SplitBoardTest do
               builds_on: [],
               stage: :engineer,
               runs: [],
+              coderabbit_reviews: [],
               scratch_path: "/nonexistent/split_board",
               issue: struct(%Issue{identifier: "SPL-#{position}", title: "Child #{position}"}, issue)
             },

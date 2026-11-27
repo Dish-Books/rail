@@ -1019,7 +1019,7 @@ defmodule RailWeb.TaskLive do
       Pipeline.list_tasks(
         parent_task_id: task.id,
         include_cleaned_up: true,
-        preload: [:project, :issue, :marked_ready_by, :merged_by, runs: [:role, :questions]]
+        preload: [:project, :issue, :marked_ready_by, :merged_by, :coderabbit_reviews, runs: [:role, :questions]]
       )
 
     shown = Enum.find(children, task, &(&1.issue.identifier == socket.assigns.child))

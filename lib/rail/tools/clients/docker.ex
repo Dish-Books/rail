@@ -9,6 +9,7 @@ defmodule Rail.Tools.Clients.Docker do
   """
 
   @label "dev.railai.sandbox"
+  @agent_label "dev.railai.agent"
 
   def config, do: Application.get_env(:rail, :docker, [])
 
@@ -39,6 +40,21 @@ defmodule Rail.Tools.Clients.Docker do
     request(method: :post, url: "/containers/create", params: [name: "rail-browser"], json: body)
   end
 
+  @doc """
+  Creates the container an agent pass runs in, named and labelled as one, so Rail can find it and nothing that sweeps
+  settled sandboxes mistakes it for one.
+  """
+  def create_agent_container(body) when is_map(body) do
+    labels = Map.put(body["Labels"] || %{}, @agent_label, "true")
+
+    request(
+      method: :post,
+      url: "/containers/create",
+      params: [name: "rail-agent-#{UXID.generate!(prefix: "pass")}"],
+      json: Map.put(body, "Labels", labels)
+    )
+  end
+
   def start_container(id), do: request(method: :post, url: "/containers/#{id}/start")
 
   @doc "Stops a container, giving it `timeout_seconds` after SIGTERM before SIGKILL."
@@ -65,6 +81,13 @@ defmodule Rail.Tools.Clients.Docker do
   @doc "Every container carrying `label`, running or exited."
   def list_containers(label) do
     request(method: :get, url: "/containers/json", params: [all: true, filters: Jason.encode!(%{label: [label]})])
+  end
+
+  @doc "A container's stdout and stderr, interleaved as written."
+  def container_logs(id) do
+    with {:ok, stream} <- request(method: :get, url: "/containers/#{id}/logs", params: [stdout: true, stderr: true]) do
+      {:ok, demultiplex(stream, [])}
+    end
   end
 
   @doc """
