@@ -1886,7 +1886,7 @@ defmodule RailWeb.OverviewLiveTest do
           started_at: DateTime.shift(now, minute: -5)
         })
 
-      stub(Rail.Git, :push_branch, fn _scope, _task -> :ok end)
+      stub(Rail.Git, :push_branch, fn _scope, _task, _commit -> :ok end)
       stub(Rail.Git, :branch_unpushed?, fn _path -> false end)
 
       assert {:ok, view, _html} = live(conn, ~p"/")

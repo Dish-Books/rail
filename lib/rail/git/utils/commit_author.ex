@@ -8,7 +8,8 @@ defmodule Rail.Git.Utils.CommitAuthor do
 
   @doc """
   Returns who git acts as for `task`: the GitHub name and email of the person its
-  ticket belongs to, with their signing key, or the Rail bot, unsigned.
+  ticket belongs to, with their signing key, or the Rail bot, unsigned, for a
+  ticket with nobody on it or a checkout not yet a ticket's.
   """
   def commit_author(%Task{} = task) do
     # Forced, because who the ticket is assigned to may have changed since
@@ -25,7 +26,7 @@ defmodule Rail.Git.Utils.CommitAuthor do
     }
   end
 
-  defp author(%Issue{}) do
+  defp author(_nobody) do
     config = Application.get_env(:rail, :git, [])
 
     %{

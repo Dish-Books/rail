@@ -1018,9 +1018,10 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   test "CI that passed pushes the branch and has the engineer's run done", %{task: task, exited: exited} do
     {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
     {_run, os_process} = exited.(:engineer, %{ci_failure_streak: 2})
-    os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
+    %OsProcess{id: os_process_id} = os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
 
-    expect(Git, :push_branch, fn _scope, _task -> :ok end)
+    # The CI run itself goes with the push, so what goes up is the commit it ran on, with its receipt.
+    expect(Git, :push_branch, fn _scope, _task, %OsProcess{id: ^os_process_id} -> :ok end)
 
     assert {:ok, %Run{stage_outcome: :done, ci_failure_streak: 0, error: nil}} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
@@ -1034,7 +1035,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     {%Run{id: run_id}, os_process} = exited.(:engineer, %{})
     os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
 
-    reject(Git, :push_branch, 2)
+    reject(Git, :push_branch, 3)
 
     pending =
       with_task_lock(task.id, fn ->
@@ -1074,13 +1075,13 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     {_run, os_process} = exited.(:engineer, %{review_on_ci_pass: true})
     os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
 
-    expect(Git, :push_branch, fn _scope, _task -> {:error, "no CI receipt for this tree"} end)
+    expect(Git, :push_branch, fn _scope, _task, _ci -> {:error, "remote rejected"} end)
 
     assert {:ok,
             %Run{
               stage_outcome: :in_progress,
               review_on_ci_pass: false,
-              error: "CI passed, but the branch could not be pushed: no CI receipt for this tree"
+              error: "CI passed, but the branch could not be pushed: remote rejected"
             }} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
   end
@@ -1228,7 +1229,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     {_run, os_process} = exited.(:engineer, %{})
     os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
 
-    expect(Git, :push_branch, fn _scope, _task -> {:error, {:github_api_error, 401, %{}}} end)
+    expect(Git, :push_branch, fn _scope, _task, _ci -> {:error, {:github_api_error, 401, %{}}} end)
 
     assert {:ok, %Run{error: "CI passed, but the branch could not be pushed: {:github_api_error, 401, %{}}"}} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
@@ -1240,7 +1241,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     setup %{project: project, task: task, worktree: worktree, head: head} do
       {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
       {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
-      expect(Git, :push_branch, fn _scope, %Task{worktree_path: ^worktree} -> :ok end)
+      expect(Git, :push_branch, fn _scope, %Task{worktree_path: ^worktree}, _ci -> :ok end)
 
       %{task: task, ci: %{kind: :ci, exit_code: 0, head_sha: head}}
     end

@@ -11,17 +11,30 @@ defmodule Rail.Git.Actions.GetOrCreateWorktree do
 
   @doc """
   Gets the task's existing checkout or makes it: a clone of the project's clone, hardlinked where the disk allows,
-  with the clone's `origin` and hooks. A task with a pull request continues its branch as `origin` has it; any other
+  with the clone's `origin` and no hooks, since Rail runs none of a project's. A task with a pull request continues its branch as `origin` has it; any other
   starts a new one from `origin/<default branch>`, fetched first.
+
+  Either way a clone's git config is then written whole by Rail (`Rail.Git.write_checkout_config/2`), over whatever a
+  sandbox wrote there before its config was mounted read-only.
   """
   def get_or_create_worktree(%Project{} = project, %Task{} = task) do
     branch = task.worktree_name || task.id
     worktree_path = task.worktree_path || Path.join(project.clone_path, ".worktrees/#{branch}")
 
-    if File.dir?(worktree_path),
-      do: {:ok, worktree_path},
-      # Two starts at once build in one place, so the second waits and then finds the first's clone.
-      else: with_clone_lock(worktree_path, fn -> make(project, task, worktree_path, branch) end)
+    # Two starts at once build in one place, so the second waits and then finds the first's clone.
+    with {:ok, worktree_path} <- with_clone_lock(worktree_path, fn -> make(project, task, worktree_path, branch) end),
+         :ok <- own_config(project, task, worktree_path) do
+      {:ok, worktree_path}
+    else
+      {:error, reason} -> {:error, failed(worktree_path, reason)}
+    end
+  end
+
+  # Only a task's own clone: a worktree of the project's clone shares the clone's config, which is not the task's.
+  defp own_config(%Project{} = project, %Task{} = task, worktree_path) do
+    if File.dir?(Path.join(worktree_path, ".git")),
+      do: Git.write_checkout_config(project, %{task | worktree_path: worktree_path}),
+      else: :ok
   end
 
   defp make(%Project{} = project, %Task{} = task, worktree_path, branch) do
@@ -43,7 +56,7 @@ defmodule Rail.Git.Actions.GetOrCreateWorktree do
       else
         {:error, reason} ->
           File.rm_rf!(building)
-          {:error, failed(worktree_path, reason)}
+          {:error, reason}
       end
     end
   end
@@ -57,8 +70,6 @@ defmodule Rail.Git.Actions.GetOrCreateWorktree do
          {_set, 0} <- git(building, ["remote", "set-url", "origin", String.trim(origin)]),
          # A push updates origin/<branch> only through a fetch refspec that names it, which --single-branch narrows.
          {_widened, 0} <- git(building, ["config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"]) do
-      # The clone's pre-push hook is the project's, and a new clone starts with none.
-      _hooks = File.cp_r(Path.join(clone_path, ".git/hooks"), Path.join(building, ".git/hooks"))
       :ok
     else
       {output, _code} -> {:error, String.trim(output)}

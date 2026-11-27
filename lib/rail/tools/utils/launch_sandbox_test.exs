@@ -46,7 +46,8 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
     worktree_path = Path.join(task_dir, "repo")
     scratch_path = Path.join(tmp_dir, "scratch")
     mise_dir = Path.join(tmp_dir, "mise")
-    Enum.each([clone_path, worktree_path, scratch_path, mise_dir], &File.mkdir_p!/1)
+    git_dir = Path.join(worktree_path, ".git")
+    Enum.each([clone_path, git_dir, scratch_path, mise_dir], &File.mkdir_p!/1)
     on_exit(fn -> File.rm_rf(tmp_dir) end)
     stub(Rail, :mise_data_dir, fn -> mise_dir end)
 
@@ -113,6 +114,7 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
       backend: backend,
       clone_path: clone_path,
       config_dir: config_dir,
+      git_dir: git_dir,
       mise_dir: mise_dir,
       project: project,
       role: role,
@@ -161,6 +163,7 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
     backend: backend,
     clone_path: clone_path,
     config_dir: config_dir,
+    git_dir: git_dir,
     mise_dir: mise_dir,
     run: run,
     scratch_path: scratch_path,
@@ -179,6 +182,10 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
                [
                  "#{task_dir}:#{task_dir}",
                  "#{scratch_path}:#{scratch_path}",
+                 "#{git_dir}:#{git_dir}",
+                 "#{git_dir}/config:#{git_dir}/config:ro",
+                 "#{git_dir}/info:#{git_dir}/info:ro",
+                 "#{git_dir}/hooks:#{git_dir}/hooks:ro",
                  "#{clone_path}:#{clone_path}:ro",
                  "#{mise_dir}:#{mise_dir}:ro",
                  "#{config_dir}:#{config_dir}",
@@ -211,6 +218,7 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
 
   test "setup and CI on a task mount the same folders as its agent, and no account's login", %{
     clone_path: clone_path,
+    git_dir: git_dir,
     mise_dir: mise_dir,
     run: run,
     scratch_path: scratch_path,
@@ -220,6 +228,10 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
       Enum.sort([
         "#{task_dir}:#{task_dir}",
         "#{scratch_path}:#{scratch_path}",
+        "#{git_dir}:#{git_dir}",
+        "#{git_dir}/config:#{git_dir}/config:ro",
+        "#{git_dir}/info:#{git_dir}/info:ro",
+        "#{git_dir}/hooks:#{git_dir}/hooks:ro",
         "#{clone_path}:#{clone_path}:ro",
         "#{mise_dir}:#{mise_dir}:ro"
       ])
@@ -379,6 +391,81 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
     Req.Test.stub(Docker, fn conn -> Req.Test.json(conn, %{"NCPU" => 16, "MemTotal" => 64 * @gib}) end)
 
     assert {:error, {:spawn_failed, {:bad_cwd, ^worktree_path}, _run}} = Tools.start_os_process(run, ["-p", "x"])
+  end
+
+  # Rail runs git in the checkout, so the sandbox writes its objects and refs and nothing git reads as config or runs.
+  test "the checkout's git config, info and hooks are mounted read-only, made first where missing", %{
+    git_dir: git_dir,
+    run: run
+  } do
+    assert {:ok, %OsProcess{}} = Tools.start_command_process(run, :setup, "./setup.sh")
+
+    assert_received {:created, %{"HostConfig" => %{"Binds" => binds}}}
+    assert "#{git_dir}:#{git_dir}" in binds
+
+    for name <- ["config", "info", "hooks"] do
+      assert "#{git_dir}/#{name}:#{git_dir}/#{name}:ro" in binds
+      assert File.exists?(Path.join(git_dir, name))
+    end
+
+    assert File.regular?(Path.join(git_dir, "config"))
+  end
+
+  # What a mount allows only Docker can say, so this one is run with `mix test --include docker`, against the sandbox
+  # image or, where it is not built, any image with a shell named in RAIL_DOCKER_TEST_IMAGE. As root, which still cannot
+  # write a read-only mount or take one down.
+  @tag :docker
+  test "a sandbox writes the checkout's objects and refs, and cannot write, move or swap its config, info or hooks", %{
+    git_dir: git_dir,
+    run: run
+  } do
+    File.mkdir_p!(Path.join(git_dir, "refs"))
+    assert {:ok, %OsProcess{}} = Tools.start_command_process(run, :setup, "./setup.sh")
+    assert_received {:created, %{"HostConfig" => %{"Binds" => binds}}}
+
+    script = """
+    cd #{git_dir}
+    for path in config info/attributes hooks/pre-push; do echo planted >> $path && echo "wrote $path"; done
+    mv config config.moved && echo "moved config"
+    mv info info.moved && echo "moved info"
+    cd .. && mv .git .git.moved && echo "moved .git"
+    echo planted > .git/refs/planted && echo "wrote refs"
+    """
+
+    image = System.get_env("RAIL_DOCKER_TEST_IMAGE", Rail.sandbox_image())
+    volumes = Enum.flat_map(binds, &["--volume", &1])
+    args = ["run", "--rm", "--entrypoint", "sh"] ++ volumes ++ [image, "-c", script]
+    {output, _code} = System.cmd("docker", args, stderr_to_stdout: true, env: [])
+
+    assert output =~ "wrote refs"
+    assert File.read!(Path.join(git_dir, "refs/planted")) == "planted\n"
+
+    for done <- [
+          "wrote config",
+          "wrote info/attributes",
+          "wrote hooks/pre-push",
+          "moved config",
+          "moved info",
+          "moved .git"
+        ],
+        do: refute(output =~ done, output)
+
+    assert File.read!(Path.join(git_dir, "config")) == ""
+    refute File.exists?(Path.join(git_dir, "info/attributes"))
+  end
+
+  # With no .git of its own, a .git the sandbox made there would be the one Rail's git reads.
+  test "a checkout with no .git of its own fails before Docker is asked", %{git_dir: git_dir, run: run} do
+    File.rm_rf!(git_dir)
+    test_pid = self()
+
+    Req.Test.stub(Docker, fn conn ->
+      send(test_pid, {:requested, conn.method, conn.request_path})
+      Req.Test.json(conn, %{"NCPU" => 16, "MemTotal" => 64 * @gib})
+    end)
+
+    assert {:error, {:spawn_failed, {:bad_cwd, ^git_dir}, _run}} = Tools.start_os_process(run, ["-p", "x"])
+    refute_received {:requested, "POST", "/containers/create"}
   end
 
   test "waits in line when Docker cannot say what the machine has free", %{run: run} do

@@ -31,12 +31,13 @@ defmodule Rail.Git.Actions.GetOrCreateWorktreeTest do
              Git.get_or_create_worktree(project, %Task{worktree_path: wt_path, worktree_name: "feature-existing"})
   end
 
-  test "makes a clone of its own, pushing to the project's origin, that the project's clone knows nothing of", %{
-    remote: remote,
-    repo: repo,
-    tasks: tasks,
-    project: project
-  } do
+  test "makes a clone of its own, pushing to the project's origin, with none of the clone's hooks, that the project's clone knows nothing of",
+       %{
+         remote: remote,
+         repo: repo,
+         tasks: tasks,
+         project: project
+       } do
     File.write!(Path.join(repo, ".git/hooks/pre-push"), "#!/bin/sh\nexit 0\n")
     wt_path = Path.join([tasks, "feature-own", "repo"])
 
@@ -45,7 +46,8 @@ defmodule Rail.Git.Actions.GetOrCreateWorktreeTest do
 
     assert git!(wt_path, ["rev-parse", "--path-format=absolute", "--git-common-dir"]) =~ wt_path <> "/.git"
     assert git!(wt_path, ["remote", "get-url", "origin"]) == remote <> "\n"
-    assert File.read!(Path.join(wt_path, ".git/hooks/pre-push")) == "#!/bin/sh\nexit 0\n"
+    # Rail runs none of a project's hooks, so the clone's are left behind.
+    refute File.exists?(Path.join(wt_path, ".git/hooks/pre-push"))
     assert git!(wt_path, ["branch", "--show-current"]) == "feature-own\n"
     refute git!(repo, ["branch", "--list"]) =~ "feature-own"
     refute git!(repo, ["worktree", "list"]) =~ "feature-own"

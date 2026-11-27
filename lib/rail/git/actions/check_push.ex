@@ -31,13 +31,19 @@ defmodule Rail.Git.Actions.CheckPush do
     end
   end
 
+  # Fetched with the token into the project's clone, whose config is Rail's, then copied from there into the
+  # checkout, whose config the sandbox could have pointed at another host. The copy needs no token.
   defp fetch(%Project{clone_path: clone_path}, worktree_path, branch, env) do
+    ref = "refs/remotes/origin/#{branch}"
+
     with_clone_lock(clone_path, fn ->
-      Tools.run("git", ["fetch", "--quiet", "origin", "+refs/heads/#{branch}:refs/remotes/origin/#{branch}"],
-        cd: worktree_path,
-        env: env,
-        stderr_to_stdout: true
-      )
+      with {_fetched, 0} <-
+             Tools.run("git", ["fetch", "--quiet", "origin", "+refs/heads/#{branch}:#{ref}"],
+               cd: clone_path,
+               env: env,
+               stderr_to_stdout: true
+             ),
+           do: git(worktree_path, ["fetch", "--quiet", "--no-tags", clone_path, "+#{ref}:#{ref}"])
     end)
   end
 

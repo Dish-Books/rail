@@ -26,6 +26,19 @@ defmodule Rail.Git.Actions.ContentFingerprintTest do
     assert Git.content_fingerprint(repo).content_digest != first.content_digest
   end
 
+  # A filter is a program the checkout's attributes name, and hashing an untracked file through one would run it.
+  test "hashes untracked files as they are, through no filter the checkout names" do
+    repo = create_temp_git_repo()
+    ran = Path.join(System.tmp_dir!(), "content_fingerprint_ran_#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(ran) end)
+    File.write!(Path.join([repo, ".git", "info", "attributes"]), "*.wip filter=theirs\n")
+    git!(repo, ["config", "filter.theirs.clean", "touch #{ran}; cat"])
+    File.write!(Path.join(repo, "notes.wip"), "wip\n")
+
+    assert %{content_digest: _digest} = Git.content_fingerprint(repo)
+    refute File.exists?(ran)
+  end
+
   test "rewriting an untracked file changes the digest" do
     repo = create_temp_git_repo()
     File.write!(Path.join(repo, "new.ex"), "first\n")

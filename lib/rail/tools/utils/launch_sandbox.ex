@@ -127,14 +127,16 @@ defmodule Rail.Tools.Utils.LaunchSandbox do
     }
   end
 
-  # A worktree's .git writes into its project clone's git folder, so such a task keeps the whole mount until it ends.
+  # A worktree's .git writes into its project clone's git folder, so such a task keeps the whole mount until it ends:
+  # nothing below protects its git config, or its clone's.
   defp mounts(%OsProcess{task: %Task{project: %Project{clone_path: clone_path}} = task} = os_process, cwd) do
     worktrees = Path.join(clone_path, ".worktrees")
 
     if String.starts_with?(cwd, worktrees <> "/") do
       {:ok, %{binds: Rail.sandbox_binds(), tmpfs: %{}}}
     else
-      writable = [Path.dirname(cwd), task.scratch_path]
+      git_dir = Path.join(cwd, ".git")
+      writable = [Path.dirname(cwd), task.scratch_path, git_dir]
       read_only = Enum.filter([clone_path, Rail.mise_data_dir()], &is_binary/1)
 
       case Enum.find(writable ++ read_only, &(not File.dir?(&1))) do
@@ -145,14 +147,28 @@ defmodule Rail.Tools.Utils.LaunchSandbox do
           login = login(os_process, cwd)
           # Old tasks' worktrees and triage checkouts live in the clone, and are no business of this task.
           hidden = if File.dir?(worktrees), do: %{worktrees => "uid=1000,gid=1000,mode=0700"}, else: %{}
+          locked = Enum.map(locked_git(git_dir), &"#{&1}:#{&1}:ro")
 
           {:ok,
            %{
-             binds: Enum.map(writable, &"#{&1}:#{&1}") ++ Enum.map(read_only, &"#{&1}:#{&1}:ro") ++ login.binds,
+             binds: Enum.map(writable, &"#{&1}:#{&1}") ++ Enum.map(read_only, &"#{&1}:#{&1}:ro") ++ locked ++ login.binds,
              tmpfs: Map.merge(hidden, login.tmpfs)
            }}
       end
     end
+  end
+
+  # Rail runs git in the checkout, so of its .git the sandbox writes only what git reads as data, its objects and
+  # refs. Not the config, which Rail writes whole before each turn (Rail.Git.write_checkout_config/2) and which alone
+  # can name a filter, merge driver, hook or program for git to run; not the info folder, whose attributes would name
+  # them; not the hooks. The .git folder is a mount of its own, so it cannot be moved aside for another, and each of
+  # these is made if missing, so Docker has something to mount over.
+  defp locked_git(git_dir) do
+    config = Path.join(git_dir, "config")
+    folders = Enum.map(["info", "hooks"], &Path.join(git_dir, &1))
+    Enum.each(folders, &File.mkdir_p!/1)
+    File.touch!(config)
+    [config | folders]
   end
 
   # Only an agent runs the CLI; its own conversations stay open so the next turn can resume them.

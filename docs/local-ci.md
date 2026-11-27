@@ -38,6 +38,8 @@ A PR with no valid receipt fails, with no fallback, so fork and Dependabot PRs n
 
 Staged or untracked changes block the hook, since the gates would test a tree other than the one being pushed. `git push --no-verify` skips it. It is HEAD-based, so push from the branch you tested.
 
+Rail runs no hooks, so its pushes never reach this one. Rail's CI runs `mise run ci` with no credential and `RAIL_PUSHES_RECEIPT=1`, which keeps the receipt local; when the run passes, Rail pushes that receipt along with the branch (`docs/org-setup.md`, step 4).
+
 By hand, with no receipt pushed:
 
 ```bash

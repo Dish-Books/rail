@@ -68,7 +68,11 @@ Outside Rail none of these is set, so nothing changes for people.
 
 The script, CI and the agents run in a sandbox that sees the task's checkout, read and write, and the project's clone and the installed toolchain, read only. No other folder on the machine is there. So nothing in the sandbox can install a tool or write into the toolchain: a tool the branch adds fails with a read-only error until the Toolchain Command has installed it from the default branch, and so does a global install such as `npm install -g`, `gem install` or `pip install` outside a virtualenv. Install packages into the checkout instead. The checkout and the clone are separate mounts, so a hard link from one to the other (`cp -al`, `ln`) fails; copy instead.
 
-**A CI command.** What Rail runs on every commit the engineer finishes, before it is pushed, for example `mix test`.
+Of the checkout's `.git`, the sandbox writes only objects and refs: committing, branching, fetching from the project's clone and writing refs all work. `.git/config`, `.git/info` and `.git/hooks` are read-only, since Rail runs git in the checkout too and those are what git reads to run a program. Rail writes the config itself before each turn, with `origin`, the branch's upstream and who commits, signed with the ticket owner's key. So `git config`, `git remote add`, `git push -u`, `git submodule init`, installing a hook (such as `prek install`) and adding to `.git/info/exclude` fail there. Ignore files in a committed `.gitignore` instead.
+
+**A CI command.** What Rail runs on every commit the engineer finishes, before it is pushed, for example `mix test`. Rail pushes a commit only once CI has passed on it, and the commit pushed is the one CI ran on. CI runs with no GitHub credential, since it runs the branch's own scripts: it cannot push, and needs nothing private from GitHub. It gets the ticket owner's git identity, and `RAIL_PUSHES_RECEIPT=1`.
+
+**No hooks.** Rail runs none of a project's git hooks, `pre-push` included, in the task's checkout or the project's clone: a hook a branch installs is code an agent may have written, and Rail's git runs beside its GitHub token. Anything a hook did belongs in the CI command. A project whose pre-push hook verified a record of a CI run has CI leave that record instead: when the CI command leaves a ref named `refs/ci-receipts/<tree>` in the checkout, for the tree of the commit it ran on, Rail pushes it with the branch, in one atomic push. It pushes a receipt only for a tree it saw CI pass on, never one for another tree the checkout holds. A CI that pushes its own receipt elsewhere should leave it in the checkout when `RAIL_PUSHES_RECEIPT` is set. Rail's own `scripts/ci.sh` does, and writes one that `pr.yaml` verifies.
 
 **CodeRabbit (optional).** Install the CodeRabbit GitHub App on the repository and commit a `.coderabbit.yaml` that turns automatic reviews off (`reviews.auto_review.enabled: false`), as Rail's own does. Rail pushes every round, and each push would otherwise spend a review from the hourly allowance. A person asks for a review from the task page instead, with a comment from their own GitHub account, so they need GitHub connected. Leave `reviews.review_progress` on: its check run is how Rail knows the review is done.
 
@@ -85,7 +89,9 @@ Give Rail a clone of its own; never point it at a checkout someone works in. Rai
 `origin` decides how Rail authenticates:
 
 - **HTTPS** (`https://github.com/<org>/<repo>.git`): Rail pushes with the App's token. Works anywhere, including sandboxes and servers.
-- **SSH** (`git@github.com:...` or a host alias from `~/.ssh/config`): git ignores the token and pushes with the SSH key of whoever runs Rail. Works only on that machine, and a passphrase-protected key needs `ssh-agent` running, because Rail runs git with no terminal.
+- **SSH** (`git@github.com:...` or a host alias from `~/.ssh/config`): git ignores the token and pushes with the SSH key of whoever runs Rail. Works only on that machine, and a passphrase-protected key needs `ssh-agent` running, because Rail runs git with no terminal. Rail runs git with plain `ssh`, whatever `core.sshCommand` says, so a key or option goes in `~/.ssh/config` or in `GIT_SSH_COMMAND` in Rail's environment.
+
+Rail pushes from this clone, never from a task's checkout: it fetches the commit from the checkout into the clone and pushes it from there, so only the clone's config and credentials touch `origin`.
 
 Check: `git -C <clone> remote get-url origin` is the URL you meant, and `GIT_TERMINAL_PROMPT=0 git -C <clone> fetch origin` succeeds.
 

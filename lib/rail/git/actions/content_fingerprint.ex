@@ -32,7 +32,8 @@ defmodule Rail.Git.Actions.ContentFingerprint do
   end
 
   defp hash_objects(_worktree_path, []), do: {"", 0}
-  defp hash_objects(worktree_path, paths), do: git(worktree_path, ["hash-object", "--" | paths])
+  # Raw, since a filter the checkout's attributes name is a program it chose.
+  defp hash_objects(worktree_path, paths), do: git(worktree_path, ["hash-object", "--no-filters", "--" | paths])
 
   defp git(worktree_path, args), do: Tools.run("git", args, cd: worktree_path, stderr_to_stdout: true)
 end

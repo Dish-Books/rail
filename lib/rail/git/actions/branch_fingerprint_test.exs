@@ -22,6 +22,22 @@ defmodule Rail.Git.Actions.BranchFingerprintTest do
     assert Git.branch_fingerprint(loose) == nil
   end
 
+  # What CI's commit is read from, in a checkout whose .git the sandbox can write.
+  test "runs no fsmonitor or hook a checkout names" do
+    repo = create_temp_git_repo()
+    ran = Path.join(System.tmp_dir!(), "fingerprint_ran_#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(ran) end)
+    File.mkdir_p!(ran)
+    git!(repo, ["config", "core.fsmonitor", "touch #{ran}/fsmonitor; false"])
+    git!(repo, ["config", "core.hooksPath", ran])
+    File.write!(Path.join(ran, "post-index-change"), "#!/bin/sh\ntouch #{ran}/hook\n")
+    File.chmod!(Path.join(ran, "post-index-change"), 0o755)
+    File.write!(Path.join(repo, "tracked.txt"), "two\n")
+
+    assert %{head_sha: _head, dirty_digest: _digest} = Git.branch_fingerprint(repo)
+    assert File.ls!(ran) == ["post-index-change"]
+  end
+
   test "new commit advances head_sha" do
     repo = create_temp_git_repo()
     fp1 = Git.branch_fingerprint(repo)
