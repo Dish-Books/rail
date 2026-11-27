@@ -28,7 +28,13 @@ defmodule Rail.Users.Actions.RemoveUser do
           revoke_mcp_tokens(user.id, now)
 
           user
-          |> Ecto.Changeset.change(removed_at: now, admin: false, tech_lead: false, slack_notifications: false)
+          |> Ecto.Changeset.change(
+            removed_at: now,
+            admin: false,
+            tech_lead: false,
+            slack_notifications: false,
+            slack_support_notifications: false
+          )
           |> Repo.update()
 
         nil ->

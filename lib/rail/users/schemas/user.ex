@@ -26,8 +26,9 @@ defmodule Rail.Users.Schemas.User do
     field :slack_team_id, :string
     field :slack_name, :string
     field :slack_access_token, EncryptedBinary, redact: true
-    # Only `slack_notifications_changeset/2` turns it on, so an admin editing a user cannot.
+    # Only `slack_notifications_changeset/2` turns these on, so an admin editing a user cannot.
     field :slack_notifications, :boolean, default: false
+    field :slack_support_notifications, :boolean, default: false
     # Which Intercom app the link is for, so Send refuses a conversation in another workspace.
     field :intercom_admin_id, :string
     field :intercom_app_id, :string
@@ -46,6 +47,8 @@ defmodule Rail.Users.Schemas.User do
 
     timestamps()
   end
+
+  @slack_notification_fields [:slack_notifications, :slack_support_notifications]
 
   @issues_filter_keys ["priority", "mine", "finished", "cycle", "owner"]
 
@@ -85,9 +88,11 @@ defmodule Rail.Users.Schemas.User do
     |> unique_constraint(:login)
     |> unique_constraint(:email)
     # Removing the Slack link turns notifications off, forced so a stale struct that still reads off clears them too.
-    |> then(
-      &if(fetch_change(&1, :slack_user_id) == {:ok, nil}, do: force_change(&1, :slack_notifications, false), else: &1)
-    )
+    |> then(fn changeset ->
+      if fetch_change(changeset, :slack_user_id) == {:ok, nil},
+        do: changeset |> force_change(:slack_notifications, false) |> force_change(:slack_support_notifications, false),
+        else: changeset
+    end)
   end
 
   @doc "The roles, in the order the Users screen lists them."
@@ -106,11 +111,16 @@ defmodule Rail.Users.Schemas.User do
   Turns the user's Slack notifications on or off, refusing on for someone with no Slack account to message.
   """
   def slack_notifications_changeset(user, attrs) do
-    changeset = user |> cast(attrs, [:slack_notifications]) |> validate_required([:slack_notifications])
+    changeset =
+      user
+      |> cast(attrs, @slack_notification_fields)
+      |> validate_required(@slack_notification_fields)
 
-    if get_field(changeset, :slack_notifications) == true and is_nil(get_field(changeset, :slack_user_id)),
-      do: add_error(changeset, :slack_notifications, "connect Slack first"),
-      else: changeset
+    Enum.reduce(@slack_notification_fields, changeset, fn field, acc ->
+      if get_change(acc, field) == true and is_nil(get_field(acc, :slack_user_id)),
+        do: add_error(acc, field, "connect Slack first"),
+        else: acc
+    end)
   end
 
   @doc """

@@ -49,7 +49,7 @@ defmodule Rail.Users do
   defdelegate unlink_slack(scope), to: Actions.UnlinkSlack
   defdelegate link_intercom(scope, workspace, code), to: Actions.LinkIntercom
   defdelegate unlink_intercom(scope), to: Actions.UnlinkIntercom
-  defdelegate set_slack_notifications(scope, on?), to: Actions.SetSlackNotifications
+  defdelegate set_slack_notifications(scope, kind, on?), to: Actions.SetSlackNotifications
   defdelegate set_issues_filters(scope, filters), to: Actions.SetIssuesFilters
 
   defdelegate can?(scope, action), to: Actions.Can

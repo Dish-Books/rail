@@ -47,7 +47,7 @@ defmodule Rail.Pipeline.Workers.NotifyOwnerTest do
     end
 
     first_message.()
-    {:ok, owner} = Users.set_slack_notifications(Scope.for_user(owner), true)
+    {:ok, owner} = Users.set_slack_notifications(Scope.for_user(owner), :tasks, true)
     Repo.update_all(from(i in Issue, where: i.id == ^issue.id), set: [owner_user_id: owner.id])
 
     roles =
@@ -262,14 +262,25 @@ defmodule Rail.Pipeline.Workers.NotifyOwnerTest do
     test "with notifications off gets nothing", %{owner: owner, run: run, posted: posted, first_message: first_message} do
       %Run{id: run_id} = run.(:plan, %{stage_outcome: :done})
 
-      {:ok, _off} = Users.set_slack_notifications(Scope.for_user(owner), false)
+      {:ok, _off} = Users.set_slack_notifications(Scope.for_user(owner), :tasks, false)
       assert :ok = perform_job(NotifyOwner, %{run_id: run_id, os_process_id: "osp_1"})
 
       first_message.()
-      {:ok, _on} = Users.set_slack_notifications(Scope.for_user(owner), true)
+      {:ok, _on} = Users.set_slack_notifications(Scope.for_user(owner), :tasks, true)
       posted.()
       assert :ok = perform_job(NotifyOwner, %{run_id: run_id, os_process_id: "osp_2"})
       assert_received {:posted, %{"channel" => "U_MAYA"}}
+    end
+
+    test "with only support messages on gets nothing", %{owner: owner, run: run} do
+      %Run{id: run_id} = run.(:plan, %{stage_outcome: :done})
+
+      {:ok, _off} = Users.set_slack_notifications(Scope.for_user(owner), :tasks, false)
+      Req.Test.expect(Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000000.000002"}))
+      {:ok, _on} = Users.set_slack_notifications(Scope.for_user(owner), :support, true)
+
+      # No Slack expectation is left, so a message here would fail the test.
+      assert :ok = perform_job(NotifyOwner, %{run_id: run_id, os_process_id: "osp_1"})
     end
 
     test "who disconnected Slack gets nothing, and connecting again does not turn them back on", %{
