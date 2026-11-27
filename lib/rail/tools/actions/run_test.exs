@@ -103,6 +103,13 @@ defmodule Rail.Tools.Actions.RunTest do
       assert File.ls!(ran) == []
     end
 
+    test "keeps a caller's own command-scope config, after Rail's", %{repo: repo} do
+      env = %{"GIT_CONFIG_PARAMETERS" => "'user.name'='Caller'"}
+
+      assert {"Caller\n", 0} = Tools.run("git", ["config", "--get", "user.name"], cd: repo, env: env)
+      assert {"/dev/null\n", 0} = Tools.run("git", ["config", "--get", "core.hooksPath"], cd: repo, env: env)
+    end
+
     # The sandbox may write a checkout's .git, all but its config, and a commondir there points git at another one's.
     test "reads config from the folder's own .git, whatever its commondir names", %{repo: repo, ran: ran} do
       elsewhere = repo <> "_elsewhere"
