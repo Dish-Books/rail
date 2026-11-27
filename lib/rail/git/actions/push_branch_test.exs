@@ -3,59 +3,24 @@ defmodule Rail.Git.Actions.PushBranchTest do
 
   alias Rail.Git
   alias Rail.GitHub.Client
-  alias Rail.Issues
-  alias Rail.Pipeline
-  alias Rail.Projects
   alias Rail.Tools.Schemas.OsProcess
 
-  # As Rail lays them out: origin, the project's clone of it, and the task's checkout, a clone of the clone that
-  # pushes to origin, on a branch of its own.
+  # As Rail lays them out: origin, the project's clone of it, the task's repository and its checkout, on a branch
+  # of its own.
   setup do
-    scope = system_scope()
-    unique = System.unique_integer([:positive])
-    remote = create_temp_git_repo(prefix: "rail_git_remote")
-    git!(remote, ["config", "receive.denyCurrentBranch", "ignore"])
+    %{checkout: checkout} = context = create_task_checkout(task: [worktree_name: "feature"])
+    File.write!(Path.join(checkout, "feature.ex"), "one\n")
+    git!(checkout, ["add", "."])
+    git!(checkout, ["commit", "--quiet", "-m", "feature"])
 
-    clone = Path.join(System.tmp_dir!(), "rail_push_clone_#{unique}")
-    repo = Path.join(System.tmp_dir!(), "rail_push_checkout_#{unique}")
-    on_exit(fn -> Enum.each([clone, repo], &File.rm_rf/1) end)
-    git!(System.tmp_dir!(), ["clone", "--quiet", remote, clone])
-    git!(System.tmp_dir!(), ["clone", "--quiet", clone, repo])
-    git!(repo, ["remote", "set-url", "origin", remote])
-    git!(repo, ["config", "user.email", "test@rail.local"])
-    git!(repo, ["config", "user.name", "Rail Test"])
-    git!(repo, ["config", "commit.gpgsign", "false"])
-    git!(repo, ["checkout", "--quiet", "-b", "feature"])
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Push #{unique}",
-        github_repo: "example/push-#{unique}",
-        github_installation_id: 1,
-        default_branch: "main",
-        key: "PSH#{unique}",
-        clone_path: clone
-      })
-
-    {:ok, issue} = Issues.create_issue(scope, project, %{title: "Issue", description: "Push Branch"})
-    {:ok, task} = Pipeline.create_task(issue, :engineer)
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: repo, worktree_name: "feature"})
-    on_exit(fn -> File.rm_rf(task.scratch_path) end)
-
-    Req.Test.stub(Client, &Req.Test.json(&1, %{"token" => "ghs_installation_token"}))
-
-    File.write!(Path.join(repo, "feature.ex"), "one\n")
-    git!(repo, ["add", "."])
-    git!(repo, ["commit", "--quiet", "-m", "feature"])
-    sha = String.trim(git!(repo, ["rev-parse", "HEAD"]))
-
-    %{scope: scope, task: task, clone: clone, repo: repo, remote: remote, sha: sha}
+    Map.merge(context, %{scope: system_scope(), sha: String.trim(git!(checkout, ["rev-parse", "HEAD"]))})
   end
 
   test "mints its own token and pushes the commit as the task's branch, which the checkout then tracks", %{
     scope: scope,
     task: task,
     repo: repo,
+    checkout: checkout,
     remote: remote,
     sha: sha
   } do
@@ -66,19 +31,20 @@ defmodule Rail.Git.Actions.PushBranchTest do
 
     assert :ok = Git.push_branch(scope, task, sha)
     assert git!(remote, ["rev-parse", "feature"]) == sha <> "\n"
-    assert git!(repo, ["rev-parse", "origin/feature"]) == sha <> "\n"
-    assert git!(repo, ["rev-parse", "--abbrev-ref", "feature@{upstream}"]) == "origin/feature\n"
-    refute Git.branch_unpushed?(repo)
+    assert git!(checkout, ["rev-parse", "origin/feature"]) == sha <> "\n"
+    assert git!(checkout, ["rev-parse", "--abbrev-ref", "feature@{upstream}"]) == "origin/feature\n"
+    assert git!(repo, ["rev-parse", "refs/remotes/origin/feature"]) == sha <> "\n"
+    refute Git.branch_unpushed?(task)
   end
 
   test "pushes the commit it is given, not one committed since", %{
     scope: scope,
     task: task,
-    repo: repo,
+    checkout: checkout,
     remote: remote,
     sha: sha
   } do
-    git!(repo, ["commit", "--quiet", "--allow-empty", "-m", "after CI started"])
+    git!(checkout, ["commit", "--quiet", "--allow-empty", "-m", "after CI started"])
 
     assert :ok = Git.push_branch(scope, task, sha)
     assert git!(remote, ["rev-parse", "feature"]) == sha <> "\n"
@@ -91,7 +57,7 @@ defmodule Rail.Git.Actions.PushBranchTest do
     scope: scope,
     task: task,
     clone: clone,
-    repo: repo,
+    checkout: checkout,
     remote: remote,
     sha: sha
   } do
@@ -99,36 +65,36 @@ defmodule Rail.Git.Actions.PushBranchTest do
     on_exit(fn -> File.rm_rf(ran) end)
     File.mkdir_p!(ran)
 
-    for {dir, name} <- [{repo, "checkout"}, {clone, "clone"}],
+    for {dir, name} <- [{checkout, "checkout"}, {clone, "clone"}],
         hook <- ["pre-push", "reference-transaction", "post-checkout"] do
       path = Path.join([dir, ".git", "hooks", hook])
       File.write!(path, "#!/bin/sh\ntouch #{ran}/#{name}-#{hook}\nexit 1\n")
       File.chmod!(path, 0o755)
     end
 
-    git!(repo, ["config", "core.fsmonitor", "touch #{ran}/fsmonitor; false"])
-    git!(repo, ["config", "credential.helper", "!touch #{ran}/credential-helper; false"])
-    git!(repo, ["config", "remote.origin.url", "/tmp/nowhere_#{System.unique_integer([:positive])}"])
+    git!(checkout, ["config", "core.fsmonitor", "touch #{ran}/fsmonitor; false"])
+    git!(checkout, ["config", "credential.helper", "!touch #{ran}/credential-helper; false"])
+    git!(checkout, ["config", "remote.origin.url", "/tmp/nowhere_#{System.unique_integer([:positive])}"])
 
     assert :ok = Git.push_branch(scope, task, sha)
     assert git!(remote, ["rev-parse", "feature"]) == sha <> "\n"
     assert File.ls!(ran) == []
 
     # A plain git in the same checkout does run them.
-    System.cmd("git", ["update-ref", "refs/heads/probe", sha], cd: repo, stderr_to_stdout: true, env: [])
+    System.cmd("git", ["update-ref", "refs/heads/probe", sha], cd: checkout, stderr_to_stdout: true, env: [])
     assert "checkout-reference-transaction" in File.ls!(ran)
   end
 
   test "takes the checkout's receipt for the tree a passed CI run ran on, with the branch", %{
     scope: scope,
     task: task,
-    repo: repo,
+    checkout: checkout,
     remote: remote,
     sha: sha
   } do
-    tree = String.trim(git!(repo, ["rev-parse", "#{sha}^{tree}"]))
-    receipt = git!(repo, ["commit-tree", tree, "-m", "ci receipt for tree #{tree}"])
-    git!(repo, ["update-ref", "refs/ci-receipts/#{tree}", String.trim(receipt)])
+    tree = String.trim(git!(checkout, ["rev-parse", "#{sha}^{tree}"]))
+    receipt = git!(checkout, ["commit-tree", tree, "-m", "ci receipt for tree #{tree}"])
+    git!(checkout, ["update-ref", "refs/ci-receipts/#{tree}", String.trim(receipt)])
 
     assert :ok = Git.push_branch(scope, task, %OsProcess{kind: :ci, exit_code: 0, head_sha: sha})
     assert git!(remote, ["rev-parse", "feature"]) == sha <> "\n"
@@ -151,10 +117,12 @@ defmodule Rail.Git.Actions.PushBranchTest do
     scope: scope,
     task: task,
     repo: repo,
+    checkout: checkout,
     remote: remote,
     sha: sha
   } do
-    tree = String.trim(git!(repo, ["rev-parse", "#{sha}^{tree}"]))
+    tree = String.trim(git!(checkout, ["rev-parse", "#{sha}^{tree}"]))
+    assert :ok = Git.sync_checkout(task)
     git!(repo, ["update-ref", "refs/planted/refs/ci-receipts/#{tree}", sha])
 
     assert :ok = Git.push_branch(scope, task, %OsProcess{kind: :ci, exit_code: 0, head_sha: sha})
@@ -167,18 +135,18 @@ defmodule Rail.Git.Actions.PushBranchTest do
   test "never pushes a receipt for a tree it did not see CI pass on", %{
     scope: scope,
     task: task,
-    repo: repo,
+    checkout: checkout,
     remote: remote,
     sha: sha
   } do
-    tree = String.trim(git!(repo, ["rev-parse", "#{sha}^{tree}"]))
-    git!(repo, ["update-ref", "refs/ci-receipts/#{tree}", sha])
+    tree = String.trim(git!(checkout, ["rev-parse", "#{sha}^{tree}"]))
+    git!(checkout, ["update-ref", "refs/ci-receipts/#{tree}", sha])
 
-    File.write!(Path.join(repo, "feature.ex"), "two\n")
-    git!(repo, ["commit", "--quiet", "-am", "after CI"])
-    later = String.trim(git!(repo, ["rev-parse", "HEAD"]))
-    later_tree = String.trim(git!(repo, ["rev-parse", "#{later}^{tree}"]))
-    git!(repo, ["update-ref", "refs/ci-receipts/#{later_tree}", later])
+    File.write!(Path.join(checkout, "feature.ex"), "two\n")
+    git!(checkout, ["commit", "--quiet", "-am", "after CI"])
+    later = String.trim(git!(checkout, ["rev-parse", "HEAD"]))
+    later_tree = String.trim(git!(checkout, ["rev-parse", "#{later}^{tree}"]))
+    git!(checkout, ["update-ref", "refs/ci-receipts/#{later_tree}", later])
 
     # Pushed with no CI run at all.
     assert :ok = Git.push_branch(scope, task, sha)
@@ -238,14 +206,14 @@ defmodule Rail.Git.Actions.PushBranchTest do
   test "refuses a branch rewritten since it was last pushed", %{
     scope: scope,
     task: task,
-    repo: repo,
+    checkout: checkout,
     remote: remote,
     sha: sha
   } do
     assert :ok = Git.push_branch(scope, task, sha)
 
-    git!(repo, ["commit", "--quiet", "--amend", "-m", "feature, rewritten"])
-    rewritten = String.trim(git!(repo, ["rev-parse", "HEAD"]))
+    git!(checkout, ["commit", "--quiet", "--amend", "-m", "feature, rewritten"])
+    rewritten = String.trim(git!(checkout, ["rev-parse", "HEAD"]))
 
     assert {:error, output} = Git.push_branch(scope, task, rewritten)
     assert output =~ "[rejected]"
@@ -264,5 +232,22 @@ defmodule Rail.Git.Actions.PushBranchTest do
 
     assert {:error, output} = Git.push_branch(scope, task, sha)
     assert output =~ "[rejected]"
+  end
+
+  test "under the docker runtime records origin's branch in the task's repository alone", %{
+    scope: scope,
+    task: task,
+    repo: repo,
+    checkout: checkout,
+    remote: remote,
+    sha: sha
+  } do
+    assert :ok = Git.sync_checkout(task)
+    stub(Rail, :sandbox_runtime, fn -> :docker end)
+
+    assert :ok = Git.push_branch(scope, task, sha)
+    assert git!(remote, ["rev-parse", "feature"]) == sha <> "\n"
+    assert git!(repo, ["rev-parse", "refs/remotes/origin/feature"]) == sha <> "\n"
+    assert {_none, 128} = Rail.Tools.run("git", ["rev-parse", "--verify", "origin/feature"], cd: checkout)
   end
 end

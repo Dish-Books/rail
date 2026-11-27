@@ -49,7 +49,7 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
     # Git is only ever asked through Rail.Git, so the worktree is a plain directory, clean, on the commit whose sha is
     # all a's.
     worktree_path = Path.join(System.tmp_dir!(), "run_ci_worktree_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(worktree_path)
+    Enum.each([worktree_path, worktree_path <> ".git"], &File.mkdir_p!/1)
     on_exit(fn -> File.rm_rf(worktree_path) end)
 
     task =
@@ -238,7 +238,7 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
   end
 
   test "uncommitted work is committed first, not run past", %{run: run, worktree_path: worktree_path} do
-    expect(Git, :worktree_dirty?, fn ^worktree_path -> true end)
+    expect(Git, :worktree_dirty?, fn %{worktree_path: ^worktree_path} -> true end)
 
     assert {:error, :uncommitted_changes} = Pipeline.run_ci(system_scope(), run)
   end

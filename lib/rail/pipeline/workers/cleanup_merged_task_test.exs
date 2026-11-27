@@ -45,8 +45,7 @@ defmodule Rail.Pipeline.Workers.CleanupMergedTaskTest do
     diff = %{path: "lib/a.ex", line_kind: :added, line: 1, line_text: "x", filter: :branch, body: "Name it."}
     {:ok, _unsent} = Pipeline.create_diff_comment(user_scope(user: ada), task, diff)
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
-    expect(Git, :remove_worktree, fn ^clone_path, ^worktree_path -> :ok end)
-    expect(Git, :delete_branch, fn ^clone_path, "cmt-branch" -> :ok end)
+    expect(Git, :remove_task_checkout, fn %{clone_path: ^clone_path}, %{worktree_path: ^worktree_path} -> :ok end)
 
     assert :ok = perform_job(CleanupMergedTask, %{task_id: task.id})
 

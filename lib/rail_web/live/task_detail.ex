@@ -1960,7 +1960,7 @@ defmodule RailWeb.Live.TaskDetail do
 
   defp assign_code(socket, %Finding{key: key} = finding) do
     %{task: task, current_scope: scope, code_cache: cache} = socket.assigns
-    fingerprint = if Task.worktree_present?(task), do: Git.branch_fingerprint(task.worktree_path)
+    fingerprint = if Task.worktree_present?(task), do: Git.branch_fingerprint(task)
     by_key = if cache.fingerprint == fingerprint, do: cache.by_key, else: %{}
     code = Map.get_lazy(by_key, key, fn -> load_code(scope, task, finding) end)
 

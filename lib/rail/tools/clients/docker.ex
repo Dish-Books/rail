@@ -10,6 +10,7 @@ defmodule Rail.Tools.Clients.Docker do
 
   @label "dev.railai.sandbox"
   @agent_label "dev.railai.agent"
+  @task_sandbox_label "dev.railai.task-sandbox"
 
   def config, do: Application.get_env(:rail, :docker, [])
 
@@ -54,6 +55,47 @@ defmodule Rail.Tools.Clients.Docker do
       json: Map.put(body, "Labels", labels)
     )
   end
+
+  @doc """
+  Creates the container a task's sandbox `sandbox_id` runs in now, named and labelled after the sandbox, so Rail finds
+  it again and nothing that sweeps a process's own containers takes it for one.
+  """
+  def create_sandbox_container(sandbox_id, body) when is_map(body) do
+    labels = Map.put(body["Labels"] || %{}, @task_sandbox_label, sandbox_id)
+
+    request(
+      method: :post,
+      url: "/containers/create",
+      params: [name: "rail-#{sandbox_id}"],
+      json: Map.put(body, "Labels", labels)
+    )
+  end
+
+  @doc "Creates the named volume a task's sandbox keeps its disk on, labelled after the sandbox."
+  def create_volume(name, sandbox_id) do
+    request(
+      method: :post,
+      url: "/volumes/create",
+      json: %{"Name" => name, "Labels" => %{@task_sandbox_label => sandbox_id}}
+    )
+  end
+
+  def remove_volume(name), do: request(method: :delete, url: "/volumes/#{name}")
+
+  @doc "Unpacks the tar archive `tar` into `path` in container `id`, which must exist and may not yet be started."
+  def put_archive(id, path, tar) when is_binary(tar) do
+    request(
+      method: :put,
+      url: "/containers/#{id}/archive",
+      params: [path: path],
+      headers: [{"content-type", "application/x-tar"}],
+      body: tar
+    )
+  end
+
+  @doc "Changes what a running container may use, such as its `CpuShares`."
+  def update_container(id, body) when is_map(body),
+    do: request(method: :post, url: "/containers/#{id}/update", json: body)
 
   def start_container(id), do: request(method: :post, url: "/containers/#{id}/start")
 

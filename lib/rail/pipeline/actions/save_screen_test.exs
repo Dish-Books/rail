@@ -9,7 +9,7 @@ defmodule Rail.Pipeline.Actions.SaveScreenTest do
     task = learnings_task(project, "SSC-1", :review)
     # HEAD is asked of Rail.Git, so the worktree is a plain directory and the stub names its commit.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task.id}")
@@ -24,7 +24,7 @@ defmodule Rail.Pipeline.Actions.SaveScreenTest do
     task: %{id: task_id, worktree_path: worktree} = task,
     head: head
   } do
-    expect(Git, :branch_fingerprint, fn ^worktree -> %{head_sha: head, dirty_digest: "clean"} end)
+    expect(Git, :branch_fingerprint, fn %{worktree_path: ^worktree} -> %{head_sha: head, dirty_digest: "clean"} end)
     file = "screens/toolbar/1760000000000000.jpg"
 
     assert {:ok,

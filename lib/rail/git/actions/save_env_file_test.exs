@@ -239,4 +239,25 @@ defmodule Rail.Git.Actions.SaveEnvFileTest do
     assert {:error, :eisdir} = Git.save_env_file(project, "FOO=bar\n")
     assert File.read!(Path.join(worktree, ".env")) == "OWN=mine\n"
   end
+
+  # A sandbox that is not running is written nothing; one with no script gets the .env with its checkout on start.
+  test "under the docker runtime writes each task with a repository through its sandbox", %{
+    projects: %{scripted: scripted, unscripted: unscripted},
+    worktrees: %{set_up: set_up, waiting: waiting, unscripted: unscripted_path}
+  } do
+    stub(Rail, :sandbox_runtime, fn -> :docker end)
+    Enum.each([set_up, waiting, unscripted_path], &File.mkdir_p!(&1 <> ".git"))
+
+    assert {:ok, %{written: 0, refused: [{^set_up, "The task's sandbox is not running, so its .env was not written."}]}} =
+             Git.save_env_file(scripted, "FOO=bar\n")
+
+    assert {:ok, %{written: 1, refused: []}} = Git.save_env_file(unscripted, "FOO=bar\n")
+
+    stub(Rail.Tools, :call_sandbox, fn
+      _task, "read", _params -> {:ok, %{"missing" => true}}
+      _task, "write", %{"files" => [_env, _exclude]} -> {:ok, %{}}
+    end)
+
+    assert {:ok, %{written: 1, refused: []}} = Git.save_env_file(scripted, "FOO=bar\n")
+  end
 end

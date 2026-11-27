@@ -54,7 +54,7 @@ defmodule Rail.Pipeline.Actions.StartPlanTest do
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     # Starting the work only queues the engineer, so the worktree is a plain directory nothing asks git about.
     worktree_path = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree_path)
+    Enum.each([worktree_path, worktree_path <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     {:ok, _saved} = Pipeline.save_plan(task, %{title: "The ticket", description: "Its body.", plan: @plan})
 

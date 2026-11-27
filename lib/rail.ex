@@ -10,8 +10,20 @@ defmodule Rail do
   @doc "The image a Docker sandbox is created from."
   def sandbox_image, do: sandbox(:image, "rail-sandbox:latest")
 
-  @doc "What a sandbox for a task still on a worktree of its project's clone has mounted, at the paths Rail sees them."
-  def sandbox_binds, do: sandbox(:binds, [])
+  @doc "Where a sandbox's runner dials Rail's socket."
+  def sandbox_url, do: sandbox(:url, "ws://localhost:4000/sandbox/socket")
+
+  @doc "How many sandboxes' containers this host runs at once."
+  def max_sandboxes, do: sandbox(:max_sandboxes, 8)
+
+  @doc "How long a sandbox's container stays up with nothing running, in minutes, before it is stopped."
+  def sandbox_idle_minutes, do: sandbox(:idle_minutes, 5)
+
+  @doc "Where the runner's binaries for each Linux architecture are, as `linux-<arch>/rail-runner`."
+  def runner_dir, do: sandbox(:runner_dir, Path.expand("../runner/dist", __DIR__))
+
+  @doc "The Docker volume of toolchains a sandbox reads at `mise_data_dir/0`, or nil for none."
+  def toolchain_volume, do: sandbox(:toolchain_volume, nil)
 
   @doc "Where mise keeps the toolchains Rail installs, which a sandbox reads and never writes; nil when unset."
   def mise_data_dir, do: System.get_env("MISE_DATA_DIR")
@@ -52,6 +64,9 @@ defmodule Rail do
   @doc "Where each task's own clone of its project lives."
   def tasks_root, do: Application.get_env(:rail, :tasks_root) || Path.join(File.cwd!(), "output/tasks")
 
+  @doc "How long, in milliseconds, a task's checkout counts as synced into its repository after a sync starts."
+  def checkout_sync_ms, do: Application.get_env(:rail, :checkout_sync_ms, 2_000)
+
   @doc "Whether Goth runs, so Rail can reach Google for embeddings."
   def goth_enabled?, do: Application.get_env(:rail, :goth_enabled, false)
 
@@ -60,6 +75,13 @@ defmodule Rail do
     config = Application.get_env(:rail, :cloudflare_access, [])
 
     if config[:team_domain] && config[:aud], do: %{team_domain: config[:team_domain], aud: config[:aud]}
+  end
+
+  @doc "The Cloudflare Access team domain and the sandbox socket's audience tag when both are set."
+  def sandbox_access do
+    config = Application.get_env(:rail, :cloudflare_access, [])
+
+    if config[:team_domain] && config[:sandbox_aud], do: %{team_domain: config[:team_domain], aud: config[:sandbox_aud]}
   end
 
   defp browser(key, default), do: :rail |> Application.get_env(:browser, []) |> Keyword.get(key, default)

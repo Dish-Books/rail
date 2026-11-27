@@ -35,6 +35,13 @@ export DOCKER_GID
 # below touches them, and the image they run is only replaced for the ones started next.
 docker build --target sandbox -t rail-sandbox:latest .
 
+# Toolchains live in a volume sandboxes mount read-only, rather than in /srv/rail. Once, it takes
+# what Rail had installed there.
+if ! docker volume inspect rail-mise >/dev/null 2>&1; then
+  docker volume create rail-mise
+  docker run --rm --user 0:0 -v /srv/rail/mise:/from:ro -v rail-mise:/to rail-sandbox:latest cp -a /from/. /to/
+fi
+
 echo "Agent runs, setup, CI and the browser keep running in their sandboxes while rail restarts." >&2
 docker compose up -d --build --remove-orphans
 docker image prune -f

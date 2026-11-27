@@ -22,7 +22,7 @@ defmodule Rail.Pipeline.Actions.SaveReview do
   def save_review(%Task{} = task) do
     task = Repo.preload(task, :issue)
     passes = Pipeline.read_review(task)
-    head = if Task.worktree_present?(task), do: Git.branch_fingerprint(task.worktree_path)[:head_sha]
+    head = if Task.worktree_present?(task), do: Git.branch_fingerprint(task)[:head_sha]
     now = DateTime.utc_now()
 
     {pass, passes} =

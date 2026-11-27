@@ -7,19 +7,16 @@ defmodule Rail.Git.Utils.BranchBase do
   alias Rail.Tools
 
   @doc """
-  The commit `task`'s branch is diffed from: where it forked from its base, or
-  `HEAD` when it shares no history with it yet.
+  The commit `task`'s branch is diffed from, `work_tree` being where it stands: where it forked from its base, or its
+  head when it shares no history with it yet.
 
   The merge base rather than the base branch's tip keeps the base moving ahead
   out of the picture. It is `origin/`'s, the one merged in.
   """
-  def branch_base(%Task{worktree_path: worktree_path} = task) do
-    case Tools.run("git", ["merge-base", "origin/#{base_branch(task)}", "HEAD"],
-           cd: worktree_path,
-           stderr_to_stdout: true
-         ) do
+  def branch_base(%Task{} = task, %{repo: repo, head: head}) do
+    case Tools.run("git", ["merge-base", "origin/#{base_branch(task)}", head], cd: repo, stderr_to_stdout: true) do
       {output, 0} -> String.trim(output)
-      _no_merge_base -> "HEAD"
+      _no_merge_base -> head
     end
   end
 

@@ -1,20 +1,20 @@
 defmodule Rail.Git.Actions.ListChangedPaths do
   @moduledoc false
 
-  import Rail.Git.Utils.UntrackedPaths
+  import Rail.Git.Utils.WorkTree
 
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Tools
 
   @doc """
-  Every path in `worktree_path` that differs from `HEAD`, changed, deleted or untracked, sorted.
+  Every path in `task`'s checkout that differs from its branch's head, changed, deleted or untracked, sorted.
   """
-  def list_changed_paths(worktree_path) when is_binary(worktree_path) do
-    tracked =
-      case Tools.run("git", ["diff", "--name-only", "-z", "HEAD"], cd: worktree_path, stderr_to_stdout: true) do
-        {output, 0} -> String.split(output, <<0>>, trim: true)
-        _unreadable -> []
-      end
-
-    Enum.sort(Enum.uniq(tracked ++ untracked_paths(worktree_path)))
+  def list_changed_paths(%Task{} = task) do
+    with %{repo: repo, head: head, work: work} <- work_tree(task),
+         {output, 0} <- Tools.run("git", ["diff", "--name-only", "-z", head, work], cd: repo, stderr_to_stdout: true) do
+      output |> String.split(<<0>>, trim: true) |> Enum.sort()
+    else
+      _unreadable -> []
+    end
   end
 end

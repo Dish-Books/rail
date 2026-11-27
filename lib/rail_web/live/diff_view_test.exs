@@ -39,7 +39,7 @@ defmodule RailWeb.Live.DiffViewTest do
 
     task = learnings_task(project, "DVW-1")
     repo = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(repo)
+    Enum.each([repo, repo <> ".git"], &File.mkdir_p!/1)
 
     engineer = String.duplicate("e", 40)
     merge = String.duplicate("b", 40)
@@ -151,13 +151,15 @@ defmodule RailWeb.Live.DiffViewTest do
        end}
     end)
 
-    stub(Git, :branch_fingerprint, fn worktree_path ->
+    stub(Git, :branch_fingerprint, fn %{worktree_path: worktree_path} ->
       %{sha: head_sha} = Enum.find(commits, &File.exists?(Path.join(worktree_path, "#{&1.sha}.diff")))
       dirty = File.read!(Path.join(worktree_path, "uncommitted.diff"))
       %{head_sha: head_sha, dirty_digest: :sha256 |> :crypto.hash(dirty) |> Base.encode16(case: :lower)}
     end)
 
-    stub(Git, :worktree_dirty?, fn worktree_path -> File.read!(Path.join(worktree_path, "uncommitted.diff")) != "" end)
+    stub(Git, :worktree_dirty?, fn %{worktree_path: worktree_path} ->
+      File.read!(Path.join(worktree_path, "uncommitted.diff")) != ""
+    end)
 
     # Round 1 read the branch up to the merge, so what came after is the fix round it led to.
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: repo})

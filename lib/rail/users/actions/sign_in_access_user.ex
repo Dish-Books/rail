@@ -4,6 +4,7 @@ defmodule Rail.Users.Actions.SignInAccessUser do
   """
 
   import Rail.Users.Utils.AdmitUser
+  import Rail.Users.Utils.VerifyAccessJwt
 
   alias Rail.Repo
   alias Rail.Users.Clients.CloudflareAccess
@@ -43,22 +44,12 @@ defmodule Rail.Users.Actions.SignInAccessUser do
     end
   end
 
+  # A service token's identity is empty, and signs nobody in.
   defp verify(assertion, keys, issuer, aud) do
-    now = System.os_time(:second)
-
-    keys
-    |> Enum.find_value(fn key ->
-      case JOSE.JWT.verify_strict(JOSE.JWK.from_map(key), ["RS256"], assertion) do
-        {true, %JOSE.JWT{fields: %{"email" => "" <> email, "iss" => ^issuer, "aud" => auds, "exp" => exp}}, _jws}
-        when is_integer(exp) and exp > now and email != "" ->
-          aud in List.wrap(auds) && email
-
-        # A forged token, or a string that is not a token at all, which JOSE answers with an error.
-        _refused ->
-          nil
-      end
-    end)
-    |> then(&if(&1, do: {:ok, &1}, else: {:error, :invalid_assertion}))
+    case verify_access_jwt(assertion, keys, issuer, aud) do
+      {:ok, %{"email" => "" <> email}} when email != "" -> {:ok, email}
+      _refused -> {:error, :invalid_assertion}
+    end
   end
 
   # A returning person is left as they are; a new one has only the email to be named by.

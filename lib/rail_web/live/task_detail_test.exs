@@ -52,12 +52,12 @@ defmodule RailWeb.Live.TaskDetailTest do
     # commit it is on, which a test moves on by writing another, and branch.diff is what the branch changed, as
     # <sha>.diff is what one commit did. With no origin/main fetched to fork from, git cannot read the branch's commits.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     head = Base.encode16(:crypto.strong_rand_bytes(20), case: :lower)
     File.write!(Path.join(worktree, "HEAD"), head)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
 
-    stub(Git, :branch_fingerprint, fn worktree_path ->
+    stub(Git, :branch_fingerprint, fn %{worktree_path: worktree_path} ->
       case File.read(Path.join(worktree_path, "HEAD")) do
         {:ok, head} -> %{head_sha: head, dirty_digest: "clean"}
         {:error, _gone} -> nil
@@ -1227,6 +1227,13 @@ defmodule RailWeb.Live.TaskDetailTest do
     head: head,
     code: code
   } do
+    # A place's code is read from the task's repository, so the worktree is a checkout that syncs into one.
+    File.rm_rf!(Task.repo_path(task))
+    git!(System.tmp_dir!(), ["init", "--quiet", "--bare", Task.repo_path(task)])
+    git!(worktree, ["init", "--quiet", "-b", task.worktree_name])
+    identity = ["-c", "user.name=Rail Test", "-c", "user.email=test@rail.local", "-c", "commit.gpgsign=false"]
+    git!(worktree, identity ++ ["commit", "--quiet", "--allow-empty", "-m", "base"])
+
     # The branch changed lines 3 to 5 of a twelve-line file.
     File.write!(
       Path.join(worktree, "example.ex"),
@@ -1813,6 +1820,13 @@ defmodule RailWeb.Live.TaskDetailTest do
     # committed. The log lists the branch's commits oldest first, each with the label the rounds give it, and a test
     # commits by adding one and moving HEAD to it.
     setup %{task: %{worktree_path: worktree} = task} do
+      # A place's code is read from the task's repository, so the worktree is a checkout that syncs into one.
+      File.rm_rf!(Task.repo_path(task))
+      git!(System.tmp_dir!(), ["init", "--quiet", "--bare", Task.repo_path(task)])
+      git!(worktree, ["init", "--quiet", "-b", task.worktree_name])
+      identity = ["-c", "user.name=Rail Test", "-c", "user.email=test@rail.local", "-c", "commit.gpgsign=false"]
+      git!(worktree, identity ++ ["commit", "--quiet", "--allow-empty", "-m", "base"])
+
       engineer = Base.encode16(:crypto.strong_rand_bytes(20), case: :lower)
       fix = Base.encode16(:crypto.strong_rand_bytes(20), case: :lower)
 

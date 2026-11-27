@@ -19,12 +19,12 @@ defmodule RailWeb.ScreenControllerTest do
     task = learnings_task(project, "SCT-1", :review)
     # A shot is stamped with the worktree's HEAD, so there is one; git is only asked about it.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
     folder = Path.join([task.scratch_path, "qa", "screens", "toolbar"])
     File.mkdir_p!(folder)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
-    expect(Git, :branch_fingerprint, fn ^worktree -> %{head_sha: "abc1234", dirty_digest: "d1"} end)
+    expect(Git, :branch_fingerprint, fn %{worktree_path: ^worktree} -> %{head_sha: "abc1234", dirty_digest: "d1"} end)
 
     File.write!(Path.join(folder, "1.jpg"), "jpeg bytes")
     {:ok, _shot} = Pipeline.save_screen(task, %{key: "toolbar", label: "Toolbar", file: "screens/toolbar/1.jpg"})

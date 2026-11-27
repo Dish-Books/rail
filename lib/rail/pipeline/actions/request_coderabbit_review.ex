@@ -65,7 +65,7 @@ defmodule Rail.Pipeline.Actions.RequestCoderabbitReview do
   end
 
   defp head(%Task{} = task) do
-    case Task.worktree_present?(task) && Git.branch_fingerprint(task.worktree_path)[:head_sha] do
+    case Task.worktree_present?(task) && Git.branch_fingerprint(task)[:head_sha] do
       sha when is_binary(sha) -> {:ok, sha}
       _no_worktree -> {:error, :no_worktree}
     end

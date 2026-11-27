@@ -7,8 +7,8 @@ defmodule Rail.Git.Actions.LoadDiff do
   review means. `:uncommitted` is only what has not been committed yet, which is
   what "what has the engineer changed since I last looked" means. `{:commit, sha}`
   is one commit against its first parent, so a merge shows what main brought in.
-  Untracked files are written into the first two by hand: git will not diff a file
-  it has never seen, but the human still has to read it.
+  The working tree is the checkout's as last synced into the task's repository,
+  `refs/rail/wip`, untracked files and all.
 
   The files come back already parsed into rows, already highlighted and already
   marked with whether this reader has read them, because there is nothing a
@@ -20,7 +20,7 @@ defmodule Rail.Git.Actions.LoadDiff do
   import Rail.Git.Utils.FileLines
   import Rail.Git.Utils.HighlightLines
   import Rail.Git.Utils.ParseDiff
-  import Rail.Git.Utils.UntrackedPaths
+  import Rail.Git.Utils.WorkTree
 
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Task
@@ -36,28 +36,30 @@ defmodule Rail.Git.Actions.LoadDiff do
   cleaned up, since the change only ever existed on disk.
   """
   def load_diff(%Scope{} = scope, %Task{} = task, filter \\ :branch, previous_files \\ []) do
-    if Task.worktree_present?(task) do
-      viewed = Git.list_viewed_files(scope, task, :diff)
-      drawn = Map.new(previous_files, &{{&1.path, &1.digest}, &1.rows})
-      sides = diff_sides(task, filter)
-      parsed = task |> raw_diff(filter, sides) |> parse_diff()
-
-      highlighted =
-        parsed
-        |> Enum.reject(&Map.has_key?(drawn, {&1.path, &1.digest}))
-        |> Elixir.Task.async_stream(&highlight(&1, task.worktree_path, sides),
-          ordered: true,
-          max_concurrency: System.schedulers_online(),
-          timeout: :infinity
-        )
-        |> Enum.map(fn {:ok, file} -> file end)
-
-      {files, []} = Enum.map_reduce(parsed, highlighted, &draw(&1, &2, drawn))
-
-      {:ok, Enum.map(files, &Map.put(&1, :viewed?, Map.get(viewed, &1.path) == &1.digest))}
-    else
-      {:error, :no_worktree}
+    case work_tree(task) do
+      %{repo: repo} = work_tree -> {:ok, load(scope, task, repo, diff_sides(task, work_tree, filter), previous_files)}
+      nil -> {:error, :no_worktree}
     end
+  end
+
+  defp load(scope, task, repo, sides, previous_files) do
+    viewed = Git.list_viewed_files(scope, task, :diff)
+    drawn = Map.new(previous_files, &{{&1.path, &1.digest}, &1.rows})
+    parsed = repo |> raw_diff(sides) |> parse_diff()
+
+    highlighted =
+      parsed
+      |> Enum.reject(&Map.has_key?(drawn, {&1.path, &1.digest}))
+      |> Elixir.Task.async_stream(&highlight(&1, repo, sides),
+        ordered: true,
+        max_concurrency: System.schedulers_online(),
+        timeout: :infinity
+      )
+      |> Enum.map(fn {:ok, file} -> file end)
+
+    {files, []} = Enum.map_reduce(parsed, highlighted, &draw(&1, &2, drawn))
+
+    Enum.map(files, &Map.put(&1, :viewed?, Map.get(viewed, &1.path) == &1.digest))
   end
 
   # Kept rows are put back here rather than in the tasks, so they stay the terms
@@ -71,13 +73,13 @@ defmodule Rail.Git.Actions.LoadDiff do
 
   # A line's color depends on where it sits in its file, so each side is highlighted
   # whole: the old one as it was at the diff's base, and only when a deleted row needs it.
-  defp highlight(%{rows: rows, path: path} = file, worktree_path, {base, revision}) do
+  defp highlight(%{rows: rows, path: path} = file, repo, {base, revision}) do
     old =
       if Enum.any?(rows, &(&1[:line_kind] == :deleted)),
-        do: colors(rows, :deleted, :old_line, path, fn -> file_lines(worktree_path, file.old_path, base) end),
+        do: colors(rows, :deleted, :old_line, path, fn -> file_lines(repo, file.old_path, base) end),
         else: %{}
 
-    new = colors(rows, :added, :new_line, path, fn -> file_lines(worktree_path, path, revision) end)
+    new = colors(rows, :added, :new_line, path, fn -> file_lines(repo, path, revision) end)
 
     %{file | rows: Enum.map(rows, &stamp(&1, old, new))}
   end
@@ -121,43 +123,14 @@ defmodule Rail.Git.Actions.LoadDiff do
   defp stamp(row, _old, _new), do: row
 
   # The sha comes from a page, so only a commit name, never an option, reaches git.
-  defp raw_diff(%Task{worktree_path: worktree_path}, {:commit, sha}, {base, sha}) do
-    if sha =~ @sha, do: diff(worktree_path, ["diff", base, sha]), else: ""
-  end
-
-  defp raw_diff(%Task{worktree_path: worktree_path}, _filter, {base, :worktree}) do
-    diff(worktree_path, ["diff", base]) <>
-      Enum.map_join(untracked_paths(worktree_path), "", &synthesize(worktree_path, &1))
-  end
-
-  defp diff(worktree_path, args) do
-    case Tools.run("git", args, cd: worktree_path, stderr_to_stdout: true) do
-      {output, 0} -> output
-      _unreadable -> ""
-    end
-  end
-
-  # The patch git will not write: a file it has never seen, added whole. A link is
-  # drawn as git draws a tracked one, by where it points, never by what it reaches.
-  defp synthesize(worktree_path, path) do
-    with {:error, _not_a_link} <- worktree_path |> Path.join(path) |> File.read_link(),
-         lines when is_list(lines) <- file_lines(worktree_path, path) do
-      patch(path, lines)
+  defp raw_diff(repo, {base, revision}) do
+    if revision =~ @sha do
+      case Tools.run("git", ["diff", base, revision], cd: repo, stderr_to_stdout: true) do
+        {output, 0} -> output
+        _unreadable -> ""
+      end
     else
-      {:ok, target} -> patch(path, [target])
-      nil -> ""
-    end
-  end
-
-  defp patch(path, lines) do
-    header = "diff --git a/#{path} b/#{path}\nnew file (untracked)\n"
-
-    if Enum.any?(lines, &String.contains?(&1, <<0>>)) do
-      header <> "Binary files /dev/null and b/#{path} differ\n"
-    else
-      header <>
-        "--- /dev/null\n+++ b/#{path}\n@@ -0,0 +1,#{length(lines)} @@\n" <>
-        Enum.map_join(lines, "", &"+#{&1}\n")
+      ""
     end
   end
 end

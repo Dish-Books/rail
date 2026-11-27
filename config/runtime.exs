@@ -23,10 +23,12 @@ config :rail, Rail.Vault,
   ]
 
 # Access signs people in when both are set: the team's bare host, such as `team.cloudflareaccess.com`,
-# and the application's audience tag.
+# and the application's audience tag. `sandbox_aud` is the tag of the app on /sandbox/socket, which a runner
+# reaching Rail through Cloudflare must carry a token of; it is not a secret.
 config :rail, :cloudflare_access,
   team_domain: get_env.("CF_ACCESS_TEAM_DOMAIN", nil),
-  aud: get_env.("CF_ACCESS_AUD", nil)
+  aud: get_env.("CF_ACCESS_AUD", nil),
+  sandbox_aud: get_env.("CF_ACCESS_SANDBOX_AUD", "98745509115be6db9cc2d0df8f46dd3144cd4a0b44de16aa79ee86b39700eb10")
 
 config :rail, :git,
   bot_name: "Rail",
@@ -92,7 +94,12 @@ if config_env() == :prod do
   config :rail, :sandbox,
     runtime: if(System.get_env("RAIL_SANDBOX_RUNTIME") == "docker", do: :docker, else: :local),
     image: System.get_env("RAIL_SANDBOX_IMAGE", "rail-sandbox:latest"),
-    headroom_cpus: String.to_integer(System.get_env("RAIL_SANDBOX_HEADROOM_CPUS", "2"))
+    headroom_cpus: String.to_integer(System.get_env("RAIL_SANDBOX_HEADROOM_CPUS", "2")),
+    url: System.get_env("RAIL_SANDBOX_URL", "ws://localhost:#{System.get_env("PORT", "4000")}/sandbox/socket"),
+    max_sandboxes: String.to_integer(System.get_env("RAIL_MAX_SANDBOXES", "8")),
+    idle_minutes: String.to_integer(System.get_env("RAIL_SANDBOX_IDLE_MINUTES", "5")),
+    runner_dir: System.get_env("RAIL_RUNNER_DIR", "/app/runner"),
+    toolchain_volume: System.get_env("RAIL_TOOLCHAIN_VOLUME")
 
   # Under /srv/rail, so the profile and the address Chrome writes into it outlive Rail's container.
   if browser_root = System.get_env("RAIL_BROWSER_ROOT"), do: config(:rail, :browser, root: browser_root)

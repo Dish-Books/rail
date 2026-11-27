@@ -59,7 +59,7 @@ defmodule Rail.Pipeline.Actions.UpdateBranch do
       |> Ecto.Changeset.change(
         plan: plan(base, task.base_conflicts),
         plan_saved_at: DateTime.utc_now(),
-        base_head: Git.branch_fingerprint(task.worktree_path)[:head_sha]
+        base_head: Git.branch_fingerprint(task)[:head_sha]
       )
       |> Repo.update()
 

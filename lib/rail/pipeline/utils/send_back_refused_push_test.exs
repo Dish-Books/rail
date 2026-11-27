@@ -16,7 +16,7 @@ defmodule Rail.Pipeline.Utils.SendBackRefusedPushTest do
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     # Resuming the engineer asks Rail.Git for the worktree, so it is a plain directory the stub hands back.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     stub(Git, :get_or_create_worktree, fn _project, _task -> {:ok, worktree} end)

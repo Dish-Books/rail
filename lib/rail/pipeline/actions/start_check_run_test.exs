@@ -16,10 +16,10 @@ defmodule Rail.Pipeline.Actions.StartCheckRunTest do
     # Git is only ever asked through Rail.Git, so the worktree is a plain directory, on the commit whose sha is all
     # a's. A round's start is `base`, which a test says how HEAD came from.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
 
-    stub(Git, :branch_fingerprint, fn ^worktree ->
+    stub(Git, :branch_fingerprint, fn %{worktree_path: ^worktree} ->
       %{head_sha: String.duplicate("a", 40), dirty_digest: String.duplicate("0", 64)}
     end)
 
@@ -82,7 +82,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRunTest do
     worktree: worktree,
     base: base
   } do
-    stub(Git, :commits_since, fn ^worktree, ^base -> {:ok, %{merges: false}} end)
+    stub(Git, :commits_since, fn %{worktree_path: ^worktree}, ^base -> {:ok, %{merges: false}} end)
     Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter by vendor.", approved_at: DateTime.utc_now()})
 
     Repo.insert!(%Round{
@@ -111,7 +111,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRunTest do
 
   test "a round that merged the default branch points its checkers at what the merge changed in the branch's files",
        %{task: task, runs: runs, worktree: worktree, base: base} do
-    stub(Git, :commits_since, fn ^worktree, ^base -> {:ok, %{merges: true}} end)
+    stub(Git, :commits_since, fn %{worktree_path: ^worktree}, ^base -> {:ok, %{merges: true}} end)
 
     Repo.insert!(%Round{
       task_id: task.id,
@@ -148,7 +148,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRunTest do
     worktree: worktree,
     base: base
   } do
-    stub(Git, :commits_since, fn ^worktree, ^base -> {:error, :not_ancestor} end)
+    stub(Git, :commits_since, fn %{worktree_path: ^worktree}, ^base -> {:error, :not_ancestor} end)
 
     Repo.insert!(%Round{
       task_id: task.id,

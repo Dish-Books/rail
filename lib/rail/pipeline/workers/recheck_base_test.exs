@@ -13,8 +13,8 @@ defmodule Rail.Pipeline.Workers.RecheckBaseTest do
     task = learnings_task(project, "RCB-1", :finalize)
     # Git is stubbed, so the worktree is only looked for: a plain directory stands in for it.
     worktree_path = Path.join(System.tmp_dir!(), "rail_rcb_wt_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(worktree_path)
-    on_exit(fn -> File.rm_rf(worktree_path) end)
+    Enum.each([worktree_path, worktree_path <> ".git"], &File.mkdir_p!/1)
+    on_exit(fn -> Enum.each([worktree_path, worktree_path <> ".git"], &File.rm_rf/1) end)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     %{task: task}
@@ -26,12 +26,12 @@ defmodule Rail.Pipeline.Workers.RecheckBaseTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
     test_pid = self()
 
-    expect(Git, :fetch_default_branch, fn _project, ^worktree_path ->
+    expect(Git, :fetch_default_branch, fn _project, %{worktree_path: ^worktree_path} ->
       send(test_pid, :fetched)
       :ok
     end)
 
-    expect(Git, :base_status, fn ^worktree_path, "main" ->
+    expect(Git, :base_status, fn %{worktree_path: ^worktree_path}, "main" ->
       assert_received :fetched
       %{behind: true, conflicts: ["lib/a.ex"]}
     end)
@@ -59,7 +59,7 @@ defmodule Rail.Pipeline.Workers.RecheckBaseTest do
     assert :ok = perform_job(RecheckBase, %{task_id: cleaned.id})
 
     {:ok, gone} = Pipeline.update_task(cleaned, %{cleaned_up_at: nil})
-    File.rm_rf!(gone.worktree_path)
+    File.rm_rf!(gone.worktree_path <> ".git")
     assert :ok = perform_job(RecheckBase, %{task_id: gone.id})
 
     {:ok, _deleted} = Repo.delete(gone)

@@ -6,6 +6,8 @@ defmodule Rail.Git.Actions.LoadBranchHistory do
   what main brought in, and a merge the conflicts git met in it.
   """
 
+  import Rail.Git.Utils.WorkTree
+
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -16,30 +18,30 @@ defmodule Rail.Git.Actions.LoadBranchHistory do
 
   @doc """
   Returns `task`'s branch as `%{base:, head:, files:, additions:, deletions:, commits:}`: the default
-  branch's name, HEAD's short sha, and what the branch changed in all since it forked. `rounds` are the
+  branch's name, the branch head's short sha, and what the branch changed in all since it forked. `rounds` are the
   commits Review's rounds read, in order, which label what came between them. Each commit is `%{sha:,
   short_sha:, parent:, subject:, at:, label:, merge?:, main?:, merged:, conflicts:, files:, additions:,
   deletions:}`, with `merged` the commit a merge brought in and `main?` whether that is the default branch's.
   A branch git cannot read has no commits and no head.
   """
-  def load_branch_history(%Task{worktree_path: worktree_path} = task, rounds) do
+  def load_branch_history(%Task{} = task, rounds) do
     %Project{default_branch: base} = Repo.get!(Project, task.project_id)
     format = @record <> Enum.join(["%H", "%h", "%p", "%s", "%cI"], @field) <> @field
 
-    args = [
-      "log",
-      "--first-parent",
-      "--diff-merges=first-parent",
-      "--numstat",
-      "--format=#{format}",
-      "origin/#{base}..HEAD"
-    ]
-
-    with {log, 0} <- Tools.run("git", args, cd: worktree_path, stderr_to_stdout: true),
-         {stat, 0} <- Tools.run("git", ["diff", "--numstat", "origin/#{base}...HEAD"], cd: worktree_path),
-         {head, 0} <- Tools.run("git", ["rev-parse", "--short", "HEAD"], cd: worktree_path, stderr_to_stdout: true) do
-      branch = %{worktree_path: worktree_path, base: base, name: task.worktree_name}
-      read = Enum.map(rounds, &read_by(worktree_path, base, &1))
+    with %{repo: repo, head: head_sha} <- work_tree(task),
+         args = [
+           "log",
+           "--first-parent",
+           "--diff-merges=first-parent",
+           "--numstat",
+           "--format=#{format}",
+           "origin/#{base}..#{head_sha}"
+         ],
+         {log, 0} <- Tools.run("git", args, cd: repo, stderr_to_stdout: true),
+         {stat, 0} <- Tools.run("git", ["diff", "--numstat", "origin/#{base}...#{head_sha}"], cd: repo),
+         {head, 0} <- Tools.run("git", ["rev-parse", "--short", head_sha], cd: repo, stderr_to_stdout: true) do
+      branch = %{repo: repo, base: base, name: task.worktree_name}
+      read = Enum.map(rounds, &read_by(repo, base, &1))
       commits = log |> String.split(@record, trim: true) |> Enum.flat_map(&commit(&1, branch, read))
 
       Map.merge(%{base: base, head: String.trim(head), commits: commits}, numstat(stat))
@@ -49,14 +51,14 @@ defmodule Rail.Git.Actions.LoadBranchHistory do
   end
 
   # The branch's commits a round read; one a rebase has since replaced is no longer on the branch.
-  defp read_by(worktree_path, base, head) do
-    case Tools.run("git", ["rev-list", "origin/#{base}..#{head}"], cd: worktree_path, stderr_to_stdout: true) do
+  defp read_by(repo, base, head) do
+    case Tools.run("git", ["rev-list", "origin/#{base}..#{head}"], cd: repo, stderr_to_stdout: true) do
       {shas, 0} -> MapSet.new(String.split(shas))
       _gone -> MapSet.new()
     end
   end
 
-  defp commit(record, %{worktree_path: worktree_path} = branch, read) do
+  defp commit(record, %{repo: repo} = branch, read) do
     case String.split(record, @field) do
       [sha, short_sha, parents, subject, at, stat] ->
         {:ok, at, _offset} = DateTime.from_iso8601(at)
@@ -75,7 +77,7 @@ defmodule Rail.Git.Actions.LoadBranchHistory do
               merge?: length(parents) > 1,
               main?: main?,
               merged: Enum.at(parents, 1),
-              conflicts: conflicts(worktree_path, parents)
+              conflicts: conflicts(repo, parents)
             },
             numstat(stat)
           )
@@ -88,11 +90,11 @@ defmodule Rail.Git.Actions.LoadBranchHistory do
 
   # A merge brings in main when what it merged is on origin/<base>; otherwise it is what was pushed to the
   # branch itself, as merged when someone pushed to it outside Rail.
-  defp main?(%{worktree_path: worktree_path, base: base}, [_first, second | _more]) do
+  defp main?(%{repo: repo, base: base}, [_first, second | _more]) do
     match?(
       {_output, 0},
       Tools.run("git", ["merge-base", "--is-ancestor", second, "origin/#{base}"],
-        cd: worktree_path,
+        cd: repo,
         stderr_to_stdout: true
       )
     )
@@ -114,9 +116,9 @@ defmodule Rail.Git.Actions.LoadBranchHistory do
   defp round_label(round, _rounds), do: "Fix round #{round}"
 
   # Git says which files the two sides changed apart; a merge with none had nothing to resolve.
-  defp conflicts(worktree_path, [first, second]) do
+  defp conflicts(repo, [first, second]) do
     case Tools.run("git", ["merge-tree", "--write-tree", "--name-only", "--no-messages", first, second],
-           cd: worktree_path,
+           cd: repo,
            stderr_to_stdout: true
          ) do
       {output, 1} -> output |> String.split("\n", trim: true) |> length() |> Kernel.-(1)
@@ -124,7 +126,7 @@ defmodule Rail.Git.Actions.LoadBranchHistory do
     end
   end
 
-  defp conflicts(_worktree_path, _parents), do: 0
+  defp conflicts(_repo, _parents), do: 0
 
   defp numstat(stat) do
     rows =

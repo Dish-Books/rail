@@ -12,7 +12,7 @@ defmodule Rail.Pipeline.Actions.SaveReviewTest do
     scratch = Path.join(System.tmp_dir!(), "save_review_#{System.unique_integer([:positive])}")
     # HEAD is asked of Rail.Git, so the worktree is a plain directory and the stub says which commit it is on.
     worktree = Path.join(scratch, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     on_exit(fn -> File.rm_rf(scratch) end)
     head = String.duplicate("a", 40)
     stub(Git, :branch_fingerprint, fn _path -> %{head_sha: head, dirty_digest: "clean"} end)
@@ -28,7 +28,7 @@ defmodule Rail.Pipeline.Actions.SaveReviewTest do
     head: head
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:tsk_svr")
-    expect(Git, :branch_fingerprint, fn ^worktree -> %{head_sha: head, dirty_digest: "clean"} end)
+    expect(Git, :branch_fingerprint, fn %{worktree_path: ^worktree} -> %{head_sha: head, dirty_digest: "clean"} end)
 
     assert Pipeline.read_review(task) == []
     assert {:ok, %{round: 1, head: ^head, finished_at: nil, saved_at: %DateTime{}}} = Pipeline.save_review(task)
@@ -86,7 +86,7 @@ defmodule Rail.Pipeline.Actions.SaveReviewTest do
   test "the commit read is kept on the task's Review lead run, and on no other", %{project: project, head: head} do
     task = learnings_task(project, "SVR-2", :review)
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)

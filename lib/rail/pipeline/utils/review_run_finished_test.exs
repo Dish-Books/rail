@@ -23,7 +23,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
     {:ok, task} = Pipeline.create_task(issue, :review)
     # HEAD is asked of Rail.Git, so the worktree is a plain directory and the stub says which commit it is on.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree, pr_number: 42, pr_is_draft: true})
     task = Repo.preload(task, :issue)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
@@ -286,7 +286,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
   # Only the engineer changes the branch, so a review agent's commit is held for a person to see.
   test "a turn that committed is failed, and nothing is sent on", %{task: %{worktree_path: worktree} = task, run: run} do
     {:ok, _closed} = Pipeline.save_review(task)
-    expect(Git, :branch_unpushed?, fn ^worktree -> true end)
+    expect(Git, :branch_unpushed?, fn %{worktree_path: ^worktree} -> true end)
     reject(&Pipeline.hand_over_work/2)
 
     assert %Run{error: "The review agent committed. Only the engineer changes the branch, so nothing was sent on."} =

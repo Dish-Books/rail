@@ -15,7 +15,7 @@ defmodule Rail.Pipeline.Actions.StartCuratorTest do
     task = learnings_task(project, "SCU-1", :finalize)
     # Git is only ever asked through Rail.Git, so the worktree is a plain directory on a clean branch.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
     stub(Git, :branch_fingerprint, fn _path -> %{head_sha: String.duplicate("a", 40), dirty_digest: "clean"} end)

@@ -28,7 +28,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     # HEAD is asked of Rail.Git, so the worktree is a plain directory and the stub says which commit it is on.
     # A test that moves the branch stubs it again with the new commit.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree, pr_number: 9, pr_is_draft: true})
     task = Repo.preload(task, :issue)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)

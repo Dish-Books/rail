@@ -2,74 +2,54 @@ defmodule Rail.Git.Actions.ContentFingerprintTest do
   use Rail.DataCase, async: true
 
   alias Rail.Git
+  alias Rail.Pipeline.Schemas.Task
 
-  test "names the commit and digests what is on top of it" do
-    repo = create_temp_git_repo()
+  setup do
+    create_task_checkout()
+  end
 
-    head_sha = String.trim(git!(repo, ["rev-parse", "HEAD"]))
+  test "names the commit and digests what is on top of it", %{task: task, checkout: checkout} do
+    head_sha = String.trim(git!(checkout, ["rev-parse", "HEAD"]))
 
-    assert %{head_sha: ^head_sha, content_digest: digest} = Git.content_fingerprint(repo)
+    assert %{head_sha: ^head_sha, content_digest: digest} = Git.content_fingerprint(task)
     assert byte_size(digest) == 64
   end
 
-  # `git status` reads " M" both times, which is what the status digest stops at.
-  test "rewriting a file already modified changes the digest" do
-    repo = create_temp_git_repo()
-    File.write!(Path.join(repo, "feature.ex"), "committed\n")
-    git!(repo, ["add", "."])
-    git!(repo, ["commit", "-m", "feature"])
+  # The status digest reads the file as modified both times.
+  test "rewriting a file already modified changes the digest", %{task: task, checkout: checkout} do
+    File.write!(Path.join(checkout, "tracked.txt"), "first edit\n")
+    first = Git.content_fingerprint(task)
+    File.write!(Path.join(checkout, "tracked.txt"), "second edit\n")
 
-    File.write!(Path.join(repo, "feature.ex"), "first edit\n")
-    first = Git.content_fingerprint(repo)
-    File.write!(Path.join(repo, "feature.ex"), "second edit\n")
-
-    assert Git.content_fingerprint(repo).content_digest != first.content_digest
+    assert Git.content_fingerprint(task).content_digest != first.content_digest
   end
 
-  # A filter is a program the checkout's attributes name, and hashing an untracked file through one would run it.
-  test "hashes untracked files as they are, through no filter the checkout names" do
-    repo = create_temp_git_repo()
-    ran = Path.join(System.tmp_dir!(), "content_fingerprint_ran_#{System.unique_integer([:positive])}")
-    on_exit(fn -> File.rm_rf(ran) end)
-    File.write!(Path.join([repo, ".git", "info", "attributes"]), "*.wip filter=theirs\n")
-    git!(repo, ["config", "filter.theirs.clean", "touch #{ran}; cat"])
-    File.write!(Path.join(repo, "notes.wip"), "wip\n")
+  test "rewriting an untracked file changes the digest", %{task: task, checkout: checkout} do
+    File.write!(Path.join(checkout, "new.ex"), "first\n")
+    first = Git.content_fingerprint(task)
+    File.write!(Path.join(checkout, "new.ex"), "second\n")
 
-    assert %{content_digest: _digest} = Git.content_fingerprint(repo)
-    refute File.exists?(ran)
+    assert Git.content_fingerprint(task).content_digest != first.content_digest
   end
 
-  test "rewriting an untracked file changes the digest" do
-    repo = create_temp_git_repo()
-    File.write!(Path.join(repo, "new.ex"), "first\n")
-    first = Git.content_fingerprint(repo)
-    File.write!(Path.join(repo, "new.ex"), "second\n")
+  test "the same tree reads the same digest", %{task: task, checkout: checkout} do
+    File.write!(Path.join(checkout, "new.ex"), "same\n")
 
-    assert Git.content_fingerprint(repo).content_digest != first.content_digest
+    assert Git.content_fingerprint(task) == Git.content_fingerprint(task)
   end
 
-  test "the same tree reads the same digest" do
-    repo = create_temp_git_repo()
-    File.write!(Path.join(repo, "new.ex"), "same\n")
+  test "what agents write under .rail/ is left out", %{task: task, checkout: checkout} do
+    clean = Git.content_fingerprint(task)
 
-    assert Git.content_fingerprint(repo) == Git.content_fingerprint(repo)
+    File.mkdir_p!(Path.join(checkout, ".rail"))
+    File.write!(Path.join([checkout, ".rail", "report.json"]), "{}")
+
+    assert Git.content_fingerprint(task) == clean
   end
 
-  test "what agents write under .rail/ is left out" do
-    repo = create_temp_git_repo()
-    clean = Git.content_fingerprint(repo)
+  test "a task with no repository has no fingerprint", %{task: task} do
+    File.rm_rf!(Task.repo_path(task))
 
-    File.mkdir_p!(Path.join(repo, ".rail"))
-    File.write!(Path.join([repo, ".rail", "report.json"]), "{}")
-
-    assert Git.content_fingerprint(repo) == clean
-  end
-
-  test "a directory git cannot read has no fingerprint" do
-    loose = Path.join(System.tmp_dir!(), "non_git_content_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(loose)
-    on_exit(fn -> File.rm_rf(loose) end)
-
-    assert Git.content_fingerprint(loose) == nil
+    assert Git.content_fingerprint(task) == nil
   end
 end

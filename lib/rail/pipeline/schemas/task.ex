@@ -174,15 +174,17 @@ defmodule Rail.Pipeline.Schemas.Task do
   def port_base(%__MODULE__{worktree_slot: slot}) when is_integer(slot), do: 20_000 + slot * 100
 
   @doc """
-  True when the task's worktree directory is actually on disk.
-
-  `worktree_path` is always set, so it says where the worktree belongs, not
-  whether it is still there — cleanup removes the directory and leaves the path
-  alone.
+  The bare repository Rail keeps for the task beside its checkout, which no sandbox can write: every git read about
+  the task runs there.
   """
-  def worktree_present?(%__MODULE__{worktree_path: path}) do
-    File.dir?(path)
-  end
+  def repo_path(%__MODULE__{worktree_path: path}) when is_binary(path), do: path <> ".git"
+
+  @doc """
+  True when the task's repository is on disk. `worktree_path` is always set, so it says where the work belongs, not
+  whether it is still there: cleanup removes the repository and leaves the path alone.
+  """
+  def worktree_present?(%__MODULE__{worktree_path: path} = task) when is_binary(path), do: File.dir?(repo_path(task))
+  def worktree_present?(%__MODULE__{worktree_path: nil}), do: false
 
   @doc """
   True when any run on this task is executing, the curator's aside when roles are loaded: it changes nothing, so it

@@ -5,6 +5,7 @@ defmodule Rail.Git.Actions.WriteCheckoutConfigTest do
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Tools
   alias Rail.Users.Schemas.User
@@ -145,7 +146,7 @@ defmodule Rail.Git.Actions.WriteCheckoutConfigTest do
     commit.(checkout, "WCC-1: signed")
     # The signature is read rather than verified: verifying needs the machine's own `gpg.ssh.allowedSignersFile`.
     assert git!(checkout, ["cat-file", "commit", "HEAD"]) =~ "-----BEGIN SSH SIGNATURE-----"
-    assert %File.Stat{mode: mode} = File.stat!(Path.join([task.scratch_path, ".signing", "key"]))
+    assert %File.Stat{mode: mode} = File.stat!(Path.join([Task.repo_path(task), "rail", "signing", "key"]))
     assert Bitwise.band(mode, 0o777) == 0o600
   end
 
@@ -231,7 +232,7 @@ defmodule Rail.Git.Actions.WriteCheckoutConfigTest do
     File.write!(Path.join(checkout, "tracked.txt"), "ours\n")
     git!(checkout, ["commit", "--quiet", "-am", "ours"])
     sha = String.trim(git!(checkout, ["rev-parse", "HEAD"]))
-    :ok = Git.fetch_default_branch(project, checkout)
+    :ok = Git.fetch_default_branch(project, task)
     File.write!(Path.join(checkout, "tracked.txt"), "ours, changed\n")
 
     # A plain git here runs them.
@@ -244,11 +245,11 @@ defmodule Rail.Git.Actions.WriteCheckoutConfigTest do
 
     assert :ok = Git.write_checkout_config(project, task)
 
-    assert Git.worktree_dirty?(checkout)
-    assert %{head_sha: ^sha} = Git.branch_fingerprint(checkout)
-    assert "tracked.txt" in Git.list_changed_paths(checkout)
-    assert %{head_sha: ^sha} = Git.content_fingerprint(checkout)
-    assert %{behind: true, conflicts: ["tracked.txt"]} = Git.base_status(checkout, "main")
+    assert Git.worktree_dirty?(task)
+    assert %{head_sha: ^sha} = Git.branch_fingerprint(task)
+    assert "tracked.txt" in Git.list_changed_paths(task)
+    assert %{head_sha: ^sha} = Git.content_fingerprint(task)
+    assert %{behind: true, conflicts: ["tracked.txt"]} = Git.base_status(task, "main")
     assert :ok = Git.push_branch(scope, task, sha)
     assert git!(remote, ["rev-parse", task.worktree_name]) == sha <> "\n"
 
@@ -287,6 +288,19 @@ defmodule Rail.Git.Actions.WriteCheckoutConfigTest do
 
     commit.(clone, "someone else's")
     assert git!(clone, ["log", "-1", "--pretty=%an"]) == "Rail Test\n"
+  end
+
+  test "writes nothing under the docker runtime, whose checkouts get their config with the checkout call", %{
+    project: project,
+    task: task,
+    checkout: checkout
+  } do
+    stub(Rail, :sandbox_runtime, fn -> :docker end)
+    config = File.read!(Path.join(checkout, ".git/config"))
+    File.write!(Path.join(checkout, ".git/config"), config <> "[planted]\n\tkept = true\n")
+
+    assert :ok = Git.write_checkout_config(project, task)
+    assert File.read!(Path.join(checkout, ".git/config")) =~ "planted"
   end
 
   test "says what git said when it cannot write the config", %{project: project, task: task, clone: clone} do

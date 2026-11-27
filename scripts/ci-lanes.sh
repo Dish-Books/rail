@@ -37,7 +37,7 @@ STATE="_build/ci-lanes/$TREE"
 COVERED="$STATE/covered"
 
 # One per priority-1 hook in .pre-commit-config.yaml.
-LANES="dev tests tooling credo"
+LANES="dev tests tooling credo runner"
 
 slug() { printf '%s' "$1" | tr -cs 'a-zA-Z0-9' '_'; }
 
@@ -151,10 +151,18 @@ lane_credo() {
     "coverage" "scripts/ci-coverage-100.sh credo/cover/excoveralls.json credo/"
 }
 
+# No mix: rail-runner's Go module.
+lane_runner() {
+  staged_gate runner \
+    "gofmt" "cd runner && test -z \"\$(gofmt -l .)\"" \
+    "vet" "cd runner && go vet ./..." \
+    "test" "cd runner && go test -race ./..."
+}
+
 # ── modes ───────────────────────────────────────────────────────────────────
 
 usage() {
-  echo "usage: ci-lanes.sh prelude | lane <dev|tests|tooling|credo> | receipt" >&2
+  echo "usage: ci-lanes.sh prelude | lane <dev|tests|tooling|credo|runner> | receipt" >&2
   exit 2
 }
 

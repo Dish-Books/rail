@@ -12,7 +12,7 @@ defmodule Rail.Pipeline.Actions.RecordDemoTest do
     task = learnings_task(project, "RDM-1", :review)
     # A run starts on HEAD as Rail.Git reads it, so the worktree is a plain directory on a stubbed commit.
     worktree = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree)
+    Enum.each([worktree, worktree <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     stub(Git, :branch_fingerprint, fn _worktree_path -> %{head_sha: String.duplicate("a", 40), dirty_digest: "clean"} end)

@@ -27,10 +27,10 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
 
     # Git is only ever asked through Rail.Git, so the worktree is a plain directory, on the commit whose sha is all a's.
     worktree_path = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree_path)
+    Enum.each([worktree_path, worktree_path <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
 
-    stub(Git, :branch_fingerprint, fn ^worktree_path ->
+    stub(Git, :branch_fingerprint, fn %{worktree_path: ^worktree_path} ->
       %{head_sha: String.duplicate("a", 40), dirty_digest: String.duplicate("0", 64)}
     end)
 

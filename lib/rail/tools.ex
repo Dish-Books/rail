@@ -23,6 +23,7 @@ defmodule Rail.Tools do
   def init(_opts) do
     children = [
       {Registry, keys: :unique, name: Rail.Tools.FollowerRegistry},
+      {Registry, keys: :unique, name: Rail.Tools.RunnerRegistry},
       Rail.Tools.FollowerSupervisor,
       {DynamicSupervisor, name: Rail.Tools.LoginSupervisor, strategy: :one_for_one},
       {Registry, keys: :unique, name: Rail.Tools.BrowserRegistry},
@@ -35,6 +36,7 @@ defmodule Rail.Tools do
   end
 
   defdelegate run(executable, args, opts \\ []), to: Actions.Run
+  defdelegate build_command(executable, args, opts \\ []), to: Actions.BuildCommand
   defdelegate run_agent(role, argv, opts), to: Actions.RunAgent
   defdelegate agent_failure_reason(output), to: Actions.AgentFailureReason
   defdelegate spawn_os_process(executable, args, opts \\ []), to: Actions.SpawnOsProcess
@@ -67,6 +69,8 @@ defmodule Rail.Tools do
   defdelegate get_usage_wait(run), to: Actions.GetUsageWait
   defdelegate start_command_process(run, kind, command, opts \\ []), to: Actions.StartCommandProcess
   defdelegate run_in_sandbox(os_process, command, opts \\ []), to: Actions.RunInSandbox
+  defdelegate call_sandbox(task, method, params, opts \\ []), to: Actions.CallSandbox
+  defdelegate end_task_sandbox(task), to: Actions.EndTaskSandbox
   defdelegate stop_os_process(scope, os_process, opts \\ []), to: Actions.StopOsProcess
   defdelegate get_os_process(id), to: Actions.GetOsProcess
   defdelegate get_active_os_process(run), to: Actions.GetActiveOsProcess

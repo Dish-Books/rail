@@ -3,6 +3,7 @@ defmodule RailTest.Helpers do
 
   defdelegate create_temp_git_repo(opts \\ []), to: RailTest.GitHelpers
   defdelegate git!(dir, args), to: RailTest.GitHelpers
+  defdelegate create_task_checkout(opts \\ []), to: RailTest.GitHelpers
 
   defdelegate stub_slack(opts \\ []), to: RailTest.TriageHelpers
   defdelegate connect_slack_channel(project, opts \\ []), to: RailTest.TriageHelpers

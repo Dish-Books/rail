@@ -2,73 +2,51 @@ defmodule Rail.Git.Actions.BranchFingerprintTest do
   use Rail.DataCase, async: true
 
   alias Rail.Git
+  alias Rail.Pipeline.Schemas.Task
 
-  test "returns fingerprint for clean repository" do
-    repo = create_temp_git_repo()
+  setup do
+    create_task_checkout()
+  end
 
-    assert %{head_sha: head_sha, dirty_digest: digest} =
-             Git.branch_fingerprint(repo)
+  test "returns the branch's commit and a digest of its working tree", %{task: task, checkout: checkout} do
+    head_sha = String.trim(git!(checkout, ["rev-parse", "HEAD"]))
 
-    assert byte_size(head_sha) == 40
+    assert %{head_sha: ^head_sha, dirty_digest: digest} = Git.branch_fingerprint(task)
     assert byte_size(digest) == 64
   end
 
-  test "returns nil on invalid or non-git path" do
-    temp_dir = System.tmp_dir!()
-    loose = Path.join(temp_dir, "non_git_fingerprint_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(loose)
-    on_exit(fn -> File.rm_rf(loose) end)
+  test "returns nil for a task with no repository", %{task: task} do
+    File.rm_rf!(Task.repo_path(task))
 
-    assert Git.branch_fingerprint(loose) == nil
+    assert Git.branch_fingerprint(task) == nil
   end
 
-  # What CI's commit is read from, in a checkout whose .git the sandbox can write.
-  test "runs no fsmonitor or hook a checkout names" do
-    repo = create_temp_git_repo()
-    ran = Path.join(System.tmp_dir!(), "fingerprint_ran_#{System.unique_integer([:positive])}")
-    on_exit(fn -> File.rm_rf(ran) end)
-    File.mkdir_p!(ran)
-    git!(repo, ["config", "core.fsmonitor", "touch #{ran}/fsmonitor; false"])
-    git!(repo, ["config", "core.hooksPath", ran])
-    File.write!(Path.join(ran, "post-index-change"), "#!/bin/sh\ntouch #{ran}/hook\n")
-    File.chmod!(Path.join(ran, "post-index-change"), 0o755)
-    File.write!(Path.join(repo, "tracked.txt"), "two\n")
+  test "a new commit advances head_sha", %{task: task, checkout: checkout} do
+    fp1 = Git.branch_fingerprint(task)
 
-    assert %{head_sha: _head, dirty_digest: _digest} = Git.branch_fingerprint(repo)
-    assert File.ls!(ran) == ["post-index-change"]
+    File.write!(Path.join(checkout, "new_file.txt"), "committed\n")
+    git!(checkout, ["add", "."])
+    git!(checkout, ["commit", "-m", "second commit"])
+
+    assert Git.branch_fingerprint(task).head_sha != fp1.head_sha
   end
 
-  test "new commit advances head_sha" do
-    repo = create_temp_git_repo()
-    fp1 = Git.branch_fingerprint(repo)
+  test "uncommitted or untracked changes change dirty_digest", %{task: task, checkout: checkout} do
+    fp_clean = Git.branch_fingerprint(task)
 
-    File.write!(Path.join(repo, "new_file.txt"), "committed\n")
-    git!(repo, ["add", "."])
-    git!(repo, ["commit", "-m", "second commit"])
-
-    fp2 = Git.branch_fingerprint(repo)
-
-    assert fp1.head_sha != fp2.head_sha
-  end
-
-  test "uncommitted or untracked changes change dirty_digest" do
-    repo = create_temp_git_repo()
-    fp_clean = Git.branch_fingerprint(repo)
-
-    File.write!(Path.join(repo, "untracked.txt"), "wip\n")
-    fp_dirty = Git.branch_fingerprint(repo)
+    File.write!(Path.join(checkout, "untracked.txt"), "wip\n")
+    fp_dirty = Git.branch_fingerprint(task)
 
     assert fp_clean.head_sha == fp_dirty.head_sha
     assert fp_clean.dirty_digest != fp_dirty.dirty_digest
   end
 
-  test "counts files under .rail in the dirty digest like any other" do
-    repo = create_temp_git_repo()
-    fp_clean = Git.branch_fingerprint(repo)
+  test "counts files under .rail in the dirty digest like any other", %{task: task, checkout: checkout} do
+    fp_clean = Git.branch_fingerprint(task)
 
-    File.mkdir_p!(Path.join(repo, ".rail"))
-    File.write!(Path.join(repo, ".rail/settings.json"), "{}\n")
+    File.mkdir_p!(Path.join(checkout, ".rail"))
+    File.write!(Path.join(checkout, ".rail/settings.json"), "{}\n")
 
-    assert fp_clean.dirty_digest != Git.branch_fingerprint(repo).dirty_digest
+    assert fp_clean.dirty_digest != Git.branch_fingerprint(task).dirty_digest
   end
 end

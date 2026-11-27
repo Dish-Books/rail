@@ -250,7 +250,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
 
     fix_plan = %FixPlan{
       round: round,
-      head: if(Task.worktree_present?(run.task), do: Git.branch_fingerprint(run.task.worktree_path)[:head_sha]),
+      head: if(Task.worktree_present?(run.task), do: Git.branch_fingerprint(run.task)[:head_sha]),
       findings: Enum.map(sent.fix, &%FixPlan.Finding{key: &1.key, title: &1.title}),
       comments: Enum.map(comments, &elem(&1, 0))
     }

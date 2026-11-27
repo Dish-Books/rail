@@ -23,6 +23,8 @@ defmodule Rail.Projects.Schemas.Project do
     field :worktree_setup_script, :string
     # Run beside Rail, outside any sandbox, in a checkout of the default branch each time it moves.
     field :toolchain_command, :string
+    # The image its sandboxes run, built by the project's own CI with its toolchain and build cache; nil for Rail's.
+    field :sandbox_image, :string
     # Run on every commit the engineer finishes, before it is pushed or reviewed.
     field :ci_command, :string
     field :ci_timeout_minutes, :integer, default: 30
@@ -64,6 +66,7 @@ defmodule Rail.Projects.Schemas.Project do
     :active,
     :worktree_setup_script,
     :toolchain_command,
+    :sandbox_image,
     :ci_command,
     :ci_timeout_minutes,
     :ci_reserved_cpus,
@@ -94,6 +97,7 @@ defmodule Rail.Projects.Schemas.Project do
     |> lock_key_once_issues_exist()
     |> validate_change(:clone_path, &validate_clone_path/2)
     |> validate_change(:worktree_setup_script, &validate_worktree_setup_script/2)
+    |> validate_format(:sandbox_image, ~r/\A[a-z0-9][a-z0-9._\/:@-]*\z/, message: "must be an image reference")
     |> validate_number(:ci_timeout_minutes, greater_than: 0, message: "must be at least a minute")
     |> validate_number(:ci_reserved_cpus, greater_than: 0, message: "must be at least 1 CPU")
     |> validate_ci_capacity()

@@ -49,9 +49,9 @@ Each project picks one, and keeps it once it has issues.
 
 ## 4. Preparing each repository
 
-Rail runs every task in its own clone of the project's clone, several at once. Anything a task starts (a dev server, tests) must not collide with another task's.
+Rail runs every task in a sandbox of its own, several at once: a disk holding the task's checkout, and while the task has work a container on it ([docs/sandbox-socket.md](sandbox-socket.md)). Anything a task starts (a dev server, tests) must not collide with another task's.
 
-**Isolate ports and databases.** Every process Rail starts in a task's checkout (the setup script, CI, the agents) gets `RAIL_WORKTREE_SLOT`, `RAIL_PORT_BASE` and `RAIL_CLONE_PATH`, the path of the project's clone. Read the first two in the dev and test config. For a Phoenix app:
+**Isolate ports and databases.** Every process Rail starts in a task's checkout (the setup script, CI, the agents) gets `RAIL_WORKTREE_SLOT` and `RAIL_PORT_BASE`. Read them in the dev and test config. For a Phoenix app:
 
 ```elixir
 # config/dev.exs
@@ -64,11 +64,11 @@ port = String.to_integer(System.get_env("PORT") || System.get_env("RAIL_PORT_BAS
 
 Outside Rail none of these is set, so nothing changes for people.
 
-**A setup script.** It runs once in each new task's checkout, from its root, before any agent starts there, except Plan's, which starts beside it. It should leave a checkout that can compile, test and serve: fetch dependencies, install assets, create and migrate the databases. Copying `deps`, `_build` and `node_modules` from the project's clone at `$RAIL_CLONE_PATH` (`cp -a --reflink=auto`) makes the first compile incremental. A task's checkout is a clone of its own, so `git worktree list` there lists only the task. Find the project's clone through `RAIL_CLONE_PATH`, and never treat a checkout as the main one while `RAIL_WORKTREE_SLOT` is set. Commit it executable (`chmod +x`); Rail runs it as `./<path>`.
+**A setup script.** It runs once in each new task's checkout, from its root, before any agent starts there, except Plan's, which starts beside it. It should leave a checkout that can compile, test and serve: fetch dependencies, install assets, create and migrate the databases. The checkout stays on the sandbox's disk between turns, so it runs once per task. There is no project clone beside it to copy a build cache from: a project that wants a fast first compile names a **sandbox image** with its toolchain and warmed `deps` and `_build`, which its own CI builds from the default branch and pushes. Never treat a checkout as the main one while `RAIL_WORKTREE_SLOT` is set. Commit it executable (`chmod +x`); Rail runs it as `./<path>`.
 
-The script, CI and the agents run in a sandbox that sees the task's checkout, read and write, and the project's clone and the installed toolchain, read only. No other folder on the machine is there. So nothing in the sandbox can install a tool or write into the toolchain: a tool the branch adds fails with a read-only error until the Toolchain Command has installed it from the default branch, and so does a global install such as `npm install -g`, `gem install` or `pip install` outside a virtualenv. Install packages into the checkout instead. The checkout and the clone are separate mounts, so a hard link from one to the other (`cp -al`, `ln`) fails; copy instead.
+The script, CI and the agents run in the task's sandbox, which sees its checkout and the installed toolchain, read only, from the project's image or Rail's. Nothing in the sandbox can install a tool or write into the toolchain: a tool the branch adds fails with a read-only error until the Toolchain Command has installed it from the default branch, or the project's image has it, and so does a global install such as `npm install -g`, `gem install` or `pip install` outside a virtualenv. Install packages into the checkout instead.
 
-Of the checkout's `.git`, the sandbox writes only objects and refs: committing, branching, fetching from the project's clone and writing refs all work. `.git/config`, `.git/info` and `.git/hooks` are read-only, since Rail runs git in the checkout too and those are what git reads to run a program. Rail writes the config itself before each turn, with `origin`, the branch's upstream and who commits, signed with the ticket owner's key. So `git config`, `git remote add`, `git push -u`, `git submodule init`, installing a hook (such as `prek install`) and adding to `.git/info/exclude` fail there. Ignore files in a committed `.gitignore` instead.
+The checkout is the sandbox's own, `.git` and all: Rail never runs git in it. Its `origin` is Rail, which takes pushes to the task's branch only, and fetches `origin/*` as GitHub has them. Commits are signed with the ticket owner's key, which stays with Rail: the sandbox asks Rail to sign each one. Rail pushes to GitHub itself.
 
 **A CI command.** What Rail runs on every commit the engineer finishes, before it is pushed, for example `mix test`. Rail pushes a commit only once CI has passed on it, and the commit pushed is the one CI ran on. CI runs with no GitHub credential, since it runs the branch's own scripts: it cannot push, and needs nothing private from GitHub. It gets the ticket owner's git identity, and `RAIL_PUSHES_RECEIPT=1`.
 
@@ -80,7 +80,7 @@ Of the checkout's `.git`, the sandbox writes only objects and refs: committing, 
 
 These have to be on the default branch: Rail starts every task from it.
 
-Check, in a scratch clone of the project's clone with `RAIL_CLONE_PATH=<the project's clone> RAIL_WORKTREE_SLOT=999 RAIL_PORT_BASE=29900` exported: the setup script exits 0, the CI command passes, and the databases it used carry the `_rail999` suffix. Then delete the scratch clone and drop those databases.
+Check, in a scratch clone of the project with `RAIL_WORKTREE_SLOT=999 RAIL_PORT_BASE=29900` exported: the setup script exits 0, the CI command passes, and the databases it used carry the `_rail999` suffix. Then delete the scratch clone and drop those databases.
 
 ## 5. The clone Rail works from
 

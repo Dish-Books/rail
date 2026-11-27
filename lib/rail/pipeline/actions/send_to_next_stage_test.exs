@@ -30,17 +30,17 @@ defmodule Rail.Pipeline.Actions.SendToNextStageTest do
     # Git is only ever asked through Rail.Git, so the worktree is a plain directory. A branch review can read is a
     # branch the remote has, so it answers as one that has been pushed, up to date with main, on one commit.
     worktree_path = Path.join(task.scratch_path, "worktree")
-    File.mkdir_p!(worktree_path)
+    Enum.each([worktree_path, worktree_path <> ".git"], &File.mkdir_p!/1)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
 
-    stub(Git, :branch_unpushed?, fn ^worktree_path -> false end)
-    stub(Git, :base_status, fn ^worktree_path, "main" -> %{behind: false, conflicts: []} end)
+    stub(Git, :branch_unpushed?, fn %{worktree_path: ^worktree_path} -> false end)
+    stub(Git, :base_status, fn %{worktree_path: ^worktree_path}, "main" -> %{behind: false, conflicts: []} end)
 
-    stub(Git, :branch_fingerprint, fn ^worktree_path ->
+    stub(Git, :branch_fingerprint, fn %{worktree_path: ^worktree_path} ->
       %{head_sha: String.duplicate("a", 40), dirty_digest: String.duplicate("0", 64)}
     end)
 
-    stub(Git, :commits_since, fn ^worktree_path, _sha -> {:ok, %{merges: false}} end)
+    stub(Git, :commits_since, fn %{worktree_path: ^worktree_path}, _sha -> {:ok, %{merges: false}} end)
 
     {:ok, run} =
       Pipeline.create_run(%{
@@ -282,7 +282,7 @@ defmodule Rail.Pipeline.Actions.SendToNextStageTest do
 
   # A commit nobody else can see is not a change anyone can review.
   test "refuses commits the remote has never been told about", %{task: task, run: run, worktree_path: repo} do
-    expect(Git, :branch_unpushed?, fn ^repo -> true end)
+    expect(Git, :branch_unpushed?, fn %{worktree_path: ^repo} -> true end)
 
     assert {:error, :unpushed_changes} = Pipeline.send_to_next_stage(run)
     assert %Task{stage: :engineer} = Repo.reload!(task)

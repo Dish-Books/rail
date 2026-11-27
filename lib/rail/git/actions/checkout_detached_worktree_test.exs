@@ -90,7 +90,11 @@ defmodule Rail.Git.Actions.CheckoutDetachedWorktreeTest do
           path = Path.join(repo, ".worktrees/at-once-#{i}")
 
           for round <- 1..4 do
-            task = %PipelineTask{worktree_path: path, worktree_name: "at-once-#{i}-#{round}"}
+            task = %PipelineTask{
+              id: UXID.generate!(prefix: "tsk"),
+              worktree_path: path,
+              worktree_name: "at-once-#{i}-#{round}"
+            }
 
             if rem(i, 2) == 0,
               do: {Git.checkout_detached_worktree(project, path), Git.remove_worktree(repo, path)},

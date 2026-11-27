@@ -33,7 +33,7 @@ defmodule Rail.Pipeline.Actions.HandOverWork do
       flagged = update(run, %{review_on_ci_pass: true})
 
       cond do
-        command in [nil, ""] -> push(scope, flagged, Git.branch_fingerprint(task.worktree_path)[:head_sha])
+        command in [nil, ""] -> push(scope, flagged, Git.branch_fingerprint(task)[:head_sha])
         passed = passing_ci(task) -> push(scope, flagged, passed)
         true -> run_ci(flagged)
       end
@@ -44,7 +44,7 @@ defmodule Rail.Pipeline.Actions.HandOverWork do
   defp handable(%Task{stage: stage} = task, %Run{role: %Role{stage: role_stage}}) do
     cond do
       {stage, role_stage} != {:engineer, :engineer} -> {:error, {:invalid_stage, stage}}
-      not Git.branch_unpushed?(task.worktree_path) -> {:error, :nothing_to_send}
+      not Git.branch_unpushed?(task) -> {:error, :nothing_to_send}
       true -> :ok
     end
   end

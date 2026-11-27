@@ -15,7 +15,7 @@ defmodule Rail.Pipeline.Actions.UpdateBranchTest do
     task = learnings_task(project, "UPB-1", :review)
     # Git is stubbed, so the worktree is only looked for: a plain directory stands in for it.
     worktree_path = Path.join(System.tmp_dir!(), "rail_upb_wt_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(worktree_path)
+    Enum.each([worktree_path, worktree_path <> ".git"], &File.mkdir_p!/1)
     on_exit(fn -> File.rm_rf(worktree_path) end)
 
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path, marked_ready_at: DateTime.utc_now()})
@@ -42,7 +42,7 @@ defmodule Rail.Pipeline.Actions.UpdateBranchTest do
     # The start is the job's, committed with the round, so it survives the page that clicked.
     reject(Tools, :start_os_process, 2)
     head = String.duplicate("b", 40)
-    expect(Git, :branch_fingerprint, fn ^worktree_path -> %{head_sha: head, dirty_digest: "clean"} end)
+    expect(Git, :branch_fingerprint, fn %{worktree_path: ^worktree_path} -> %{head_sha: head, dirty_digest: "clean"} end)
 
     assert {:ok, %Round{number: 2, approved_by_id: ^ada_id, approved_at: %DateTime{}, plan: plan, base_head: ^head}} =
              Pipeline.update_branch(ada, task)

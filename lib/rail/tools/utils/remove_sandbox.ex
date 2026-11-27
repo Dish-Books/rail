@@ -8,6 +8,9 @@ defmodule Rail.Tools.Utils.RemoveSandbox do
   Removes a settled process's container, once nothing is left to read from it.
   A process that ran beside Rail has none.
   """
+  # A task's sandbox outlives each of its processes.
+  def remove_sandbox(%OsProcess{sandbox_id: sandbox_id}) when is_binary(sandbox_id), do: :ok
+
   def remove_sandbox(%OsProcess{runtime: :docker, container_id: id}) when is_binary(id) do
     _removed = Docker.remove_container(id)
     :ok

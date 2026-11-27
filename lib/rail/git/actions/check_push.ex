@@ -5,7 +5,9 @@ defmodule Rail.Git.Actions.CheckPush do
   do, or someone pushed to it outside Rail. Either way, merging `origin/<branch>` in is the way on.
   """
 
+  import Rail.Git.Utils.LocalCheckout
   import Rail.Git.Utils.WithCloneLock
+  import Rail.Git.Utils.WorkTree
 
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Task
@@ -14,27 +16,29 @@ defmodule Rail.Git.Actions.CheckPush do
   alias Rail.Tools
 
   @doc """
-  Fetches `task`'s branch from `origin` and checks HEAD against it. Returns `:ok` when HEAD holds all of
+  Fetches `task`'s branch from `origin` and checks the branch against it. Returns `:ok` when the branch holds all of
   it, or the remote has no such branch or cannot be read, so the push says what is wrong;
   `{:error, :history_rewritten}` when the remote's tip is a commit the branch once held; and
   `{:error, :pushed_outside_rail}` when it is one the branch never had.
   """
-  def check_push(%Task{worktree_path: worktree_path, worktree_name: branch} = task) do
+  def check_push(%Task{worktree_name: branch} = task) do
     project = Repo.get!(Project, task.project_id)
 
     with {:ok, env} <- Git.credential_env(project),
-         {_fetched, 0} <- fetch(project, worktree_path, branch, env),
-         {_output, 1} <- git(worktree_path, ["merge-base", "--is-ancestor", "origin/#{branch}", "HEAD"]) do
-      if held?(worktree_path, branch), do: {:error, :history_rewritten}, else: {:error, :pushed_outside_rail}
+         {_fetched, 0} <- fetch(project, task, branch, env),
+         %{repo: repo, branch: ref} <- work_tree(task),
+         {_output, 1} <- git(repo, ["merge-base", "--is-ancestor", "origin/#{branch}", ref]) do
+      if held?(repo, ref, branch), do: {:error, :history_rewritten}, else: {:error, :pushed_outside_rail}
     else
       _pushable_or_unknown -> :ok
     end
   end
 
-  # Fetched with the token into the project's clone, whose config is Rail's, then copied from there into the
-  # checkout, whose config the sandbox could have pointed at another host. The copy needs no token.
-  defp fetch(%Project{clone_path: clone_path}, worktree_path, branch, env) do
+  # Fetched with the token into the project's clone, whose config is Rail's, then copied from there into the task's
+  # repository, and into a checkout on Rail's disk, which the agent merges it in from. The copy needs no token.
+  defp fetch(%Project{clone_path: clone_path}, %Task{} = task, branch, env) do
     ref = "refs/remotes/origin/#{branch}"
+    copy = ["fetch", "--quiet", "--no-tags", "--no-write-fetch-head", clone_path, "+#{ref}:#{ref}"]
 
     with_clone_lock(clone_path, fn ->
       with {_fetched, 0} <-
@@ -43,17 +47,22 @@ defmodule Rail.Git.Actions.CheckPush do
                env: env,
                stderr_to_stdout: true
              ),
-           do: git(worktree_path, ["fetch", "--quiet", "--no-tags", clone_path, "+#{ref}:#{ref}"])
+           {_copied, 0} <- git(Task.repo_path(task), copy) do
+        case local_checkout(task) do
+          checkout when is_binary(checkout) -> git(checkout, copy)
+          nil -> {"", 0}
+        end
+      end
     end)
   end
 
-  # The branch's reflog has every tip it has been at, so the remote's tip is one it held when one of them
+  # The branch's reflog has every tip it has been synced at, so the remote's tip is one it held when one of them
   # reaches it: `rev-list` lists the tip only when none does.
-  defp held?(worktree_path, branch) do
-    {tips, 0} = git(worktree_path, ["reflog", "show", "--format=%H", "refs/heads/#{branch}"])
+  defp held?(repo, ref, branch) do
+    {tips, 0} = git(repo, ["reflog", "show", "--format=%H", ref])
 
-    match?({"", 0}, git(worktree_path, ["rev-list", "-n", "1", "origin/#{branch}", "--not" | String.split(tips)]))
+    match?({"", 0}, git(repo, ["rev-list", "-n", "1", "origin/#{branch}", "--not" | String.split(tips)]))
   end
 
-  defp git(worktree_path, args), do: Tools.run("git", args, cd: worktree_path, stderr_to_stdout: true)
+  defp git(path, args), do: Tools.run("git", args, cd: path, stderr_to_stdout: true)
 end

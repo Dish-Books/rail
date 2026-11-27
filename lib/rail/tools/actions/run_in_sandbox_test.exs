@@ -6,6 +6,7 @@ defmodule Rail.Tools.Actions.RunInSandboxTest do
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Clients.Docker
+  alias Rail.Tools.RunnerRegistry
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
@@ -115,5 +116,98 @@ defmodule Rail.Tools.Actions.RunInSandboxTest do
     end)
 
     assert {:error, {:docker_api_error, 404, _body}} = Tools.run_in_sandbox(os_process, "scripts/seed")
+  end
+
+  describe "in a task's sandbox" do
+    setup %{os_process: os_process, task: task} do
+      sandbox =
+        Repo.insert!(%Rail.Tools.Schemas.Sandbox{
+          task_id: task.id,
+          engine: :docker,
+          image: "rail-sandbox:latest",
+          volume: "rail-run",
+          status: :running,
+          container_id: "c0ffee"
+        })
+
+      %{
+        os_process: Repo.update!(OsProcess.changeset(os_process, %{sandbox_id: sandbox.id, runtime: :docker})),
+        sandbox: sandbox
+      }
+    end
+
+    test "runs through the runner, from the worktree root, and lets the output go once read", %{
+      os_process: os_process,
+      sandbox: sandbox,
+      task: %{worktree_path: worktree}
+    } do
+      test_pid = self()
+
+      spawn(fn ->
+        Registry.register(RunnerRegistry, sandbox.id, nil)
+        send(test_pid, :registered)
+
+        receive do
+          {:follow, caller, id, 0, 0, exec} ->
+            send(test_pid, {:exec, exec})
+            send(caller, {:runner_data, id, 1, 0, "hel"})
+            send(caller, {:runner_data, id, 1, 0, "hello\n"})
+            send(caller, {:runner_data, id, 1, 0, "h"})
+            send(caller, {:runner_exit, id, %{code: 3, oom: false, out: 6, err: 0}})
+        end
+
+        for _message <- 1..3, do: receive(do: (message -> send(test_pid, {:conn, message})))
+      end)
+
+      assert_receive :registered
+      assert {:ok, %{output: "hello\n", exit_code: 3}} = Tools.run_in_sandbox(os_process, "echo hello; exit 3")
+
+      assert_received {:exec,
+                       %{
+                         "cwd" => ^worktree,
+                         "stderr" => "merge",
+                         "argv" => ["timeout", "-k", "5", "120.0", "/bin/sh", "-c", "echo hello; exit 3"],
+                         "env" => %{"RAIL_PORT_BASE" => "20300"}
+                       }}
+
+      assert_receive {:conn, {:ack_proc, "exec_" <> _id, 1, 3}}
+      assert_receive {:conn, {:ack_proc, "exec_" <> _id, 1, 6}}
+      assert_receive {:conn, {:done, "exec_" <> _id}}
+    end
+
+    test "is refused with no runner connected, or one that loses the command", %{os_process: os_process, sandbox: sandbox} do
+      assert {:error, :not_running} = Tools.run_in_sandbox(os_process, "true")
+      test_pid = self()
+
+      for reply <- [&{:runner_lost, &1}, &{:runner_down, &1}, &{:runner_failed, &1, "no checkout"}] do
+        conn =
+          spawn(fn ->
+            Registry.register(RunnerRegistry, sandbox.id, nil)
+            send(test_pid, :registered)
+            receive(do: ({:follow, caller, id, _out, _err, _exec} -> send(caller, reply.(id))))
+            receive(do: (:never -> :ok))
+          end)
+
+        assert_receive :registered
+        assert {:error, :not_running} = Tools.run_in_sandbox(os_process, "true")
+        Process.exit(conn, :kill)
+        eventually(fn -> assert Rail.Tools.RunnerSocket.whereis(sandbox.id) == nil end)
+      end
+    end
+
+    test "a command past its limit is killed", %{os_process: os_process, sandbox: sandbox} do
+      test_pid = self()
+
+      spawn(fn ->
+        Registry.register(RunnerRegistry, sandbox.id, nil)
+        send(test_pid, :registered)
+        receive(do: ({:follow, _caller, _id, _out, _err, _exec} -> :ok))
+        receive(do: (message -> send(test_pid, {:conn, message})))
+      end)
+
+      assert_receive :registered
+      assert {:error, :timeout} = Tools.run_in_sandbox(os_process, "sleep 9", timeout_ms: 20)
+      assert_receive {:conn, {:signal, "exec_" <> _id, "KILL"}}
+    end
   end
 end

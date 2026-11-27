@@ -11,9 +11,9 @@ defmodule Rail.Git.Actions.FetchDefaultBranch do
 
   @doc """
   Fetches `project`'s default branch from `origin` into its clone, with the same credentials Rail pushes with, moves
-  the clone's local branch of that name to it, and brings `repo_path` up to it.
+  the clone's local branch of that name to it, and brings `target`, a task or a path, up to it (`Rail.Git.copy_default_branch/2`).
   """
-  def fetch_default_branch(%Project{} = project, repo_path) when is_binary(repo_path) do
+  def fetch_default_branch(%Project{} = project, target) do
     with {:ok, env} <- Git.credential_env(project) do
       fetch = fn ->
         fetched =
@@ -29,7 +29,7 @@ defmodule Rail.Git.Actions.FetchDefaultBranch do
       end
 
       case with_clone_lock(project.clone_path, fetch) do
-        {_output, 0} -> Git.copy_default_branch(project, repo_path)
+        {_output, 0} -> Git.copy_default_branch(project, target)
         # coveralls-ignore-next-line (a fetch that runs for five minutes)
         {:error, :timeout} -> {:error, "The fetch was still running after five minutes, so it was stopped."}
         {output, code} when is_binary(output) and is_integer(code) -> {:error, String.trim(output)}

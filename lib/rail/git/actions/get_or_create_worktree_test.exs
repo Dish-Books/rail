@@ -23,12 +23,40 @@ defmodule Rail.Git.Actions.GetOrCreateWorktreeTest do
     }
   end
 
-  test "returns immediately if worktree_path already exists", %{repo: repo, project: project} do
-    wt_path = Path.join(repo, ".worktrees/existing")
-    File.mkdir_p!(wt_path)
+  test "a task whose repository and checkout are there is given them as they are", %{tasks: tasks, project: project} do
+    wt_path = Path.join([tasks, "feature-existing", "repo"])
+    task = %Task{worktree_path: wt_path, worktree_name: "feature-existing"}
+    assert {:ok, ^wt_path} = Git.get_or_create_worktree(project, task)
+    File.write!(Path.join(wt_path, "work.ex"), "uncommitted\n")
+    reject(Git, :fetch_default_branch, 2)
 
-    assert {:ok, ^wt_path} =
-             Git.get_or_create_worktree(project, %Task{worktree_path: wt_path, worktree_name: "feature-existing"})
+    assert {:ok, ^wt_path} = Git.get_or_create_worktree(project, task)
+    assert File.read!(Path.join(wt_path, "work.ex")) == "uncommitted\n"
+  end
+
+  test "makes the task a bare repository of Rail's, borrowing the project clone's objects and holding its branch", %{
+    remote: remote,
+    repo: repo,
+    tasks: tasks,
+    project: project
+  } do
+    wt_path = Path.join([tasks, "feature-repo", "repo"])
+    task = %Task{worktree_path: wt_path, worktree_name: "feature-repo"}
+
+    assert {:ok, ^wt_path} = Git.get_or_create_worktree(project, task)
+
+    task_repo = Task.repo_path(task)
+    assert git!(task_repo, ["rev-parse", "--is-bare-repository"]) == "true\n"
+    assert git!(task_repo, ["symbolic-ref", "HEAD"]) == "refs/heads/feature-repo\n"
+    assert git!(task_repo, ["rev-parse", "refs/heads/feature-repo"]) == git!(remote, ["rev-parse", "main"])
+    assert git!(task_repo, ["config", "remote.origin.url"]) == remote <> "\n"
+    assert git!(task_repo, ["config", "core.logallrefupdates"]) == "true\n"
+    assert File.read!(Path.join(task_repo, "objects/info/alternates")) =~ Path.join(repo, ".git/objects")
+
+    assert task_repo |> File.ls!() |> Enum.reject(&(&1 in ["HEAD", "config", "objects", "refs", "logs", "packed-refs"])) ==
+             []
+
+    refute File.exists?(task_repo <> ".new")
   end
 
   test "makes a clone of its own, pushing to the project's origin, with none of the clone's hooks, that the project's clone knows nothing of",
@@ -71,7 +99,7 @@ defmodule Rail.Git.Actions.GetOrCreateWorktreeTest do
     assert git!(wt_path, ["rev-parse", "HEAD"]) == git!(remote, ["rev-parse", "main"])
     assert git!(wt_path, ["rev-parse", "origin/main"]) == git!(remote, ["rev-parse", "main"])
     assert {_no_upstream, 1} = Tools.run("git", ["config", "branch.feature-1.merge"], cd: wt_path)
-    refute Git.branch_unpushed?(wt_path)
+    refute Git.branch_unpushed?(%Task{worktree_path: wt_path, worktree_name: "feature-1"})
   end
 
   test "lists only the default branch among its remote branches, not the project clone's other branches", %{
@@ -92,33 +120,17 @@ defmodule Rail.Git.Actions.GetOrCreateWorktreeTest do
            |> Enum.reject(&(&1 == "refs/remotes/origin/HEAD")) == ["refs/remotes/origin/main"]
   end
 
-  test "a branch pushed from it reads as pushed, and survives the project's clone being moved aside", %{
-    remote: remote,
-    repo: repo,
-    tasks: tasks,
-    project: project
-  } do
+  test "a commit made in the checkout reads as the branch's own, not yet pushed", %{tasks: tasks, project: project} do
     wt_path = Path.join([tasks, "feature-pushed", "repo"])
+    task = %Task{worktree_path: wt_path, worktree_name: "feature-pushed"}
+    assert {:ok, ^wt_path} = Git.get_or_create_worktree(project, task)
 
-    assert {:ok, ^wt_path} =
-             Git.get_or_create_worktree(project, %Task{worktree_path: wt_path, worktree_name: "feature-pushed"})
-
-    aside = repo <> "_aside"
-    File.rename!(repo, aside)
-    on_exit(fn -> File.rm_rf(aside) end)
-
-    git!(wt_path, ["config", "user.name", "Rail Test"])
-    git!(wt_path, ["config", "user.email", "test@rail.local"])
     File.write!(Path.join(wt_path, "work.txt"), "work\n")
     git!(wt_path, ["add", "."])
-    git!(wt_path, ["commit", "-m", "Work after the clone moved"])
-    assert git!(wt_path, ["log", "--format=%s"]) == "Work after the clone moved\ninitial commit\n"
-    assert Git.branch_unpushed?(wt_path)
+    git!(wt_path, ["commit", "-m", "Work in the checkout"])
+    assert git!(wt_path, ["log", "--format=%s"]) == "Work in the checkout\ninitial commit\n"
 
-    git!(wt_path, ["push", "--set-upstream", "origin", "feature-pushed"])
-
-    assert git!(remote, ["rev-parse", "feature-pushed"]) == git!(wt_path, ["rev-parse", "HEAD"])
-    refute Git.branch_unpushed?(wt_path)
+    assert Git.branch_unpushed?(task)
   end
 
   test "a task with a pull request starts on its branch as the remote has it", %{
@@ -154,6 +166,8 @@ defmodule Rail.Git.Actions.GetOrCreateWorktreeTest do
     assert reason =~ "couldn't find remote ref"
     refute File.exists?(wt_path)
     refute File.exists?(wt_path <> ".new")
+    refute File.exists?(wt_path <> ".git")
+    refute File.exists?(wt_path <> ".git.new")
   end
 
   test "errors when origin has no such default branch", %{tasks: tasks, project: project} do
@@ -208,18 +222,10 @@ defmodule Rail.Git.Actions.GetOrCreateWorktreeTest do
     assert git!(wt_path, ["rev-parse", "HEAD"]) == git!(remote, ["rev-parse", "develop"])
   end
 
-  test "derives the path from the clone path when the task has none", %{repo: repo, project: project} do
-    task = %Task{id: "tsk_derived", worktree_name: "feature-derived"}
+  test "falls back to the task id when the task has no worktree name", %{tasks: tasks, project: project} do
+    expected = Path.join([tasks, "tsk_by_id", "repo"])
+    task = %Task{id: "tsk_by_id", worktree_path: expected}
 
-    expected = Path.join(repo, ".worktrees/feature-derived")
-    assert {:ok, ^expected} = Git.get_or_create_worktree(project, task)
-    assert File.dir?(Path.join(expected, ".git"))
-  end
-
-  test "falls back to the task id when the task has no worktree name", %{repo: repo, project: project} do
-    task = %Task{id: "tsk_by_id"}
-
-    expected = Path.join(repo, ".worktrees/tsk_by_id")
     assert {:ok, ^expected} = Git.get_or_create_worktree(project, task)
     assert git!(expected, ["branch", "--show-current"]) == "tsk_by_id\n"
   end
@@ -289,7 +295,11 @@ defmodule Rail.Git.Actions.GetOrCreateWorktreeTest do
 
   test "a new clone that cannot be moved into place is not left half made", %{tasks: tasks, project: project} do
     wt_path = Path.join([tasks, "feature-stuck", "repo"])
-    expect(File, :rename, fn _from, ^wt_path -> {:error, :eacces} end)
+
+    stub(File, :rename, fn
+      _from, ^wt_path -> {:error, :eacces}
+      from, to -> call_original(File, :rename, [from, to])
+    end)
 
     message = "Failed to create the task's clone at #{wt_path}: #{wt_path}: permission denied"
 
@@ -341,5 +351,136 @@ defmodule Rail.Git.Actions.GetOrCreateWorktreeTest do
              )
 
     refute File.exists?(Path.join(wt_path, ".env"))
+  end
+
+  test "a repository that cannot be moved into place is not left half made", %{tasks: tasks, project: project} do
+    wt_path = Path.join([tasks, "feature-stuck-repo", "repo"])
+    task_repo = wt_path <> ".git"
+    expect(File, :rename, fn _from, ^task_repo -> {:error, :eacces} end)
+
+    message = "Failed to create the task's clone at #{wt_path}: #{task_repo}: permission denied"
+
+    assert {:error, ^message} =
+             Git.get_or_create_worktree(project, %Task{worktree_path: wt_path, worktree_name: "feature-stuck-repo"})
+
+    refute File.exists?(task_repo)
+    refute File.exists?(task_repo <> ".new")
+  end
+
+  test "says what git said when the task's repository cannot be set up", %{tasks: tasks, project: project} do
+    wt_path = Path.join([tasks, "feature-no-config", "repo"])
+
+    stub(Tools, :run, fn
+      "git", ["config", "core.logallrefupdates" | _rest], _opts -> {"error: could not lock config file\n", 255}
+      command, args, opts -> call_original(Tools, :run, [command, args, opts])
+    end)
+
+    reason = "Failed to create the task's clone at #{wt_path}: error: could not lock config file"
+
+    assert {:error, ^reason} =
+             Git.get_or_create_worktree(project, %Task{worktree_path: wt_path, worktree_name: "feature-no-config"})
+
+    refute File.exists?(wt_path <> ".git")
+  end
+
+  test "a checkout made again over a repository it synced into starts with that work in it, uncommitted", %{
+    tasks: tasks,
+    project: project
+  } do
+    wt_path = Path.join([tasks, "feature-again", "repo"])
+    task = %Task{worktree_path: wt_path, worktree_name: "feature-again"}
+    {:ok, ^wt_path} = Git.get_or_create_worktree(project, task)
+    git!(wt_path, ["commit", "--allow-empty", "-m", "committed"])
+    File.write!(Path.join(wt_path, "tracked.txt"), "edited\n")
+    File.write!(Path.join(wt_path, "new.ex"), "new\n")
+    File.rm_rf!(Path.join(wt_path, ".env"))
+    assert :ok = Git.sync_checkout(task)
+    File.rm_rf!(wt_path)
+
+    assert {:ok, ^wt_path} = Git.get_or_create_worktree(project, task)
+
+    assert git!(wt_path, ["log", "-1", "--format=%s"]) == "committed\n"
+    assert File.read!(Path.join(wt_path, "tracked.txt")) == "edited\n"
+    assert git!(wt_path, ["status", "--porcelain"]) == " M tracked.txt\n?? new.ex\n"
+  end
+
+  test "a snapshot taken on an earlier head is not put back over the branch", %{tasks: tasks, project: project} do
+    wt_path = Path.join([tasks, "feature-stale", "repo"])
+    task = %Task{worktree_path: wt_path, worktree_name: "feature-stale"}
+    {:ok, ^wt_path} = Git.get_or_create_worktree(project, task)
+    File.write!(Path.join(wt_path, "tracked.txt"), "edited\n")
+    assert :ok = Git.sync_checkout(task)
+    git!(wt_path, ["commit", "--allow-empty", "-m", "committed after"])
+    git!(wt_path, ["push", "--quiet", "--force", wt_path <> ".git", "HEAD:refs/heads/feature-stale"])
+    File.rm_rf!(wt_path)
+
+    assert {:ok, ^wt_path} = Git.get_or_create_worktree(project, task)
+    assert git!(wt_path, ["status", "--porcelain"]) == ""
+  end
+
+  test "under the docker runtime makes the repository alone, since the sandbox clones its own checkout", %{
+    tasks: tasks,
+    project: project
+  } do
+    stub(Rail, :sandbox_runtime, fn -> :docker end)
+    wt_path = Path.join([tasks, "feature-docker", "repo"])
+    task = %Task{worktree_path: wt_path, worktree_name: "feature-docker"}
+
+    assert {:ok, ^wt_path} = Git.get_or_create_worktree(project, task)
+    assert Task.worktree_present?(task)
+    refute File.exists?(wt_path)
+  end
+
+  describe "a task whose checkout was made before its repository" do
+    test "of its own clone, takes the branch from origin where origin has it, and keeps the checkout as it is", %{
+      remote: remote,
+      tasks: tasks,
+      project: project
+    } do
+      git!(remote, ["checkout", "--quiet", "-b", "feature-old"])
+      git!(remote, ["commit", "--allow-empty", "-m", "pushed before"])
+      git!(remote, ["checkout", "--quiet", "main"])
+      wt_path = Path.join([tasks, "feature-old", "repo"])
+      git!(System.tmp_dir!(), ["clone", "--quiet", "--branch", "feature-old", remote, wt_path])
+      git!(wt_path, ["commit", "--allow-empty", "-m", "not pushed"])
+      File.write!(Path.join(wt_path, "work.ex"), "uncommitted\n")
+      task = %Task{worktree_path: wt_path, worktree_name: "feature-old"}
+
+      assert {:ok, ^wt_path} = Git.get_or_create_worktree(project, task)
+
+      assert git!(wt_path <> ".git", ["log", "-1", "--format=%s", "refs/heads/feature-old"]) == "pushed before\n"
+      assert git!(wt_path, ["log", "-1", "--format=%s"]) == "not pushed\n"
+      assert File.read!(Path.join(wt_path, "work.ex")) == "uncommitted\n"
+      # Its config is Rail's now, as any checkout's on Rail's disk.
+      assert git!(wt_path, ["config", "user.email"]) == "rail[bot]@railai.dev\n"
+
+      # The first sync brings the rest in.
+      assert Git.list_changed_paths(task) == ["work.ex"]
+      assert git!(wt_path <> ".git", ["log", "-1", "--format=%s", "refs/heads/feature-old"]) == "not pushed\n"
+    end
+
+    test "starts the branch from the default branch when origin does not have it", %{
+      remote: remote,
+      tasks: tasks,
+      project: project
+    } do
+      wt_path = Path.join([tasks, "feature-unpushed", "repo"])
+      git!(System.tmp_dir!(), ["clone", "--quiet", remote, wt_path])
+      task = %Task{worktree_path: wt_path, worktree_name: "feature-unpushed"}
+
+      assert {:ok, ^wt_path} = Git.get_or_create_worktree(project, task)
+      assert git!(wt_path <> ".git", ["rev-parse", "refs/heads/feature-unpushed"]) == git!(remote, ["rev-parse", "main"])
+    end
+
+    test "on a worktree of the project's clone, leaves the clone's config alone", %{repo: repo, project: project} do
+      wt_path = Path.join(repo, ".worktrees/feature-worktree")
+      git!(repo, ["worktree", "add", "--quiet", "-b", "feature-worktree", wt_path])
+      task = %Task{worktree_path: wt_path, worktree_name: "feature-worktree"}
+
+      assert {:ok, ^wt_path} = Git.get_or_create_worktree(project, task)
+      assert Task.worktree_present?(task)
+      refute File.read!(Path.join(repo, ".git/config")) =~ "worktreeConfig"
+      refute File.read!(Path.join(repo, ".git/config")) =~ "railai"
+    end
   end
 end

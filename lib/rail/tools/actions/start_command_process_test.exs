@@ -71,10 +71,9 @@ defmodule Rail.Tools.Actions.StartCommandProcessTest do
     %{run: run, worktree_path: worktree_path, clone_path: project.clone_path}
   end
 
-  test "runs the command in the worktree with its ports and its project's clone, and records how it exited", %{
+  test "runs the command in the worktree with its ports, and records how it exited", %{
     run: run,
-    worktree_path: worktree_path,
-    clone_path: clone_path
+    worktree_path: worktree_path
   } do
     expect(FollowerSupervisor, :start_follower, fn _os_process, [port: _port] -> {:ok, self()} end)
     command = "pwd; echo $RAIL_PORT_BASE; echo clone=$RAIL_CLONE_PATH; exit 3"
@@ -87,7 +86,7 @@ defmodule Rail.Tools.Actions.StartCommandProcessTest do
     assert {:ok, output} = File.read(os_process.stream_path)
     assert output =~ Path.basename(worktree_path)
     assert output =~ "20400"
-    assert output =~ "clone=#{clone_path}\n"
+    assert output =~ "clone=\n"
   end
 
   # Runs the real mise, with the settings Rail gives every tool it starts, on a

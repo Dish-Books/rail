@@ -20,7 +20,7 @@ defmodule Rail.Pipeline.Utils.PrepareTurn do
     %Project{default_branch: base} = project = Repo.get!(Project, task.project_id)
 
     if Task.worktree_present?(task) do
-      with {:error, reason} <- Git.fetch_default_branch(project, task.worktree_path) do
+      with {:error, reason} <- Git.fetch_default_branch(project, task) do
         say(
           run,
           "Could not fetch origin/#{base} before this turn, so the copy fetched last is what the branch is checked against: #{describe(reason)}"

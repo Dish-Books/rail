@@ -13,7 +13,7 @@ defmodule Rail.Pipeline.Utils.PassingCi do
   def passing_ci(%Task{} = task) do
     case Tools.list_os_processes(task_id: task.id, kind: :ci) do
       [%OsProcess{exit_code: 0, head_sha: head_sha} = os_process | _earlier] when is_binary(head_sha) ->
-        if match?(%{head_sha: ^head_sha}, Git.branch_fingerprint(task.worktree_path)), do: os_process
+        if match?(%{head_sha: ^head_sha}, Git.branch_fingerprint(task)), do: os_process
 
       _never_or_not_passing ->
         nil

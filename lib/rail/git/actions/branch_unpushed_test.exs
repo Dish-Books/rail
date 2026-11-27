@@ -2,38 +2,35 @@ defmodule Rail.Git.Actions.BranchUnpushedTest do
   use Rail.DataCase, async: true
 
   alias Rail.Git
+  alias Rail.Pipeline.Schemas.Task
 
   setup do
-    remote = create_temp_git_repo(prefix: "rail_unpushed_remote")
-    repo = create_temp_git_repo(initial_commit: false)
-    git!(repo, ["remote", "add", "origin", remote])
-    git!(repo, ["fetch", "--quiet", "origin"])
-    git!(repo, ["checkout", "--quiet", "--no-track", "-b", "feature", "origin/main"])
-
-    %{repo: repo}
+    create_task_checkout()
   end
 
-  test "a fresh branch from the default branch has nothing to push, with no upstream", %{repo: repo} do
-    refute Git.branch_unpushed?(repo)
+  test "a fresh branch from the default branch has nothing to push, with no upstream", %{task: task} do
+    refute Git.branch_unpushed?(task)
   end
 
-  test "a commit only here is unpushed until it is pushed", %{repo: repo} do
-    git!(repo, ["commit", "--allow-empty", "-m", "the work"])
-    assert Git.branch_unpushed?(repo)
+  test "a commit only in the checkout is unpushed until Rail pushes it", %{task: task, checkout: checkout} do
+    git!(checkout, ["commit", "--allow-empty", "-m", "the work"])
+    assert Git.branch_unpushed?(task)
 
-    git!(repo, ["push", "--quiet", "--set-upstream", "origin", "feature"])
-    refute Git.branch_unpushed?(repo)
+    assert :ok = Git.push_branch(system_scope(), task, String.trim(git!(checkout, ["rev-parse", "HEAD"])))
+    refute Git.branch_unpushed?(task)
   end
 
-  test "a branch rewritten since its push is unpushed", %{repo: repo} do
-    git!(repo, ["commit", "--allow-empty", "-m", "the work"])
-    git!(repo, ["push", "--quiet", "--set-upstream", "origin", "feature"])
-    git!(repo, ["commit", "--amend", "--allow-empty", "-m", "the work, reworded"])
+  test "a branch rewritten since its push is unpushed", %{task: task, checkout: checkout} do
+    git!(checkout, ["commit", "--allow-empty", "-m", "the work"])
+    assert :ok = Git.push_branch(system_scope(), task, String.trim(git!(checkout, ["rev-parse", "HEAD"])))
+    git!(checkout, ["commit", "--amend", "--allow-empty", "-m", "the work, reworded"])
 
-    assert Git.branch_unpushed?(repo)
+    assert Git.branch_unpushed?(task)
   end
 
-  test "a worktree git cannot read counts as unpushed" do
-    assert Git.branch_unpushed?(create_temp_git_repo(initial_commit: false))
+  test "a task whose repository git cannot read counts as unpushed", %{task: task} do
+    File.rm_rf!(Task.repo_path(task))
+
+    assert Git.branch_unpushed?(task)
   end
 end

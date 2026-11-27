@@ -462,7 +462,7 @@ defmodule RailWeb.Live.DiffView do
     socket
     |> assign(:view, view)
     |> assign(:history, history)
-    |> assign(:dirty?, present? and Git.worktree_dirty?(task.worktree_path))
+    |> assign(:dirty?, present? and Git.worktree_dirty?(task))
     |> assign(:fingerprint, fingerprint(task))
     |> fold_away_read_files(files)
     |> assign(:files, files)
@@ -605,8 +605,8 @@ defmodule RailWeb.Live.DiffView do
   defp written_in({:commit, sha}), do: %{filter: :commit, commit: sha}
   defp written_in(filter), do: %{filter: filter}
 
-  defp fingerprint(%Task{worktree_path: worktree_path} = task) do
-    if Task.worktree_present?(task), do: Git.branch_fingerprint(worktree_path)
+  defp fingerprint(%Task{} = task) do
+    if Task.worktree_present?(task), do: Git.branch_fingerprint(task)
   end
 
   # A file already read is folded away the first time it is seen that way, and

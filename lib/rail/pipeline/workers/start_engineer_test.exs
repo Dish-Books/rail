@@ -128,7 +128,7 @@ defmodule Rail.Pipeline.Workers.StartEngineerTest do
   describe "an approved custom stage's job on a task it moved to Review" do
     setup %{task: task} do
       worktree_path = Path.join(task.scratch_path, "worktree")
-      File.mkdir_p!(worktree_path)
+      Enum.each([worktree_path, worktree_path <> ".git"], &File.mkdir_p!/1)
       {:ok, reviewing} = Pipeline.update_task(task, %{stage: :review, worktree_path: worktree_path})
       on_exit(fn -> File.rm_rf(reviewing.scratch_path) end)
       stub(Git, :base_status, fn _path, _base -> %{behind: true, conflicts: []} end)

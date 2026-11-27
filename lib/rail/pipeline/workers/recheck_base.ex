@@ -21,7 +21,7 @@ defmodule Rail.Pipeline.Workers.RecheckBase do
       project = Repo.get!(Project, task.project_id)
 
       # A fetch that fails still leaves the copy fetched last to check against, which may already show the move.
-      with {:error, reason} <- Git.fetch_default_branch(project, task.worktree_path) do
+      with {:error, reason} <- Git.fetch_default_branch(project, task) do
         Logger.warning("Could not fetch #{project.name}'s default branch after a refused merge: #{inspect(reason)}")
       end
 
