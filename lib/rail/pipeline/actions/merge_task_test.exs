@@ -7,7 +7,9 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.AdvanceTrackerState
+  alias Rail.Issues.Workers.WriteTestScenarios
   alias Rail.Learnings
   alias Rail.Learnings.Workers.FinalizeTaskProposals
   alias Rail.Pipeline
@@ -95,7 +97,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   end
 
   test "a tech lead's merge says Merging, squash-merges as the lead, records it and enters Merged", %{
-    task: %Task{id: task_id} = task,
+    task: %Task{id: task_id, issue_id: issue_id} = task,
     lead: %{id: lead_id},
     scope: scope
   } do
@@ -121,6 +123,22 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert [%Oban.Job{args: %{"task_id" => ^task_id}}] = all_enqueued(worker: CleanupMergedTask)
     assert [%Oban.Job{args: %{"task_id" => ^task_id}}] = all_enqueued(worker: NotifyOwner)
     assert [%Oban.Job{args: %{"task_id" => ^task_id}}] = all_enqueued(worker: FinalizeTaskProposals)
+
+    assert %Issue{scenarios_requested_at: %DateTime{}} = Repo.get!(Issue, issue_id)
+
+    assert [%Oban.Job{args: %{"issue_id" => ^issue_id, "merge_sha" => "3c9a1f0e2b"}}] =
+             all_enqueued(worker: WriteTestScenarios)
+  end
+
+  test "a merge of a ticket whose testing already finished asks for no scenarios", %{task: task, scope: scope} do
+    issue = Repo.get!(Issue, task.issue_id)
+    {:ok, done} = Issues.set_issue_status(system_scope(), issue, %{id: "done", name: "Done", state: :done})
+    {:ok, _tested} = Issues.mark_issue_tested(system_scope(), done, %{no_scenarios_reason: "Tested by hand"})
+    Req.Test.expect(Client, &Req.Test.json(&1, %{"merged" => true, "sha" => "3c9a1f0e2b"}))
+
+    assert {:ok, %Task{stage: :merged}} = Pipeline.merge_task(scope, task)
+    assert %Issue{testing_state: :tested, scenarios_requested_at: nil} = Repo.get!(Issue, task.issue_id)
+    refute_enqueued(worker: WriteTestScenarios)
   end
 
   test "a lead with no GitHub token, or one GitHub no longer takes, signs in again and the claim is let go", %{

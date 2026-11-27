@@ -654,7 +654,7 @@ defmodule RailWeb.IssueLiveTest do
     {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
     assert has_element?(view, "#issue-testing-link[href='/testing/#{issue.id}'] [data-testing-state='waiting']")
 
-    {:ok, _tested} = Issues.mark_issue_tested(system_scope(), issue)
+    {:ok, _tested} = Issues.mark_issue_tested(system_scope(), issue, %{no_scenarios_reason: "Only docs"})
 
     assert has_element?(view, "#issue-testing [data-testing-state='tested']", "Tested")
     refute has_element?(view, "#issue-testing-link")

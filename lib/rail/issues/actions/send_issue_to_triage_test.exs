@@ -4,6 +4,7 @@ defmodule Rail.Issues.Actions.SendIssueToTriageTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.TestingImage
+  alias Rail.Issues.Schemas.TestingScenario
   alias Rail.Projects
 
   setup do
@@ -21,57 +22,106 @@ defmodule Rail.Issues.Actions.SendIssueToTriageTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Merge moves the ticket"})
     {:ok, waiting} = Issues.set_issue_status(system_scope(), issue, %{id: "done", name: "Done", state: :done})
+
+    scenarios = [
+      %{TestingScenario.agent("A branch that names it moves it") | result: :passed, note: "Was broken, then fixed"},
+      %{
+        TestingScenario.agent("A branch that only mentions it leaves it")
+        | result: :failed,
+          note: "  It moved anyway.\n",
+          images: [
+            %TestingImage{url: "https://x/a.png", name: "row [cut].png"},
+            %TestingImage{url: "https://x/b.png", name: "b.png"}
+          ]
+      },
+      TestingScenario.agent("A second tab shows the move")
+    ]
+
+    {:ok, written} = waiting |> Issue.testing_scenarios_changeset(scenarios, :agent) |> Repo.update()
     Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
 
-    %{local_project: project, issue: waiting, scope: user_scope(project_ids: [project.id])}
+    %{local_project: project, issue: written, scope: user_scope(project_ids: [project.id])}
   end
 
-  test "opens a ticket in Triage in the same project with the notes and a link, and the tested one stays Done", %{
+  test "opens a ticket in Triage with every result, the failed scenarios' details, the place and a link", %{
     local_project: %{id: project_id},
     issue: %Issue{id: issue_id, identifier: identifier, url: url} = issue,
     scope: scope
   } do
-    {:ok, _noted} = Issues.save_testing_notes(scope, issue, "  A branch that only names it moved it too.\n")
+    {:ok, _placed} =
+      Issues.save_testing_place(scope, issue, %{
+        testing_environment: "staging",
+        testing_platform: "ios",
+        testing_device: " iPhone 15 "
+      })
 
     title = "Follow-up to #{identifier}: Merge moves the ticket"
-    description = "A branch that only names it moved it too.\n\nFound while testing [#{identifier}](#{url})."
+
+    description =
+      """
+      Found while testing [#{identifier}](#{url}) on Staging · iOS · iPhone 15.
+
+      ## Results
+
+      1 passed · 1 failed · 1 not marked
+
+      - Passed: A branch that names it moves it
+      - Failed: A branch that only mentions it leaves it
+      - Not marked: A second tab shows the move
+
+      ## Failed scenarios
+
+      1. A branch that only mentions it leaves it
+
+         It moved anyway.
+
+         ![row cut.png](https://x/a.png)
+
+         ![b.png](https://x/b.png)\
+      """
 
     assert {:ok, %Issue{id: created_id, project_id: ^project_id, state: :todo, title: ^title, description: ^description}} =
              Issues.send_issue_to_triage(scope, issue)
 
+    refute description =~ "Was broken, then fixed"
     assert %Issue{state: :done, testing_state: :sent_to_triage} = Repo.get!(Issue, issue_id)
     assert_received {:issue_changed, ^issue_id}
     assert_received {:issue_created, ^created_id}
     assert %{issues: []} = Issues.list_issues(project_id: project_id, testing: true)
   end
 
-  test "the notes' pictures go into the new ticket after the notes, a bracket in a name kept out of its markdown", %{
-    issue: %Issue{identifier: identifier, url: url} = issue,
+  test "notes and pictures from before scenarios follow the failed ones, and no place says nothing of one", %{
+    issue: %Issue{id: issue_id, identifier: identifier, url: url} = issue,
     scope: scope
   } do
-    {:ok, noted} = Issues.save_testing_notes(scope, issue, "The row is cut off")
+    Repo.update_all(from(i in Issue, where: i.id == ^issue_id),
+      set: [testing_notes: " Old notes \n", testing_images: [%TestingImage{url: "https://x/old.png", name: "old.png"}]]
+    )
 
-    {:ok, _pictured} =
-      noted
-      |> Issue.testing_images_changeset([
-        %TestingImage{url: "https://x/a.png", name: "row [cut].png"},
-        %TestingImage{url: "https://x/b.png", name: "b.png"}
-      ])
-      |> Repo.update()
+    assert {:ok, %Issue{description: description}} = Issues.send_issue_to_triage(scope, issue)
+    assert description =~ "Found while testing [#{identifier}](#{url}).\n\n## Results"
 
-    description =
-      "The row is cut off\n\n![row cut.png](https://x/a.png)\n\n![b.png](https://x/b.png)\n\n" <>
-        "Found while testing [#{identifier}](#{url})."
-
-    assert {:ok, %Issue{description: ^description}} = Issues.send_issue_to_triage(scope, issue)
+    assert String.ends_with?(
+             description,
+             "\n\n## Notes from before scenarios\n\nOld notes\n\n![old.png](https://x/old.png)"
+           )
   end
 
-  test "blank notes refuse and leave the ticket in the queue", %{issue: %Issue{id: issue_id} = issue, scope: scope} do
-    assert {:error, :no_notes} = Issues.send_issue_to_triage(scope, issue)
+  test "with no failed scenario it refuses, opens nothing and leaves the ticket in the queue", %{
+    local_project: %{id: project_id},
+    issue: %Issue{id: issue_id, testing_scenarios: [_passed, %{id: failed_id}, _open]} = issue,
+    scope: scope
+  } do
+    {:ok, _passed} = Issues.save_testing_scenario(scope, issue, failed_id, %{result: "passed"})
 
-    {:ok, _blank} = Issues.save_testing_notes(scope, issue, " \n ")
-    assert {:error, :no_notes} = Issues.send_issue_to_triage(scope, issue)
-    assert %Issue{testing_state: :waiting} = Repo.get!(Issue, issue_id)
+    assert {:error, :no_failed_scenarios} = Issues.send_issue_to_triage(scope, issue)
+    assert %Issue{testing_state: :testing} = Repo.get!(Issue, issue_id)
+    assert %{total: 1} = Issues.list_issues(project_id: project_id, show_finished: true)
+  end
+
+  test "a ticket being written refuses", %{issue: issue, scope: scope} do
+    {:ok, _requested} = Issues.request_test_scenarios(issue, "abc123")
+    assert {:error, :writing_scenarios} = Issues.send_issue_to_triage(scope, issue)
   end
 
   test "a second send says testing already finished and opens no second ticket", %{
@@ -79,7 +129,6 @@ defmodule Rail.Issues.Actions.SendIssueToTriageTest do
     issue: issue,
     scope: scope
   } do
-    {:ok, _noted} = Issues.save_testing_notes(scope, issue, "Broken")
     {:ok, _created} = Issues.send_issue_to_triage(scope, issue)
 
     assert {:error, :testing_finished} = Issues.send_issue_to_triage(scope, issue)
@@ -92,17 +141,16 @@ defmodule Rail.Issues.Actions.SendIssueToTriageTest do
     assert {:error, :not_found} = Issues.send_issue_to_triage(system_scope(), issue)
   end
 
-  test "a send cut off while the new ticket is opened leaves the ticket in the queue with its notes", %{
+  test "a send cut off while the new ticket is opened leaves the ticket in the queue with its scenarios", %{
     local_project: %{id: project_id},
     issue: %Issue{id: issue_id} = issue,
     scope: scope
   } do
-    {:ok, _noted} = Issues.save_testing_notes(scope, issue, "Broken after the merge")
     expect(Rail.Issues.Tracker, :create_issue, fn _scope, _project, _attrs -> raise "the node restarted" end)
 
     assert_raise RuntimeError, "the node restarted", fn -> Issues.send_issue_to_triage(scope, issue) end
 
-    assert %Issue{state: :done, testing_state: :testing, testing_notes: "Broken after the merge"} =
+    assert %Issue{state: :done, testing_state: :waiting, testing_scenarios: [_passed, _failed, _open]} =
              Repo.get!(Issue, issue_id)
 
     assert %{issues: [%Issue{id: ^issue_id}]} = Issues.list_issues(project_id: project_id, testing: true)

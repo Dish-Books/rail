@@ -1,7 +1,7 @@
 defmodule Rail.Issues.Actions.AddTestingImage do
   @moduledoc false
 
-  import Ecto.Query
+  import Rail.Issues.Utils.UpdateTesting
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.TestingImage
@@ -19,12 +19,12 @@ defmodule Rail.Issues.Actions.AddTestingImage do
   }
 
   @doc """
-  Stores a picture and adds it to the testing notes of a ticket in the testing queue,
-  returning the ticket as it now reads. Broadcasts as `Rail.Issues.save_testing_notes/3` does. Refuses with
-  `:not_accepted` for a name that is not a PNG, JPEG, GIF or WebP, and `:testing_finished` once the ticket is out of the queue.
+  Stores a picture and adds it to the scenario `scenario_id` of a ticket in the testing queue, returning the ticket as
+  it now reads. Refuses with `:not_accepted` for a name that is not a PNG, JPEG, GIF or WebP, `:not_found` for a
+  scenario the ticket no longer has, and as `Rail.Issues.Utils.UpdateTesting` does.
   """
-  def add_testing_image(%Scope{} = scope, %Issue{id: id, project_id: project_id} = issue, filename, data)
-      when is_binary(filename) and is_binary(data) do
+  def add_testing_image(%Scope{} = scope, %Issue{project_id: project_id} = issue, scenario_id, filename, data)
+      when is_binary(scenario_id) and is_binary(filename) and is_binary(data) do
     content_type = @types[filename |> Path.extname() |> String.downcase()]
     issue = Repo.preload(issue, :project)
 
@@ -32,31 +32,23 @@ defmodule Rail.Issues.Actions.AddTestingImage do
     with true <- Scope.can_access_project?(scope, project_id) || {:error, :not_found},
          true <- is_binary(content_type) || {:error, :not_accepted},
          true <- Issue.in_testing_queue?(issue) || {:error, :testing_finished},
-         {:ok, url} <- Tracker.upload_asset(issue, filename, content_type, data),
-         {:ok, {was, saved}} <-
-           Repo.transaction(fn -> append(id, project_id, %TestingImage{url: url, name: filename}) end) do
-      Phoenix.PubSub.broadcast(Rail.PubSub, "testing", {:testing_notes_changed, id})
+         # Read again under the lock below; checked here so a refused picture is never uploaded.
+         false <- Issue.writing_scenarios?(issue) && {:error, :writing_scenarios},
+         {:ok, url} <- Tracker.upload_asset(issue, filename, content_type, data) do
+      image = %TestingImage{url: url, name: filename}
 
-      if was.testing_state != saved.testing_state,
-        do: Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, id})
+      update_testing(scope, issue, fn locked ->
+        case Enum.find_index(locked.testing_scenarios, &(&1.id == scenario_id)) do
+          index when is_integer(index) ->
+            scenarios =
+              List.update_at(locked.testing_scenarios, index, &%{&1 | images: List.insert_at(&1.images, -1, image)})
 
-      {:ok, saved}
-    end
-  end
+            Issue.testing_scenarios_changeset(locked, scenarios, :tester)
 
-  defp append(id, project_id, image) do
-    locked = Repo.one(from(i in Issue, where: i.id == ^id and i.project_id == ^project_id, lock: "FOR UPDATE"))
-
-    cond do
-      is_nil(locked) ->
-        Repo.rollback(:not_found)
-
-      not Issue.in_testing_queue?(locked) ->
-        Repo.rollback(:testing_finished)
-
-      true ->
-        {locked,
-         locked |> Issue.testing_images_changeset(List.insert_at(locked.testing_images, -1, image)) |> Repo.update!()}
+          nil ->
+            {:error, :not_found}
+        end
+      end)
     end
   end
 end

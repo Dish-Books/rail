@@ -1,38 +1,26 @@
 defmodule Rail.Issues.Actions.RemoveTestingImage do
   @moduledoc false
 
-  import Ecto.Query
+  import Rail.Issues.Utils.UpdateTesting
 
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Repo
   alias Rail.Scope
 
   @doc """
-  Takes the picture at `url` out of the testing notes of a ticket in the testing queue, and returns the ticket as it
-  now reads. The tracker keeps the file; nothing links to it any more. Refuses with `:testing_finished` once the
-  ticket is out of the queue.
+  Takes the picture at `url` out of the scenario `scenario_id` and returns the ticket as it now reads. The tracker
+  keeps the file. Refuses as `Rail.Issues.Utils.UpdateTesting` does.
   """
-  def remove_testing_image(%Scope{} = scope, %Issue{id: id, project_id: project_id}, url) when is_binary(url) do
-    with true <- Scope.can_access_project?(scope, project_id) || {:error, :not_found},
-         {:ok, saved} <-
-           Repo.transaction(fn ->
-             locked =
-               Repo.one(from(i in Issue, where: i.id == ^id and i.project_id == ^project_id, lock: "FOR UPDATE"))
+  def remove_testing_image(%Scope{} = scope, %Issue{} = issue, scenario_id, url)
+      when is_binary(scenario_id) and is_binary(url) do
+    update_testing(scope, issue, fn locked ->
+      scenarios =
+        Enum.map(locked.testing_scenarios, fn scenario ->
+          if scenario.id == scenario_id,
+            do: %{scenario | images: Enum.reject(scenario.images, &(&1.url == url))},
+            else: scenario
+        end)
 
-             cond do
-               is_nil(locked) ->
-                 Repo.rollback(:not_found)
-
-               not Issue.in_testing_queue?(locked) ->
-                 Repo.rollback(:testing_finished)
-
-               true ->
-                 kept = Enum.reject(locked.testing_images, &(&1.url == url))
-                 locked |> Issue.testing_images_changeset(kept) |> Repo.update!()
-             end
-           end) do
-      Phoenix.PubSub.broadcast(Rail.PubSub, "testing", {:testing_notes_changed, id})
-      {:ok, saved}
-    end
+      Issue.testing_scenarios_changeset(locked, scenarios, :tester)
+    end)
   end
 end

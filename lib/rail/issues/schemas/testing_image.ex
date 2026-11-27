@@ -1,7 +1,7 @@
 defmodule Rail.Issues.Schemas.TestingImage do
   @moduledoc """
-  A picture a tester added beside a ticket's testing notes: stored by the ticket's tracker at `url`, under the name
-  it was added with.
+  A picture a tester added to a failed scenario, or beside notes from before scenarios: stored by the ticket's tracker
+  at `url`, under the name it was added with.
   """
   use Rail.Schema
 
