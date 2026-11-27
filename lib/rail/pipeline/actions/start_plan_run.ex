@@ -166,7 +166,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
 
     - One round per turn. Collect every question you could not close and ask them all in one `ask_questions` call before you end your turn, each with its options, your recommended answer first. Leave the options out where the answer is free text. The human sees the round when your turn ends and answers the lot in a single pass. A question you can settle from the docs, the code or a named assumption is not a question.
     #{learnings_brief(run, ["#{issue.title}\n\n#{issue.description}"])}
-    #{saved(task, on?)}#{format_stage_outputs(task, "Stages of this task's workflow ran before Plan and saved the files below, each under its stage's name. Read them with the issue, and give the plan check each one that bears on the plan, word for word.")}
+    #{saved(task, on?)}#{format_stage_outputs(task, "Stages of this task's workflow ran before Plan and saved the files below, each under its stage's name. Read them with the issue, and give the plan check each one that bears on the plan, word for word.")}#{if issue.support_conversation_id, do: "\nThis issue was created from a customer's support conversation. Read it with `support_read` before you write anything: it is what the customer reported and asked for, in their words, and the ticket below is only triage's summary of it.\n"}
     The ticket as it stands, its title, priority and estimate above its description:
 
     #{format_ticket(issue)}

@@ -54,6 +54,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   import Rail.Mcp.Utils.RunToolSaveScreen
   import Rail.Mcp.Utils.RunToolSaveStageOutput
   import Rail.Mcp.Utils.RunToolSearchIssues
+  import Rail.Mcp.Utils.RunToolSupportRead
   import Rail.Mcp.Utils.ToolAllowed
   import Rail.Mcp.Utils.WithUpstreamToken
 
@@ -280,6 +281,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
 
   defp run("save_demo", task, arguments, opts), do: run_tool_save_demo(task, arguments, opts)
   defp run("ask_questions", task, arguments, opts), do: run_tool_ask_questions(task, arguments, opts)
+  defp run("support_read", task, arguments, opts), do: run_tool_support_read(task, arguments, opts)
 
   defp task(%RunContext{os_process: %{task_id: task_id}}) when is_binary(task_id) do
     case Pipeline.get_task(task_id) do

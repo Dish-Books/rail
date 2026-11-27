@@ -75,6 +75,48 @@ defmodule Rail.Support.Schemas.ConversationTest do
     assert "Conversation with a customer" = Conversation.title_or_preview(%Conversation{})
   end
 
+  test "the transcript quotes every message in order, with who wrote it, as what, when, and its files" do
+    messages = [
+      %Message{
+        kind: :customer,
+        author_name: "Marta",
+        text: "Two bugs.\n\nSee **this**",
+        posted_at: ~U[2026-11-20 10:00:00Z]
+      },
+      %Message{
+        kind: :note,
+        author_name: "Sam",
+        text: "",
+        posted_at: ~U[2026-11-20 10:05:00Z],
+        attachments: [%Message.Attachment{name: "shot.png", url: "https://files.example/shot.png"}]
+      },
+      %Message{kind: :teammate, author_name: "Sam", text: "Passed on.", posted_at: ~U[2026-11-20 10:06:00Z]},
+      %Message{kind: :bot, author_name: "Fin", text: "Anything else?", posted_at: ~U[2026-11-20 10:07:00Z]}
+    ]
+
+    assert Conversation.calculate_transcript(%Conversation{customer_name: "Marta", messages: messages}) ==
+             """
+             The Intercom conversation with Marta this ticket came from:
+
+             **Marta** (customer) · Nov 20, 2026 10:00 UTC
+             > Two bugs.
+             >
+             > See **this**
+
+             **Sam** (internal note) · Nov 20, 2026 10:05 UTC
+             > [shot.png](https://files.example/shot.png)
+
+             **Sam** (teammate) · Nov 20, 2026 10:06 UTC
+             > Passed on.
+
+             **Fin** (bot) · Nov 20, 2026 10:07 UTC
+             > Anything else?\
+             """
+
+    assert "The Intercom conversation with the customer this ticket came from:" =
+             Conversation.calculate_transcript(%Conversation{messages: []})
+  end
+
   test "a pass works in its own scratch folder and worktree" do
     conversation = %Conversation{id: "scv_1", project_id: "prj_1", project: %Project{clone_path: "/clones/x"}}
 

@@ -8,7 +8,6 @@ defmodule Rail.Triage.Actions.SendTriageReplyTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.LinkTrackerUrl
   alias Rail.Scope
-  alias Rail.Support
   alias Rail.Support.Schemas.Item, as: SupportItem
   alias Rail.Triage
   alias Rail.Triage.Schemas.Item
@@ -327,29 +326,7 @@ defmodule Rail.Triage.Actions.SendTriageReplyTest do
 
   describe "a thread forwarded from Intercom" do
     setup %{project: project, scope: scope} do
-      unique = System.unique_integer([:positive])
-      Req.Test.expect(Rail.Intercom, &Req.Test.json(&1, %{"app" => %{"id_code" => "app#{unique}"}}))
-
-      {:ok, workspace} =
-        Support.create_intercom_workspace(system_scope(), project, %{
-          "name" => "Support",
-          "access_token" => "tok",
-          "client_id" => "cid",
-          "client_secret" => "secret"
-        })
-
-      Req.Test.expect(Rail.Intercom, fn conn ->
-        Req.Test.json(conn, %{
-          "id" => "#{unique}",
-          "created_at" => 1_790_000_000,
-          "updated_at" => 1_790_000_100,
-          "state" => "open",
-          "source" => %{"id" => "src1", "body" => "<p>Two bugs.</p>", "author" => %{"type" => "user", "name" => "Marta"}}
-        })
-      end)
-
-      {:ok, synced} = Support.sync_intercom_conversation(workspace, "#{unique}")
-      {:ok, conversation} = Support.get_support_conversation(system_scope(), synced.id)
+      conversation = support_conversation(project)
 
       items = [
         %SupportItem{key: "sesame", kind: :bug, title: "Sesame", verdict: :confirmed, issue_title: "Lists sesame"},
@@ -357,7 +334,7 @@ defmodule Rail.Triage.Actions.SendTriageReplyTest do
       ]
 
       {:ok, forwarded} = Triage.create_forwarded_thread(scope, conversation, items)
-      %{forwarded: forwarded}
+      %{forwarded: forwarded, conversation: conversation}
     end
 
     test "Create 2 tickets creates both, links them to the conversation and posts nothing", %{
@@ -373,6 +350,24 @@ defmodule Rail.Triage.Actions.SendTriageReplyTest do
                Repo.all(from i in Item, where: i.thread_id == ^forwarded_id, order_by: i.position)
 
       assert [_one, _two] = all_enqueued(worker: LinkTrackerUrl, args: %{title: "Intercom conversation"})
+    end
+
+    test "each new ticket references the conversation, and holds no copy of it", %{
+      forwarded: %{id: forwarded_id} = forwarded,
+      scope: scope,
+      conversation: %{id: conversation_id}
+    } do
+      assert {:ok, %Thread{status: :done}} = Triage.send_triage_reply(scope, forwarded)
+
+      issue_ids =
+        Repo.all(from i in Item, where: i.thread_id == ^forwarded_id, order_by: i.position, select: i.created_issue_id)
+
+      assert [
+               %Issue{title: "Lists sesame", description: nil, support_conversation_id: ^conversation_id},
+               %Issue{title: "Prints the method", description: nil, support_conversation_id: ^conversation_id}
+             ] = Enum.map(issue_ids, &Repo.get!(Issue, &1))
+
+      assert 0 = Repo.aggregate(from(c in Comment, where: c.issue_id in ^issue_ids), :count)
     end
   end
 end

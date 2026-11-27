@@ -18,6 +18,7 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
              "browser_close",
              "save_design_option",
              "save_plan",
+             "support_read",
              "ask_questions",
              "knowledge_search",
              "search_issues",

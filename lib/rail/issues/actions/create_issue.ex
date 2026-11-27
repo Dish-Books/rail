@@ -25,7 +25,7 @@ defmodule Rail.Issues.Actions.CreateIssue do
   `:owner_user_id`, `:workflow_id`, the workflow opening it, `:skipped_steps`, the steps its file
   turned off, `:stages`, the `IssueStage`s its file named, `:parent`, the issue it is a sub-issue of, and `:cycle_id`,
   the cycle the ticket opens in, and `:initiative_id`, the initiative it joins, both of which the caller has already
-  checked. The ticket is opened in Todo. Broadcasts
+  checked, and `:support_conversation_id`, the support conversation it was created from. The ticket is opened in Todo. Broadcasts
   `{:issue_created, issue_id}` on `"issues"`.
   """
   def create_issue(%Scope{} = scope, %Project{} = project, %{} = attrs) do
@@ -43,13 +43,14 @@ defmodule Rail.Issues.Actions.CreateIssue do
           })
 
         # Set on the struct rather than cast, so no later write can change the steps; `Issue.changeset/2` takes no cycle,
-        # parent or initiative.
+        # parent, initiative or support conversation.
         %Issue{
           skipped_steps: attrs[:skipped_steps] || [],
           stages: attrs[:stages] || [],
           cycle_id: tracked[:cycle_id],
           parent_id: tracked[:parent_id],
-          initiative_id: attrs[:initiative_id]
+          initiative_id: attrs[:initiative_id],
+          support_conversation_id: attrs[:support_conversation_id]
         }
         |> Issue.changeset(local)
         # The tracker draws the id its URL names. On the struct it would make the insert read as an update.
