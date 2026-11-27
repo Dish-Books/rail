@@ -103,7 +103,7 @@ config :rail, :sandbox,
   runtime: :local,
   image: "rail-sandbox:latest",
   url: "ws://localhost:4000/sandbox/socket",
-  idle_minutes: 5,
+  idle_minutes: 2,
   headroom_cpus: 2,
   shm_size_gb: 1
 

@@ -17,7 +17,7 @@ defmodule Rail do
   def max_sandboxes, do: sandbox(:max_sandboxes, nil)
 
   @doc "How long a sandbox's container stays up with nothing running, in minutes, before it is stopped."
-  def sandbox_idle_minutes, do: sandbox(:idle_minutes, 5)
+  def sandbox_idle_minutes, do: sandbox(:idle_minutes, 2)
 
   @doc "Where the runner's binaries for each Linux architecture are, as `linux-<arch>/rail-runner`."
   def runner_dir, do: sandbox(:runner_dir, Path.expand("../runner/dist", __DIR__))

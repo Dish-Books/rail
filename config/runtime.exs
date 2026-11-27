@@ -97,7 +97,7 @@ if config_env() == :prod do
     headroom_cpus: String.to_integer(System.get_env("RAIL_SANDBOX_HEADROOM_CPUS", "2")),
     url: System.get_env("RAIL_SANDBOX_URL", "ws://localhost:#{System.get_env("PORT", "4000")}/sandbox/socket"),
     max_sandboxes: if(max = System.get_env("RAIL_MAX_SANDBOXES"), do: String.to_integer(max)),
-    idle_minutes: String.to_integer(System.get_env("RAIL_SANDBOX_IDLE_MINUTES", "5")),
+    idle_minutes: String.to_integer(System.get_env("RAIL_SANDBOX_IDLE_MINUTES", "2")),
     runner_dir: System.get_env("RAIL_RUNNER_DIR", "/app/runner"),
     toolchain_volume: System.get_env("RAIL_TOOLCHAIN_VOLUME")
 
