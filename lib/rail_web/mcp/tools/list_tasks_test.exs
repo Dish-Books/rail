@@ -4,8 +4,11 @@ defmodule RailWeb.Mcp.Tools.ListTasksTest do
   alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
+  alias Rail.Roles
   alias Rail.Users
 
   setup do
@@ -112,5 +115,145 @@ defmodule RailWeb.Mcp.Tools.ListTasksTest do
 
     assert {:error, "No project you can open has that key or name. Yours are: " <> _keys} =
              call_mcp_tool(scope, "list_tasks", %{"project" => hidden.key})
+  end
+
+  test "with waiting, only the tasks waiting on me, each wait with its kind, status, link, start and the same id twice",
+       %{project: seeded, local: local, hidden: hidden, user: user, teammate: teammate, scope: scope} do
+    now = DateTime.utc_now()
+
+    for listed <- [local, hidden] do
+      {:ok, [_first | _rest]} = Roles.copy_roles(system_scope(), listed.id, seeded.id)
+    end
+
+    {:ok, plan} = Roles.get_role(project_id: local.id, stage: :plan)
+    {:ok, engineer} = Roles.get_role(project_id: local.id, stage: :engineer)
+
+    {:ok, %{identifier: asking_key} = asking_issue} =
+      Issues.create_issue(system_scope(), local, %{title: "Three questions", owner_user_id: user.id})
+
+    {:ok, %Task{id: asking_id} = asking} = Pipeline.create_task(asking_issue, :plan)
+
+    {:ok, %Run{id: asking_run_id} = asking_run} =
+      Pipeline.create_run(%{task_id: asking.id, role_id: plan.id, status: :running, started_at: now})
+
+    {:ok, %{asked: [_first, _second, %Question{id: newest_id}]}} =
+      Pipeline.ask_questions(
+        asking_run,
+        for(p <- ["Which database?", "Behind a flag?", "Who signs off?"], do: %{"prompt" => p})
+      )
+
+    {:ok, _parked} = Pipeline.update_run(asking_run, %{status: :blocked_on_input})
+
+    {:ok, %{identifier: planned_key} = planned_issue} =
+      Issues.create_issue(system_scope(), local, %{title: "Plan to review", owner_user_id: user.id})
+
+    {:ok, %Task{id: planned_id} = planned} = Pipeline.create_task(planned_issue, :plan)
+
+    {:ok, %Run{id: planned_run_id, wait_started_at: planned_at}} =
+      Pipeline.create_run(%{
+        task_id: planned.id,
+        role_id: plan.id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: now
+      })
+
+    {:ok, %{identifier: failed_key} = failed_issue} =
+      Issues.create_issue(system_scope(), local, %{title: "Engineer failed", owner_user_id: user.id})
+
+    {:ok, %Task{id: failed_id} = failed} = Pipeline.create_task(failed_issue, :engineer)
+
+    {:ok, %Run{id: failed_run_id, wait_started_at: failed_at}} =
+      Pipeline.create_run(%{
+        task_id: failed.id,
+        role_id: engineer.id,
+        status: :failed,
+        error: "Exited with code 1",
+        started_at: now
+      })
+
+    {:ok, %{identifier: working_key} = working_issue} =
+      Issues.create_issue(system_scope(), local, %{title: "Still working", owner_user_id: user.id})
+
+    {:ok, working} = Pipeline.create_task(working_issue, :engineer)
+
+    {:ok, _running} =
+      Pipeline.create_run(%{task_id: working.id, role_id: engineer.id, status: :running, started_at: now})
+
+    {:ok, theirs_issue} =
+      Issues.create_issue(system_scope(), local, %{title: "Theirs", owner_user_id: teammate.id})
+
+    {:ok, theirs} = Pipeline.create_task(theirs_issue, :engineer)
+
+    {:ok, _failed} =
+      Pipeline.create_run(%{task_id: theirs.id, role_id: engineer.id, status: :failed, error: "Boom", started_at: now})
+
+    {:ok, hidden_issue} = Issues.create_issue(system_scope(), hidden, %{title: "Hidden", owner_user_id: user.id})
+    {:ok, hidden_task} = Pipeline.create_task(hidden_issue, :engineer)
+    {:ok, hidden_engineer} = Roles.get_role(project_id: hidden.id, stage: :engineer)
+
+    {:ok, _failed} =
+      Pipeline.create_run(%{
+        task_id: hidden_task.id,
+        role_id: hidden_engineer.id,
+        status: :failed,
+        error: "Boom",
+        started_at: now
+      })
+
+    questions_wait = "#{asking_run_id}:#{newest_id}"
+    planned_wait = "#{planned_run_id}:#{DateTime.to_unix(planned_at, :microsecond)}"
+    failed_wait = "#{failed_run_id}:#{DateTime.to_unix(failed_at, :microsecond)}"
+    asking_url = RailWeb.Endpoint.url() <> "/tasks/#{asking_id}"
+    planned_url = RailWeb.Endpoint.url() <> "/tasks/#{planned_id}"
+    failed_url = RailWeb.Endpoint.url() <> "/tasks/#{failed_id}"
+
+    for _call <- 1..2 do
+      assert {:ok,
+              %{
+                "tasks" => [
+                  %{
+                    "identifier" => ^failed_key,
+                    "waiting" => %{
+                      "id" => ^failed_wait,
+                      "kind" => "failed",
+                      "summary" => "Implement failed",
+                      "url" => ^failed_url,
+                      "since" => "20" <> _failed_since
+                    }
+                  },
+                  %{
+                    "identifier" => ^planned_key,
+                    "waiting" => %{
+                      "id" => ^planned_wait,
+                      "kind" => "review",
+                      "summary" => "Review the plan",
+                      "url" => ^planned_url,
+                      "since" => "20" <> _planned_since
+                    }
+                  },
+                  %{
+                    "identifier" => ^asking_key,
+                    "waiting" => %{
+                      "id" => ^questions_wait,
+                      "kind" => "questions",
+                      "summary" => "Plan needs an answer",
+                      "url" => ^asking_url,
+                      "since" => "20" <> _asked_since
+                    }
+                  }
+                ]
+              }} = call_mcp_tool(scope, "list_tasks", %{"waiting" => true, "assignee" => "me"})
+    end
+
+    assert {:ok, %{"tasks" => [%{"identifier" => ^working_key, "waiting" => nil} | _rest]}} =
+             call_mcp_tool(scope, "list_tasks", %{"assignee" => "me"})
+  end
+
+  test "with waiting and nothing waiting on me, the list is empty", %{local: local, user: user, scope: scope} do
+    {:ok, issue} = Issues.create_issue(system_scope(), local, %{title: "Not started", owner_user_id: user.id})
+    {:ok, _task} = Pipeline.create_task(issue, :engineer)
+
+    assert {:ok, %{"tasks" => []}} = call_mcp_tool(scope, "list_tasks", %{"waiting" => true, "assignee" => "me"})
   end
 end

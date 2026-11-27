@@ -43,6 +43,8 @@ defmodule Rail.Pipeline.Schemas.Run do
     field :stage_outcome, Ecto.Enum, values: @stage_outcomes, default: :in_progress
     field :started_at, :utc_datetime_usec
     field :completed_at, :utc_datetime_usec
+    # When this run's current wait began; with the run's id, it names the wait to people's own Claude.
+    field :wait_started_at, :utc_datetime_usec
     field :exit_code, :integer
     field :error, :string
     field :pending_answer, :string
@@ -93,6 +95,8 @@ defmodule Rail.Pipeline.Schemas.Run do
     :review_on_ci_pass
   ]
 
+  @in_flight [:waiting_for_resources, :waiting_for_usage, :starting, :running]
+
   @usage_fields [
     :input_tokens,
     :output_tokens,
@@ -116,6 +120,7 @@ defmodule Rail.Pipeline.Schemas.Run do
       |> cast(attrs, @cast_fields)
       |> validate_required(@required_fields)
       |> validate_conversation_id_unchanged()
+      |> put_wait_started_at()
 
     handle_embed(changeset, :usage, attrs)
   end
@@ -304,6 +309,20 @@ defmodule Rail.Pipeline.Schemas.Run do
       _unset_or_unchanged ->
         changeset
     end
+  end
+
+  # An error on a run already done leaves it done, as `notify_owner/2` reads it, so it starts no wait.
+  defp put_wait_started_at(%Ecto.Changeset{data: %__MODULE__{} = before} = changeset) do
+    status = get_field(changeset, :status)
+    outcome = get_field(changeset, :stage_outcome)
+    error = get_field(changeset, :error)
+
+    starts_wait? =
+      (outcome == :done and before.stage_outcome != :done) or
+        (is_binary(error) and is_nil(before.error) and outcome != :done) or
+        ((is_nil(before.status) or before.status in @in_flight) and status not in @in_flight)
+
+    if starts_wait?, do: put_change(changeset, :wait_started_at, DateTime.utc_now()), else: changeset
   end
 
   # Usage accumulates: a run spends across every OS process it spawns, so what

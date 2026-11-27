@@ -1,9 +1,10 @@
 defmodule Rail.Pipeline.Actions.CountAttention do
   @moduledoc false
 
+  import Rail.Pipeline.Utils.ListWaitingStageRuns
+
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
 
   @doc """
@@ -13,19 +14,9 @@ defmodule Rail.Pipeline.Actions.CountAttention do
   """
   def count_attention(opts \\ []) do
     waiting =
-      [
-        project_id: opts[:project_id],
-        owner_user_id: opts[:owner_user_id],
-        preload: [:role, :questions, task: [:issue, :rounds, :coderabbit_reviews]]
-      ]
-      |> Pipeline.list_runs()
-      |> Enum.group_by(& &1.task_id)
-      |> Enum.count(fn {_task_id, [%Run{task: task} | _rest] = runs} ->
-        case Task.stage_run(%{task | runs: runs}) do
-          %Run{} = run -> Run.needs_attention?(run)
-          nil -> false
-        end
-      end)
+      [project_id: opts[:project_id], owner_user_id: opts[:owner_user_id]]
+      |> list_waiting_stage_runs()
+      |> length()
 
     blocked =
       [
