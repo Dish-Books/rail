@@ -50,7 +50,7 @@ defmodule Rail.Tools.Actions.Run do
   end
 
   defp cmd(executable, args, opts, cd) do
-    extra = Enum.into(Keyword.get(opts, :env, %{}), tool_env(executable))
+    extra = tool_env(executable, Keyword.get(opts, :env, %{}))
     base_opts = [{:env, env_list(extra, nil)} | Keyword.take(opts, [:into, :stderr_to_stdout])]
 
     cmd_opts =
@@ -60,14 +60,79 @@ defmodule Rail.Tools.Actions.Run do
         base_opts
       end
 
-    System.cmd(resolve(executable), args, cmd_opts)
+    System.cmd(resolve(executable), tool_args(executable, args), cmd_opts)
   end
+
+  # Rail runs git in task checkouts whose .git the sandbox can write, so whatever
+  # git runs from a repository's own config or hooks would run here, in Rail's
+  # container, beside its GitHub token and the Docker socket. Config given in the
+  # environment is git's command scope, read after every file and so winning over
+  # them, and git passes it on to the gits it starts for submodules:
+  #
+  # - no hooks: core.hooksPath names a directory that holds none;
+  # - no fsmonitor, the command `git status` and the like run first;
+  # - plain ssh, not one a repository names;
+  # - no askpass program, so a missing credential fails rather than runs one;
+  # - no credential helper but the caller's: an empty value clears those read so far;
+  # - no signature checks from `git log`, which run the gpg or ssh program config names;
+  # - the stock upload and receive programs for `origin`, which on a local path run here.
+  #
+  # Config under a name of the repository's own choosing cannot be overruled this
+  # way: a clean filter a `git status` or worktree diff runs, a merge driver a
+  # `merge-tree` runs, and on a git new enough to have them, as 2.54 is, hooks set
+  # as `hook.<name>.command`, which core.hooksPath does not reach. Only git
+  # never reading the checkout's config closes those. What has to be safe already
+  # is: Rail pushes from the project's clone, never from a checkout.
+  @git_config [
+    {"core.hooksPath", "/dev/null"},
+    {"core.fsmonitor", "false"},
+    {"core.sshCommand", "ssh"},
+    {"core.askPass", ""},
+    {"credential.helper", ""},
+    {"log.showSignature", "false"},
+    {"remote.origin.uploadpack", "git-upload-pack"},
+    {"remote.origin.receivepack", "git-receive-pack"}
+  ]
 
   # Rail reads a worktree with `git status` and the like while it commits in the
   # same one, and a read that refreshes the index takes its lock: a commit landing
   # then fails on `index.lock: File exists`. Rail's reads leave the index alone.
-  defp tool_env("git"), do: %{"GIT_OPTIONAL_LOCKS" => "0"}
-  defp tool_env(_executable), do: %{}
+  #
+  # Only the transports Rail's remotes use, so no `ext::` command or remote helper a
+  # rewritten URL names; and objects as stored, never as `refs/replace` swaps them.
+  @git_env %{
+    "GIT_OPTIONAL_LOCKS" => "0",
+    "GIT_ALLOW_PROTOCOL" => "file:http:https:ssh",
+    "GIT_NO_REPLACE_OBJECTS" => "1"
+  }
+
+  # As GIT_CONFIG_PARAMETERS, the form `git -c` passes on, since the port drops a
+  # variable whose value is empty and the resets above are empty values. Rail's go
+  # first, so a caller's own credential helper comes after the reset that clears the
+  # repository's.
+  defp tool_env("git", env) do
+    env = Map.new(env, fn {key, value} -> {to_string(key), to_string(value)} end)
+    count = env |> Map.get("GIT_CONFIG_COUNT", "0") |> String.to_integer()
+    callers = for i <- 0..(count - 1)//1, do: {env["GIT_CONFIG_KEY_#{i}"], env["GIT_CONFIG_VALUE_#{i}"]}
+    own = Map.reject(env, fn {key, _value} -> key =~ ~r/^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)$/ end)
+    parameters = Enum.map_join(@git_config ++ callers, " ", fn {key, value} -> quoted(key) <> "=" <> quoted(value) end)
+
+    @git_env
+    |> Map.merge(own)
+    |> Map.update("GIT_CONFIG_PARAMETERS", parameters, &(parameters <> " " <> &1))
+  end
+
+  defp tool_env(_executable, env), do: Map.new(env)
+
+  # git's own quoting for GIT_CONFIG_PARAMETERS: single quotes, with each one inside closed, escaped and reopened.
+  defp quoted(text), do: "'" <> String.replace(text, "'", ~S('\'')) <> "'"
+
+  # A diff driver's command and textconv are programs too, named by attributes the
+  # checkout holds, and no config can unname them; these flags turn both off.
+  defp tool_args("git", [command | rest]) when command in ["diff", "log", "show"],
+    do: [command, "--no-ext-diff", "--no-textconv" | rest]
+
+  defp tool_args(_executable, args), do: args
 
   # Resolves an executable to its absolute path on the tool PATH. Names that
   # already contain a `/` are taken as given, and a name nothing on PATH matches

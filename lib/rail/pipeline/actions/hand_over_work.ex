@@ -4,8 +4,8 @@ defmodule Rail.Pipeline.Actions.HandOverWork do
   stage: Review, where Rail starts the agents that check the round, or a custom stage placed before it.
   """
 
-  import Rail.Pipeline.Utils.CiPassed
   import Rail.Pipeline.Utils.OpenPullRequest
+  import Rail.Pipeline.Utils.PassingCi
   import Rail.Pipeline.Utils.StartCi
 
   alias Rail.Git
@@ -32,9 +32,11 @@ defmodule Rail.Pipeline.Actions.HandOverWork do
       # Set before CI starts, so a CI that finishes fast still finds it.
       flagged = update(run, %{review_on_ci_pass: true})
 
-      if command in [nil, ""] or ci_passed?(task),
-        do: push(scope, flagged),
-        else: run_ci(flagged)
+      cond do
+        command in [nil, ""] -> push(scope, flagged, Git.branch_fingerprint(task.worktree_path)[:head_sha])
+        passed = passing_ci(task) -> push(scope, flagged, passed)
+        true -> run_ci(flagged)
+      end
     end
   end
 
@@ -47,9 +49,10 @@ defmodule Rail.Pipeline.Actions.HandOverWork do
     end
   end
 
-  # Pushed once CI has passed on HEAD, and sent on once pushed; CI's finish does both where it runs.
-  defp push(%Scope{} = scope, %Run{task: %Task{} = task} = run) do
-    case Git.push_branch(scope, task) do
+  # Pushed once CI has passed on HEAD, and sent on once pushed; CI's finish does both where it runs. With no CI,
+  # HEAD goes up alone, since no CI vouches for it.
+  defp push(%Scope{} = scope, %Run{task: %Task{} = task} = run, commit) do
+    case Git.push_branch(scope, task, commit) do
       :ok ->
         pushed = %{update(run, %{review_on_ci_pass: false, error: nil}) | task: open_pull_request(task, run)}
         Pipeline.send_to_next_stage(pushed)

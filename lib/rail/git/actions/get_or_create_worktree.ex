@@ -11,7 +11,7 @@ defmodule Rail.Git.Actions.GetOrCreateWorktree do
 
   @doc """
   Gets the task's existing checkout or makes it: a clone of the project's clone, hardlinked where the disk allows,
-  with the clone's `origin` and hooks. A task with a pull request continues its branch as `origin` has it; any other
+  with the clone's `origin` and no hooks, since Rail runs none of a project's. A task with a pull request continues its branch as `origin` has it; any other
   starts a new one from `origin/<default branch>`, fetched first.
   """
   def get_or_create_worktree(%Project{} = project, %Task{} = task) do
@@ -57,8 +57,6 @@ defmodule Rail.Git.Actions.GetOrCreateWorktree do
          {_set, 0} <- git(building, ["remote", "set-url", "origin", String.trim(origin)]),
          # A push updates origin/<branch> only through a fetch refspec that names it, which --single-branch narrows.
          {_widened, 0} <- git(building, ["config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"]) do
-      # The clone's pre-push hook is the project's, and a new clone starts with none.
-      _hooks = File.cp_r(Path.join(clone_path, ".git/hooks"), Path.join(building, ".git/hooks"))
       :ok
     else
       {output, _code} -> {:error, String.trim(output)}

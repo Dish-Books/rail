@@ -33,7 +33,7 @@ defmodule Rail.Git do
   defdelegate list_round_paths(task, round_change), to: Actions.ListRoundPaths
   defdelegate base_status(worktree_path, base_branch), to: Actions.BaseStatus
   defdelegate branch_changed?(task), to: Actions.BranchChanged
-  defdelegate push_branch(scope, task), to: Actions.PushBranch
+  defdelegate push_branch(scope, task, commit), to: Actions.PushBranch
   defdelegate check_push(task), to: Actions.CheckPush
   defdelegate set_commit_identity(task), to: Actions.SetCommitIdentity
   defdelegate credential_env(project), to: Actions.CredentialEnv

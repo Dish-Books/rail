@@ -24,8 +24,9 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   @tail_lines 150
 
   @doc "Finishes `run` after `os_process`, its CI, exited."
-  def ci_run_finished(%Run{exit_code: 0, task: %Task{} = task} = run, %OsProcess{}) do
-    case Git.push_branch(Scope.for_system(), task) do
+  # What goes up is the commit CI ran on, with its receipt, even when the branch has moved on since.
+  def ci_run_finished(%Run{exit_code: 0, task: %Task{} = task} = run, %OsProcess{} = os_process) do
+    case Git.push_branch(Scope.for_system(), task, os_process) do
       :ok ->
         attrs = %{ci_failure_streak: 0, error: nil, review_on_ci_pass: false, stage_outcome: :done}
         pushed = %{update(run, attrs) | task: open_pull_request(task, run)}

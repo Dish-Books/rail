@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.GetCiStatus do
   @moduledoc false
 
-  import Rail.Pipeline.Utils.CiPassed
+  import Rail.Pipeline.Utils.PassingCi
 
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -31,7 +31,7 @@ defmodule Rail.Pipeline.Actions.GetCiStatus do
   defp state(%OsProcess{status: status}, _task) when status in [:waiting_for_resources, :starting, :running], do: :running
 
   defp state(%OsProcess{exit_code: 0}, %Task{} = task) do
-    if ci_passed?(task), do: :passed, else: :pending
+    if passing_ci(task), do: :passed, else: :pending
   end
 
   defp state(%OsProcess{}, _task), do: :failed

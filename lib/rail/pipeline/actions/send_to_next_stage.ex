@@ -11,7 +11,7 @@ defmodule Rail.Pipeline.Actions.SendToNextStage do
   pane's Push sends it. Work left uncommitted is not the engineer's to hand over, so it stays behind in the worktree.
   """
 
-  import Rail.Pipeline.Utils.CiPassed
+  import Rail.Pipeline.Utils.PassingCi
   import Rail.Pipeline.Utils.StartChecks
 
   alias Rail.Git
@@ -55,7 +55,7 @@ defmodule Rail.Pipeline.Actions.SendToNextStage do
     cond do
       Task.running?(task) -> {:error, :stage_running}
       Git.branch_unpushed?(task.worktree_path) -> {:error, :unpushed_changes}
-      ci_required?(task) and not ci_passed?(task) -> {:error, :ci_not_passed}
+      ci_required?(task) and is_nil(passing_ci(task)) -> {:error, :ci_not_passed}
       true -> :ok
     end
   end

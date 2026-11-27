@@ -25,8 +25,8 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   import Rail.Pipeline.Utils.BroadcastFindingComments
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.BroadcastScreenComments
-  import Rail.Pipeline.Utils.CiPassed
   import Rail.Pipeline.Utils.FinishReview
+  import Rail.Pipeline.Utils.PassingCi
   import Rail.Pipeline.Utils.ReopenReviewRun
   import Rail.Pipeline.Utils.SendBack
   import Rail.Pipeline.Utils.WriteFixPlan
@@ -127,7 +127,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
 
   # A fix whose commit has not passed CI is still waiting on it, however it was ruled.
   defp sendable(%Task{project: %Project{ci_command: command}} = task, false, [], []) when command not in [nil, ""] do
-    if ci_passed?(task), do: :ok, else: {:error, :ci_not_passed}
+    if passing_ci(task), do: :ok, else: {:error, :ci_not_passed}
   end
 
   defp sendable(%Task{}, false, _fix, _comments), do: :ok
