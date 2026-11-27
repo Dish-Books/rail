@@ -22,8 +22,8 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
   out is passed over and keeps its place: it would only start to fail, so it
   waits for someone to sign the account in, and holds nobody behind it up meanwhile.
 
-  Under Docker a command also needs its task's sandbox running: one whose task has none takes one of the host's
-  `Rail.max_sandboxes/0`, an idle sandbox's if none is free, and otherwise waits. An agent turn whose sandbox carries
+  Under Docker a command also needs its task's sandbox running. Where `Rail.max_sandboxes/0` caps the host, one whose
+  task has none takes a free slot, an idle sandbox's if none is free, and otherwise waits. An agent turn whose sandbox carries
   another account's login while something runs there is passed over the same way, until it is idle.
 
   One pass at a time on this machine, so two never hand out the same CPU. It must
@@ -108,7 +108,9 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
 
   # A host at its limit gives up the container of an idle sandbox, the one started longest ago, for this one.
   defp free_slot(live) do
-    if length(live) < Rail.max_sandboxes() do
+    max = Rail.max_sandboxes()
+
+    if is_nil(max) or length(live) < max do
       :ok
     else
       case live |> Enum.reject(&busy?/1) |> Enum.min_by(&(&1.ready_at || &1.started_at), DateTime, fn -> nil end) do

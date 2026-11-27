@@ -13,8 +13,8 @@ defmodule Rail do
   @doc "Where a sandbox's runner dials Rail's socket."
   def sandbox_url, do: sandbox(:url, "ws://localhost:4000/sandbox/socket")
 
-  @doc "How many sandboxes' containers this host runs at once."
-  def max_sandboxes, do: sandbox(:max_sandboxes, 8)
+  @doc "How many sandboxes' containers this host runs at once, or nil for no cap beyond the CPUs commands reserve."
+  def max_sandboxes, do: sandbox(:max_sandboxes, nil)
 
   @doc "How long a sandbox's container stays up with nothing running, in minutes, before it is stopped."
   def sandbox_idle_minutes, do: sandbox(:idle_minutes, 5)

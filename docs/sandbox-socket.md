@@ -10,7 +10,7 @@ A sandbox is a task's **disk** and, while the task has work, its **compute**.
 - **The compute** is a container (on the Mac, the task's user's processes; in k8s, a pod) running `rail-runner`. Rail starts it when one of the task's commands is admitted and stops it once the task has had nothing running for `idle_minutes` (5 by default). Whatever the agent left running stops with it, as a turn's brief already says.
 - Every command still gets its own `OsProcess` row, under the task's `sandboxes` row.
 
-**Capacity.** Each command still reserves its role's CPUs while it runs, and the line admits oldest first, as now. On top of that a host runs at most `max_sandboxes` containers at once; a command whose task has no running container waits for a slot. Idle containers give theirs up first. The container's CPU shares are the sum of what its running commands reserve.
+**Capacity.** Each command still reserves its role's CPUs while it runs, and the line admits oldest first, as now. Those reservations are what bound how many containers run at once, and an idle one stops after `idle_minutes`. A host that needs a hard cap as well sets `RAIL_MAX_SANDBOXES`: a command whose task has no running container then waits for a slot, and idle containers give theirs up first. The container's CPU shares are the sum of what its running commands reserve.
 
 **An account's login** is still a mount, of that one account's folder, until RAIL-228 proxies Claude. A container carries the login of the account its run's role is placed on when it starts, and a later turn prefers that account. A turn that has to go to another waits until nothing is running, then the container is made again on that account. The disk stays, so this costs seconds.
 
