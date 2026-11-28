@@ -2,17 +2,11 @@ defmodule Rail.Tools.Utils.StartSandbox do
   @moduledoc false
 
   import Ecto.Query
-  import Rail.Tools.Utils.LoginMounts
-  import Rail.Tools.Utils.PickBackend
-  import Rail.Tools.Utils.StopSandbox
 
-  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
-  alias Rail.Roles.Schemas.Role
   alias Rail.Tools.Clients.Docker
-  alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Tools.Schemas.Sandbox
   alias Rail.Types.Cpus
@@ -26,11 +20,9 @@ defmodule Rail.Tools.Utils.StartSandbox do
   Makes sure `os_process`'s task has a container running on its sandbox's disk that `os_process` can run in, and
   returns `{:ok, sandbox}`, or `{:error, reason}` when none could be started.
 
-  A running container is used as it is, with its CPU shares raised to what its commands now reserve, unless an agent
-  turn needs another account's login: the admission line holds such a turn until the container is idle, and it is made
-  again here on that account. A sandbox with no container gets one, carrying the login of the account the turn is on,
-  or for a command the one its run's role would be placed on. `os_process` carries its task down to the project, its
-  run down to the role, and its backend.
+  A running container is used as it is, with its CPU shares raised to what its commands now reserve. A sandbox with no
+  container gets one. It carries no account's login: Claude reaches its account through Rail's proxy, whatever account
+  each turn is on. `os_process` carries its task down to the project.
   """
   def start_sandbox(%OsProcess{task: %Task{} = task} = os_process, %{cpus: cpus}) do
     {sandbox, new?} =
@@ -39,18 +31,11 @@ defmodule Rail.Tools.Utils.StartSandbox do
         nil -> {insert(task), true}
       end
 
-    login = login(os_process, sandbox)
-
-    cond do
-      Sandbox.live?(sandbox) and login == sandbox.backend_id ->
-        share(sandbox, os_process)
-        {:ok, sandbox}
-
-      Sandbox.live?(sandbox) ->
-        sandbox |> stop_sandbox() |> start(os_process, login, cpus, false)
-
-      true ->
-        start(sandbox, os_process, login, cpus, new?)
+    if Sandbox.live?(sandbox) do
+      share(sandbox, os_process)
+      {:ok, sandbox}
+    else
+      start(sandbox, os_process, cpus, new?)
     end
   end
 
@@ -67,28 +52,14 @@ defmodule Rail.Tools.Utils.StartSandbox do
     |> Repo.insert!()
   end
 
-  # An agent turn needs its own account's login; a command keeps whatever the container has, or takes the account its
-  # run's next turn would most likely go to.
-  defp login(%OsProcess{kind: :agent, backend_id: backend_id}, %Sandbox{}), do: backend_id
-
-  defp login(%OsProcess{}, %Sandbox{backend_id: backend_id}) when is_binary(backend_id), do: backend_id
-
-  defp login(%OsProcess{run: %Run{role: %Role{cli: cli, model: model}}}, %Sandbox{}) do
-    case pick_backend(cli, model, nil) do
-      {placed, %Backend{id: id}} when placed in [:ok, :held] -> id
-      _none -> nil
-    end
-  end
-
-  defp start(%Sandbox{} = sandbox, %OsProcess{task: %Task{} = task} = os_process, login, cpus, new?) do
+  defp start(%Sandbox{} = sandbox, %OsProcess{task: %Task{} = task} = os_process, cpus, new?) do
     token = 32 |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)
-    backend = login && Repo.get(Backend, login)
     File.mkdir_p!(task.scratch_path)
 
     with {:ok, tar} <- runner_archive(),
          {:ok, _volume} <- Docker.create_volume(sandbox.volume, sandbox.id),
          :ok <- if(new?, do: seed(sandbox, task), else: :ok),
-         body = body(sandbox, os_process, task, backend, token, cpus),
+         body = body(sandbox, os_process, task, token, cpus),
          {:ok, %{"Id" => id}} <- Docker.create_sandbox_container(sandbox.id, body),
          {:ok, _started} <- put_and_start(id, tar) do
       sandbox
@@ -96,7 +67,6 @@ defmodule Rail.Tools.Utils.StartSandbox do
         status: :starting,
         container_id: id,
         token_hash: :crypto.hash(:sha256, token),
-        backend_id: backend && backend.id,
         started_at: DateTime.utc_now(),
         connected_at: nil,
         ready_at: nil,
@@ -106,13 +76,7 @@ defmodule Rail.Tools.Utils.StartSandbox do
     end
   end
 
-  defp body(%Sandbox{} = sandbox, %OsProcess{} = os_process, %Task{} = task, backend, token, cpus) do
-    login =
-      case backend do
-        %Backend{} -> login_mounts(backend, [Backend.session_dir(backend, task.worktree_path)])
-        nil -> %{binds: [], tmpfs: %{}}
-      end
-
+  defp body(%Sandbox{} = sandbox, %OsProcess{} = os_process, %Task{} = task, token, cpus) do
     toolchain =
       case {Rail.toolchain_volume(), Rail.mise_data_dir()} do
         {volume, dir} when is_binary(volume) and is_binary(dir) ->
@@ -130,9 +94,8 @@ defmodule Rail.Tools.Utils.StartSandbox do
       "User" => "0:0",
       "HostConfig" => %{
         "NetworkMode" => "host",
-        "Binds" => ["#{task.scratch_path}:#{task.scratch_path}" | login.binds],
+        "Binds" => ["#{task.scratch_path}:#{task.scratch_path}"],
         "Mounts" => [%{"Type" => "volume", "Source" => sandbox.volume, "Target" => task.worktree_path} | toolchain],
-        "Tmpfs" => login.tmpfs,
         "CpuShares" => round(os_process.reserved_cpus * 1024),
         "NanoCpus" => cpus * 1_000_000_000,
         "OomScoreAdj" => 500,

@@ -9,7 +9,6 @@ defmodule Rail.Tools.Schemas.Sandbox do
   use Rail.Schema
 
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Tools.Schemas.Backend
 
   @statuses [:starting, :running, :stopped, :ended]
   @engines [:docker]
@@ -30,8 +29,6 @@ defmodule Rail.Tools.Schemas.Sandbox do
     field :ready_at, :utc_datetime_usec
     field :stopped_at, :utc_datetime_usec
     field :ended_at, :utc_datetime_usec
-    # The account whose login the container mounts, until RAIL-228 proxies it.
-    belongs_to :backend, Backend
     belongs_to :task, Task
 
     timestamps()
@@ -50,8 +47,7 @@ defmodule Rail.Tools.Schemas.Sandbox do
     :connected_at,
     :ready_at,
     :stopped_at,
-    :ended_at,
-    :backend_id
+    :ended_at
   ]
 
   @doc "Builds a changeset; `task_id` is set from the task, never cast."

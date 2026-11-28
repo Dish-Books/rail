@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -35,6 +36,8 @@ type config struct {
 	Log        *log.Logger
 	// A unix socket to reach URL through, as rail-host offers on the Mac; empty to dial URL itself.
 	Socket string
+	// Where commands reach Rail's Claude proxy and MCP server; a free loopback port by default.
+	HTTPAddr string
 }
 
 const defaultPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -60,6 +63,7 @@ func configFromEnv() (config, error) {
 		AccessID:     os.Getenv("RAIL_ACCESS_CLIENT_ID"),
 		AccessSecret: os.Getenv("RAIL_ACCESS_CLIENT_SECRET"),
 		Socket:       os.Getenv("RAIL_SANDBOX_UNIX_SOCKET"),
+		HTTPAddr:     os.Getenv("RAIL_RUNNER_HTTP"),
 		State:        stateDir(),
 		UID:          1000,
 		GID:          1000,
@@ -102,6 +106,9 @@ type daemon struct {
 	sessChanged chan struct{}
 
 	gitMu sync.Mutex // serializes checkout and sync
+
+	httpURL string                     // the HTTP listener, once listening
+	tokens  map[string]json.RawMessage // a Claude token to the process it was made for
 }
 
 func newDaemon(cfg config) *daemon {
@@ -118,7 +125,7 @@ func newDaemon(cfg config) *daemon {
 	if l == nil {
 		l = log.New(os.Stderr, "rail-runner: ", log.LstdFlags)
 	}
-	return &daemon{cfg: cfg, log: l, procs: map[string]*proc{}, sessChanged: make(chan struct{})}
+	return &daemon{cfg: cfg, log: l, procs: map[string]*proc{}, tokens: map[string]json.RawMessage{}, sessChanged: make(chan struct{})}
 }
 
 func (d *daemon) procsDir() string { return filepath.Join(d.cfg.State, "procs") }
@@ -138,6 +145,12 @@ func (d *daemon) Run(ctx context.Context) error {
 	}
 	go d.acceptLoop(ln)
 	defer ln.Close()
+	hln, err := d.listenHTTP()
+	if err != nil {
+		return err
+	}
+	go d.serveHTTP(hln)
+	defer hln.Close()
 
 	if err := d.adoptProcs(ctx); err != nil {
 		return err
@@ -217,12 +230,15 @@ func (d *daemon) cmdEnv(extra map[string]string) []string {
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
 		switch k {
-		case "RAIL_SANDBOX_TOKEN", "RAIL_SANDBOX_URL", "RAIL_SANDBOX_UNIX_SOCKET", "RAIL_ACCESS_CLIENT_ID", "RAIL_ACCESS_CLIENT_SECRET", childEnv:
+		case "RAIL_SANDBOX_TOKEN", "RAIL_SANDBOX_URL", "RAIL_SANDBOX_UNIX_SOCKET", "RAIL_ACCESS_CLIENT_ID", "RAIL_ACCESS_CLIENT_SECRET", "RAIL_RUNNER_HTTP", childEnv:
 			continue
 		}
 		env = append(env, kv)
 	}
 	env = envSet(env, "RAIL_RUNNER_STATE", d.cfg.State)
+	if u := d.localURL(); u != "" {
+		env = envSet(env, "RAIL_MCP_URL", u+"/mcp")
+	}
 	if c := d.cred(); c != nil {
 		if u, err := user.LookupId(strconv.Itoa(int(c.Uid))); err == nil {
 			env = envSet(env, "HOME", u.HomeDir)

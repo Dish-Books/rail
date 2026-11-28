@@ -40,6 +40,7 @@ defmodule Rail.Mcp do
   defdelegate list_run_tools(context), to: Actions.ListRunTools
   defdelegate check_run_tools(context), to: Actions.CheckRunTools
   defdelegate call_run_tool(context, name, arguments), to: Actions.CallRunTool
+  defdelegate handle_rpc(context, message), to: Actions.HandleRpc
 
   defdelegate register_dynamic_client(metadata), to: Actions.RegisterDynamicClient
   defdelegate validate_authorize_request(params), to: Actions.ValidateAuthorizeRequest

@@ -80,15 +80,18 @@ defmodule Rail.Tools.Schemas.Backend do
 
   @doc "Where Claude Code keeps the conversations it had in `cwd`, named as the CLI names that folder."
   def session_dir(%__MODULE__{} = backend, cwd) when is_binary(cwd) do
-    name = String.replace(cwd, ~r/[^a-zA-Z0-9]/, "-")
+    Path.join([config_dir(backend), "projects", project_dir_name(cwd)])
+  end
 
-    # The CLI cuts a long name at 200 and adds the path's string hash, in base 36.
-    name =
-      if byte_size(name) <= 200,
-        do: name,
-        else: "#{binary_part(name, 0, 200)}-#{calculate_path_hash(cwd)}"
+  @doc """
+  Where Claude Code keeps its config in a sandbox: a folder of the container's own, holding no login. Rail restores a
+  conversation into it before the turn that resumes it.
+  """
+  def sandbox_config_dir, do: "/tmp/rail-claude"
 
-    Path.join([config_dir(backend), "projects", name])
+  @doc "Where Claude Code in a sandbox keeps the conversations it had in `cwd`."
+  def sandbox_session_dir(cwd) when is_binary(cwd) do
+    Path.join([sandbox_config_dir(), "projects", project_dir_name(cwd)])
   end
 
   @doc "What a CLI is called wherever Rail names it."
@@ -175,6 +178,15 @@ defmodule Rail.Tools.Schemas.Backend do
   end
 
   # Java's String#hashCode over UTF-16 units, wrapped to 32 bits, as the CLI's is.
+  defp project_dir_name(cwd) do
+    name = String.replace(cwd, ~r/[^a-zA-Z0-9]/, "-")
+
+    # The CLI cuts a long name at 200 and adds the path's string hash, in base 36.
+    if byte_size(name) <= 200,
+      do: name,
+      else: "#{binary_part(name, 0, 200)}-#{calculate_path_hash(cwd)}"
+  end
+
   defp calculate_path_hash(cwd) do
     hash =
       for <<unit::16 <- :unicode.characters_to_binary(cwd, :utf8, :utf16)>>, reduce: 0 do

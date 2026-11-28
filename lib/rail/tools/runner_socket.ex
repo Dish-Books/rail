@@ -15,6 +15,7 @@ defmodule Rail.Tools.RunnerSocket do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Tools.RunnerRegistry
+  alias Rail.Tools.SandboxProxy
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Tools.Schemas.Sandbox
 
@@ -25,6 +26,8 @@ defmodule Rail.Tools.RunnerSocket do
   @max_payload 65_536
   @call_timeout_ms to_timeout(minute: 5)
   @services ["git-upload-pack", "git-receive-pack"]
+  @http_kinds ["claude", "mcp"]
+  @max_request_body 64 * 1_048_576
   @signals %{"TERM" => 143, "KILL" => 137, "INT" => 130, "HUP" => 129}
 
   defstruct [
@@ -39,6 +42,7 @@ defmodule Rail.Tools.RunnerSocket do
     procs: %{},
     chans: %{},
     calls: %{},
+    http_pids: %{},
     waiting: []
   ]
 
@@ -209,6 +213,42 @@ defmodule Rail.Tools.RunnerSocket do
     end
   end
 
+  def handle_info({:http_head, ch, status, headers}, state) do
+    case state.chans do
+      %{^ch => %{http: _kind}} -> {:push, [json(%{t: "head", ch: ch, status: status, headers: Map.new(headers)})], state}
+      _gone -> {:ok, state}
+    end
+  end
+
+  def handle_info({:http_body, ch, bytes}, state) do
+    case state.chans do
+      %{^ch => %{http: _kind} = chan} -> chan |> Map.update!(:queue, &(&1 <> bytes)) |> drain(ch, state)
+      _gone -> {:ok, state}
+    end
+  end
+
+  def handle_info({:http_end, ch}, state) do
+    case state.chans do
+      %{^ch => %{http: _kind} = chan} -> drain(%{chan | exit: :ok}, ch, state)
+      _gone -> {:ok, state}
+    end
+  end
+
+  # A request's process that died before answering ends its channel, so the runner's caller is not left waiting.
+  def handle_info({:DOWN, _ref, :process, pid, reason}, state) when is_map_key(state.http_pids, pid) do
+    {ch, http_pids} = Map.pop(state.http_pids, pid)
+    state = %{state | http_pids: http_pids}
+
+    case state.chans do
+      %{^ch => %{exit: nil}} when reason != :normal ->
+        close = json(%{t: "close", ch: ch, error: "Rail failed answering the request"})
+        {:push, [close], %{state | chans: Map.delete(state.chans, ch)}}
+
+      _answered ->
+        {:ok, state}
+    end
+  end
+
   def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
     detached =
       for {id, %{pid: ^pid}} <- state.procs, reduce: state do
@@ -224,6 +264,7 @@ defmodule Rail.Tools.RunnerSocket do
   def terminate(_reason, state) do
     Enum.each(state.procs, fn {id, %{pid: pid}} -> send(pid, {:runner_down, id}) end)
     for {_ch, %{port: port}} <- state.chans, do: close_port(port)
+    for {pid, _ch} <- state.http_pids, do: Process.exit(pid, :kill)
     :ok
   end
 
@@ -331,13 +372,48 @@ defmodule Rail.Tools.RunnerSocket do
     {:ok, %{state | chans: Map.put(state.chans, ch, chan)}}
   end
 
+  # An HTTP request's body is held until its eof, then answered by a process of its own.
+  defp message(%{"t" => "open", "ch" => ch, "kind" => kind, "method" => method, "path" => path} = open, state)
+       when kind in @http_kinds and is_binary(method) and is_binary(path) do
+    chan = %{http: kind, open: open, body: [], size: 0, queue: "", sent: 0, acked: 0, exit: nil}
+    {:ok, put_chan(state, ch, chan)}
+  end
+
   defp message(%{"t" => "open", "ch" => ch}, state) do
     {:push, [json(%{t: "close", ch: ch, error: "unsupported"})], state}
   end
 
+  defp message(%{"t" => "eof", "ch" => ch, "stream" => 0}, state) do
+    case state.chans do
+      %{^ch => %{http: kind, body: body} = chan} when is_list(body) ->
+        conn = self()
+        sandbox_id = state.sandbox_id
+        bytes = body |> Enum.reverse() |> IO.iodata_to_binary()
+        open = chan.open
+        # As Task would, so whatever owns this socket's database connection and stubs owns the request's too.
+        callers = [conn | Process.get(:"$callers", [])]
+
+        {pid, _ref} =
+          spawn_monitor(fn ->
+            Process.put(:"$callers", callers)
+
+            case kind do
+              "claude" -> SandboxProxy.claude(conn, ch, sandbox_id, open, bytes)
+              "mcp" -> SandboxProxy.mcp(conn, ch, sandbox_id, open, bytes)
+            end
+          end)
+
+        state = %{state | http_pids: Map.put(state.http_pids, pid, ch)}
+        {:ok, put_chan(state, ch, %{chan | body: nil, open: nil})}
+
+      _other ->
+        {:ok, state}
+    end
+  end
+
   defp message(%{"t" => "ack", "ch" => ch, "stream" => 0, "offset" => offset}, state) do
     case state.chans do
-      %{^ch => %{port: _port} = chan} -> drain(%{chan | acked: max(chan.acked, offset)}, ch, state)
+      %{^ch => %{acked: acked} = chan} -> drain(%{chan | acked: max(acked, offset)}, ch, state)
       _gone -> {:ok, state}
     end
   end
@@ -347,6 +423,11 @@ defmodule Rail.Tools.RunnerSocket do
       {%{port: port}, chans} ->
         close_port(port)
         {:ok, %{state | chans: chans}}
+
+      {%{http: _kind}, chans} ->
+        {stopped, http_pids} = Map.split_with(state.http_pids, fn {_pid, of} -> of == ch end)
+        for {pid, _ch} <- stopped, do: Process.exit(pid, :kill)
+        {:ok, %{state | chans: chans, http_pids: http_pids}}
 
       {_proc_or_nothing, _chans} ->
         {:ok, state}
@@ -388,6 +469,16 @@ defmodule Rail.Tools.RunnerSocket do
   defp data(%{port: port}, ch, 0, offset, payload, state) do
     Port.command(port, payload)
     {:push, [json(%{t: "ack", ch: ch, stream: 0, offset: offset + byte_size(payload)})], state}
+  end
+
+  defp data(%{http: _kind, body: body, size: size} = chan, ch, 0, offset, payload, state) when is_list(body) do
+    if size + byte_size(payload) > @max_request_body do
+      close = json(%{t: "close", ch: ch, error: "The request is over #{div(@max_request_body, 1_048_576)} MiB."})
+      {:push, [close], %{state | chans: Map.delete(state.chans, ch)}}
+    else
+      chan = %{chan | body: [payload | body], size: size + byte_size(payload)}
+      {:push, [json(%{t: "ack", ch: ch, stream: 0, offset: offset + byte_size(payload)})], put_chan(state, ch, chan)}
+    end
   end
 
   defp data(_unknown, _ch, _stream, _offset, _payload, state), do: {:ok, state}
@@ -497,8 +588,8 @@ defmodule Rail.Tools.RunnerSocket do
 
   defp exit_code(%{"code" => code}), do: code
 
-  # Sends what a git service wrote as far as the runner's window allows, and closes the channel once the service has
-  # exited and everything it wrote is sent.
+  # Sends what a git service or an HTTP answer wrote as far as the runner's window allows, and closes the channel once
+  # the service has exited, or the answer ended, and everything it wrote is sent.
   defp drain(chan, ch, state) do
     room = max(@window - (chan.sent - chan.acked), 0)
     size = min(room, byte_size(chan.queue))
@@ -507,7 +598,7 @@ defmodule Rail.Tools.RunnerSocket do
     chan = %{chan | queue: rest, sent: chan.sent + size}
 
     if chan.exit != nil and rest == "" do
-      close = json(%{t: "close", ch: ch, code: chan.exit})
+      close = json(if(chan.exit == :ok, do: %{t: "close", ch: ch}, else: %{t: "close", ch: ch, code: chan.exit}))
       {:push, Enum.reverse([close | Enum.reverse(frames)]), %{state | chans: Map.delete(state.chans, ch)}}
     else
       {:push, frames, put_chan(state, ch, chan)}

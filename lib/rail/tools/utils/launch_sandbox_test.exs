@@ -1,8 +1,6 @@
 defmodule Rail.Tools.Utils.LaunchSandboxTest do
   use Rail.DataCase, async: true
 
-  import Ecto.Query
-
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -200,33 +198,56 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
     assert env["ERL_FLAGS"] == System.get_env("ERL_FLAGS")
   end
 
-  test "a task's sandbox keeps its checkout on a volume of its own, and mounts only its scratch folder and login", %{
-    backend: %Backend{id: backend_id} = backend,
-    config_dir: config_dir,
+  test "a task's sandbox keeps its checkout on a volume of its own, and mounts only its scratch folder", %{
     run: run,
     scratch_path: scratch_path,
     worktree_path: worktree_path
   } do
-    session_dir = Backend.session_dir(backend, worktree_path)
-
     assert {:ok, %OsProcess{kind: :agent, sandbox_id: sandbox_id}} = Tools.start_os_process(run, ["-p", "Build it."])
 
     assert_received {:volume, %{"Name" => volume, "Labels" => %{"dev.railai.task-sandbox" => ^sandbox_id}}}
-    assert_received {:created, _name, %{"HostConfig" => %{"Binds" => binds, "Mounts" => mounts, "Tmpfs" => tmpfs}}}
-    locked = Enum.map(["settings.json", "settings.local.json", "CLAUDE.md"], &Path.join(config_dir, &1))
+    assert_received {:created, _name, %{"HostConfig" => host_config}}
+    assert host_config["Binds"] == ["#{scratch_path}:#{scratch_path}"]
+    assert host_config["Mounts"] == [%{"Type" => "volume", "Source" => volume, "Target" => worktree_path}]
+    refute Map.has_key?(host_config, "Tmpfs")
 
-    assert Enum.sort(binds) ==
-             Enum.sort(
-               ["#{scratch_path}:#{scratch_path}", "#{config_dir}:#{config_dir}", "#{session_dir}:#{session_dir}"] ++
-                 Enum.map(locked, &"#{&1}:#{&1}:ro")
-             )
-
-    assert mounts == [%{"Type" => "volume", "Source" => volume, "Target" => worktree_path}]
-    assert Map.has_key?(tmpfs, Path.join(config_dir, "projects"))
-    assert File.dir?(session_dir)
-
-    assert %Sandbox{status: :starting, container_id: "c0ffee", backend_id: ^backend_id, token_hash: <<_hash::binary-32>>} =
+    assert %Sandbox{status: :starting, container_id: "c0ffee", token_hash: <<_hash::binary-32>>} =
              Repo.get!(Sandbox, sandbox_id)
+  end
+
+  test "an agent's Claude keeps no login: it reaches its account through the runner, with the checkout trusted", %{
+    run: run,
+    worktree_path: worktree_path
+  } do
+    assert {:ok, %OsProcess{kind: :agent} = os_process} = Tools.start_os_process(run, ["-p", "Build it."])
+
+    assert %{"claude" => true, "env" => env, "files" => [config]} = Jason.decode!(Repo.reload!(os_process).launch)
+    assert env["CLAUDE_CONFIG_DIR"] == "/tmp/rail-claude"
+    assert env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] == "1"
+    refute Map.has_key?(env, "RAIL_MCP_URL")
+    assert %{"path" => "/tmp/rail-claude/.claude.json", "mode" => 0o600, "data" => data} = config
+
+    assert %{"projects" => %{^worktree_path => %{"hasTrustDialogAccepted" => true}}} =
+             data |> Base.decode64!() |> Jason.decode!()
+  end
+
+  test "a turn that resumes a conversation finds it where its CLI looks, put back from the account's copy", %{
+    backend: backend,
+    run: run,
+    worktree_path: worktree_path
+  } do
+    session_dir = Backend.session_dir(backend, worktree_path)
+    File.mkdir_p!(session_dir)
+    File.write!(Path.join(session_dir, "conv-1.jsonl"), ~s({"type":"user"}\n))
+
+    {:ok, run} = Pipeline.update_run(run, %{conversation_id: "conv-1"})
+
+    assert {:ok, %OsProcess{} = os_process} =
+             Tools.start_os_process(run, ["-p", "Go on.", "--resume", "conv-1"])
+
+    assert %{"files" => [_config, transcript]} = Jason.decode!(Repo.reload!(os_process).launch)
+    assert transcript["path"] == Path.join(Backend.sandbox_session_dir(worktree_path), "conv-1.jsonl")
+    assert Base.decode64!(transcript["data"]) == ~s({"type":"user"}\n)
   end
 
   test "the runner for the host's architecture is put in the container before it starts", %{run: run} do
@@ -264,25 +285,11 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
     assert %{"stderr" => "merge", "argv" => ["/bin/sh", "-c", _script]} = Jason.decode!(Repo.reload!(ci).launch)
   end
 
-  test "a command's sandbox carries the login of the account its run's role would be placed on", %{
-    backend: %Backend{id: backend_id},
-    run: run
-  } do
-    assert {:ok, %OsProcess{kind: :setup, sandbox_id: sandbox_id}} =
-             Tools.start_command_process(run, :setup, "./setup.sh")
+  test "a command gets no way to Claude", %{run: run} do
+    assert {:ok, %OsProcess{kind: :setup} = setup} = Tools.start_command_process(run, :setup, "./setup.sh")
 
-    assert %Sandbox{backend_id: ^backend_id} = Repo.get!(Sandbox, sandbox_id)
-  end
-
-  test "a command whose role no signed-in account offers runs in a sandbox with no login", %{
-    run: run,
-    role: role
-  } do
-    {:ok, _role} = Roles.update_role(system_scope(), role, %{model: "claude-nobody-offers"})
-
-    assert {:ok, %OsProcess{sandbox_id: sandbox_id}} = Tools.start_command_process(run, :setup, "./setup.sh")
-    assert_received {:created, _name, %{"HostConfig" => %{"Binds" => [_scratch], "Tmpfs" => %{}}}}
-    assert %Sandbox{backend_id: nil} = Repo.get!(Sandbox, sandbox_id)
+    assert %{"claude" => false, "files" => [], "env" => env} = Jason.decode!(Repo.reload!(setup).launch)
+    refute Map.has_key?(env, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
   end
 
   test "a task from before sandboxes had disks gets a copy of its checkout on its first", %{
@@ -465,39 +472,16 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
     assert [%Sandbox{status: :stopped, container_id: nil}] = Repo.all(Sandbox)
   end
 
-  test "an agent turn on another account than its busy sandbox's is passed over, and keeps its place", %{run: run} do
+  test "an agent turn joins its task's busy sandbox whatever account it is on", %{run: run} do
     assert {:ok, %OsProcess{kind: :setup, sandbox_id: sandbox_id}} =
              Tools.start_command_process(run, :setup, "./setup.sh")
 
-    {:ok, other} =
-      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true", label: "Other"})
-
-    Repo.update_all(from(s in Sandbox, where: s.id == ^sandbox_id), set: [backend_id: other.id])
-
-    assert {:ok, %OsProcess{kind: :agent, status: :waiting_for_resources, sandbox_id: nil}} =
-             Tools.start_os_process(run, ["-p", "Build it."])
-  end
-
-  test "an agent turn on another account than its idle sandbox's makes the container again on its own", %{
-    backend: %Backend{id: backend_id},
-    run: run
-  } do
-    assert {:ok, %OsProcess{sandbox_id: sandbox_id} = setup} = Tools.start_command_process(run, :setup, "./setup.sh")
     assert_received {:created, _name, _body}
-    Repo.update_all(from(p in OsProcess, where: p.id == ^setup.id), set: [status: :finished])
-
-    {:ok, other} =
-      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true", label: "Other"})
-
-    Repo.update_all(from(s in Sandbox, where: s.id == ^sandbox_id), set: [backend_id: other.id])
 
     assert {:ok, %OsProcess{kind: :agent, status: :running, sandbox_id: ^sandbox_id}} =
              Tools.start_os_process(run, ["-p", "Build it."])
 
-    assert_received :stopped
-    assert_received :removed
-    assert_received {:created, _name, _body}
-    assert %Sandbox{backend_id: ^backend_id, status: :starting} = Repo.get!(Sandbox, sandbox_id)
+    refute_received {:created, _name, _body}
   end
 
   test "a host running as many sandboxes as it may gives up an idle one's container for a new task's", %{

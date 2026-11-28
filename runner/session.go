@@ -319,6 +319,10 @@ func (d *daemon) handle(s *session, m inMsg) {
 		d.signal(m)
 	case "signed":
 		s.signed(m)
+	case "head":
+		if h, ok := s.channel(m.Ch).(*httpChan); ok {
+			h.onHead(m)
+		}
 	case "call":
 		go d.call(s, m)
 	case "ack":
